@@ -1,0 +1,7 @@
+must_rules:
+  - id: MUST-001
+  - id: MUST-002
+should_rules:
+  - id: SHOULD-001
+forbidden_patterns:
+  - id: FORBIDDEN-001

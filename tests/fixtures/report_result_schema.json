@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HarmonyOS生成代码评分结果",
+  "description": "HarmonyOS NEXT 生成代码评测结果的统一固定 JSON Schema，用于本地落盘与服务端上报。",
+  "type": "object",
+  "properties": {
+    "basic_info": {
+      "type": "object",
+      "properties": {
+        "rubric_version": { "type": "string" },
+        "task_type": {
+          "type": "string",
+          "enum": ["full_generation", "continuation", "bug_fix"]
+        },
+        "evaluation_mode": {
+          "type": "string",
+          "enum": ["auto_precheck", "auto_precheck_with_human_review"]
+        },
+        "rules_enabled": { "type": "boolean" },
+        "build_check_enabled": { "type": "boolean" },
+        "target_description": { "type": "string" },
+        "target_scope": { "type": "string" },
+        "task_type_basis": { "type": "string" }
+      },
+      "required": [
+        "rubric_version",
+        "task_type",
+        "evaluation_mode",
+        "rules_enabled",
+        "build_check_enabled",
+        "target_description",
+        "target_scope",
+        "task_type_basis"
+      ],
+      "additionalProperties": false
+    },
+    "overall_conclusion": {
+      "type": "object",
+      "properties": {
+        "total_score": { "type": "number" },
+        "hard_gate_triggered": { "type": "boolean" },
+        "summary": { "type": "string" }
+      },
+      "required": ["total_score", "hard_gate_triggered", "summary"],
+      "additionalProperties": false
+    },
+    "dimension_scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "dimension_name": { "type": "string" },
+          "score": { "type": "number" },
+          "max_score": { "type": "number" },
+          "comment": { "type": "string" }
+        },
+        "required": ["dimension_name", "score", "max_score", "comment"],
+        "additionalProperties": false
+      }
+    },
+    "submetric_details": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "dimension_name": { "type": "string" },
+          "metric_name": { "type": "string" },
+          "score": { "type": "number" },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "review_required": { "type": "boolean" },
+          "rationale": { "type": "string" },
+          "evidence": { "type": "string" }
+        },
+        "required": [
+          "dimension_name",
+          "metric_name",
+          "score",
+          "confidence",
+          "review_required",
+          "rationale",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "rule_violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule_source": { "type": "string" },
+          "rule_id": { "type": "string" },
+          "rule_summary": { "type": "string" },
+          "affected_items": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "handling_result": { "type": "string" },
+          "evidence": { "type": "string" }
+        },
+        "required": [
+          "rule_source",
+          "rule_id",
+          "rule_summary",
+          "affected_items",
+          "handling_result",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "level": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "evidence": { "type": "string" }
+        },
+        "required": ["level", "title", "description", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "strengths": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "main_issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "human_review_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": { "type": "string" },
+          "current_assessment": { "type": "string" },
+          "uncertainty_reason": { "type": "string" },
+          "suggested_focus": { "type": "string" }
+        },
+        "required": ["item", "current_assessment", "uncertainty_reason", "suggested_focus"],
+        "additionalProperties": false
+      }
+    },
+    "final_recommendation": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "legacy_issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "rule_audit_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule_id": { "type": "string" },
+          "rule_source": {
+            "type": "string",
+            "enum": ["must_rule", "should_rule", "forbidden_pattern"]
+          },
+          "result": {
+            "type": "string",
+            "enum": ["满足", "不满足", "不涉及"]
+          },
+          "conclusion": { "type": "string" }
+        },
+        "required": ["rule_id", "rule_source", "result", "conclusion"],
+        "additionalProperties": false
+      }
+    },
+    "report_meta": {
+      "type": "object",
+      "properties": {
+        "report_file_name": { "type": "string" },
+        "result_json_file_name": { "type": "string" },
+        "unit_name": { "type": "string" },
+        "generated_at": { "type": "string" }
+      },
+      "required": [
+        "report_file_name",
+        "result_json_file_name",
+        "unit_name",
+        "generated_at"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "basic_info",
+    "overall_conclusion",
+    "dimension_scores",
+    "submetric_details",
+    "rule_violations",
+    "risks",
+    "strengths",
+    "main_issues",
+    "human_review_items",
+    "final_recommendation",
+    "rule_audit_results",
+    "report_meta"
+  ],
+  "additionalProperties": false
+}
