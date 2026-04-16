@@ -34,6 +34,25 @@ test("generateCasePatch writes a unified diff between original and workspace", a
   assert.match(patchText, /restaurant-grid/);
 });
 
+test("generateCasePatch excludes transient workspace artifacts from the diff", async (t) => {
+  const caseDir = await createCaseFixture(t);
+  const patchPath = path.join(caseDir, "diff", "changes.patch");
+
+  await fs.mkdir(path.join(caseDir, "workspace", ".agent_bench"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "workspace", ".hvigor"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "workspace", "build"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "workspace", ".agent_bench", "noise.patch"), "noise\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "workspace", ".hvigor", "cache.json"), "noise\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "workspace", "build", "artifact.txt"), "noise\n", "utf-8");
+
+  await generateCasePatch(caseDir, patchPath);
+
+  const patchText = await fs.readFile(patchPath, "utf-8");
+  assert.doesNotMatch(patchText, /\.agent_bench/);
+  assert.doesNotMatch(patchText, /\.hvigor/);
+  assert.doesNotMatch(patchText, /build\/artifact\.txt/);
+});
+
 test("README documents directory-based patch generation", async () => {
   const readme = await fs.readFile(path.resolve(process.cwd(), "README.md"), "utf-8");
   assert.match(readme, /git diff --no-index|npm run case:patch/);
