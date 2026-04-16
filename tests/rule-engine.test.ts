@@ -103,3 +103,50 @@ test("runRuleEngine does not report violations from files ignored by workspace g
   assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"), false);
   assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"), false);
 });
+
+test("runRuleEngine only evaluates code-like files for text syntax rules", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "entry/src/main/resources/base/element/color.json": '{ "value": "#FFFFFF" }\n',
+    "entry/src/main/resources/base/media/background.png": "#private-binary-noise\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"), false);
+});
+
+test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "entry/src/main/js/generated.js": "var y = 2;\nlet x: any = 1;\nclass A { #secret = 1; }\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"), false);
+  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"), false);
+  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"), false);
+});
+
+test("runRuleEngine does not treat hex color literals in ets files as private field syntax", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "Text('hello').fontColor('#FF6B35')\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"), false);
+});

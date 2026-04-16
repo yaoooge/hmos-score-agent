@@ -1,6 +1,7 @@
 import { RuleAuditResult } from "../types.js";
 import { CollectedEvidence } from "./evidenceCollector.js";
 import { supportedTextRules } from "./ruleMapping.js";
+import path from "node:path";
 
 // 评估结果在 `RuleAuditResult` 上补充了“是否已支持”和命中文件，便于后续生成 violation。
 export interface EvaluatedRule extends RuleAuditResult {
@@ -27,6 +28,7 @@ export function evaluateTextRule(
   }
 
   const matchedFiles = evidence.workspaceFiles
+    .filter((file) => mapping.fileExtensions.includes(path.extname(file.relativePath).toLowerCase()))
     .filter((file) => mapping.pattern.test(file.content))
     .map((file) => file.relativePath);
 
