@@ -1,0 +1,477 @@
+name: HarmonyOS NEXT 生成代码评分
+version: v1
+summary: 面向 HarmonyOS NEXT 大模型生成代码的质量评分 Rubric，支持完整工程生成、续写代码、Bug 修复三类任务，采用自动初评 + 人工复核机制。
+
+scope:
+  include:
+    - 代码实现质量
+    - 工程组织质量
+    - 架构与职责划分
+    - 可维护性与可读性
+    - HarmonyOS NEXT / ArkTS / ArkUI 规范符合度
+    - 风险控制
+    - 与既有工程一致性
+    - 改动精准度与最小侵入性
+  exclude:
+    - 功能正确性验收
+    - 产品视觉设计
+    - UI 美观度
+    - 测试验收结果
+    - 编译通过率
+
+modes:
+  default_evaluation_mode: auto_precheck_with_human_review
+  supported_evaluation_modes:
+    - auto_precheck
+    - auto_precheck_with_human_review
+  output_detail_levels:
+    - summary
+    - standard
+    - full
+
+confidence_levels:
+  high: 证据充分，判断稳定
+  medium: 证据基本充分，存在少量不确定性
+  low: 证据不足或上下文不足，需人工复核
+
+input_schema:
+  required:
+    - task_type
+    - task_description
+    - target_scope
+  properties:
+    task_type:
+      type: enum
+      values:
+        - full_generation
+        - continuation
+        - bug_fix
+    task_description:
+      type: string
+    target_scope:
+      type: object
+      required:
+        - path
+        - scope_type
+      properties:
+        path:
+          type: string
+        scope_type:
+          type: enum
+          values:
+            - project
+            - module
+            - file_set
+            - diff
+    reference_scope:
+      type: object
+      required: false
+      properties:
+        path:
+          type: string
+        scope_type:
+          type: enum
+          values:
+            - project
+            - module
+            - file_set
+            - diff
+    standards_application_mode:
+      type: enum
+      default: additive_modifier
+      values:
+        - additive_modifier
+        - gating_only
+        - review_only
+    evaluation_mode:
+      type: enum
+      default: auto_precheck_with_human_review
+      values:
+        - auto_precheck
+        - auto_precheck_with_human_review
+    output_detail_level:
+      type: enum
+      default: full
+      values:
+        - summary
+        - standard
+        - full
+    enable_build_check:
+      type: boolean
+      default: false
+
+standards_extension:
+  architecture:
+    principle: 基础 Rubric 定义主评分结构，规则集作为规则层接入，不单独形成第二套总分
+    scoring_formula: 最终得分 = 基础 Rubric 得分 + 规则层修正结果（受硬门槛与总分上限约束）
+  application_priority:
+    - platform_rules
+    - must_rules
+    - forbidden_patterns
+    - should_rules
+  application_modes:
+    additive_modifier:
+      description: 默认模式，将规则命中结果映射到既有评分项并修正得分
+      suitable_for:
+        - 正式评分
+        - 模型横向对比
+    gating_only:
+      description: 仅将规则作为红线门槛，主要用于触发扣分上限、风险项或人工复核
+      suitable_for:
+        - 规则尚未完全结构化阶段
+        - 过渡期规范接入
+    review_only:
+      description: 规则只用于生成人工复核项和规则符合性观察，不直接修改总分
+      suitable_for:
+        - 规则稳定性不足阶段
+        - 高主观性规范场景
+  mapping_recommendation:
+    naming:
+      - 可维护性与可读性/命名表达清晰度
+      - 与既有工程一致性/命名与风格一致性
+    comments:
+      - 可维护性与可读性/命名表达清晰度
+      - 代码正确性与静态质量/静态坏味道控制
+    formatting:
+      - 工程结构与组织质量/目录结构合理性
+      - 代码正确性与静态质量/静态坏味道控制
+      - 与既有工程一致性/命名与风格一致性
+    types:
+      - 代码正确性与静态质量/ArkTS/ArkUI语法与类型安全
+      - 平台规范符合度/ArkTS约束遵循度
+      - 可维护性与可读性/可演进性
+    functions:
+      - 可维护性与可读性/复杂度控制
+      - 架构与职责划分/页面或新增代码职责边界
+      - 风险控制与稳定性/稳定性风险
+    control_flow:
+      - 可维护性与可读性/复杂度控制
+      - 代码正确性与静态质量/静态坏味道控制
+      - 风险控制与稳定性/稳定性风险
+  conflict_policy:
+    description: 当规范与平台规则冲突时，以平台规则为准；若无法自动裁决，则进入人工复核
+    unresolved_action:
+      - 降低相关项 confidence 为 low
+      - 写入 human_review_queue
+      - 不直接强判
+
+hard_gates:
+  - id: G1
+    name: 高密度静态错误
+    applies_to:
+      - full_generation
+      - continuation
+      - bug_fix
+    trigger_signals:
+      - 大量未定义引用
+      - 大量类型错误
+      - import/export 错位明显
+      - 明显不可运行代码片段密集出现
+    score_cap: 69
+  - id: G2
+    name: 明显不符合 HarmonyOS NEXT / ArkTS 基本规范
+    applies_to:
+      - full_generation
+      - continuation
+      - bug_fix
+    trigger_signals:
+      - 大量 Web/Vue/React 思维硬套
+      - 明显不符合 ArkTS 约束
+      - 平台写法严重失真
+    score_cap: 69
+  - id: G3
+    name: 严重工程风险
+    applies_to:
+      - full_generation
+      - continuation
+      - bug_fix
+    trigger_signals:
+      - 生命周期误用明显
+      - 空值或异步竞争风险高
+      - 敏感信息硬编码
+      - 资源释放或监听清理存在明显风险
+    score_cap: 79
+  - id: G4
+    name: Bug 修复任务中的误修或过修
+    applies_to:
+      - bug_fix
+    trigger_signals:
+      - 改动与问题点明显不匹配
+      - 修改范围严重失控
+      - 引入明显无关改动
+    score_cap: 59
+
+human_review_rules:
+  force_review_when:
+    - 任一评分项 confidence 为 low
+    - 需要依据规则判断但未提供完整规则信息
+    - continuation 或 bug_fix 缺少足够参考上下文
+    - bug_fix 场景中无法确认是否真正命中根因
+    - 触发任意硬门槛
+    - 最终总分落在 68-71、78-81、88-91 临界带
+    - 一级维度间结论冲突明显
+  output_fields:
+    - item
+    - current_assessment
+    - uncertainty_reason
+    - suggested_focus
+
+rules_policy:
+  must_rules:
+    handling: 若明显违反，可直接降分；严重违反可触发硬门槛或专项风险项
+  should_rules:
+    handling: 影响评分项得分修正，不直接触发硬门槛
+  forbidden_patterns:
+    handling: 一旦命中，必须进入风险项，并降低相关项评分
+
+task_templates:
+  full_generation:
+    total_score: 100
+    dimensions:
+      - name: 工程结构与组织质量
+        weight: 20
+        intent: 评价目录结构、模块边界与公共能力组织是否清晰合理
+        items:
+          - name: 目录结构合理性
+            weight: 7
+            guidance:
+              high: 目录组织自然、职责分布明确、扩展路径清晰
+              low: 目录混乱、文件职责错位、存在明显模板残留
+          - name: 模块边界清晰度
+            weight: 7
+            guidance:
+              high: 模块职责边界明确，分层合理
+              low: 模块耦合明显，职责不清
+          - name: 公共能力组织质量
+            weight: 6
+            guidance:
+              high: 通用能力抽取位置合理，复用自然
+              low: 公共逻辑散落或过度堆叠在页面层
+
+      - name: 代码正确性与静态质量
+        weight: 20
+        intent: 评价 ArkTS/ArkUI 语法、类型安全与静态坏味道
+        items:
+          - name: ArkTS/ArkUI语法与类型安全
+            weight: 8
+          - name: 静态坏味道控制
+            weight: 6
+          - name: 明显错误密度
+            weight: 6
+
+      - name: 架构与职责划分
+        weight: 20
+        intent: 评价页面、组件、状态与工具逻辑的职责分配
+        items:
+          - name: 页面/组件职责分离
+            weight: 8
+          - name: 状态与数据流组织
+            weight: 6
+          - name: 复用与抽象合理性
+            weight: 6
+
+      - name: 可维护性与可读性
+        weight: 15
+        intent: 评价命名、复杂度与可演进性
+        items:
+          - name: 命名表达清晰度
+            weight: 5
+          - name: 复杂度控制
+            weight: 5
+          - name: 可演进性
+            weight: 5
+
+      - name: 平台规范符合度
+        weight: 15
+        intent: 评价 ArkUI、ArkTS 与 HarmonyOS 工程实践符合度
+        items:
+          - name: ArkUI组织方式合理性
+            weight: 5
+          - name: ArkTS约束遵循度
+            weight: 5
+          - name: HarmonyOS工程实践符合度
+            weight: 5
+
+      - name: 风险控制与稳定性
+        weight: 10
+        intent: 评价稳定性、性能与安全边界风险
+        items:
+          - name: 稳定性风险
+            weight: 4
+          - name: 性能风险
+            weight: 3
+          - name: 安全与边界意识
+            weight: 3
+
+  continuation:
+    total_score: 100
+    dimensions:
+      - name: 与既有工程一致性
+        weight: 20
+        intent: 评价新增代码是否自然融入原工程
+        items:
+          - name: 命名与风格一致性
+            weight: 7
+          - name: 目录/模块接入一致性
+            weight: 7
+          - name: 复用既有能力程度
+            weight: 6
+
+      - name: 代码正确性与静态质量
+        weight: 20
+        items:
+          - name: ArkTS/ArkUI语法与类型安全
+            weight: 8
+          - name: 静态坏味道控制
+            weight: 6
+          - name: 明显错误密度
+            weight: 6
+
+      - name: 架构与职责划分
+        weight: 15
+        items:
+          - name: 新增代码职责边界
+            weight: 5
+          - name: 状态接入合理性
+            weight: 5
+          - name: 组件/能力抽取合理性
+            weight: 5
+
+      - name: 可维护性与可读性
+        weight: 15
+        items:
+          - name: 命名表达清晰度
+            weight: 5
+          - name: 复杂度控制
+            weight: 5
+          - name: 可演进性
+            weight: 5
+
+      - name: 平台规范符合度
+        weight: 15
+        items:
+          - name: ArkUI组织方式合理性
+            weight: 5
+          - name: ArkTS约束遵循度
+            weight: 5
+          - name: HarmonyOS工程实践符合度
+            weight: 5
+
+      - name: 风险控制与稳定性
+        weight: 10
+        items:
+          - name: 稳定性风险
+            weight: 4
+          - name: 性能风险
+            weight: 3
+          - name: 安全与边界意识
+            weight: 3
+
+      - name: 改动范围合理性
+        weight: 5
+        items:
+          - name: 改动聚焦度
+            weight: 3
+          - name: 无关改动控制
+            weight: 2
+
+  bug_fix:
+    total_score: 100
+    dimensions:
+      - name: 改动精准度与最小侵入性
+        weight: 25
+        intent: 评价是否精准修复问题且控制改动范围
+        items:
+          - name: 问题点命中程度
+            weight: 10
+          - name: 修改范围克制度
+            weight: 8
+          - name: 无关重构控制
+            weight: 7
+
+      - name: 代码正确性与静态质量
+        weight: 20
+        items:
+          - name: ArkTS/ArkUI语法与类型安全
+            weight: 8
+          - name: 静态坏味道控制
+            weight: 6
+          - name: 明显错误密度
+            weight: 6
+
+      - name: 与既有工程一致性
+        weight: 15
+        items:
+          - name: 命名与风格一致性
+            weight: 5
+          - name: 结构接入一致性
+            weight: 5
+          - name: 原模式复用程度
+            weight: 5
+
+      - name: 风险控制与稳定性
+        weight: 15
+        items:
+          - name: 回归风险控制
+            weight: 6
+          - name: 稳定性风险
+            weight: 5
+          - name: 安全/边界意识
+            weight: 4
+
+      - name: 平台规范符合度
+        weight: 10
+        items:
+          - name: ArkTS/ArkUI规范符合度
+            weight: 5
+          - name: HarmonyOS工程实践符合度
+            weight: 5
+
+      - name: 可维护性与可读性
+        weight: 10
+        items:
+          - name: 修改点可理解性
+            weight: 4
+          - name: 复杂度控制
+            weight: 3
+          - name: 可演进性
+            weight: 3
+
+      - name: 架构与职责影响控制
+        weight: 5
+        items:
+          - name: 是否破坏原边界
+            weight: 3
+          - name: 是否引入额外耦合
+            weight: 2
+
+execution_flow:
+  - step: 1
+    name: 识别任务类型
+    description: 根据 task_type 选择对应评分模板；若未明确给出，则依据任务描述推断并说明依据
+  - step: 2
+    name: 读取评分范围
+    description: 读取 target_scope；对于 continuation 与 bug_fix，优先读取 reference_scope 作为对照上下文
+  - step: 3
+    name: 提取证据
+    description: 从结构、代码、风险、一致性四类证据中整理评分依据
+  - step: 4
+    name: 应用规则集
+    description: 依次检查 must_rules、forbidden_patterns、should_rules，并记录影响
+  - step: 5
+    name: 逐项评分
+    description: 为每个二级指标输出 score、confidence、rationale、evidence、review_required
+  - step: 6
+    name: 计算总分
+    description: 聚合维度得分并应用硬门槛总分上限
+  - step: 7
+    name: 提炼结论
+    description: 输出优势项、问题项、风险项、总体建议
+  - step: 8
+    name: 生成人工复核清单
+    description: 汇总 low confidence、临界分、硬门槛与证据不足项
+
+legacy_issues:
+  - 当前版本未接入构建检查，无法将编译通过率纳入客观评分链路
+  - 当前版本不评估功能正确性，仅评估代码产物质量
+  - 人工复核阈值后续可结合真实数据进一步量化

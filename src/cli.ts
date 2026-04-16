@@ -12,10 +12,10 @@ async function main(): Promise<void> {
   const casePath = parseCaseArg(process.argv.slice(2));
   const result = await runSingleCase(casePath);
   // eslint-disable-next-line no-console
-  console.log(`Scoring completed. Case artifacts: ${result.caseDir}`);
+  console.log(`评分完成，结果目录：${result.caseDir}`);
   if (result.uploadMessage) {
     // eslint-disable-next-line no-console
-    console.log(`Upload: ${result.uploadMessage}`);
+    console.log(`上传信息：${result.uploadMessage}`);
   }
 }
 

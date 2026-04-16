@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "dev:cli": "tsx src/cli.ts",
     "dev:api": "tsx src/index.ts",
+    "launch:score": "node --import tsx src/tools/runInteractiveScore.ts",
     "score": "tsx src/cli.ts",
     "case:patch": "node --import tsx src/tools/generateCasePatch.ts",
     "test": "node --import tsx --test tests/*.test.ts"

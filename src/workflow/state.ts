@@ -2,6 +2,7 @@ import { Annotation } from "@langchain/langgraph";
 import {
   CaseInput,
   ConstraintSummary,
+  EvidenceSummary,
   FeatureExtraction,
   RuleAuditResult,
   RuleViolation,
@@ -17,6 +18,7 @@ export const ScoreState = Annotation.Root({
   featureExtraction: Annotation<FeatureExtraction>(),
   ruleAuditResults: Annotation<RuleAuditResult[]>(),
   ruleViolations: Annotation<RuleViolation[]>(),
+  evidenceSummary: Annotation<EvidenceSummary>(),
   scoreComputation: Annotation<ScoreComputation>(),
   resultJson: Annotation<Record<string, unknown>>(),
   htmlReport: Annotation<string>(),

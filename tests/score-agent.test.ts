@@ -13,7 +13,6 @@ import type { CaseInput } from "../src/types.js";
 
 const fixtureRoot = path.resolve(process.cwd(), "tests/fixtures");
 const schemaPath = path.join(fixtureRoot, "report_result_schema.json");
-const ruleFixturePath = path.join(fixtureRoot, "arkts_internal_rules.yaml");
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-score-agent-"));
@@ -25,24 +24,35 @@ async function makeTempDir(t: test.TestContext): Promise<string> {
 
 async function writeCaseFixture(
   rootDir: string,
-  options: { promptText?: string; withPatch?: boolean } = {},
+  options: { promptText?: string; withPatch?: boolean; workspaceContent?: string; originalContent?: string } = {},
 ): Promise<string> {
   const caseDir = path.join(rootDir, "sample-case");
-  await fs.mkdir(path.join(caseDir, "original"), { recursive: true });
-  await fs.mkdir(path.join(caseDir, "workspace"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "main", "ets"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "workspace", "entry", "src", "main", "ets"), { recursive: true });
   await fs.writeFile(path.join(caseDir, "input.txt"), options.promptText ?? "新增餐厅列表页面", "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "original", "entry", "src", "main", "ets", "Index.ets"),
+    options.originalContent ?? "let count: number = 1;\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "entry", "src", "main", "ets", "Index.ets"),
+    options.workspaceContent ?? "let count: number = 2;\n",
+    "utf-8",
+  );
   if (options.withPatch) {
     await fs.mkdir(path.join(caseDir, "diff"), { recursive: true });
-    await fs.writeFile(path.join(caseDir, "diff", "changes.patch"), "@@ -1 +1 @@\n-fixme\n+fixed\n", "utf-8");
+    await fs.writeFile(
+      path.join(caseDir, "diff", "changes.patch"),
+      "diff --git a/entry/src/main/ets/Index.ets b/entry/src/main/ets/Index.ets\n@@ -1 +1 @@\n-let count: number = 1;\n+let count: any = 2;\n",
+      "utf-8",
+    );
   }
   return caseDir;
 }
 
-async function createReferenceRoot(t: test.TestContext): Promise<string> {
-  const referenceRoot = await makeTempDir(t);
-  await fs.copyFile(schemaPath, path.join(referenceRoot, "report_result_schema.json"));
-  await fs.copyFile(ruleFixturePath, path.join(referenceRoot, "arkts_internal_rules.yaml"));
-  return referenceRoot;
+async function createReferenceRoot(_t: test.TestContext): Promise<string> {
+  return path.resolve(process.cwd(), "references/scoring");
 }
 
 function makeState(input: Partial<CaseInput> = {}): {
@@ -124,23 +134,35 @@ test("inputClassificationNode prioritizes bug_fix over patch-based continuation"
 
 test("ruleAuditNode emits one ledger item per rule and preserves source ordering", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
+  const rootDir = await makeTempDir(t);
+  const caseDir = await writeCaseFixture(rootDir, {
+    workspaceContent: "let x: any = 1;\nvar y = 2;\n",
+  });
+  const caseInput = await loadCaseFromPath(caseDir);
 
-  const result = await ruleAuditNode(makeState() as never, { referenceRoot });
+  const result = await ruleAuditNode(
+    {
+      caseInput,
+      taskType: "full_generation",
+    } as never,
+    { referenceRoot },
+  );
 
-  assert.deepEqual(result.ruleViolations, []);
-  assert.deepEqual(result.ruleAuditResults?.map((item) => item.rule_id), [
-    "MUST-001",
-    "MUST-002",
-    "SHOULD-001",
-    "FORBIDDEN-001",
+  assert.ok((result.ruleViolations?.length ?? 0) >= 1);
+  assert.deepEqual(result.ruleAuditResults?.slice(0, 4).map((item) => item.rule_id), [
+    "ARKTS-MUST-001",
+    "ARKTS-MUST-002",
+    "ARKTS-MUST-003",
+    "ARKTS-MUST-004",
   ]);
-  assert.deepEqual(result.ruleAuditResults?.map((item) => item.rule_source), [
+  assert.deepEqual(result.ruleAuditResults?.slice(0, 4).map((item) => item.rule_source), [
     "must_rule",
     "must_rule",
-    "should_rule",
-    "forbidden_pattern",
+    "must_rule",
+    "must_rule",
   ]);
-  assert.equal(result.ruleAuditResults?.every((item) => item.result === "不涉及"), true);
+  assert.equal(result.ruleAuditResults?.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"), true);
+  assert.equal(result.ruleAuditResults?.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"), true);
 });
 
 test("runScoreWorkflow writes artifacts and produces schema-valid result json", async (t) => {
@@ -148,15 +170,16 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
   const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    promptText: "请修复餐厅列表页中的 bug",
+    withPatch: true,
+    workspaceContent: "let x: any = 1;\nvar y = 2;\n",
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
 
   const result = await runScoreWorkflow({
-    caseInput: {
-      caseId: "case-1",
-      promptText: "请修复餐厅列表页中的 bug",
-      originalProjectPath: "/tmp/original",
-      generatedProjectPath: "/tmp/workspace",
-      patchPath: "/tmp/changes.patch",
-    },
+    caseInput: { ...caseInput, caseId: "case-1" },
     caseDir,
     referenceRoot,
     artifactStore,
@@ -173,11 +196,49 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   const validate = ajv.compile(schema);
 
   assert.equal(validate(resultJson), true, ajv.errorsText(validate.errors));
-  assert.equal(result.uploadMessage, "UPLOAD_ENDPOINT is empty; skipped upload.");
+  assert.equal(result.uploadMessage, "未配置 UPLOAD_ENDPOINT，已跳过上传。");
   assert.equal(resultJson.basic_info.task_type, "bug_fix");
-  assert.equal(resultJson.overall_conclusion.total_score, 75);
-  assert.equal(ruleAuditJson.length, 4);
-  assert.match(reportHtml, /Case case-1/);
+  assert.ok(resultJson.dimension_scores.length > 0);
+  assert.ok(resultJson.submetric_details.length > 0);
+  assert.ok(resultJson.overall_conclusion.total_score <= 69);
+  assert.ok(ruleAuditJson.length > 10);
+  assert.ok(ruleAuditJson.some((item: { result: string }) => item.result === "不满足"));
+  assert.match(reportHtml, /评分报告/);
+});
+
+test("runScoreWorkflow emits Chinese descriptive text in result.json and report.html", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    promptText: "请修复餐厅列表页中的 bug",
+    withPatch: true,
+    workspaceContent: "let x: any = 1;\nvar y = 2;\n",
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+
+  await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+  });
+
+  const resultJson = JSON.parse(await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
+  const reportHtml = await fs.readFile(path.join(caseDir, "outputs", "report.html"), "utf-8");
+
+  assert.equal(resultJson.basic_info.target_description, "HarmonyOS 生成工程评分");
+  assert.match(resultJson.overall_conclusion.summary, /触发|未触发|评分/);
+  assert.equal(
+    resultJson.rule_audit_results.some((item: { conclusion: string }) =>
+      /当前版本未接入对应判定器。|未发现该规则的命中证据。|检测到规则命中，文件：/.test(item.conclusion),
+    ),
+    true,
+  );
+  assert.match(reportHtml, /评分报告/);
+  assert.doesNotMatch(reportHtml, /Score Report/);
 });
 
 test.todo("taskUnderstandingNode should load configurable extractors instead of fixed keyword heuristics");

@@ -1,0 +1,874 @@
+name: ArkTS TypeScript 适配与编程规范融合规则包
+version: v1.0.0
+summary: 基于《从TypeScript到ArkTS的适配规则》与《ArkTS编程规范》融合提炼的内部规则包，按 must / should / forbidden 分类，用于 HarmonyOS NEXT 生成代码评分与审查。
+
+rule_pack_meta:
+  source_name: Huawei-ArkTS-TypeScript-Adaptation-Guide-and-Programming-Guide
+  source_version: merged-html-and-v1-rules-2026-04-08
+  priority: 120
+  application_mode: additive_modifier
+  description: >-
+    本规则包以《从TypeScript到ArkTS的适配规则》为主体，补充《ArkTS编程规范》v1.0 中不重复的命名、格式、控制流与编程实践规则，
+    重点覆盖 ArkTS 相比 TypeScript 更严格的静态类型、对象布局、模块、类型系统、控制流与标准库限制，
+    同时保留一部分工程级风格与可维护性约束。
+    文档中“错误”级别条目优先归入 must_rules；文档中的高风险反模式沉淀到 forbidden_patterns；
+    “警告”级别条目归入 should_rules。
+  compatible_task_types:
+    - full_generation
+    - continuation
+    - bug_fix
+  supported_scopes:
+    - naming
+    - formatting
+    - types
+    - functions
+    - control_flow
+    - modules
+    - stdlib
+    - interop
+    - general
+
+source_reference:
+  title: 从TypeScript到ArkTS的适配规则 + ArkTS编程规范
+  document: 从TypeScript到ArkTS的适配规则-从TypeScript到ArkTS的适配指导-学习ArkTS语言-基础入门 - 华为HarmonyOS开发者.html；ArkTS编程规范-学习ArkTS语言-基础入门 - 华为HarmonyOS开发者.pdf
+  extraction_note: >-
+    当前文件以本地 HTML 抽取规则为主，并补充 2026-04-03 旧版 ArkTS 官方编程规范规则包 v1.0 中未重复的条目。
+  key_sections:
+    - 类型系统约束
+    - 对象布局约束
+    - 函数与控制流约束
+    - 模块与导入约束
+    - 标准库与跨语言限制
+    - 命名与格式规范
+    - 编程实践
+
+usage:
+  description: >-
+    本规则包适合作为 HarmonyOS NEXT 评分体系中的高优先级 internal rules 使用。
+    “must_rules”用于识别会导致 ArkTS 编译失败、类型不安全、平台约束不满足或明确违背官方编程要求的问题；
+    “forbidden_patterns”用于标记应直接规避的高风险写法；
+    “should_rules”用于提示受限能力、迁移建议以及工程风格层面的可维护性问题。
+  apply_order:
+    - platform_rules
+    - this_rule_pack
+  notes:
+    - 错误级别规则通常应直接影响 ArkTS/ArkUI 语法与类型安全评分
+    - 警告级别规则更适合 additive_modifier 或 review_only 模式
+    - forbidden_patterns 更适合硬性拦截、人工复核加权或高风险提示
+
+must_rules:
+  - id: ARKTS-MUST-001
+    category: 属性访问约束
+    scope: types
+    severity: critical
+    rule: 对象属性名必须是合法标识符；禁止依赖数字键或普通字符串键的动态属性访问
+    rationale: ArkTS 依赖静态对象布局，动态 key 访问会削弱类型系统并影响编译期校验
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+    scoring_impact: 命中时至少降低相关项一档；严重时可视为编译失败级问题
+
+  - id: ARKTS-MUST-002
+    category: 标准库限制
+    scope: stdlib
+    severity: high
+    rule: 禁止使用 Symbol() API；仅允许 Symbol.iterator 这一特例
+    rationale: ArkTS 不支持依赖动态对象标识和运行时对象扩展的 Symbol 语义
+    level_from_source: 错误
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+
+  - id: ARKTS-MUST-003
+    category: 类字段声明
+    scope: types
+    severity: high
+    rule: 禁止使用 #private 字段语法，必须改用 private 关键字
+    rationale: ArkTS 不支持 TS 私有字段语法，仅支持显式可访问修饰符体系
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-004
+    category: 命名唯一性
+    scope: naming
+    severity: high
+    rule: 类型、枚举、接口、命名空间名称必须唯一，且不得与变量、函数等其他标识符冲突
+    rationale: 避免命名遮蔽与类型空间/值空间混淆
+    level_from_source: 错误
+    affects:
+      - dimension: 可维护性与可读性
+        item: 命名表达清晰度
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-MUST-005
+    category: 变量声明
+    scope: general
+    severity: high
+    rule: 禁止使用 var，必须使用 let 或 const
+    rationale: 块级作用域有助于减少变量提升和作用域错误
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+
+  - id: ARKTS-MUST-006
+    category: 静态类型
+    scope: types
+    severity: critical
+    rule: 禁止使用 any 和 unknown，必须显式声明具体类型
+    rationale: ArkTS 强调编译期静态类型；any/unknown 会破坏类型可验证性与性能收益
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+    scoring_impact: 可直接判定为高密度类型问题
+
+  - id: ARKTS-MUST-007
+    category: 类型系统
+    scope: types
+    severity: high
+    rule: 禁止在对象类型中使用 call signature；需要可调用对象时应改用类或显式函数对象封装
+    rationale: ArkTS 不支持这类依赖结构类型的动态表达
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-008
+    category: 类型系统
+    scope: types
+    severity: high
+    rule: 禁止在 type 或 interface 中定义构造签名，需改用 class、工厂函数或普通方法
+    rationale: ArkTS 对构造行为要求更静态、更显式
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-009
+    category: 类结构
+    scope: types
+    severity: medium
+    rule: 一个类中只允许存在一个 static 初始化块；多个 static 块必须合并
+    rationale: 降低初始化顺序复杂度，符合 ArkTS 类模型约束
+    level_from_source: 错误
+    affects:
+      - dimension: 可维护性与可读性
+        item: 复杂度控制
+
+  - id: ARKTS-MUST-010
+    category: 索引签名
+    scope: types
+    severity: high
+    rule: 禁止使用 index signature；需要索引访问能力时优先使用数组、TypedArray 或 Map
+    rationale: index signature 依赖更动态的对象模型，不符合 ArkTS 静态布局约束
+    level_from_source: 错误
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-011
+    category: 类型系统
+    scope: types
+    severity: high
+    rule: 禁止使用 intersection types、conditional types、infer、this 类型和索引访问类型
+    rationale: 这些高级 TS 类型特性在 ArkTS 中不被支持或支持不完整
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-012
+    category: 类字段定义
+    scope: types
+    severity: high
+    rule: 禁止在构造函数参数中直接声明类字段；所有字段必须在 class 作用域中显式声明
+    rationale: 保持类结构显式、稳定，避免隐式布局变化
+    level_from_source: 错误
+    affects:
+      - dimension: 架构与职责划分
+        item: 页面/组件职责分离
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-013
+    category: 结构化类型限制
+    scope: types
+    severity: high
+    rule: 禁止依赖 structural typing、对象字面量类型或无类型对象字面量初始化；应使用 class / interface / 显式类型
+    rationale: ArkTS 不支持典型 TS 结构类型推断与动态对象塑形能力
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+
+  - id: ARKTS-MUST-014
+    category: 数组与字面量推断
+    scope: types
+    severity: medium
+    rule: 对无法可靠推断元素类型的数组字面量必须补充显式类型
+    rationale: 避免联合类型扩散或推断失败导致编译错误
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-015
+    category: 函数表达式
+    scope: functions
+    severity: high
+    rule: 禁止使用 function expression 和 class expression；函数请改用箭头函数，类请改为显式类声明
+    rationale: ArkTS 不支持这类更动态的表达式式声明形式
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-016
+    category: 继承与实现
+    scope: types
+    severity: high
+    rule: implements 只能作用于 interface；extends 必须遵循“类继承类、接口继承接口”
+    rationale: ArkTS 对类型层级关系有明确静态限制
+    level_from_source: 错误
+    affects:
+      - dimension: 架构与职责划分
+        item: 页面/组件职责分离
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+
+  - id: ARKTS-MUST-017
+    category: 对象布局
+    scope: general
+    severity: critical
+    rule: 禁止在运行时修改对象布局，包括动态新增/删除属性、修改方法绑定或依赖 prototype 赋值
+    rationale: ArkTS 对象布局在编译时确定，运行时变更会破坏静态语义和运行时性能
+    level_from_source: 错误
+    affects:
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+    scoring_impact: 属于高风险平台违规项
+
+  - id: ARKTS-MUST-018
+    category: 类型转换
+    scope: types
+    severity: high
+    rule: 类型转换只能使用 as 语法；禁止使用 <Type> 形式的断言
+    rationale: ArkTS 将 as 作为唯一合法的显式类型转换形式
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-019
+    category: 运算符限制
+    scope: control_flow
+    severity: high
+    rule: 限制多态运算符语义；一元 + / - / ~ 仅允许用于数值类型，instanceof 左操作数必须是引用类型
+    rationale: 避免 TS 中过于宽松的动态运算符语义进入 ArkTS
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+
+  - id: ARKTS-MUST-020
+    category: 控制流与解构
+    scope: control_flow
+    severity: high
+    rule: 禁止使用解构赋值、解构声明、解构参数、逗号运算符（for 语句除外）和 for..in
+    rationale: 这些语法依赖更动态的数据结构或降低代码可预测性
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+
+  - id: ARKTS-MUST-021
+    category: 异常处理
+    scope: control_flow
+    severity: critical
+    rule: 只允许抛出 Error 或其派生类实例；catch 参数不得标注 any 或 unknown
+    rationale: 保持异常体系可分析、可追踪，并避免弱类型异常值传播
+    level_from_source: 错误
+    affects:
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+      - dimension: 风险控制与稳定性
+        item: 回归风险控制
+
+  - id: ARKTS-MUST-022
+    category: 函数与 this
+    scope: functions
+    severity: high
+    rule: 禁止在普通函数、静态方法中使用 this；禁止嵌套函数声明与生成器函数
+    rationale: ArkTS 仅保留更明确的 OOP this 语义，并裁剪部分动态函数能力
+    level_from_source: 错误
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-023
+    category: 展开与可变参数
+    scope: functions
+    severity: medium
+    rule: 展开运算符仅允许用于数组、Array 子类和 TypedArray，且仅在受支持场景中使用
+    rationale: ArkTS 对 spread 的可用对象和使用场景有更严格限制
+    level_from_source: 错误
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+
+  - id: ARKTS-MUST-024
+    category: 枚举与命名空间
+    scope: types
+    severity: high
+    rule: 禁止混合类型枚举、运行时表达式枚举初始化、enum 声明合并、将命名空间当对象使用、在命名空间中写非声明语句
+    rationale: ArkTS 枚举与命名空间语义更静态，禁止运行时扩展和合并
+    level_from_source: 错误
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-MUST-025
+    category: 模块系统
+    scope: modules
+    severity: critical
+    rule: 禁止使用 require、import 赋值表达式、ambient module、模块通配符、UMD、import assertions；.ts/.js 文件不得反向 import .ets 源码
+    rationale: ArkTS 模块系统是编译时静态导入体系，不支持大量 JS/TS 运行时模块特性
+    level_from_source: 错误
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+
+  - id: ARKTS-MUST-026
+    category: 类型检查强制性
+    scope: general
+    severity: critical
+    rule: 禁止通过 @ts-ignore、@ts-nocheck 或关闭严格检查的方式绕过类型系统
+    rationale: ArkTS 的类型检查不是可选项，绕过检查会直接破坏语言设计前提
+    level_from_source: 错误
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+    scoring_impact: 可作为硬门槛候选
+
+  - id: ARKTS-MUST-027
+    category: 标准库受限接口
+    scope: stdlib
+    severity: high
+    rule: 禁止使用 ArkTS 明确限制的 TS/JS 标准库动态接口，如 eval、__proto__、__defineGetter__ 等
+    rationale: 这些接口依赖动态元编程或原型机制，不符合 ArkTS 静态模型
+    level_from_source: 错误
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 风险控制与稳定性
+        item: 安全与稳定性风险
+
+  - id: ARKTS-MUST-028
+    category: 格式规范
+    scope: formatting
+    severity: high
+    rule: 多个变量定义和赋值语句不允许写在一行
+    rationale: 便于调试、维护与增量修改，减少分号或逗号误用风险
+    level_from_source: 要求
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+      - dimension: 可维护性与可读性
+        item: 复杂度控制
+    scoring_impact: 命中时至少降低相关项一档
+    detection_hint:
+      - 检查单行中是否同时声明多个变量
+      - 检查单行中是否存在多个赋值语句
+
+  - id: ARKTS-MUST-029
+    category: 数值判断
+    scope: types
+    severity: high
+    rule: 判断变量是否为 Number.NaN 时必须使用 Number.isNaN()
+    rationale: Number.NaN 与自身比较结果异常，直接比较会导致错误判断
+    level_from_source: 要求
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+    scoring_impact: 命中时至少降低相关项一档；严重时可作为高密度静态错误候选
+    detection_hint:
+      - 检查是否存在 foo == Number.NaN 或 foo != Number.NaN
+
+  - id: ARKTS-MUST-030
+    category: 数组实践
+    scope: functions
+    severity: medium
+    rule: 对明显仅用于映射、过滤、查找、归约的数组遍历，优先使用 forEach、map、filter、find、reduce 等 Array 方法
+    rationale: 能提升可读性并减少样板循环代码
+    level_from_source: 要求
+    affects:
+      - dimension: 可维护性与可读性
+        item: 复杂度控制
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+    scoring_impact: 当存在明显可替换的遍历样板代码时，降低相关项评分
+    review_hint:
+      - 若循环中包含复杂副作用或早停逻辑，可人工确认是否适合替换
+
+should_rules:
+  - id: ARKTS-SHOULD-001
+    category: 全局对象限制
+    scope: general
+    severity: medium
+    rule: 应避免依赖全局作用域或 globalThis 传递状态，优先使用显式模块导出与局部状态管理
+    rationale: 该能力在 ArkTS 中受限，继续依赖会增加迁移成本与可维护性问题
+    level_from_source: 警告
+    affects:
+      - dimension: 架构与职责划分
+        item: 模块边界清晰度
+      - dimension: 可维护性与可读性
+        item: 可演进性
+
+  - id: ARKTS-SHOULD-002
+    category: ESObject 使用约束
+    scope: interop
+    severity: medium
+    rule: 仅在确有跨语言调用需要时使用 ESObject，且优先限制在局部变量场景
+    rationale: ESObject 主要用于 .ets 与 .ts/.js 互操作，滥用会削弱静态类型约束并引入运行时成本
+    level_from_source: 警告
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 风险控制与稳定性
+        item: 性能风险
+
+  - id: ARKTS-SHOULD-003
+    category: 类值语义
+    scope: types
+    severity: low
+    rule: 不应将 class 当作普通对象值使用；需要值语义时应改用实例、工厂函数或模块导出对象
+    rationale: ArkTS 中 class 更强调类型与实例语义，而非 JS 式一等对象玩法
+    level_from_source: 警告
+    affects:
+      - dimension: 可维护性与可读性
+        item: 抽象设计清晰度
+
+  - id: ARKTS-SHOULD-004
+    category: 命名规范
+    scope: naming
+    severity: medium
+    rule: 标识符命名应清晰表达意图，避免单字母、非标准缩写和中文拼音
+    rationale: 提升代码可读性，减少歧义
+    level_from_source: 建议
+    affects:
+      - dimension: 可维护性与可读性
+        item: 命名表达清晰度
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+
+  - id: ARKTS-SHOULD-005
+    category: 命名规范
+    scope: naming
+    severity: medium
+    rule: 类名、枚举名、命名空间名采用 UpperCamelCase 风格
+    rationale: 保持类型相关标识的一致性
+    level_from_source: 建议
+    affects:
+      - dimension: 可维护性与可读性
+        item: 命名表达清晰度
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+
+  - id: ARKTS-SHOULD-006
+    category: 命名规范
+    scope: naming
+    severity: medium
+    rule: 变量名、方法名、参数名采用 lowerCamelCase 风格
+    rationale: 符合 ArkTS 常见命名习惯，便于理解
+    level_from_source: 建议
+    affects:
+      - dimension: 可维护性与可读性
+        item: 命名表达清晰度
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+
+  - id: ARKTS-SHOULD-007
+    category: 命名规范
+    scope: naming
+    severity: medium
+    rule: 常量名、枚举值名使用全大写，单词间以下划线分隔
+    rationale: 强化常量语义辨识度
+    level_from_source: 建议
+    affects:
+      - dimension: 可维护性与可读性
+        item: 命名表达清晰度
+
+  - id: ARKTS-SHOULD-008
+    category: 布尔命名
+    scope: naming
+    severity: medium
+    rule: 布尔变量或方法使用 is/has/can/should 等前缀，避免否定式命名
+    rationale: 避免出现双重否定，提高逻辑可读性
+    level_from_source: 建议
+    affects:
+      - dimension: 可维护性与可读性
+        item: 命名表达清晰度
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+    detection_hint:
+      - 检查 isNotXxx、isNoXxx 等命名
+
+  - id: ARKTS-SHOULD-009
+    category: 缩进格式
+    scope: formatting
+    severity: low
+    rule: 使用空格缩进，禁止使用 tab；大多数场景优先 2 空格，换行续行优先 4 空格
+    rationale: 保持统一格式，减少编辑器差异
+    level_from_source: 建议
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+
+  - id: ARKTS-SHOULD-010
+    category: 行宽格式
+    scope: formatting
+    severity: low
+    rule: 建议代码行宽不超过 120 个字符
+    rationale: 提升阅读体验，间接引导控制嵌套和命名长度
+    level_from_source: 建议
+    affects:
+      - dimension: 可维护性与可读性
+        item: 复杂度控制
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-011
+    category: 控制语句格式
+    scope: control_flow
+    severity: medium
+    rule: 条件语句和循环语句建议使用大括号
+    rationale: 避免遗漏执行体边界，提升可读性和安全性
+    level_from_source: 建议
+    affects:
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-012
+    category: switch 格式
+    scope: formatting
+    severity: low
+    rule: switch 语句中的 case 和 default 需缩进一层，标签后的语句再缩进一层
+    rationale: 保持 switch 结构清晰
+    level_from_source: 建议
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-013
+    category: 换行规则
+    scope: formatting
+    severity: low
+    rule: 表达式换行应保持一致，运算符放在行末
+    rationale: 提示表达式未结束，符合主流格式化工具习惯
+    level_from_source: 建议
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-014
+    category: 空格规则
+    scope: formatting
+    severity: low
+    rule: 空格应突出关键字和重要信息，避免不必要空格和多个连续空格
+    rationale: 保持统一视觉节奏与可读性
+    level_from_source: 建议
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+
+  - id: ARKTS-SHOULD-015
+    category: 字符串风格
+    scope: formatting
+    severity: low
+    rule: 建议字符串统一使用单引号
+    rationale: 保持代码风格一致
+    level_from_source: 建议
+    affects:
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-016
+    category: 对象字面量格式
+    scope: formatting
+    severity: low
+    rule: 对象字面量属性超过 4 个时建议统一换行
+    rationale: 提升大对象结构的可读性
+    level_from_source: 建议
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+      - dimension: 可维护性与可读性
+        item: 复杂度控制
+
+  - id: ARKTS-SHOULD-017
+    category: else/catch 格式
+    scope: formatting
+    severity: low
+    rule: else 或 catch 放在前一个代码块闭括号的同一行
+    rationale: 保持代码风格一致
+    level_from_source: 建议
+    affects:
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-018
+    category: 大括号风格
+    scope: formatting
+    severity: low
+    rule: 大括号应与控制语句或声明语句位于同一行
+    rationale: 保持一致的大括号风格
+    level_from_source: 建议
+    affects:
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-019
+    category: 可访问修饰符
+    scope: types
+    severity: medium
+    rule: 建议为类属性添加明确的可访问修饰符（private/protected/public）
+    rationale: 提升封装性、安全性和可读性
+    level_from_source: 建议
+    affects:
+      - dimension: 可维护性与可读性
+        item: 可演进性
+      - dimension: 架构与职责划分
+        item: 页面/组件职责分离
+
+  - id: ARKTS-SHOULD-020
+    category: 数值字面量
+    scope: formatting
+    severity: low
+    rule: 不建议省略浮点数小数点前后的 0
+    rationale: 提升数值表达可读性
+    level_from_source: 建议
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-SHOULD-021
+    category: 数组类型风格
+    scope: types
+    severity: low
+    rule: 使用 T[] 表示数组类型，而不是 Array<T>
+    rationale: 提高代码可读性并统一风格
+    level_from_source: 建议
+    affects:
+      - dimension: 与既有工程一致性
+        item: 命名与风格一致性
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+forbidden_patterns:
+  - id: ARKTS-FORBID-001
+    category: 弱类型逃逸
+    scope: types
+    severity: critical
+    pattern: 使用 any、unknown、@ts-ignore、@ts-nocheck、关闭严格检查或 as any 绕过类型系统
+    rationale: 这是 ArkTS 迁移中最核心的禁区，会直接破坏静态类型约束
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+    scoring_impact: 直接进入高风险或硬门槛候选
+
+  - id: ARKTS-FORBID-002
+    category: 动态对象布局
+    scope: general
+    severity: critical
+    pattern: 动态添加/删除对象属性、重绑定对象方法、依赖 prototype 赋值、使用 in 检查成员存在
+    rationale: ArkTS 对象布局在编译期固定，这类写法与语言模型直接冲突
+    affects:
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+
+  - id: ARKTS-FORBID-003
+    category: 动态属性访问
+    scope: types
+    severity: high
+    pattern: 使用数字键、普通字符串键、索引签名、索引访问类型或未声明字段进行对象成员访问
+    rationale: 这些模式都会削弱静态成员边界，属于典型 TS 到 ArkTS 不兼容写法
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-FORBID-004
+    category: 不受支持类型特性
+    scope: types
+    severity: high
+    pattern: 使用 intersection type、conditional type、infer、this 类型、映射类型、结构类型兼容推断
+    rationale: 属于 ArkTS 明确裁剪或限制的 TS 类型高级特性
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-FORBID-005
+    category: 不受支持声明形式
+    scope: functions
+    severity: high
+    pattern: 使用 function expression、class expression、嵌套函数声明、generator、独立 this、构造签名或调用签名类型
+    rationale: 这些语法依赖更动态的 JS/TS 运行时语义，不适合 ArkTS
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: ArkTS/ArkUI语法与类型安全
+
+  - id: ARKTS-FORBID-006
+    category: 解构与动态语法
+    scope: control_flow
+    severity: high
+    pattern: 使用解构赋值、解构声明、解构参数、for..in、for 外逗号运算符、with 语句
+    rationale: 这些写法动态性强、可读性差，且在 ArkTS 中不被支持
+    affects:
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+
+  - id: ARKTS-FORBID-007
+    category: 异常值滥用
+    scope: control_flow
+    severity: critical
+    pattern: 抛出 string、number 等非 Error 类型值，或在 catch 中依赖 any/unknown 类型注解
+    rationale: 会破坏异常处理的统一性、可诊断性与类型安全
+    affects:
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+      - dimension: 风险控制与稳定性
+        item: 回归风险控制
+
+  - id: ARKTS-FORBID-008
+    category: 模块系统违规
+    scope: modules
+    severity: critical
+    pattern: 使用 require、UMD、ambient module、模块名通配符、import assertions，或 .ts/.js 反向依赖 .ets 源码
+    rationale: 这些模式与 ArkTS 的静态模块系统不兼容
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+
+  - id: ARKTS-FORBID-009
+    category: 枚举与命名空间滥用
+    scope: types
+    severity: high
+    pattern: 枚举混用不同值类型、使用运行时表达式初始化枚举、依赖 enum/声明合并、将命名空间作为运行时对象
+    rationale: 这些都属于 TS 宽松语义，在 ArkTS 中不成立
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+
+  - id: ARKTS-FORBID-010
+    category: 动态标准库接口
+    scope: stdlib
+    severity: high
+    pattern: 使用 eval、__proto__、__defineGetter__、Function.apply、Function.call、new.target、as const 等 ArkTS 不支持或受限能力
+    rationale: 这些接口或语法依赖 JS 动态运行时，不符合 ArkTS 静态语义
+    affects:
+      - dimension: 平台规范符合度
+        item: ArkTS约束遵循度
+      - dimension: 风险控制与稳定性
+        item: 安全与稳定性风险
+
+  - id: ARKTS-FORBID-011
+    category: 条件赋值
+    scope: control_flow
+    severity: high
+    pattern: 在 if、while、for、?: 等控制性条件表达式中直接进行赋值
+    rationale: 会造成逻辑歧义和潜在错误
+    affects:
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+      - dimension: 代码正确性与静态质量
+        item: 静态坏味道控制
+    scoring_impact: 命中时进入风险项；严重时可提高人工复核优先级
+
+  - id: ARKTS-FORBID-012
+    category: finally 非正常结束
+    scope: control_flow
+    severity: critical
+    pattern: finally 代码块中使用 return、break、continue 或抛出未处理异常
+    rationale: 影响异常传播与返回值语义，属于高风险控制流错误
+    affects:
+      - dimension: 风险控制与稳定性
+        item: 稳定性风险
+      - dimension: 风险控制与稳定性
+        item: 回归风险控制
+    scoring_impact: 命中时进入高风险项；必要时触发硬门槛候选
+
+review_hints:
+  full_generation:
+    focus:
+      - 检查是否残留 TypeScript 动态类型与动态对象模型写法
+      - 检查模块导入、异常抛出、类型断言、解构与函数声明形式是否符合 ArkTS 限制
+      - 检查 ESObject、标准库动态接口是否仅在必要场景受控使用
+      - 检查命名、格式与数组实践是否符合补充后的编程规范规则
+  continuation:
+    focus:
+      - 检查新增代码是否延续已有 ArkTS 静态类型风格，而非把 TS 写法直接搬运进来
+      - 检查新增改动是否通过 any、忽略注释或动态对象技巧临时绕过编译问题
+      - 检查新增代码是否明显破坏原工程的命名和格式一致性
+  bug_fix:
+    focus:
+      - 检查修复是否通过禁用类型检查、使用弱类型或动态属性访问来“掩盖”问题
+      - 检查是否引入模块系统违规、异常值滥用、finally 非正常结束或条件赋值等高风险模式
+
+customization_guide:
+  suggestions:
+    - 若团队希望更严格，可将部分 should_rules（如命名、格式）提升为 review_only 之外的更强修正项
+    - 若项目仅审查 .ets 业务代码，可弱化与历史 TS 互操作相关的规则影响权重
+    - 若已有格式化工具完全托管格式类规则，可适当下调其评分影响
+    - 可继续叠加公司级命名、ArkUI 组件、性能与安全 internal rules 形成完整评分基线

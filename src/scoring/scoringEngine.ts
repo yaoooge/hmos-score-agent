@@ -1,0 +1,239 @@
+import {
+  ConstraintSummary,
+  DimensionScore,
+  EvidenceSummary,
+  FeatureExtraction,
+  HumanReviewItem,
+  RiskItem,
+  RuleAuditResult,
+  RuleViolation,
+  ScoreComputation,
+  SubmetricDetail,
+  TaskType,
+} from "../types.js";
+import { LoadedRubric } from "./rubricLoader.js";
+
+type ComputeScoreInput = {
+  taskType: TaskType;
+  rubric: LoadedRubric;
+  ruleAuditResults: RuleAuditResult[];
+  ruleViolations: RuleViolation[];
+  constraintSummary: ConstraintSummary;
+  featureExtraction: FeatureExtraction;
+  evidenceSummary: EvidenceSummary;
+};
+
+type MetricPenaltyRule = {
+  keywords: string[];
+  ratio: number;
+  confidence: "medium" | "low";
+  reviewRequired: boolean;
+};
+
+type GateTrigger = {
+  id: "G1" | "G2" | "G3" | "G4";
+  reason: string;
+};
+
+function roundScore(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function makeMetricKey(dimensionName: string, metricName: string): string {
+  return `${dimensionName}::${metricName}`;
+}
+
+function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
+  // 首版只做“规则源 -> 扣分档位”的粗映射，先把主链闭环起来。
+  if (rule.rule_source === "must_rule") {
+    return [
+      { keywords: ["语法", "类型", "错误"], ratio: 0.35, confidence: "medium", reviewRequired: true },
+      { keywords: ["规范", "ArkTS"], ratio: 0.25, confidence: "medium", reviewRequired: true },
+    ];
+  }
+  if (rule.rule_source === "forbidden_pattern") {
+    return [
+      { keywords: ["风险", "安全", "边界"], ratio: 0.5, confidence: "low", reviewRequired: true },
+    ];
+  }
+  return [
+    { keywords: ["复杂度", "可维护", "坏味道"], ratio: 0.15, confidence: "medium", reviewRequired: false },
+  ];
+}
+
+function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
+  // 这里保留确定性触发条件，避免首版因为复杂推理而难以验证。
+  const violatedRules = input.ruleAuditResults.filter((rule) => rule.result === "不满足");
+  const mustViolations = violatedRules.filter((rule) => rule.rule_source === "must_rule");
+  const forbiddenViolations = violatedRules.filter((rule) => rule.rule_source === "forbidden_pattern");
+  const triggered: GateTrigger[] = [];
+
+  if (mustViolations.length >= 2) {
+    triggered.push({ id: "G1", reason: "存在多条 must_rule 违规，说明静态质量问题较为集中。" });
+  }
+
+  if (mustViolations.some((rule) => ["ARKTS-MUST-003", "ARKTS-MUST-005", "ARKTS-MUST-006"].includes(rule.rule_id))) {
+    triggered.push({ id: "G2", reason: "命中了核心 ArkTS 约束违规，说明实现与平台规则存在偏差。" });
+  }
+
+  if (forbiddenViolations.length > 0) {
+    triggered.push({ id: "G3", reason: "命中了 forbidden_pattern 违规，工程风险较高。" });
+  }
+
+  if (
+    input.taskType === "bug_fix" &&
+    (input.evidenceSummary.changedFileCount > 8 || input.evidenceSummary.changedFiles.length > 8)
+  ) {
+    triggered.push({ id: "G4", reason: "bug_fix 改动文件过多，存在过度修复风险。" });
+  }
+
+  return triggered;
+}
+
+function shouldForceReview(score: number, scoreBands: Array<{ min: number; max: number }>): boolean {
+  return scoreBands.some((band) => score >= band.min && score <= band.max);
+}
+
+export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputation {
+  // 所有子指标先按 rubric 满分初始化，再叠加规则修正。
+  const details: SubmetricDetail[] = input.rubric.dimensions.flatMap((dimension) =>
+    dimension.items.map((item) => ({
+      dimension_name: dimension.name,
+      metric_name: item.name,
+      score: item.weight,
+      confidence: "high" as const,
+      review_required: false,
+      rationale: "按 rubric 基线满分初始化。",
+      evidence: "当前未命中扣分证据。",
+    })),
+  );
+
+  const detailMap = new Map(details.map((detail) => [makeMetricKey(detail.dimension_name, detail.metric_name), detail]));
+  const risks: RiskItem[] = [];
+  const humanReviewItems: HumanReviewItem[] = [];
+
+  for (const rule of input.ruleAuditResults) {
+    if (rule.result !== "不满足") {
+      continue;
+    }
+
+    const penaltyRules = findPenaltyRules(rule);
+    for (const detail of details) {
+      const combinedText = `${detail.dimension_name} ${detail.metric_name}`;
+      if (!penaltyRules.some((penalty) => penalty.keywords.some((keyword) => combinedText.includes(keyword)))) {
+        continue;
+      }
+
+      const penalty = penaltyRules.find((candidate) =>
+        candidate.keywords.some((keyword) => combinedText.includes(keyword)),
+      );
+      if (!penalty) {
+        continue;
+      }
+
+      const current = detailMap.get(makeMetricKey(detail.dimension_name, detail.metric_name));
+      if (!current) {
+        continue;
+      }
+
+      const maxScore = input.rubric.dimensions
+        .find((dimension) => dimension.name === detail.dimension_name)
+        ?.items.find((item) => item.name === detail.metric_name)?.weight;
+      if (maxScore === undefined) {
+        continue;
+      }
+
+      const nextScore = Math.max(maxScore * 0.2, current.score - maxScore * penalty.ratio);
+      current.score = roundScore(nextScore);
+      current.confidence = penalty.confidence;
+      current.review_required = penalty.reviewRequired;
+      // rationale/evidence 直接回指触发的规则，便于 report 层透明展示。
+      current.rationale = `${rule.rule_id} 触发了 ${rule.rule_source} 扣分。`;
+      current.evidence = rule.conclusion;
+    }
+
+    risks.push({
+      level: rule.rule_source === "forbidden_pattern" ? "high" : "medium",
+      title: `规则违规：${rule.rule_id}`,
+      description: rule.conclusion,
+      evidence: rule.conclusion,
+    });
+  }
+
+  const dimensionScores: DimensionScore[] = input.rubric.dimensions.map((dimension) => {
+    const metrics = details.filter((detail) => detail.dimension_name === dimension.name);
+    const score = roundScore(metrics.reduce((sum, detail) => sum + detail.score, 0));
+    return {
+      dimension_name: dimension.name,
+      score,
+      max_score: dimension.weight,
+      comment: metrics.some((metric) => metric.review_required)
+        ? "包含需要人工复核的扣分项。"
+        : "未发现高风险扣分项。",
+    };
+  });
+
+  const rawTotalScore = roundScore(dimensionScores.reduce((sum, dimension) => sum + dimension.score, 0));
+  const triggeredGates = selectTriggeredGates(input);
+  const scoreCap = triggeredGates
+    .map((trigger) => input.rubric.hardGates.find((gate) => gate.id === trigger.id)?.scoreCap)
+    .filter((value): value is number => typeof value === "number")
+    .reduce<number | undefined>((minCap, current) => (minCap === undefined ? current : Math.min(minCap, current)), undefined);
+  // 总分先聚合，再应用最严格的硬门槛 cap。
+  const totalScore = scoreCap === undefined ? rawTotalScore : Math.min(rawTotalScore, scoreCap);
+
+  if (triggeredGates.length > 0) {
+    humanReviewItems.push({
+      item: "硬门槛复核",
+      current_assessment: triggeredGates.map((gate) => gate.id).join(", "),
+      uncertainty_reason: triggeredGates.map((gate) => gate.reason).join(" "),
+      suggested_focus: "确认触发的硬门槛是否真实反映当前实现的主要风险。",
+    });
+  }
+
+  if (!input.evidenceSummary.hasPatch && input.taskType !== "full_generation") {
+    humanReviewItems.push({
+      item: "Patch 上下文缺失",
+      current_assessment: "当前 continuation 或 bug_fix 评分时缺少 patch 文件。",
+      uncertainty_reason: "变更范围证据不完整。",
+      suggested_focus: "请结合 original 工程人工核对改动文件。",
+    });
+  }
+
+  if (details.some((detail) => detail.confidence === "low") || shouldForceReview(totalScore, input.rubric.reviewRules.scoreBands)) {
+    humanReviewItems.push({
+      item: "置信度复核",
+      current_assessment: `当前总分为 ${totalScore}。`,
+      uncertainty_reason: "存在低置信度指标，或分数落在需要人工确认的关键分段。",
+      suggested_focus: "重点复核低置信度指标以及临近 score cap 的阈值。",
+    });
+  }
+
+  return {
+    totalScore,
+    hardGateTriggered: triggeredGates.length > 0,
+    hardGateReason: triggeredGates.map((gate) => `${gate.id}: ${gate.reason}`).join(" "),
+    overallConclusion: {
+      total_score: totalScore,
+      hard_gate_triggered: triggeredGates.length > 0,
+      summary:
+        triggeredGates.length > 0
+          ? `触发硬门槛：${triggeredGates.map((gate) => `${gate.id}: ${gate.reason}`).join(" ")}`
+          : "未触发硬门槛，当前评分可作为自动预检结果。",
+    },
+    dimensionScores,
+    submetricDetails: details,
+    risks,
+    humanReviewItems,
+    strengths: input.ruleAuditResults.every((rule) => rule.result !== "不满足")
+      ? ["已支持的规则集中未检测到违规项。"]
+      : ["工作流已采集规则级证据，并将其传递到评分拆解结果中。"],
+    mainIssues: input.ruleAuditResults
+      .filter((rule) => rule.result === "不满足")
+      .slice(0, 5)
+      .map((rule) => `${rule.rule_id}: ${rule.conclusion}`),
+    finalRecommendation: triggeredGates.length > 0
+      ? ["在将该分数用于自动排序前，必须先进行人工复核。"]
+      : ["当前分数可作为自动预检基线使用。"],
+  };
+}

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { validateReportResult } from "../report/schemaValidator.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
 export async function reportGenerationNode(
@@ -17,23 +18,19 @@ export async function reportGenerationNode(
       evaluation_mode: "auto_precheck_with_human_review",
       rules_enabled: true,
       build_check_enabled: false,
-      target_description: "HarmonyOS generated project scoring",
+      target_description: "HarmonyOS 生成工程评分",
       target_scope: state.caseInput.generatedProjectPath,
       task_type_basis: state.constraintSummary.classificationHints.join("; "),
     },
-    overall_conclusion: {
-      total_score: state.scoreComputation.totalScore,
-      hard_gate_triggered: state.scoreComputation.hardGateTriggered,
-      summary: "Scaffold run completed. Rule and rubric engines are in baseline mode.",
-    },
-    dimension_scores: [],
-    submetric_details: [],
+    overall_conclusion: state.scoreComputation.overallConclusion,
+    dimension_scores: state.scoreComputation.dimensionScores,
+    submetric_details: state.scoreComputation.submetricDetails,
     rule_violations: state.ruleViolations,
-    risks: [],
-    strengths: ["Workflow scaffold created and runnable."],
-    main_issues: ["Detailed evidence extraction not fully implemented yet."],
-    human_review_items: [],
-    final_recommendation: ["Use as baseline and iteratively enrich rule evidence."],
+    risks: state.scoreComputation.risks,
+    strengths: state.scoreComputation.strengths,
+    main_issues: state.scoreComputation.mainIssues,
+    human_review_items: state.scoreComputation.humanReviewItems,
+    final_recommendation: state.scoreComputation.finalRecommendation,
     rule_audit_results: state.ruleAuditResults,
     report_meta: {
       report_file_name: "report.html",
@@ -44,10 +41,12 @@ export async function reportGenerationNode(
   };
 
   if (typeof schema !== "object" || schema === null) {
-    throw new Error("Invalid report_result_schema.json content.");
+    throw new Error("report_result_schema.json 内容不合法。");
   }
 
-  const htmlReport = `<!doctype html><html><head><meta charset="utf-8"><title>Score Report</title></head><body><h1>Case ${state.caseInput.caseId}</h1><p>Total score: ${state.scoreComputation.totalScore}</p><pre>${JSON.stringify(resultJson, null, 2)}</pre></body></html>`;
+  validateReportResult(resultJson, schemaPath);
+
+  const htmlReport = `<!doctype html><html><head><meta charset="utf-8"><title>评分报告</title></head><body><h1>评分报告</h1><p>用例：${state.caseInput.caseId}</p><p>总分：${state.scoreComputation.totalScore}</p><pre>${JSON.stringify(resultJson, null, 2)}</pre></body></html>`;
 
   return { resultJson, htmlReport };
 }

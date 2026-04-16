@@ -15,7 +15,7 @@ export function getConfig(): AppConfig {
     localCaseRoot: path.resolve(process.cwd(), process.env.LOCAL_CASE_ROOT ?? ".local-cases"),
     referenceRoot:
       process.env.DEFAULT_REFERENCE_ROOT ??
-      "/Users/guoyutong/.claude/skills/harmonyos-gen-code-evaluator/references",
+      path.resolve(process.cwd(), "references/scoring"),
     uploadEndpoint: process.env.UPLOAD_ENDPOINT,
     uploadToken: process.env.UPLOAD_TOKEN,
   };

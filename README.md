@@ -61,9 +61,15 @@ cp .env.example .env
 关键变量：
 
 - `LOCAL_CASE_ROOT`：本地产物目录，默认 `.local-cases`
-- `DEFAULT_REFERENCE_ROOT`：rubric/rules/schema 参考目录
+- `DEFAULT_REFERENCE_ROOT`：评分参考目录，默认 `references/scoring`
 - `UPLOAD_ENDPOINT`：结果上传地址（为空则跳过上传）
 - `UPLOAD_TOKEN`：上传鉴权 token（可选）
+
+默认参考资源已经内置到仓库：
+
+- `references/scoring/rubric.yaml`
+- `references/scoring/report_result_schema.json`
+- `references/scoring/arkts_internal_rules.yaml`
 
 ## 3. 本地调试
 
@@ -78,8 +84,8 @@ npm run dev:cli -- --case init-input
 成功后终端会打印用例产物目录，例如：
 
 ```text
-Scoring completed. Case artifacts: .../.local-cases/init-input
-Upload: UPLOAD_ENDPOINT is empty; skipped upload.
+评分完成，结果目录：.../.local-cases/20260416T112233_bug_fix_a1b2c3d4
+上传信息：未配置 UPLOAD_ENDPOINT，已跳过上传。
 ```
 
 ### 3.2 API 调试
@@ -109,8 +115,34 @@ curl -X POST http://localhost:3000/score/run \
 - `npm run build`：TypeScript 编译检查
 - `npm run dev:cli -- --case <path>`：命令行运行单用例
 - `npm run dev:api`：本地 HTTP 服务调试
+- `npm run launch:score`：交互式填写 `baseURL` / `apiKey`，写入 `.env` 后运行评分流程
 - `npm run score -- --case <path>`：与 `dev:cli` 等价
 - `npm run case:patch -- --case <path>`：基于 `original/` 和 `workspace/` 目录差异生成 `diff/changes.patch`
+
+### 交互式启动评分
+
+执行：
+
+```bash
+npm run launch:score
+```
+
+如需指定自定义用例目录：
+
+```bash
+npm run launch:score -- --case examples/my-case
+```
+
+脚本会：
+
+1. 在终端里询问 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY`
+2. 将输入结果写入项目根目录 `.env`
+3. 读取 `--case` 指定目录；未指定时默认读取 `init-input/`
+4. 启动评分流程
+5. 在 `.local-cases/` 下创建 `时间_task_type_唯一id` 目录并写入产物
+6. 将初始 prompt 落盘到 `inputs/prompt.txt`
+7. 将用例元信息落盘到 `inputs/case-info.json`
+8. 将关键运行日志追加写入 `logs/run.log`
 
 ### Patch 生成说明
 

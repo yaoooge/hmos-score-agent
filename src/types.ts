@@ -1,5 +1,6 @@
 export type TaskType = "full_generation" | "continuation" | "bug_fix";
 
+// CaseInput 描述单条评分用例的 before/after/prompt/patch 四元组。
 export interface CaseInput {
   caseId: string;
   promptText: string;
@@ -38,8 +39,62 @@ export interface RuleViolation {
   evidence: string;
 }
 
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+// 以下结构基本直接映射到 `result.json` schema，保持命名一致以减少转换成本。
+export interface DimensionScore {
+  dimension_name: string;
+  score: number;
+  max_score: number;
+  comment: string;
+}
+
+export interface SubmetricDetail {
+  dimension_name: string;
+  metric_name: string;
+  score: number;
+  confidence: ConfidenceLevel;
+  review_required: boolean;
+  rationale: string;
+  evidence: string;
+}
+
+export interface RiskItem {
+  level: string;
+  title: string;
+  description: string;
+  evidence: string;
+}
+
+export interface HumanReviewItem {
+  item: string;
+  current_assessment: string;
+  uncertainty_reason: string;
+  suggested_focus: string;
+}
+
+export interface EvidenceSummary {
+  workspaceFileCount: number;
+  originalFileCount: number;
+  changedFileCount: number;
+  changedFiles: string[];
+  hasPatch: boolean;
+}
+
 export interface ScoreComputation {
   totalScore: number;
   hardGateTriggered: boolean;
   hardGateReason?: string;
+  overallConclusion: {
+    total_score: number;
+    hard_gate_triggered: boolean;
+    summary: string;
+  };
+  dimensionScores: DimensionScore[];
+  submetricDetails: SubmetricDetail[];
+  risks: RiskItem[];
+  humanReviewItems: HumanReviewItem[];
+  strengths: string[];
+  mainIssues: string[];
+  finalRecommendation: string[];
 }

@@ -17,7 +17,7 @@ app.post("/score/run", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "Unknown error",
+      message: error instanceof Error ? error.message : "未知错误",
     });
   }
 });
@@ -25,5 +25,5 @@ app.post("/score/run", async (req, res) => {
 const config = getConfig();
 app.listen(config.port, () => {
   // eslint-disable-next-line no-console
-  console.log(`hmos-score-agent api listening on :${config.port}`);
+  console.log(`hmos-score-agent API 已启动，监听端口：${config.port}`);
 });

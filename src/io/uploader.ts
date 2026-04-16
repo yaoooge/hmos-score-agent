@@ -10,7 +10,7 @@ export async function uploadResultJson(
   payload: UploadPayload,
 ): Promise<{ uploaded: boolean; message: string }> {
   if (!endpoint) {
-    return { uploaded: false, message: "UPLOAD_ENDPOINT is empty; skipped upload." };
+    return { uploaded: false, message: "未配置 UPLOAD_ENDPOINT，已跳过上传。" };
   }
 
   const response = await fetch(endpoint, {
@@ -23,7 +23,7 @@ export async function uploadResultJson(
   });
 
   if (!response.ok) {
-    return { uploaded: false, message: `Upload failed: ${response.status}` };
+    return { uploaded: false, message: `上传失败，状态码：${response.status}` };
   }
-  return { uploaded: true, message: "Uploaded successfully." };
+  return { uploaded: true, message: "上传成功。" };
 }

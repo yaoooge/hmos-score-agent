@@ -24,4 +24,11 @@ export class ArtifactStore {
     await fs.writeFile(filePath, content, "utf-8");
     return filePath;
   }
+
+  // 追加日志等流式文本，避免覆盖前序落盘内容。
+  async appendText(caseDir: string, relativePath: string, content: string): Promise<string> {
+    const filePath = path.join(caseDir, relativePath);
+    await fs.appendFile(filePath, content, "utf-8");
+    return filePath;
+  }
 }
