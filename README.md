@@ -62,6 +62,9 @@ cp .env.example .env
 
 - `LOCAL_CASE_ROOT`：本地产物目录，默认 `.local-cases`
 - `DEFAULT_REFERENCE_ROOT`：评分参考目录，默认 `references/scoring`
+- `MODEL_PROVIDER_BASE_URL`：兼容 chat completions 的模型服务地址
+- `MODEL_PROVIDER_API_KEY`：模型服务鉴权密钥
+- `MODEL_PROVIDER_MODEL`：模型名称，默认 `gpt-5.4`
 - `UPLOAD_ENDPOINT`：结果上传地址（为空则跳过上传）
 - `UPLOAD_TOKEN`：上传鉴权 token（可选）
 

@@ -224,6 +224,7 @@ test("runScoreWorkflow emits Chinese descriptive text in result.json and report.
     caseDir,
     referenceRoot,
     artifactStore,
+    agentClient: undefined,
   });
 
   const resultJson = JSON.parse(await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
@@ -332,6 +333,61 @@ test("runScoreWorkflow falls back and persists agent artifacts when agent output
   assert.equal(Array.isArray(agentPromptPayload.assisted_rule_candidates), true);
   assert.equal(Array.isArray(mergedAudit), true);
   assert.equal(agentResult.status, "invalid_output");
+});
+
+test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    promptText: "请修复餐厅列表页中的 bug",
+    withPatch: true,
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+
+  await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+    agentClient: undefined,
+  });
+
+  const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
+
+  assert.match(logText, /节点开始 node=taskUnderstandingNode label=任务理解/);
+  assert.match(logText, /节点开始 node=ruleAuditNode label=规则审计/);
+  assert.match(logText, /节点开始 node=persistAndUploadNode label=结果落盘与上传/);
+  assert.match(logText, /节点完成 node=inputClassificationNode label=任务分类 summary=taskType=bug_fix/);
+  assert.match(logText, /节点完成 node=scoringOrchestrationNode label=评分编排 summary=totalScore=/);
+});
+
+test("runScoreWorkflow writes warning logs when agent assistance is skipped", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    promptText: "请修复餐厅列表页中的 bug",
+    withPatch: true,
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+
+  await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+    agentClient: undefined,
+  });
+
+  const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
+
+  assert.match(logText, /\[WARN\] agent 辅助判定跳过 reason=未配置 agent client/);
+  assert.doesNotMatch(logText, /\[INFO\] agent 辅助判定跳过 reason=未配置 agent client/);
 });
 
 test.todo("taskUnderstandingNode should load configurable extractors instead of fixed keyword heuristics");

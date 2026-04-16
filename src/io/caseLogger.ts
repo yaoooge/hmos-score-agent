@@ -14,6 +14,13 @@ export class CaseLogger {
     await this.artifactStore.appendText(this.caseDir, "logs/run.log", line);
   }
 
+  async warn(message: string): Promise<void> {
+    const line = this.formatLine("WARN", message);
+    // eslint-disable-next-line no-console
+    console.warn(line.trimEnd());
+    await this.artifactStore.appendText(this.caseDir, "logs/run.log", line);
+  }
+
   async error(message: string): Promise<void> {
     const line = this.formatLine("ERROR", message);
     // eslint-disable-next-line no-console
@@ -21,7 +28,7 @@ export class CaseLogger {
     await this.artifactStore.appendText(this.caseDir, "logs/run.log", line);
   }
 
-  private formatLine(level: "INFO" | "ERROR", message: string): string {
+  private formatLine(level: "INFO" | "WARN" | "ERROR", message: string): string {
     return `[${new Date().toISOString()}] [${level}] ${message}\n`;
   }
 }

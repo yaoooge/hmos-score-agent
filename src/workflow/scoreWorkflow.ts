@@ -16,6 +16,8 @@ import { scoringOrchestrationNode } from "../nodes/scoringOrchestrationNode.js";
 import { taskUnderstandingNode } from "../nodes/taskUnderstandingNode.js";
 import { CaseInput } from "../types.js";
 import { ScoreState } from "./state.js";
+import { WorkflowEventLogger } from "./observability/workflowEventLogger.js";
+import { interpretStreamChunk } from "./observability/workflowStreamInterpreter.js";
 
 export async function runScoreWorkflow(input: {
   caseInput: CaseInput;
@@ -28,7 +30,11 @@ export async function runScoreWorkflow(input: {
 }): Promise<Record<string, unknown>> {
   const config = getConfig();
   const logger = new CaseLogger(input.artifactStore, input.caseDir);
-  const agentClient = input.agentClient ?? createDefaultAgentClient(config);
+  const workflowLogger = new WorkflowEventLogger(logger);
+  // 显式传入 agentClient 时优先使用调用方配置，便于测试和离线运行稳定控参。
+  const agentClient = Object.prototype.hasOwnProperty.call(input, "agentClient")
+    ? input.agentClient
+    : createDefaultAgentClient(config);
   const graph = new StateGraph(ScoreState)
     .addNode("taskUnderstandingNode", (s) => taskUnderstandingNode(s))
     .addNode("inputClassificationNode", (s) => inputClassificationNode(s))
@@ -63,10 +69,29 @@ export async function runScoreWorkflow(input: {
     .addEdge("persistAndUploadNode", END)
     .compile();
 
-  const result = await graph.invoke({
+  const initialState = {
     caseInput: input.caseInput,
     caseDir: input.caseDir,
     originalPromptText: input.caseInput.promptText,
+  };
+  const finalState: Record<string, unknown> = { ...initialState };
+  const stream = await graph.stream(initialState, {
+    streamMode: ["updates", "custom"],
   });
-  return result as Record<string, unknown>;
+
+  for await (const chunk of stream) {
+    const interpreted = interpretStreamChunk(chunk as [string, unknown]);
+    if (interpreted) {
+      await workflowLogger.log(interpreted);
+    }
+
+    if (Array.isArray(chunk) && chunk[0] === "updates") {
+      const payload = chunk[1] as Record<string, Record<string, unknown>>;
+      for (const update of Object.values(payload)) {
+        Object.assign(finalState, update);
+      }
+    }
+  }
+
+  return finalState;
 }
