@@ -8,7 +8,8 @@
     "dev:cli": "tsx src/cli.ts",
     "dev:api": "tsx src/index.ts",
     "score": "tsx src/cli.ts",
-    "test": "node --import tsx --test tests/score-agent.test.ts"
+    "case:patch": "node --import tsx src/tools/generateCasePatch.ts",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.40",

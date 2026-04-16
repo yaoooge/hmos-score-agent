@@ -110,6 +110,21 @@ curl -X POST http://localhost:3000/score/run \
 - `npm run dev:cli -- --case <path>`：命令行运行单用例
 - `npm run dev:api`：本地 HTTP 服务调试
 - `npm run score -- --case <path>`：与 `dev:cli` 等价
+- `npm run case:patch -- --case <path>`：基于 `original/` 和 `workspace/` 目录差异生成 `diff/changes.patch`
+
+### Patch 生成说明
+
+`init-input/workspace` 应作为主仓库中的普通目录使用，不依赖独立 Git 仓库。需要 patch 时，统一通过目录差异生成：
+
+```bash
+npm run case:patch -- --case init-input
+```
+
+底层等价于在用例目录执行：
+
+```bash
+git diff --no-index -- original workspace > diff/changes.patch
+```
 
 ## 5. 当前实现状态（骨架阶段）
 
