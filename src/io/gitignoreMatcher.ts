@@ -18,7 +18,7 @@ type Rule =
   | { type: "exact"; value: string }
   | { type: "prefix"; value: string }
   | { type: "suffix"; value: string }
-  | { type: "wildcard"; value: string; regex: RegExp; hasSlash: boolean };
+  | { type: "wildcard"; value: string; regex: RegExp; hasSlash: boolean; directoryOnly: boolean };
 
 export interface IgnoreFilter {
   isIgnored(relativePath: string, kind: EntryKind): boolean;
@@ -33,20 +33,26 @@ function toRule(pattern: string): Rule | null {
   if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("!") || trimmed.includes("**")) {
     return null;
   }
-  if (trimmed.endsWith("/")) {
-    return { type: "prefix", value: trimmed.slice(0, -1) };
+  const directoryOnly = trimmed.endsWith("/");
+  const normalizedPattern = directoryOnly ? trimmed.slice(0, -1) : trimmed;
+  if (!normalizedPattern) {
+    return null;
   }
   if (trimmed.startsWith("*.")) {
     return { type: "suffix", value: trimmed.slice(1) };
   }
-  if (trimmed.includes("*")) {
-    const escaped = trimmed.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  if (normalizedPattern.includes("*")) {
+    const escaped = normalizedPattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
     return {
       type: "wildcard",
-      value: trimmed,
+      value: normalizedPattern,
       regex: new RegExp(`^${escaped.replace(/\*/g, "[^/]*")}$`),
-      hasSlash: trimmed.includes("/"),
+      hasSlash: normalizedPattern.includes("/"),
+      directoryOnly,
     };
+  }
+  if (directoryOnly) {
+    return { type: "prefix", value: normalizedPattern };
   }
   return { type: "exact", value: trimmed };
 }
@@ -61,6 +67,20 @@ function matchesRule(rule: Rule, relativePath: string, kind: EntryKind): boolean
     return normalized === rule.value || normalized.startsWith(`${rule.value}/`) || segments.includes(rule.value);
   }
   if (rule.type === "wildcard") {
+    if (rule.directoryOnly) {
+      const directorySegments = kind === "directory" ? segments : segments.slice(0, -1);
+      if (rule.hasSlash) {
+        let currentPath = "";
+        for (const segment of directorySegments) {
+          currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+          if (rule.regex.test(currentPath)) {
+            return true;
+          }
+        }
+        return false;
+      }
+      return directorySegments.some((segment) => rule.regex.test(segment));
+    }
     if (rule.hasSlash) {
       return rule.regex.test(normalized);
     }
