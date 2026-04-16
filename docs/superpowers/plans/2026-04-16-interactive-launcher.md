@@ -20,16 +20,16 @@
 
 ```ts
 test("upsertEnvVars updates existing keys and appends missing ones", async (t) => {
-  const envPath = await createTempEnv(t, "OPENAI_BASE_URL=https://old\nOPENAI_MODEL=gpt-4o-mini\n");
+  const envPath = await createTempEnv(t, "MODEL_PROVIDER_BASE_URL=https://old\nMODEL_PROVIDER_MODEL=gpt-4o-mini\n");
   await upsertEnvVars(envPath, {
-    OPENAI_BASE_URL: "https://new.example/v1",
-    OPENAI_API_KEY: "sk-test",
+    MODEL_PROVIDER_BASE_URL: "https://new.example/v1",
+    MODEL_PROVIDER_API_KEY: "sk-test",
   });
 
   const text = await fs.readFile(envPath, "utf-8");
-  assert.match(text, /OPENAI_BASE_URL=https:\/\/new\.example\/v1/);
-  assert.match(text, /OPENAI_API_KEY=sk-test/);
-  assert.match(text, /OPENAI_MODEL=gpt-4o-mini/);
+  assert.match(text, /MODEL_PROVIDER_BASE_URL=https:\/\/new\.example\/v1/);
+  assert.match(text, /MODEL_PROVIDER_API_KEY=sk-test/);
+  assert.match(text, /MODEL_PROVIDER_MODEL=gpt-4o-mini/);
 });
 ```
 

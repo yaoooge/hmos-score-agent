@@ -168,7 +168,7 @@
           },
           "result": {
             "type": "string",
-            "enum": ["满足", "不满足", "不涉及"]
+            "enum": ["满足", "不满足", "不涉及", "待人工复核"]
           },
           "conclusion": { "type": "string" }
         },

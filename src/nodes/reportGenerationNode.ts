@@ -11,6 +11,9 @@ export async function reportGenerationNode(
   const schemaText = await fs.readFile(schemaPath, "utf-8");
   const schema = JSON.parse(schemaText) as object;
 
+  const effectiveRuleAuditResults =
+    (state.mergedRuleAuditResults?.length ?? 0) > 0 ? state.mergedRuleAuditResults : state.ruleAuditResults;
+
   const resultJson: Record<string, unknown> = {
     basic_info: {
       rubric_version: "v1",
@@ -31,7 +34,7 @@ export async function reportGenerationNode(
     main_issues: state.scoreComputation.mainIssues,
     human_review_items: state.scoreComputation.humanReviewItems,
     final_recommendation: state.scoreComputation.finalRecommendation,
-    rule_audit_results: state.ruleAuditResults,
+    rule_audit_results: effectiveRuleAuditResults,
     report_meta: {
       report_file_name: "report.html",
       result_json_file_name: "result.json",

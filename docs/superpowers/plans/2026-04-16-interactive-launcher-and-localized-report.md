@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `launch:score -- --case <path>` bootstrap flow that persists OpenAI config into `.env`, runs scoring on a chosen case, writes prompt and case metadata into `inputs/`, appends key lifecycle logs into `logs/run.log`, and ensures all descriptive report/log text is Chinese.
+**Goal:** Add a `launch:score -- --case <path>` bootstrap flow that persists model-provider config into `.env`, runs scoring on a chosen case, writes prompt and case metadata into `inputs/`, appends key lifecycle logs into `logs/run.log`, and ensures all descriptive report/log text is Chinese.
 
 **Architecture:** Keep the interactive launcher thin by pushing case selection, prompt snapshot writing, case-info writing, and logging orchestration into `runSingleCase()`. Introduce a small `CaseLogger` for append-only log writing, extend service orchestration to persist `inputs/prompt.txt` and `inputs/case-info.json`, and localize report/scoring/rule-engine template strings so both local debugging and deployed execution share the same Chinese output path.
 

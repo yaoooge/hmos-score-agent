@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { collectEvidence } from "./evidenceCollector.js";
 import { evaluateTextRule } from "./textRuleEvaluator.js";
-import { CaseInput, RuleAuditResult, RuleViolation, TaskType } from "../types.js";
+import { CaseInput, RuleAuditResult, RuleEvidenceIndex, RuleViolation, TaskType } from "../types.js";
 
 type RuleDocEntry = {
   id: string;
@@ -18,6 +18,7 @@ type RulesDoc = {
 export interface RuleEngineOutput {
   ruleAuditResults: RuleAuditResult[];
   ruleViolations: RuleViolation[];
+  ruleEvidenceIndex: RuleEvidenceIndex;
   evidenceSummary: {
     workspaceFileCount: number;
     originalFileCount: number;
@@ -62,11 +63,41 @@ export async function runRuleEngine(input: {
       evidence: rule.conclusion,
     }));
 
+  const ruleEvidenceIndex: RuleEvidenceIndex = Object.fromEntries(
+    evaluatedRules.map((rule) => [
+      rule.rule_id,
+      {
+        evidenceFiles: rule.matchedFiles,
+        evidenceSnippets: rule.matchedFiles
+          .map((relativePath) => evidence.workspaceFiles.find((file) => file.relativePath === relativePath)?.content ?? "")
+          .filter(Boolean)
+          .map((content) => content.slice(0, 200)),
+      },
+    ]),
+  );
+  const fallbackEvidenceFiles =
+    evidence.changedFiles.length > 0
+      ? evidence.changedFiles.slice(0, 3)
+      : evidence.workspaceFiles.slice(0, 3).map((file) => file.relativePath);
+  ruleEvidenceIndex.__fallback__ = {
+    evidenceFiles: fallbackEvidenceFiles,
+    evidenceSnippets: fallbackEvidenceFiles
+      .map((relativePath) => normalizeWorkspaceRelativePath(relativePath))
+      .map((relativePath) => evidence.workspaceFiles.find((file) => file.relativePath === relativePath)?.content ?? "")
+      .filter(Boolean)
+      .map((content) => content.slice(0, 200)),
+  };
+
   return {
     ruleAuditResults: evaluatedRules.map(({ supported: _supported, matchedFiles: _matchedFiles, ...rule }) => rule),
     ruleViolations,
+    ruleEvidenceIndex,
     evidenceSummary: evidence.summary,
   };
+}
+
+function normalizeWorkspaceRelativePath(relativePath: string): string {
+  return relativePath.replace(/^workspace\//, "").replace(/^original\//, "");
 }
 
 function parseRulesDoc(text: string): RulesDoc {

@@ -31,12 +31,16 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
   const rl = createInterface({ input, output });
   try {
     const rawBaseURL =
-      (await rl.question(`OpenAI baseURL [${process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1"}]: `)) ||
-      process.env.OPENAI_BASE_URL ||
-      "https://api.openai.com/v1";
+      (await rl.question(
+        `模型服务 baseURL [${process.env.MODEL_PROVIDER_BASE_URL ?? "https://your-model-provider.example/v1"}]: `,
+      )) ||
+      process.env.MODEL_PROVIDER_BASE_URL ||
+      "https://your-model-provider.example/v1";
     const rawApiKey =
-      (await rl.question(`OpenAI apiKey${process.env.OPENAI_API_KEY ? " [Press Enter to keep current]" : ""}: `)) ||
-      process.env.OPENAI_API_KEY ||
+      (await rl.question(
+        `模型服务 apiKey${process.env.MODEL_PROVIDER_API_KEY ? " [Press Enter to keep current]" : ""}: `,
+      )) ||
+      process.env.MODEL_PROVIDER_API_KEY ||
       "";
     const { baseURL, apiKey } = normalizeLauncherAnswers({
       baseURL: rawBaseURL,
@@ -49,12 +53,12 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
 
     const envPath = path.resolve(process.cwd(), ".env");
     await upsertEnvVars(envPath, {
-      OPENAI_BASE_URL: baseURL,
-      OPENAI_API_KEY: apiKey,
+      MODEL_PROVIDER_BASE_URL: baseURL,
+      MODEL_PROVIDER_API_KEY: apiKey,
     });
 
-    process.env.OPENAI_BASE_URL = baseURL;
-    process.env.OPENAI_API_KEY = apiKey;
+    process.env.MODEL_PROVIDER_BASE_URL = baseURL;
+    process.env.MODEL_PROVIDER_API_KEY = apiKey;
 
     const casePath = parseLauncherArgs(argv);
     const result = await runSingleCase(casePath);

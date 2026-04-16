@@ -26,7 +26,7 @@ export interface FeatureExtraction {
 export interface RuleAuditResult {
   rule_id: string;
   rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
-  result: "满足" | "不满足" | "不涉及";
+  result: "满足" | "不满足" | "不涉及" | "待人工复核";
   conclusion: string;
 }
 
@@ -80,6 +80,81 @@ export interface EvidenceSummary {
   changedFiles: string[];
   hasPatch: boolean;
 }
+
+// AssistedRuleCandidate 描述需要 Agent 辅助判定的弱规则候选及其证据。
+export interface AssistedRuleCandidate {
+  rule_id: string;
+  rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
+  why_uncertain: string;
+  local_preliminary_signal: string;
+  evidence_files: string[];
+  evidence_snippets: string[];
+}
+
+export type AgentRunStatus = "not_enabled" | "success" | "failed" | "invalid_output" | "skipped";
+
+// LoadedRubricSnapshot 是从 rubric 裁剪出的轻量快照，专供 prompt 构建与落盘。
+export interface LoadedRubricSnapshot {
+  task_type: TaskType;
+  evaluation_mode: string;
+  dimension_summaries: Array<{
+    name: string;
+    weight: number;
+    item_names: string[];
+  }>;
+  hard_gates: Array<{
+    id: string;
+    score_cap: number;
+  }>;
+  review_rule_summary: string[];
+}
+
+export interface AgentPromptPayload {
+  case_context: {
+    case_id: string;
+    task_type: TaskType;
+    original_prompt_summary: string;
+    has_patch: boolean;
+    project_paths: {
+      original_project_path: string;
+      generated_project_path: string;
+    };
+  };
+  task_understanding: ConstraintSummary;
+  rubric_summary: LoadedRubricSnapshot;
+  deterministic_rule_results: RuleAuditResult[];
+  assisted_rule_candidates: AssistedRuleCandidate[];
+  response_contract: {
+    output_language: "zh-CN";
+    json_only: true;
+    fallback_rule: "不确定时必须返回 needs_human_review=true";
+  };
+}
+
+export interface AgentRuleAssessment {
+  rule_id: string;
+  decision: "violation" | "pass" | "not_applicable" | "uncertain";
+  confidence: ConfidenceLevel;
+  reason: string;
+  evidence_used: string[];
+  needs_human_review: boolean;
+}
+
+export interface AgentAssistedRuleResult {
+  summary: {
+    assistant_scope: string;
+    overall_confidence: ConfidenceLevel;
+  };
+  rule_assessments: AgentRuleAssessment[];
+}
+
+export type RuleEvidenceIndex = Record<
+  string,
+  {
+    evidenceFiles: string[];
+    evidenceSnippets: string[];
+  }
+>;
 
 export interface ScoreComputation {
   totalScore: number;

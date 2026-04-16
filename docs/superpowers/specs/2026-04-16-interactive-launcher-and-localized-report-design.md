@@ -23,7 +23,7 @@
 
 1. `npm run launch:score -- --case <path>` 支持运行指定用例目录。
 2. `npm run launch:score` 在不传 `--case` 时默认读取 `init-input/`。
-3. 启动时交互获取 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY`，写入项目根目录 `.env`，并同步写入当前进程环境变量。
+3. 启动时交互获取 `MODEL_PROVIDER_BASE_URL` 和 `MODEL_PROVIDER_API_KEY`，写入项目根目录 `.env`，并同步写入当前进程环境变量。
 4. 评分启动后在 `.local-cases/` 下创建 `时间_task_type_唯一id` 格式的目录。
 5. 在 case 目录下新增：
    - `inputs/prompt.txt`
@@ -250,7 +250,7 @@ export class CaseLogger {
 先写测试：
 
 - `launch:score` 支持 `--case <path>`
-- `.env` 会更新 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY`
+- `.env` 会更新 `MODEL_PROVIDER_BASE_URL` 和 `MODEL_PROVIDER_API_KEY`
 
 ### 第二步：运行目录命名与 inputs 快照
 

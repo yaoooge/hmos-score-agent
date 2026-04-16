@@ -20,12 +20,7 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
     }),
   );
   const logger = new CaseLogger(artifactStore, caseDir);
-
-  await logger.info(`启动评分流程 sourceCasePath=${sourceCasePath}`);
-  await logger.info(`用例加载完成 caseId=${caseInput.caseId}`);
-  await logger.info(`任务类型判定完成 taskType=${taskType}`);
-  await artifactStore.writeText(caseDir, "inputs/prompt.txt", caseInput.promptText);
-  await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
+  const caseInfoBase = {
     case_id: path.basename(caseDir),
     source_case_path: sourceCasePath,
     task_type: taskType,
@@ -33,6 +28,19 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
     generated_project_path: caseInput.generatedProjectPath,
     patch_path: caseInput.patchPath ?? null,
     started_at: new Date().toISOString(),
+    original_prompt_file: "inputs/original-prompt.txt",
+    agent_prompt_file: "inputs/agent-prompt.txt",
+    agent_assistance_enabled: Boolean(config.modelProviderBaseUrl && config.modelProviderApiKey),
+    agent_model: config.modelProviderModel ?? "gpt-5.4",
+  };
+
+  await logger.info(`启动评分流程 sourceCasePath=${sourceCasePath}`);
+  await logger.info(`用例加载完成 caseId=${caseInput.caseId}`);
+  await logger.info(`任务类型判定完成 taskType=${taskType}`);
+  await artifactStore.writeText(caseDir, "inputs/prompt.txt", caseInput.promptText);
+  await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
+    ...caseInfoBase,
+    agent_run_status: "not_enabled",
   });
   await logger.info("输入快照写入完成");
 
@@ -47,6 +55,10 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
       uploadToken: config.uploadToken,
     });
     const uploadMessage = typeof result.uploadMessage === "string" ? result.uploadMessage : undefined;
+    await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
+      ...caseInfoBase,
+      agent_run_status: typeof result.agentRunStatus === "string" ? result.agentRunStatus : "not_enabled",
+    });
     await logger.info("工作流执行完成");
     await logger.info("结果已落盘");
     if (uploadMessage) {

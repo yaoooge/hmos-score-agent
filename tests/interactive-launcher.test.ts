@@ -52,17 +52,20 @@ async function createLauncherCaseFixture(
 }
 
 test("upsertEnvVars updates existing keys and appends missing ones", async (t) => {
-  const envPath = await createTempEnv(t, "OPENAI_BASE_URL=https://old.example/v1\nOPENAI_MODEL=gpt-4o-mini\n");
+  const envPath = await createTempEnv(
+    t,
+    "MODEL_PROVIDER_BASE_URL=https://old.example/v1\nMODEL_PROVIDER_MODEL=gpt-4o-mini\n",
+  );
 
   await upsertEnvVars(envPath, {
-    OPENAI_BASE_URL: "https://new.example/v1",
-    OPENAI_API_KEY: "sk-test",
+    MODEL_PROVIDER_BASE_URL: "https://new.example/v1",
+    MODEL_PROVIDER_API_KEY: "sk-test",
   });
 
   const text = await fs.readFile(envPath, "utf-8");
-  assert.match(text, /OPENAI_BASE_URL=https:\/\/new\.example\/v1/);
-  assert.match(text, /OPENAI_API_KEY=sk-test/);
-  assert.match(text, /OPENAI_MODEL=gpt-4o-mini/);
+  assert.match(text, /MODEL_PROVIDER_BASE_URL=https:\/\/new\.example\/v1/);
+  assert.match(text, /MODEL_PROVIDER_API_KEY=sk-test/);
+  assert.match(text, /MODEL_PROVIDER_MODEL=gpt-4o-mini/);
 });
 
 test("buildRunCaseId formats timestamp, task type and unique id", () => {
@@ -83,6 +86,12 @@ test("normalizeLauncherAnswers keeps the prompted baseURL and apiKey", () => {
 
   assert.equal(result.baseURL, "https://api.example/v1");
   assert.equal(result.apiKey, "sk-test");
+});
+
+test("launcher source uses provider-neutral env names and prompts", async () => {
+  const source = await fs.readFile(path.resolve(process.cwd(), "src/tools/runInteractiveScore.ts"), "utf-8");
+  assert.match(source, /模型服务 baseURL|MODEL_PROVIDER_BASE_URL/);
+  assert.match(source, /模型服务 apiKey|MODEL_PROVIDER_API_KEY/);
 });
 
 test("parseLauncherArgs resolves explicit --case and falls back to init-input", () => {
@@ -131,6 +140,11 @@ test("runSingleCase writes prompt snapshot and case-info metadata into inputs", 
     assert.equal(caseInfo.task_type, "bug_fix");
     assert.equal(caseInfo.source_case_path, fixture.casePath);
     assert.equal(caseInfo.patch_path.endsWith("changes.patch"), true);
+    assert.equal(caseInfo.original_prompt_file, "inputs/original-prompt.txt");
+    assert.equal(caseInfo.agent_prompt_file, "inputs/agent-prompt.txt");
+    assert.equal(typeof caseInfo.agent_assistance_enabled, "boolean");
+    assert.equal(typeof caseInfo.agent_model, "string");
+    assert.match(caseInfo.agent_run_status, /not_enabled|success|failed|invalid_output|skipped/);
   } finally {
     if (fixture.originalLocalCaseRoot === undefined) {
       delete process.env.LOCAL_CASE_ROOT;

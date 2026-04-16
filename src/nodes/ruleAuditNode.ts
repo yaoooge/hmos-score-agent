@@ -13,6 +13,7 @@ export async function ruleAuditNode(
 
   return {
     ruleAuditResults: result.ruleAuditResults,
+    ruleEvidenceIndex: result.ruleEvidenceIndex,
     ruleViolations: result.ruleViolations,
     evidenceSummary: result.evidenceSummary,
   };

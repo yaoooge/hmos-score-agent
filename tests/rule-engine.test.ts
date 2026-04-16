@@ -150,3 +150,32 @@ test("runRuleEngine does not treat hex color literals in ets files as private fi
 
   assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"), false);
 });
+
+test("runRuleEngine builds fallback evidence snippets when patch paths include workspace prefix", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    ".gitignore": ".hvigor/\n",
+    "entry/src/main/ets/common/models/Restaurant.ts": "export interface Restaurant { id: string; }\n",
+    "entry/src/main/ets/pages/Index.ets": "@Entry\n@Component\nstruct Index {}\n",
+  });
+
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      "diff --git a/workspace/entry/src/main/ets/pages/Index.ets b/workspace/entry/src/main/ets/pages/Index.ets",
+      "+++ b/workspace/entry/src/main/ets/pages/Index.ets",
+      "@@ -1 +1 @@",
+      "-@Entry",
+      "+@Entry",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "bug_fix",
+  });
+
+  assert.deepEqual(result.ruleEvidenceIndex.__fallback__?.evidenceFiles, ["workspace/entry/src/main/ets/pages/Index.ets"]);
+  assert.equal((result.ruleEvidenceIndex.__fallback__?.evidenceSnippets.length ?? 0) > 0, true);
+});

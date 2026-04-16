@@ -7,11 +7,13 @@ export async function scoringOrchestrationNode(
   state: ScoreGraphState,
 ): Promise<Partial<ScoreGraphState>> {
   const config = getConfig();
+  const effectiveRuleAuditResults =
+    (state.mergedRuleAuditResults?.length ?? 0) > 0 ? state.mergedRuleAuditResults : state.ruleAuditResults;
   const rubric = await loadRubricForTaskType(state.taskType, config.referenceRoot);
   const scoreBreakdown = computeScoreBreakdown({
     taskType: state.taskType,
     rubric,
-    ruleAuditResults: state.ruleAuditResults,
+    ruleAuditResults: effectiveRuleAuditResults,
     ruleViolations: state.ruleViolations,
     constraintSummary: state.constraintSummary,
     featureExtraction: state.featureExtraction,

@@ -135,7 +135,7 @@ npm run launch:score -- --case examples/my-case
 
 脚本会：
 
-1. 在终端里询问 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY`
+1. 在终端里询问 `MODEL_PROVIDER_BASE_URL` 和 `MODEL_PROVIDER_API_KEY`
 2. 将输入结果写入项目根目录 `.env`
 3. 读取 `--case` 指定目录；未指定时默认读取 `init-input/`
 4. 启动评分流程
