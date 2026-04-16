@@ -17,7 +17,8 @@ type EntryKind = "file" | "directory";
 type Rule =
   | { type: "exact"; value: string }
   | { type: "prefix"; value: string }
-  | { type: "suffix"; value: string };
+  | { type: "suffix"; value: string }
+  | { type: "wildcard"; value: string; regex: RegExp; hasSlash: boolean };
 
 export interface IgnoreFilter {
   isIgnored(relativePath: string, kind: EntryKind): boolean;
@@ -38,6 +39,15 @@ function toRule(pattern: string): Rule | null {
   if (trimmed.startsWith("*.")) {
     return { type: "suffix", value: trimmed.slice(1) };
   }
+  if (trimmed.includes("*")) {
+    const escaped = trimmed.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+    return {
+      type: "wildcard",
+      value: trimmed,
+      regex: new RegExp(`^${escaped.replace(/\*/g, "[^/]*")}$`),
+      hasSlash: trimmed.includes("/"),
+    };
+  }
   return { type: "exact", value: trimmed };
 }
 
@@ -49,6 +59,12 @@ function matchesRule(rule: Rule, relativePath: string, kind: EntryKind): boolean
   }
   if (rule.type === "prefix") {
     return normalized === rule.value || normalized.startsWith(`${rule.value}/`) || segments.includes(rule.value);
+  }
+  if (rule.type === "wildcard") {
+    if (rule.hasSlash) {
+      return rule.regex.test(normalized);
+    }
+    return segments.some((segment) => rule.regex.test(segment));
   }
   return normalized === rule.value || segments.includes(rule.value);
 }
@@ -87,24 +103,28 @@ export async function loadIgnoreFilter(rootDir: string): Promise<IgnoreFilter> {
   };
 }
 
-export async function collectVisibleFiles(rootDir: string, currentDir = rootDir): Promise<string[]> {
-  const filter = currentDir === rootDir ? await loadIgnoreFilter(rootDir) : undefined;
-  const activeFilter = filter ?? (await loadIgnoreFilter(rootDir));
+async function collectVisibleFilesFrom(rootDir: string, currentDir: string, filter: IgnoreFilter): Promise<string[]> {
   const entries = await fs.readdir(currentDir, { withFileTypes: true });
   const results: string[] = [];
   for (const entry of entries) {
     const absolutePath = path.join(currentDir, entry.name);
     const relativePath = normalizeRelativePath(path.relative(rootDir, absolutePath));
-    if (activeFilter.isIgnored(relativePath, entry.isDirectory() ? "directory" : "file")) {
+    if (filter.isIgnored(relativePath, entry.isDirectory() ? "directory" : "file")) {
       continue;
     }
     if (entry.isDirectory()) {
-      results.push(...(await collectVisibleFiles(rootDir, absolutePath)));
+      results.push(...(await collectVisibleFilesFrom(rootDir, absolutePath, filter)));
       continue;
     }
     if (entry.isFile()) {
       results.push(relativePath);
     }
   }
-  return results.sort();
+  return results;
+}
+
+export async function collectVisibleFiles(rootDir: string): Promise<string[]> {
+  const filter = await loadIgnoreFilter(rootDir);
+  const files = await collectVisibleFilesFrom(rootDir, rootDir, filter);
+  return files.sort();
 }
