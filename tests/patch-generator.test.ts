@@ -78,4 +78,7 @@ test("generateCasePatch respects original and workspace root gitignore files", a
 test("README documents directory-based patch generation", async () => {
   const readme = await fs.readFile(path.resolve(process.cwd(), "README.md"), "utf-8");
   assert.match(readme, /git diff --no-index|npm run case:patch/);
+  assert.match(readme, /\.gitignore/);
+  assert.match(readme, /workspace\/\.gitignore/);
+  assert.match(readme, /original\/\.gitignore/);
 });

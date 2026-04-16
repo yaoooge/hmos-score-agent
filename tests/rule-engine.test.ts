@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { collectEvidence } from "../src/rules/evidenceCollector.js";
 import { runRuleEngine } from "../src/rules/ruleEngine.js";
 import type { CaseInput } from "../src/types.js";
 
@@ -60,4 +61,45 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
   assert.ok(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"));
   assert.ok(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"));
   assert.ok(result.ruleViolations.length >= 1);
+});
+
+test("collectEvidence ignores workspace and original files matched by root gitignore", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "build/cache/compiled.js": "var y = 2;\n",
+  });
+
+  await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "build/\n*.tmp\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "original", ".gitignore"), "cache/\n", "utf-8");
+  await fs.mkdir(path.join(caseDir, "original", "cache"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "original", "cache", "legacy.txt"), "legacy\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "workspace", "trace.tmp"), "noise\n", "utf-8");
+
+  const evidence = await collectEvidence(makeCaseInput(caseDir));
+
+  assert.deepEqual(
+    evidence.workspaceFiles.map((item) => item.relativePath),
+    ["entry/src/main/ets/pages/Index.ets"],
+  );
+  assert.deepEqual(evidence.originalFiles, []);
+  assert.equal(evidence.summary.workspaceFileCount, 1);
+  assert.equal(evidence.summary.originalFileCount, 0);
+});
+
+test("runRuleEngine does not report violations from files ignored by workspace gitignore", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "build/generated.js": "var y = 2;\nlet x: any = 1;\n",
+  });
+
+  await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "build/\n", "utf-8");
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"), false);
+  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"), false);
 });

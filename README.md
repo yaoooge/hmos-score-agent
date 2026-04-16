@@ -158,6 +158,13 @@ npm run case:patch -- --case init-input
 git diff --no-index -- original workspace > diff/changes.patch
 ```
 
+### Patch 与评测过滤
+
+- `case:patch` 会分别读取 `original/.gitignore` 和 `workspace/.gitignore`
+- 规则评测采集文件时，也会按对应目录根级 `.gitignore` 过滤
+- 当前仅支持根级 `.gitignore` 的常见规则，例如目录模式、文件模式和简单 `*` 通配
+- 如果 `.gitignore` 缺失或不可读，会回退到内置的保底忽略项
+
 ## 5. 当前实现状态（骨架阶段）
 
 已完成：
