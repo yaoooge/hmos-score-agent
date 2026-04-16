@@ -3,36 +3,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { promisify } from "node:util";
+import { collectVisibleFiles } from "./gitignoreMatcher.js";
 
 const execFileAsync = promisify(execFile);
-const IGNORED_NAMES = new Set([
-  ".git",
-  ".agent_bench",
-  ".hvigor",
-  "build",
-  "node_modules",
-  "oh_modules",
-  "oh-package-lock.json5",
-]);
 
 async function copyFilteredTree(sourceDir: string, targetDir: string): Promise<void> {
   await fs.mkdir(targetDir, { recursive: true });
-  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+  const visibleFiles = await collectVisibleFiles(sourceDir);
 
-  for (const entry of entries) {
-    if (IGNORED_NAMES.has(entry.name) || entry.name.endsWith(".log")) {
-      continue;
-    }
-
-    const sourcePath = path.join(sourceDir, entry.name);
-    const targetPath = path.join(targetDir, entry.name);
-    if (entry.isDirectory()) {
-      await copyFilteredTree(sourcePath, targetPath);
-    } else if (entry.isFile()) {
+  await Promise.all(
+    visibleFiles.map(async (relativePath) => {
+      const sourcePath = path.join(sourceDir, relativePath);
+      const targetPath = path.join(targetDir, relativePath);
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.copyFile(sourcePath, targetPath);
-    }
-  }
+    }),
+  );
 }
 
 export async function generateCasePatch(caseDir: string, outputPath: string): Promise<string> {

@@ -53,6 +53,28 @@ test("generateCasePatch excludes transient workspace artifacts from the diff", a
   assert.doesNotMatch(patchText, /build\/artifact\.txt/);
 });
 
+test("generateCasePatch respects original and workspace root gitignore files", async (t) => {
+  const caseDir = await createCaseFixture(t);
+  const patchPath = path.join(caseDir, "diff", "changes.patch");
+
+  await fs.writeFile(path.join(caseDir, "original", ".gitignore"), "tmp/\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "generated/\n*.log\n", "utf-8");
+  await fs.mkdir(path.join(caseDir, "original", "tmp"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "workspace", "generated"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "original", "tmp", "legacy.txt"), "legacy\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "workspace", "generated", "artifact.txt"), "compiled any\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "workspace", "trace.log"), "compiled any\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "workspace", "src", "feature.txt"), "restaurant-grid-updated\n", "utf-8");
+
+  await generateCasePatch(caseDir, patchPath);
+
+  const patchText = await fs.readFile(patchPath, "utf-8");
+  assert.doesNotMatch(patchText, /original\/tmp\/legacy\.txt/);
+  assert.doesNotMatch(patchText, /workspace\/generated\/artifact\.txt/);
+  assert.doesNotMatch(patchText, /workspace\/trace\.log/);
+  assert.match(patchText, /restaurant-grid-updated/);
+});
+
 test("README documents directory-based patch generation", async () => {
   const readme = await fs.readFile(path.resolve(process.cwd(), "README.md"), "utf-8");
   assert.match(readme, /git diff --no-index|npm run case:patch/);
