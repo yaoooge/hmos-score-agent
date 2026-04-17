@@ -243,6 +243,66 @@ test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => 
   );
 });
 
+test("runRuleEngine evaluates arkts-performance rules and keeps pending rules explicit", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": `
+function add(left?: number, right?: number): number {
+  return (left ?? 0) + (right ?? 0);
+}
+
+let arrUnion: (number | string)[] = [1, 'hello'];
+let arrNum: number[] = [1, 1.1, 2];
+let sparse: number[] = [];
+sparse[9999] = 0;
+
+function sum(num: number): number {
+  for (let t = 1; t < 100; t++) {
+    throw new Error('Invalid numbers.');
+  }
+  return num;
+}
+
+let intNum = 1;
+intNum = 1.1;
+`,
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  for (const ruleId of [
+    "ARKTS-PERF-FORBID-001",
+    "ARKTS-PERF-FORBID-002",
+    "ARKTS-PERF-FORBID-003",
+    "ARKTS-PERF-FORBID-004",
+    "ARKTS-PERF-FORBID-005",
+    "ARKTS-PERF-SHOULD-002",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+
+  for (const ruleId of [
+    "ARKTS-PERF-SHOULD-001",
+    "ARKTS-PERF-SHOULD-003",
+    "ARKTS-PERF-SHOULD-004",
+    "ARKTS-PERF-SHOULD-005",
+    "ARKTS-PERF-SHOULD-006",
+  ]) {
+    assert.equal(
+      result.staticRuleAuditResults.some((item) => item.rule_id === ruleId && item.result === "未接入判定器"),
+      true,
+      ruleId,
+    );
+  }
+});
+
 test("runRuleEngine does not treat hex color literals in ets files as private field syntax", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "Text('hello').fontColor('#FF6B35')\n",

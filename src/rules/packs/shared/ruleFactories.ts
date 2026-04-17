@@ -3,9 +3,9 @@ import type { RegisteredRule, RuleSource } from "../../engine/ruleTypes.js";
 const defaultFileExtensions = [".ets"];
 
 // createPendingRule 用于声明已纳入规则包、但当前版本仍需 agent 辅助的规则。
-export function createPendingRule(rule_source: RuleSource, rule_id: string, summary: string): RegisteredRule {
+export function createPendingRule(pack_id: string, rule_source: RuleSource, rule_id: string, summary: string): RegisteredRule {
   return {
-    pack_id: "arkts-language",
+    pack_id,
     rule_id,
     rule_source,
     summary,
@@ -16,9 +16,15 @@ export function createPendingRule(rule_source: RuleSource, rule_id: string, summ
 }
 
 // createTextRule 为文本可判规则提供统一 detector 配置，避免三类规则文件重复拼装。
-export function createTextRule(rule_source: RuleSource, rule_id: string, summary: string, patterns: string[]): RegisteredRule {
+export function createTextRule(
+  pack_id: string,
+  rule_source: RuleSource,
+  rule_id: string,
+  summary: string,
+  patterns: string[],
+): RegisteredRule {
   return {
-    pack_id: "arkts-language",
+    pack_id,
     rule_id,
     rule_source,
     summary,
@@ -30,4 +36,3 @@ export function createTextRule(rule_source: RuleSource, rule_id: string, summary
     fallback_policy: "agent_assisted",
   };
 }
-

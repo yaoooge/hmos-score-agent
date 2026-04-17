@@ -95,6 +95,105 @@ test("ChatModelClient sends one request with response_format and returns the fir
   }
 });
 
+test("ChatModelClient retries once without response_format when provider rejects structured output parameters", async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const bodyText = typeof init?.body === "string" ? init.body : "";
+    const body = JSON.parse(bodyText) as Record<string, unknown>;
+    calls.push({ url: String(url), body });
+
+    if (calls.length === 1) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: "Unknown parameter: 'text.format.name'.",
+            type: "invalid_request_error",
+            param: "text.format.name",
+          },
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: '{"ok":true}',
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const client = new ChatModelClient({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test",
+      model: "gpt-5.4",
+    });
+
+    const result = await client.evaluateRules({
+      prompt: "请仅输出 JSON",
+      payload: createPayload(),
+    });
+
+    assert.equal(result, '{"ok":true}');
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0]?.body.response_format, { type: "json_object" });
+    assert.equal("response_format" in (calls[1]?.body ?? {}), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ChatModelClient does not retry unrelated 400 responses", async () => {
+  let callCount = 0;
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async () => {
+    callCount += 1;
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: "Invalid request body.",
+          type: "invalid_request_error",
+        },
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const client = new ChatModelClient({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test",
+      model: "gpt-5.4",
+    });
+
+    await assert.rejects(
+      () =>
+        client.evaluateRules({
+          prompt: "请仅输出 JSON",
+          payload: createPayload(),
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /Invalid request body/);
+        return true;
+      },
+    );
+    assert.equal(callCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ChatModelClient extracts only text-bearing content parts from array-form responses", async () => {
   const originalFetch = globalThis.fetch;
 

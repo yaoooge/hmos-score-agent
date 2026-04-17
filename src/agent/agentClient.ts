@@ -10,11 +10,17 @@ export interface ChatModelClientOptions {
   model: string;
 }
 
+interface CompletionResponse {
+  ok: boolean;
+  status: number;
+  bodyText: string;
+}
+
 export class ChatModelClient implements AgentClient {
   constructor(private readonly options: ChatModelClientOptions) {}
 
   async evaluateRules(input: { prompt: string; payload: AgentPromptPayload }): Promise<string> {
-    const response = await this.requestCompletion({
+    const requestBody = {
       model: this.options.model,
       temperature: 0,
       messages: [
@@ -24,16 +30,18 @@ export class ChatModelClient implements AgentClient {
         },
       ],
       response_format: { type: "json_object" },
-    });
+    };
+
+    let response = await this.requestCompletion(requestBody);
+    if (this.shouldRetryWithoutStructuredOutput(response)) {
+      const { response_format: _ignored, ...fallbackBody } = requestBody;
+      response = await this.requestCompletion(fallbackBody);
+    }
 
     return this.extractMessageContent(response);
   }
 
-  private async requestCompletion(body: Record<string, unknown>): Promise<{
-    ok: boolean;
-    status: number;
-    bodyText: string;
-  }> {
+  private async requestCompletion(body: Record<string, unknown>): Promise<CompletionResponse> {
     const response = await fetch(`${this.options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
@@ -49,7 +57,20 @@ export class ChatModelClient implements AgentClient {
     };
   }
 
-  private extractMessageContent(response: { ok: boolean; status: number; bodyText: string }): string {
+  private shouldRetryWithoutStructuredOutput(response: CompletionResponse): boolean {
+    if (response.ok || response.status !== 400) {
+      return false;
+    }
+
+    const normalized = response.bodyText.toLowerCase();
+    const mentionsUnsupportedParameter =
+      normalized.includes("unknown parameter") || normalized.includes("unsupported parameter");
+    const mentionsStructuredOutput =
+      normalized.includes("response_format") || normalized.includes("text.format");
+    return mentionsUnsupportedParameter && mentionsStructuredOutput;
+  }
+
+  private extractMessageContent(response: CompletionResponse): string {
     if (!response.ok) {
       throw new Error(`Agent 调用失败，HTTP ${response.status}，响应：${response.bodyText}`);
     }
