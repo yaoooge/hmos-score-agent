@@ -18,8 +18,16 @@ async function createCaseFixture(t: test.TestContext): Promise<string> {
   await fs.mkdir(path.join(caseDir, "original", "src"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "workspace", "src"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "diff"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "original", "src", "feature.txt"), "restaurant-list\n", "utf-8");
-  await fs.writeFile(path.join(caseDir, "workspace", "src", "feature.txt"), "restaurant-grid\n", "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "original", "src", "feature.txt"),
+    "restaurant-list\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "src", "feature.txt"),
+    "restaurant-grid\n",
+    "utf-8",
+  );
   return caseDir;
 }
 
@@ -30,7 +38,10 @@ test("generateCasePatch writes a unified diff between original and workspace", a
   await generateCasePatch(caseDir, patchPath);
 
   const patchText = await fs.readFile(patchPath, "utf-8");
-  assert.match(patchText, /diff --git a\/original\/src\/feature\.txt b\/workspace\/src\/feature\.txt/);
+  assert.match(
+    patchText,
+    /diff --git a\/original\/src\/feature\.txt b\/workspace\/src\/feature\.txt/,
+  );
   assert.match(patchText, /restaurant-grid/);
 });
 
@@ -41,7 +52,11 @@ test("generateCasePatch excludes transient workspace artifacts from the diff", a
   await fs.mkdir(path.join(caseDir, "workspace", ".agent_bench"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "workspace", ".hvigor"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "workspace", "build"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "workspace", ".agent_bench", "noise.patch"), "noise\n", "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "workspace", ".agent_bench", "noise.patch"),
+    "noise\n",
+    "utf-8",
+  );
   await fs.writeFile(path.join(caseDir, "workspace", ".hvigor", "cache.json"), "noise\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "build", "artifact.txt"), "noise\n", "utf-8");
 
@@ -62,9 +77,17 @@ test("generateCasePatch respects original and workspace root gitignore files", a
   await fs.mkdir(path.join(caseDir, "original", "tmp"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "workspace", "generated"), { recursive: true });
   await fs.writeFile(path.join(caseDir, "original", "tmp", "archived.txt"), "archived\n", "utf-8");
-  await fs.writeFile(path.join(caseDir, "workspace", "generated", "artifact.txt"), "compiled any\n", "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "generated", "artifact.txt"),
+    "compiled any\n",
+    "utf-8",
+  );
   await fs.writeFile(path.join(caseDir, "workspace", "trace.log"), "compiled any\n", "utf-8");
-  await fs.writeFile(path.join(caseDir, "workspace", "src", "feature.txt"), "restaurant-grid-updated\n", "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "src", "feature.txt"),
+    "restaurant-grid-updated\n",
+    "utf-8",
+  );
 
   await generateCasePatch(caseDir, patchPath);
 

@@ -24,19 +24,34 @@ async function createTempEnv(t: test.TestContext, content: string): Promise<stri
 }
 
 // 统一构造 launcher 用例，避免每个测试重复拼装目录结构。
-async function createLauncherCaseFixture(
-  t: test.TestContext,
-): Promise<{ casePath: string; localCaseRoot: string; originalLocalCaseRoot?: string; originalReferenceRoot?: string }> {
+async function createLauncherCaseFixture(t: test.TestContext): Promise<{
+  casePath: string;
+  localCaseRoot: string;
+  originalLocalCaseRoot?: string;
+  originalReferenceRoot?: string;
+}> {
   const caseRoot = await makeTempDir(t);
   const localCaseRoot = await makeTempDir(t);
   const casePath = path.join(caseRoot, "sample-case");
 
-  await fs.mkdir(path.join(casePath, "original", "entry", "src", "main", "ets"), { recursive: true });
-  await fs.mkdir(path.join(casePath, "workspace", "entry", "src", "main", "ets"), { recursive: true });
+  await fs.mkdir(path.join(casePath, "original", "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(casePath, "workspace", "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
   await fs.mkdir(path.join(casePath, "diff"), { recursive: true });
   await fs.writeFile(path.join(casePath, "input.txt"), "请修复页面中的 bug", "utf-8");
-  await fs.writeFile(path.join(casePath, "original", "entry", "src", "main", "ets", "Index.ets"), "let x: number = 1;\n", "utf-8");
-  await fs.writeFile(path.join(casePath, "workspace", "entry", "src", "main", "ets", "Index.ets"), "let x: any = 1;\n", "utf-8");
+  await fs.writeFile(
+    path.join(casePath, "original", "entry", "src", "main", "ets", "Index.ets"),
+    "let x: number = 1;\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(casePath, "workspace", "entry", "src", "main", "ets", "Index.ets"),
+    "let x: any = 1;\n",
+    "utf-8",
+  );
   await fs.writeFile(
     path.join(casePath, "diff", "changes.patch"),
     "diff --git a/entry/src/main/ets/Index.ets b/entry/src/main/ets/Index.ets\n@@ -1 +1 @@\n-let x: number = 1;\n+let x: any = 1;\n",
@@ -89,7 +104,10 @@ test("normalizeLauncherAnswers keeps the prompted baseURL and apiKey", () => {
 });
 
 test("launcher source uses provider-neutral env names and prompts", async () => {
-  const source = await fs.readFile(path.resolve(process.cwd(), "src/tools/runInteractiveScore.ts"), "utf-8");
+  const source = await fs.readFile(
+    path.resolve(process.cwd(), "src/tools/runInteractiveScore.ts"),
+    "utf-8",
+  );
   assert.match(source, /模型服务 baseURL|MODEL_PROVIDER_BASE_URL/);
   assert.match(source, /模型服务 apiKey|MODEL_PROVIDER_API_KEY/);
 });
@@ -134,8 +152,12 @@ test("runSingleCase omits prompt snapshots and writes updated case-info metadata
   try {
     const result = await runSingleCase(fixture.casePath);
     await assert.rejects(fs.readFile(path.join(result.caseDir, "inputs", "prompt.txt"), "utf-8"));
-    await assert.rejects(fs.readFile(path.join(result.caseDir, "inputs", "original-prompt.txt"), "utf-8"));
-    const caseInfo = JSON.parse(await fs.readFile(path.join(result.caseDir, "inputs", "case-info.json"), "utf-8"));
+    await assert.rejects(
+      fs.readFile(path.join(result.caseDir, "inputs", "original-prompt.txt"), "utf-8"),
+    );
+    const caseInfo = JSON.parse(
+      await fs.readFile(path.join(result.caseDir, "inputs", "case-info.json"), "utf-8"),
+    );
 
     assert.equal(caseInfo.task_type, "bug_fix");
     assert.equal(caseInfo.source_case_path, fixture.casePath);

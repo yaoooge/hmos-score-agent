@@ -62,10 +62,9 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
 
     const casePath = parseLauncherArgs(argv);
     const result = await runSingleCase(casePath);
-    // eslint-disable-next-line no-console
+
     console.log(`评分完成，结果目录：${result.caseDir}`);
     if (result.uploadMessage) {
-      // eslint-disable-next-line no-console
       console.log(`上传信息：${result.uploadMessage}`);
     }
   } finally {
@@ -75,7 +74,6 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runInteractiveScore().catch((error: unknown) => {
-    // eslint-disable-next-line no-console
     console.error(error);
     process.exit(1);
   });

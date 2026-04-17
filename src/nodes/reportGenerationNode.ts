@@ -10,7 +10,9 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
   const submetricDetails = state.scoreComputation.submetricDetails;
 
   return (rubricSummary?.dimension_summaries ?? []).map((dimensionSummary) => {
-    const dimensionScore = dimensionScores.find((item) => item.dimension_name === dimensionSummary.name);
+    const dimensionScore = dimensionScores.find(
+      (item) => item.dimension_name === dimensionSummary.name,
+    );
 
     return {
       dimension_name: dimensionSummary.name,
@@ -20,9 +22,11 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
       comment: dimensionScore?.comment ?? "",
       item_results: dimensionSummary.item_summaries.map((itemSummary) => {
         const detail = submetricDetails.find(
-          (item) => item.dimension_name === dimensionSummary.name && item.metric_name === itemSummary.name,
+          (item) =>
+            item.dimension_name === dimensionSummary.name && item.metric_name === itemSummary.name,
         );
-        const matchedBand = itemSummary.scoring_bands.find((band) => band.score === detail?.score) ?? null;
+        const matchedBand =
+          itemSummary.scoring_bands.find((band) => band.score === detail?.score) ?? null;
 
         return {
           item_name: itemSummary.name,
@@ -52,7 +56,7 @@ export async function reportGenerationNode(
     const effectiveRuleAuditResults =
       (state.mergedRuleAuditResults?.length ?? 0) > 0
         ? state.mergedRuleAuditResults
-        : state.deterministicRuleResults ?? [];
+        : (state.deterministicRuleResults ?? []);
 
     const resultJson: Record<string, unknown> = {
       basic_info: {

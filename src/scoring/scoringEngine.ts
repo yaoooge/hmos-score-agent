@@ -47,7 +47,12 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
   // 首版只做“规则源 -> 扣分档位”的粗映射，先把主链闭环起来。
   if (rule.rule_source === "must_rule") {
     return [
-      { keywords: ["语法", "类型", "错误"], ratio: 0.35, confidence: "medium", reviewRequired: true },
+      {
+        keywords: ["语法", "类型", "错误"],
+        ratio: 0.35,
+        confidence: "medium",
+        reviewRequired: true,
+      },
       { keywords: ["规范", "ArkTS"], ratio: 0.25, confidence: "medium", reviewRequired: true },
     ];
   }
@@ -57,7 +62,12 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
     ];
   }
   return [
-    { keywords: ["复杂度", "可维护", "坏味道"], ratio: 0.15, confidence: "medium", reviewRequired: false },
+    {
+      keywords: ["复杂度", "可维护", "坏味道"],
+      ratio: 0.15,
+      confidence: "medium",
+      reviewRequired: false,
+    },
   ];
 }
 
@@ -65,14 +75,20 @@ function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
   // 这里保留确定性触发条件，避免首版因为复杂推理而难以验证。
   const violatedRules = input.ruleAuditResults.filter((rule) => rule.result === "不满足");
   const mustViolations = violatedRules.filter((rule) => rule.rule_source === "must_rule");
-  const forbiddenViolations = violatedRules.filter((rule) => rule.rule_source === "forbidden_pattern");
+  const forbiddenViolations = violatedRules.filter(
+    (rule) => rule.rule_source === "forbidden_pattern",
+  );
   const triggered: GateTrigger[] = [];
 
   if (mustViolations.length >= 2) {
     triggered.push({ id: "G1", reason: "存在多条 must_rule 违规，说明静态质量问题较为集中。" });
   }
 
-  if (mustViolations.some((rule) => ["ARKTS-MUST-003", "ARKTS-MUST-005", "ARKTS-MUST-006"].includes(rule.rule_id))) {
+  if (
+    mustViolations.some((rule) =>
+      ["ARKTS-MUST-003", "ARKTS-MUST-005", "ARKTS-MUST-006"].includes(rule.rule_id),
+    )
+  ) {
     triggered.push({ id: "G2", reason: "命中了核心 ArkTS 约束违规，说明实现与平台规则存在偏差。" });
   }
 
@@ -90,7 +106,10 @@ function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
   return triggered;
 }
 
-function shouldForceReview(score: number, scoreBands: Array<{ min: number; max: number }>): boolean {
+function shouldForceReview(
+  score: number,
+  scoreBands: Array<{ min: number; max: number }>,
+): boolean {
   return scoreBands.some((band) => score >= band.min && score <= band.max);
 }
 
@@ -108,7 +127,9 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     })),
   );
 
-  const detailMap = new Map(details.map((detail) => [makeMetricKey(detail.dimension_name, detail.metric_name), detail]));
+  const detailMap = new Map(
+    details.map((detail) => [makeMetricKey(detail.dimension_name, detail.metric_name), detail]),
+  );
   const risks: RiskItem[] = [];
   const humanReviewItems: HumanReviewItem[] = [];
 
@@ -120,7 +141,11 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     const penaltyRules = findPenaltyRules(rule);
     for (const detail of details) {
       const combinedText = `${detail.dimension_name} ${detail.metric_name}`;
-      if (!penaltyRules.some((penalty) => penalty.keywords.some((keyword) => combinedText.includes(keyword)))) {
+      if (
+        !penaltyRules.some((penalty) =>
+          penalty.keywords.some((keyword) => combinedText.includes(keyword)),
+        )
+      ) {
         continue;
       }
 
@@ -173,12 +198,17 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     };
   });
 
-  const rawTotalScore = roundScore(dimensionScores.reduce((sum, dimension) => sum + dimension.score, 0));
+  const rawTotalScore = roundScore(
+    dimensionScores.reduce((sum, dimension) => sum + dimension.score, 0),
+  );
   const triggeredGates = selectTriggeredGates(input);
   const scoreCap = triggeredGates
     .map((trigger) => input.rubric.hardGates.find((gate) => gate.id === trigger.id)?.scoreCap)
     .filter((value): value is number => typeof value === "number")
-    .reduce<number | undefined>((minCap, current) => (minCap === undefined ? current : Math.min(minCap, current)), undefined);
+    .reduce<number | undefined>(
+      (minCap, current) => (minCap === undefined ? current : Math.min(minCap, current)),
+      undefined,
+    );
   // 总分先聚合，再应用最严格的硬门槛 cap。
   const totalScore = scoreCap === undefined ? rawTotalScore : Math.min(rawTotalScore, scoreCap);
 
@@ -200,7 +230,10 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     });
   }
 
-  if (details.some((detail) => detail.confidence === "low") || shouldForceReview(totalScore, input.rubric.reviewRules.scoreBands)) {
+  if (
+    details.some((detail) => detail.confidence === "low") ||
+    shouldForceReview(totalScore, input.rubric.reviewRules.scoreBands)
+  ) {
     humanReviewItems.push({
       item: "置信度复核",
       current_assessment: `当前总分为 ${totalScore}。`,
@@ -232,8 +265,9 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
       .filter((rule) => rule.result === "不满足")
       .slice(0, 5)
       .map((rule) => `${rule.rule_id}: ${rule.conclusion}`),
-    finalRecommendation: triggeredGates.length > 0
-      ? ["在将该分数用于自动排序前，必须先进行人工复核。"]
-      : ["当前分数可作为自动预检基线使用。"],
+    finalRecommendation:
+      triggeredGates.length > 0
+        ? ["在将该分数用于自动排序前，必须先进行人工复核。"]
+        : ["当前分数可作为自动预检基线使用。"],
   };
 }

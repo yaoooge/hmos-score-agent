@@ -8,7 +8,9 @@ function compilePatterns(patterns: string[]): RegExp[] {
 }
 
 function shouldKeepComments(patterns: string[]): boolean {
-  return patterns.some((pattern) => pattern.includes("@ts-ignore") || pattern.includes("@ts-nocheck"));
+  return patterns.some(
+    (pattern) => pattern.includes("@ts-ignore") || pattern.includes("@ts-nocheck"),
+  );
 }
 
 // stripCommentsPreserveLayout 仅移除注释内容，并尽量保留换行与列宽，避免影响按行规则。
@@ -55,7 +57,11 @@ function stripCommentsPreserveLayout(source: string): string {
         escaped = false;
       } else if (current === "\\") {
         escaped = true;
-      } else if ((inSingleQuote && current === "'") || (inDoubleQuote && current === "\"") || (inTemplateString && current === "`")) {
+      } else if (
+        (inSingleQuote && current === "'") ||
+        (inDoubleQuote && current === '"') ||
+        (inTemplateString && current === "`")
+      ) {
         inSingleQuote = false;
         inDoubleQuote = false;
         inTemplateString = false;
@@ -85,7 +91,7 @@ function stripCommentsPreserveLayout(source: string): string {
       continue;
     }
 
-    if (current === "\"") {
+    if (current === '"') {
       inDoubleQuote = true;
       result += current;
       index += 1;
@@ -107,18 +113,25 @@ function stripCommentsPreserveLayout(source: string): string {
 }
 
 // 文本规则完全由规则包中的 detector_config 驱动。
-export function runTextPatternRule(rule: RegisteredRule, evidence: CollectedEvidence): EvaluatedRule {
-  const fileExtensions = ((rule.detector_config.fileExtensions as string[] | undefined) ?? []).map((item) =>
-    item.toLowerCase(),
+export function runTextPatternRule(
+  rule: RegisteredRule,
+  evidence: CollectedEvidence,
+): EvaluatedRule {
+  const fileExtensions = ((rule.detector_config.fileExtensions as string[] | undefined) ?? []).map(
+    (item) => item.toLowerCase(),
   );
-  const patternTexts = ((rule.detector_config.patterns as string[] | undefined) ?? []).filter(Boolean);
+  const patternTexts = ((rule.detector_config.patterns as string[] | undefined) ?? []).filter(
+    Boolean,
+  );
   const patterns = compilePatterns(patternTexts);
   const keepComments = shouldKeepComments(patternTexts);
 
   const matchedFiles = evidence.workspaceFiles
     .filter((file) => fileExtensions.includes(path.extname(file.relativePath).toLowerCase()))
     .filter((file) => {
-      const normalizedContent = keepComments ? file.content : stripCommentsPreserveLayout(file.content);
+      const normalizedContent = keepComments
+        ? file.content
+        : stripCommentsPreserveLayout(file.content);
       return patterns.some((pattern) => pattern.test(normalizedContent));
     })
     .map((file) => file.relativePath);
@@ -127,7 +140,10 @@ export function runTextPatternRule(rule: RegisteredRule, evidence: CollectedEvid
     rule_id: rule.rule_id,
     rule_source: rule.rule_source,
     result: matchedFiles.length > 0 ? "不满足" : "满足",
-    conclusion: matchedFiles.length > 0 ? `${rule.summary} 检测到规则命中，文件：${matchedFiles.join(", ")}` : "未发现该规则的命中证据。",
+    conclusion:
+      matchedFiles.length > 0
+        ? `${rule.summary} 检测到规则命中，文件：${matchedFiles.join(", ")}`
+        : "未发现该规则的命中证据。",
     matchedFiles,
   };
 }

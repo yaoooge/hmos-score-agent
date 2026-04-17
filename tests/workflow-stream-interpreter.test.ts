@@ -3,7 +3,10 @@ import test from "node:test";
 import { interpretStreamChunk } from "../src/workflow/observability/workflowStreamInterpreter.js";
 
 test("interpretStreamChunk maps custom and updates chunks into workflow events", () => {
-  const started = interpretStreamChunk(["custom", { event: "node_started", nodeId: "taskUnderstandingNode" }]);
+  const started = interpretStreamChunk([
+    "custom",
+    { event: "node_started", nodeId: "taskUnderstandingNode" },
+  ]);
   const completed = interpretStreamChunk([
     "updates",
     {

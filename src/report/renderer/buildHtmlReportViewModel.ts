@@ -108,9 +108,15 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
   const basicInfo = asRecord(resultJson.basic_info);
   const overallConclusion = asRecord(resultJson.overall_conclusion);
   const reportMeta = asRecord(resultJson.report_meta);
-  const dimensionResults = Array.isArray(resultJson.dimension_results) ? resultJson.dimension_results : [];
-  const humanReviewItems = Array.isArray(resultJson.human_review_items) ? resultJson.human_review_items : [];
-  const ruleAuditResults = Array.isArray(resultJson.rule_audit_results) ? resultJson.rule_audit_results : [];
+  const dimensionResults = Array.isArray(resultJson.dimension_results)
+    ? resultJson.dimension_results
+    : [];
+  const humanReviewItems = Array.isArray(resultJson.human_review_items)
+    ? resultJson.human_review_items
+    : [];
+  const ruleAuditResults = Array.isArray(resultJson.rule_audit_results)
+    ? resultJson.rule_audit_results
+    : [];
   const risks = Array.isArray(resultJson.risks) ? resultJson.risks : [];
   const mainIssues = asStringArray(resultJson.main_issues);
   const strengths = asStringArray(resultJson.strengths);
@@ -157,7 +163,8 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
       totalScore: String(overallConclusion.total_score ?? "-"),
       hardGateLabel: overallConclusion.hard_gate_triggered ? "已触发硬门禁" : "未触发硬门禁",
       summaryText: String(overallConclusion.summary ?? "暂无总体结论。"),
-      recommendationText: recommendations.length > 0 ? `建议动作：${recommendations.join("；")}` : "",
+      recommendationText:
+        recommendations.length > 0 ? `建议动作：${recommendations.join("；")}` : "",
       caseId: String(reportMeta.unit_name ?? "unknown-case"),
       taskType: String(basicInfo.task_type ?? "unknown"),
       generatedAt: formatTimestamp(reportMeta.generated_at),

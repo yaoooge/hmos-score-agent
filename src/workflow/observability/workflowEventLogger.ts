@@ -16,10 +16,14 @@ export class WorkflowEventLogger {
     }
 
     if (event.type === "node_completed") {
-      await this.logger.info(`节点完成 node=${event.nodeId} label=${event.label} summary=${event.summary}`);
+      await this.logger.info(
+        `节点完成 node=${event.nodeId} label=${event.label} summary=${event.summary}`,
+      );
       return;
     }
 
-    await this.logger.error(`节点失败 node=${event.nodeId} label=${event.label} error=${event.errorMessage ?? "unknown"}`);
+    await this.logger.error(
+      `节点失败 node=${event.nodeId} label=${event.label} error=${event.errorMessage ?? "unknown"}`,
+    );
   }
 }

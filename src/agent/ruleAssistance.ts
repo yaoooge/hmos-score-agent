@@ -52,26 +52,28 @@ type MergeRuleAuditResultsOutput = {
   mergedRuleAuditResults: RuleAuditResult[];
 };
 
-const agentResponseSchema = z.object({
-  summary: z
-    .object({
-      assistant_scope: z.string(),
-      overall_confidence: z.enum(["high", "medium", "low"]),
-    })
-    .strict(),
-  rule_assessments: z.array(
-    z
+const agentResponseSchema = z
+  .object({
+    summary: z
       .object({
-        rule_id: z.string(),
-        decision: z.enum(["violation", "pass", "not_applicable", "uncertain"]),
-        confidence: z.enum(["high", "medium", "low"]),
-        reason: z.string(),
-        evidence_used: z.array(z.string()),
-        needs_human_review: z.boolean(),
+        assistant_scope: z.string(),
+        overall_confidence: z.enum(["high", "medium", "low"]),
       })
       .strict(),
-  ),
-}).strict();
+    rule_assessments: z.array(
+      z
+        .object({
+          rule_id: z.string(),
+          decision: z.enum(["violation", "pass", "not_applicable", "uncertain"]),
+          confidence: z.enum(["high", "medium", "low"]),
+          reason: z.string(),
+          evidence_used: z.array(z.string()),
+          needs_human_review: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 
 // selectAssistedRuleCandidates 根据当前快速版策略，优先把 should_rule 交给 Agent 辅助判定。
 export function selectAssistedRuleCandidates(
@@ -97,10 +99,17 @@ export function selectAssistedRuleCandidates(
       rule_source: rule.rule_source,
       why_uncertain: "当前规则需要 Agent 结合上下文做辅助判定。",
       local_preliminary_signal:
-        rule.result === "不满足" ? "possible_violation" : rule.result === "满足" ? "possible_pass" : "unknown",
-      evidence_files: evidence?.evidenceFiles?.length ? evidence.evidenceFiles : fallbackEvidence?.evidenceFiles ?? [],
-      evidence_snippets:
-        evidence?.evidenceSnippets?.length ? evidence.evidenceSnippets : fallbackEvidence?.evidenceSnippets ?? [],
+        rule.result === "不满足"
+          ? "possible_violation"
+          : rule.result === "满足"
+            ? "possible_pass"
+            : "unknown",
+      evidence_files: evidence?.evidenceFiles?.length
+        ? evidence.evidenceFiles
+        : (fallbackEvidence?.evidenceFiles ?? []),
+      evidence_snippets: evidence?.evidenceSnippets?.length
+        ? evidence.evidenceSnippets
+        : (fallbackEvidence?.evidenceSnippets ?? []),
     });
   }
 
@@ -138,9 +147,7 @@ export function buildRubricSnapshot(rubric: LoadedRubric): LoadedRubricSnapshot 
       score_cap: gate.scoreCap,
     })),
     review_rule_summary:
-      rubric.reviewRules.scoreBands.length > 0
-        ? ["关键分段分数需要人工复核"]
-        : [],
+      rubric.reviewRules.scoreBands.length > 0 ? ["关键分段分数需要人工复核"] : [],
   };
 }
 
@@ -171,7 +178,14 @@ export function buildAgentPromptPayload(input: BuildAgentPromptPayloadInput): Ag
         overall_confidence: ["high", "medium", "low"],
       },
       rule_assessment_schema: {
-        required_fields: ["rule_id", "decision", "confidence", "reason", "evidence_used", "needs_human_review"],
+        required_fields: [
+          "rule_id",
+          "decision",
+          "confidence",
+          "reason",
+          "evidence_used",
+          "needs_human_review",
+        ],
         decision_enum: ["violation", "pass", "not_applicable", "uncertain"],
         confidence_enum: ["high", "medium", "low"],
       },
@@ -236,7 +250,11 @@ function mapAssessmentToRuleAuditResult(
   candidate: AssistedRuleCandidate,
   assessment: AgentAssistedRuleResult["rule_assessments"][number],
 ): RuleAuditResult {
-  if (assessment.needs_human_review || assessment.decision === "uncertain" || assessment.confidence === "low") {
+  if (
+    assessment.needs_human_review ||
+    assessment.decision === "uncertain" ||
+    assessment.confidence === "low"
+  ) {
     return {
       rule_id: candidate.rule_id,
       rule_source: candidate.rule_source,
@@ -272,7 +290,9 @@ function mapAssessmentToRuleAuditResult(
 }
 
 // mergeRuleAuditResults 负责本地优先合并，保证非法输出时仍能稳定回退。
-export function mergeRuleAuditResults(input: MergeRuleAuditResultsInput): MergeRuleAuditResultsOutput {
+export function mergeRuleAuditResults(
+  input: MergeRuleAuditResultsInput,
+): MergeRuleAuditResultsOutput {
   let parsed: unknown;
   try {
     parsed = JSON.parse(input.agentOutputText);
@@ -300,10 +320,14 @@ export function mergeRuleAuditResults(input: MergeRuleAuditResultsInput): MergeR
   }
 
   const agentAssistedRuleResults = validation.data;
-  const assessmentByRuleId = new Map(agentAssistedRuleResults.rule_assessments.map((item) => [item.rule_id, item]));
+  const assessmentByRuleId = new Map(
+    agentAssistedRuleResults.rule_assessments.map((item) => [item.rule_id, item]),
+  );
   const mergedCandidates = input.assistedRuleCandidates.map((candidate) => {
     const assessment = assessmentByRuleId.get(candidate.rule_id);
-    return assessment ? mapAssessmentToRuleAuditResult(candidate, assessment) : makeFallbackResult(candidate);
+    return assessment
+      ? mapAssessmentToRuleAuditResult(candidate, assessment)
+      : makeFallbackResult(candidate);
   });
 
   return {

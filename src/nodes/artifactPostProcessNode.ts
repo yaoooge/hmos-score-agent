@@ -3,7 +3,9 @@ import { renderHtmlReport } from "../report/renderer/renderHtmlReport.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
-export async function artifactPostProcessNode(state: ScoreGraphState): Promise<Partial<ScoreGraphState>> {
+export async function artifactPostProcessNode(
+  state: ScoreGraphState,
+): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("artifactPostProcessNode");
   try {
     const resultJson =

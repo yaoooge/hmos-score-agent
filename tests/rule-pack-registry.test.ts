@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { getRegisteredRulePacks, listRegisteredRules } from "../src/rules/engine/rulePackRegistry.js";
+import {
+  getRegisteredRulePacks,
+  listRegisteredRules,
+} from "../src/rules/engine/rulePackRegistry.js";
 
 test("arkts-language pack registers all rules from current source set", () => {
   const packs = getRegisteredRulePacks();
@@ -24,8 +27,14 @@ test("arkts-performance pack registers PDF-derived performance rules", () => {
   assert.equal(performancePack.displayName, "ArkTS 高性能编程实践");
   assert.equal(performancePack.rules.length, 11);
   assert.equal(performancePack.rules.filter((item) => item.rule_source === "must_rule").length, 0);
-  assert.equal(performancePack.rules.filter((item) => item.rule_source === "should_rule").length, 6);
-  assert.equal(performancePack.rules.filter((item) => item.rule_source === "forbidden_pattern").length, 5);
+  assert.equal(
+    performancePack.rules.filter((item) => item.rule_source === "should_rule").length,
+    6,
+  );
+  assert.equal(
+    performancePack.rules.filter((item) => item.rule_source === "forbidden_pattern").length,
+    5,
+  );
 
   const rules = listRegisteredRules();
   assert.equal(rules.length, 74);
@@ -83,7 +92,9 @@ test("registered rules carry performance-pack summaries and detector configs", (
 });
 
 test("all text pattern rules share consistent detector config shape", () => {
-  const textPatternRules = listRegisteredRules().filter((item) => item.detector_kind === "text_pattern");
+  const textPatternRules = listRegisteredRules().filter(
+    (item) => item.detector_kind === "text_pattern",
+  );
 
   assert.equal(textPatternRules.length > 0, true);
   for (const rule of textPatternRules) {

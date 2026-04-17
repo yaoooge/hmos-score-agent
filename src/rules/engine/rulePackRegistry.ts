@@ -15,7 +15,11 @@ const registeredRulePacks: RegisteredRulePack[] = [
   {
     packId: "arkts-performance",
     displayName: "ArkTS 高性能编程实践",
-    rules: [...arktsPerformanceMustRules, ...arktsPerformanceShouldRules, ...arktsPerformanceForbiddenRules],
+    rules: [
+      ...arktsPerformanceMustRules,
+      ...arktsPerformanceShouldRules,
+      ...arktsPerformanceForbiddenRules,
+    ],
   },
 ];
 

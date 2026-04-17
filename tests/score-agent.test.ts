@@ -29,12 +29,25 @@ async function makeTempDir(t: test.TestContext): Promise<string> {
 
 async function writeCaseFixture(
   rootDir: string,
-  options: { promptText?: string; withPatch?: boolean; workspaceContent?: string; originalContent?: string } = {},
+  options: {
+    promptText?: string;
+    withPatch?: boolean;
+    workspaceContent?: string;
+    originalContent?: string;
+  } = {},
 ): Promise<string> {
   const caseDir = path.join(rootDir, "sample-case");
-  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "main", "ets"), { recursive: true });
-  await fs.mkdir(path.join(caseDir, "workspace", "entry", "src", "main", "ets"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "input.txt"), options.promptText ?? "新增餐厅列表页面", "utf-8");
+  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(caseDir, "workspace", "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(caseDir, "input.txt"),
+    options.promptText ?? "新增餐厅列表页面",
+    "utf-8",
+  );
   await fs.writeFile(
     path.join(caseDir, "original", "entry", "src", "main", "ets", "Index.ets"),
     options.originalContent ?? "let count: number = 1;\n",
@@ -76,7 +89,10 @@ function makeState(input: Partial<CaseInput> = {}): {
 
 test("loadCaseFromPath loads prompt and optional patch path", async (t) => {
   const rootDir = await makeTempDir(t);
-  const caseDir = await writeCaseFixture(rootDir, { withPatch: true, promptText: "修复餐厅页面 bug" });
+  const caseDir = await writeCaseFixture(rootDir, {
+    withPatch: true,
+    promptText: "修复餐厅页面 bug",
+  });
 
   const caseInput = await loadCaseFromPath(caseDir);
 
@@ -111,7 +127,9 @@ test("ArtifactStore creates case directories and persists json/text artifacts", 
     }),
   );
 
-  const resultJson = JSON.parse(await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
+  const resultJson = JSON.parse(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  );
   const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
   assert.deepEqual(resultJson, { ok: true });
   assert.equal(logText, "hello");
@@ -155,24 +173,24 @@ test("ruleAuditNode emits one ledger item per rule and preserves source ordering
 
   assert.ok((result.ruleViolations?.length ?? 0) >= 1);
   assert.equal("ruleAuditResults" in result, false);
-  assert.deepEqual(result.staticRuleAuditResults?.slice(0, 4).map((item) => item.rule_id), [
-    "ARKTS-MUST-001",
-    "ARKTS-MUST-002",
-    "ARKTS-MUST-003",
-    "ARKTS-MUST-004",
-  ]);
-  assert.deepEqual(result.staticRuleAuditResults?.slice(0, 4).map((item) => item.rule_source), [
-    "must_rule",
-    "must_rule",
-    "must_rule",
-    "must_rule",
-  ]);
+  assert.deepEqual(
+    result.staticRuleAuditResults?.slice(0, 4).map((item) => item.rule_id),
+    ["ARKTS-MUST-001", "ARKTS-MUST-002", "ARKTS-MUST-003", "ARKTS-MUST-004"],
+  );
+  assert.deepEqual(
+    result.staticRuleAuditResults?.slice(0, 4).map((item) => item.rule_source),
+    ["must_rule", "must_rule", "must_rule", "must_rule"],
+  );
   assert.equal(
-    result.deterministicRuleResults?.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    result.deterministicRuleResults?.some(
+      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+    ),
     true,
   );
   assert.equal(
-    result.deterministicRuleResults?.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    result.deterministicRuleResults?.some(
+      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+    ),
     true,
   );
 });
@@ -198,7 +216,9 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   assert.equal(Array.isArray(result.assistedRuleCandidates), true);
   assert.equal(result.assistedRuleCandidates?.length, 0);
   assert.equal(
-    result.deterministicRuleResults?.some((item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及"),
+    result.deterministicRuleResults?.some(
+      (item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及",
+    ),
     true,
   );
 });
@@ -291,7 +311,8 @@ test("scoring and report nodes fall back to deterministic results when merge out
       rubricSnapshot: {
         task_type: "bug_fix",
         evaluation_mode: "auto_precheck_with_human_review",
-        scenario: "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
+        scenario:
+          "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
         scoring_method: "discrete_band",
         scoring_note: "二级指标按离散档位给分。",
         common_risks: ["因顺手优化造成 diff 噪音和误修。"],
@@ -369,7 +390,8 @@ test("reportGenerationNode only returns schema-valid resultJson without html rep
       rubricSnapshot: {
         task_type: "bug_fix",
         evaluation_mode: "auto_precheck_with_human_review",
-        scenario: "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
+        scenario:
+          "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
         scoring_method: "discrete_band",
         scoring_note: "二级指标按离散档位给分。",
         common_risks: ["因顺手优化造成 diff 噪音和误修。"],
@@ -574,14 +596,18 @@ test("runScoreWorkflow emits Chinese descriptive text in result.json and report.
     agentClient: undefined,
   });
 
-  const resultJson = JSON.parse(await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
+  const resultJson = JSON.parse(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  );
   const reportHtml = await fs.readFile(path.join(caseDir, "outputs", "report.html"), "utf-8");
 
   assert.equal(resultJson.basic_info.target_description, "HarmonyOS 生成工程评分");
   assert.match(resultJson.overall_conclusion.summary, /触发|未触发|评分/);
   assert.equal(
     resultJson.rule_audit_results.some((item: { conclusion: string }) =>
-      /当前版本未接入对应判定器。|未发现该规则的命中证据。|检测到规则命中，文件：/.test(item.conclusion),
+      /当前版本未接入对应判定器。|未发现该规则的命中证据。|检测到规则命中，文件：/.test(
+        item.conclusion,
+      ),
     ),
     true,
   );
@@ -657,13 +683,21 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
     agentClient,
   } as never);
 
-  const agentPromptText = await fs.readFile(path.join(caseDir, "inputs", "agent-prompt.txt"), "utf-8");
+  const agentPromptText = await fs.readFile(
+    path.join(caseDir, "inputs", "agent-prompt.txt"),
+    "utf-8",
+  );
   const agentPromptPayload = JSON.parse(
     await fs.readFile(path.join(caseDir, "inputs", "agent-prompt-payload.json"), "utf-8"),
   );
-  const mergedAudit = JSON.parse(await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"));
+  const mergedAudit = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
+  );
   const agentResult = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"), "utf-8"),
+    await fs.readFile(
+      path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"),
+      "utf-8",
+    ),
   );
 
   assert.equal(invoked, false);
@@ -701,9 +735,18 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
   assert.match(logText, /节点开始 node=ruleAuditNode label=规则审计/);
   assert.match(logText, /节点开始 node=artifactPostProcessNode label=产物后处理/);
   assert.match(logText, /节点开始 node=persistAndUploadNode label=结果落盘与上传/);
-  assert.match(logText, /节点完成 node=inputClassificationNode label=任务分类 summary=taskType=bug_fix/);
-  assert.match(logText, /节点完成 node=scoringOrchestrationNode label=评分编排 summary=totalScore=/);
-  assert.match(logText, /节点完成 node=artifactPostProcessNode label=产物后处理 summary=htmlLength=/);
+  assert.match(
+    logText,
+    /节点完成 node=inputClassificationNode label=任务分类 summary=taskType=bug_fix/,
+  );
+  assert.match(
+    logText,
+    /节点完成 node=scoringOrchestrationNode label=评分编排 summary=totalScore=/,
+  );
+  assert.match(
+    logText,
+    /节点完成 node=artifactPostProcessNode label=产物后处理 summary=htmlLength=/,
+  );
 });
 
 test("runScoreWorkflow writes warning logs when agent assistance is skipped", async (t) => {
@@ -753,9 +796,14 @@ test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async
     agentClient: undefined,
   });
 
-  const mergedAudit = JSON.parse(await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"));
+  const mergedAudit = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
+  );
 
-  assert.equal(mergedAudit.some((item: { result: string }) => item.result === "未接入判定器"), false);
+  assert.equal(
+    mergedAudit.some((item: { result: string }) => item.result === "未接入判定器"),
+    false,
+  );
 });
 
 test("runScoreWorkflow keeps unsupported rules without direct evidence out of agent candidates", async (t) => {
@@ -807,7 +855,9 @@ test("runScoreWorkflow does not send unsupported should rules without direct evi
     agentClient: undefined,
   });
 
-  const resultJson = JSON.parse(await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
+  const resultJson = JSON.parse(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  );
 
   assert.equal(
     resultJson.rule_audit_results.some(
@@ -818,7 +868,15 @@ test("runScoreWorkflow does not send unsupported should rules without direct evi
   );
 });
 
-test.todo("taskUnderstandingNode should load configurable extractors instead of fixed keyword heuristics");
-test.todo("scoringOrchestrationNode should compute weighted dimension scores and apply hard gates from rubric.yaml");
-test.todo("reportGenerationNode should validate result.json against the schema before persisting it");
-test.todo("persistAndUploadNode should write enough evidence for retryable upload failures and failed workflows");
+test.todo(
+  "taskUnderstandingNode should load configurable extractors instead of fixed keyword heuristics",
+);
+test.todo(
+  "scoringOrchestrationNode should compute weighted dimension scores and apply hard gates from rubric.yaml",
+);
+test.todo(
+  "reportGenerationNode should validate result.json against the schema before persisting it",
+);
+test.todo(
+  "persistAndUploadNode should write enough evidence for retryable upload failures and failed workflows",
+);

@@ -24,6 +24,5 @@ app.post("/score/run", async (req, res) => {
 
 const config = getConfig();
 app.listen(config.port, () => {
-  // eslint-disable-next-line no-console
   console.log(`hmos-score-agent API 已启动，监听端口：${config.port}`);
 });

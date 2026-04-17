@@ -18,7 +18,11 @@ export function emitNodeStarted(nodeId: WorkflowNodeId, config?: LangGraphRunnab
 }
 
 // emitNodeFailed 通过 LangGraph custom stream 发出节点失败事件。
-export function emitNodeFailed(nodeId: WorkflowNodeId, error: unknown, config?: LangGraphRunnableConfig): void {
+export function emitNodeFailed(
+  nodeId: WorkflowNodeId,
+  error: unknown,
+  config?: LangGraphRunnableConfig,
+): void {
   resolveWriter(config)?.({
     event: "node_failed",
     nodeId,

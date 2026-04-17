@@ -47,7 +47,11 @@ type RubricScoreBandDoc = {
 
 type RubricDoc = {
   modes?: { default_evaluation_mode?: string };
-  hard_gates?: Array<{ id: LoadedRubricHardGate["id"]; score_cap: number; applies_to?: TaskType[] }>;
+  hard_gates?: Array<{
+    id: LoadedRubricHardGate["id"];
+    score_cap: number;
+    applies_to?: TaskType[];
+  }>;
   human_review_rules?: { force_review_when?: string[] };
   task_templates?: Record<
     TaskType,
@@ -71,14 +75,19 @@ type RubricDoc = {
   >;
 };
 
-function parseScoreBands(forceReviewRules: string[] | undefined): Array<{ min: number; max: number }> {
+function parseScoreBands(
+  forceReviewRules: string[] | undefined,
+): Array<{ min: number; max: number }> {
   // 目前只抽取文档中显式出现的临界分段，保持实现简单且可解释。
   return (forceReviewRules ?? [])
     .flatMap((rule) => Array.from(rule.matchAll(/(\d+)-(\d+)/g)))
     .map((match) => ({ min: Number(match[1]), max: Number(match[2]) }));
 }
 
-export async function loadRubricForTaskType(taskType: TaskType, referenceRoot: string): Promise<LoadedRubric> {
+export async function loadRubricForTaskType(
+  taskType: TaskType,
+  referenceRoot: string,
+): Promise<LoadedRubric> {
   // 评分模板的唯一入口，后续扩展新 task type 或新字段时优先改这里。
   const rubricPath = path.join(referenceRoot, "rubric.yaml");
   const rubricText = await fs.readFile(rubricPath, "utf-8");

@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 
 // 将关键配置持久化到项目根目录 `.env`，同时保留未改动的其他环境变量。
-export async function upsertEnvVars(envPath: string, updates: Record<string, string>): Promise<void> {
+export async function upsertEnvVars(
+  envPath: string,
+  updates: Record<string, string>,
+): Promise<void> {
   let currentText = "";
   try {
     currentText = await fs.readFile(envPath, "utf-8");
@@ -32,6 +35,8 @@ export async function upsertEnvVars(envPath: string, updates: Record<string, str
     }
   }
 
-  const normalized = nextLines.filter((line, index, source) => !(line === "" && index === source.length - 1)).join("\n");
+  const normalized = nextLines
+    .filter((line, index, source) => !(line === "" && index === source.length - 1))
+    .join("\n");
   await fs.writeFile(envPath, `${normalized}\n`, "utf-8");
 }

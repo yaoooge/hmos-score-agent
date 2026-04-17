@@ -45,7 +45,9 @@ export async function collectEvidence(caseInput: CaseInput): Promise<CollectedEv
     ? Array.from(
         new Set(
           // 目前只从 unified diff 中提取 `+++ b/...` 作为变更文件来源。
-          Array.from(patchText.matchAll(/^\+\+\+ b\/(.+)$/gm)).map((match) => match[1]).filter(Boolean),
+          Array.from(patchText.matchAll(/^\+\+\+ b\/(.+)$/gm))
+            .map((match) => match[1])
+            .filter(Boolean),
         ),
       )
     : [];

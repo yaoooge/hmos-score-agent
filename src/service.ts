@@ -7,7 +7,9 @@ import { CaseLogger } from "./io/caseLogger.js";
 import { buildRunCaseId, inferTaskTypeFromCaseInput } from "./service/runCaseId.js";
 import { runScoreWorkflow } from "./workflow/scoreWorkflow.js";
 
-export async function runSingleCase(casePath: string): Promise<{ caseDir: string; uploadMessage?: string }> {
+export async function runSingleCase(
+  casePath: string,
+): Promise<{ caseDir: string; uploadMessage?: string }> {
   const config = getConfig();
   const artifactStore = new ArtifactStore(config.localCaseRoot);
   const caseInput = await loadCaseFromPath(casePath);
@@ -52,10 +54,12 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
       uploadEndpoint: config.uploadEndpoint,
       uploadToken: config.uploadToken,
     });
-    const uploadMessage = typeof result.uploadMessage === "string" ? result.uploadMessage : undefined;
+    const uploadMessage =
+      typeof result.uploadMessage === "string" ? result.uploadMessage : undefined;
     await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
       ...caseInfoBase,
-      agent_run_status: typeof result.agentRunStatus === "string" ? result.agentRunStatus : "not_enabled",
+      agent_run_status:
+        typeof result.agentRunStatus === "string" ? result.agentRunStatus : "not_enabled",
     });
     await logger.info("工作流执行完成");
     await logger.info("结果已落盘");
@@ -72,7 +76,7 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
       uploadMessage,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
     await logger.error(`执行失败 error=${message}`);
     throw error;
   }

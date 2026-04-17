@@ -69,7 +69,11 @@ function matchesRule(rule: Rule, relativePath: string, kind: EntryKind): boolean
     return kind === "file" && normalized.endsWith(rule.value);
   }
   if (rule.type === "prefix") {
-    return normalized === rule.value || normalized.startsWith(`${rule.value}/`) || segments.includes(rule.value);
+    return (
+      normalized === rule.value ||
+      normalized.startsWith(`${rule.value}/`) ||
+      segments.includes(rule.value)
+    );
   }
   if (rule.type === "wildcard") {
     if (rule.directoryOnly) {
@@ -111,7 +115,10 @@ async function loadRules(rootDir: string): Promise<Rule[]> {
   return rules;
 }
 
-export async function loadIgnoreFilter(rootDir: string, options: CollectVisibleFilesOptions = {}): Promise<IgnoreFilter> {
+export async function loadIgnoreFilter(
+  rootDir: string,
+  options: CollectVisibleFilesOptions = {},
+): Promise<IgnoreFilter> {
   const rules = await loadRules(rootDir);
   const extraIgnoredPathPrefixes = (options.extraIgnoredPathPrefixes ?? [])
     .map((item) => normalizeRelativePath(item).replace(/\/+$/, ""))
@@ -123,7 +130,11 @@ export async function loadIgnoreFilter(rootDir: string, options: CollectVisibleF
       if (segments.some((segment) => BUILTIN_EXACT_NAMES.has(segment))) {
         return true;
       }
-      if (extraIgnoredPathPrefixes.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`))) {
+      if (
+        extraIgnoredPathPrefixes.some(
+          (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
+        )
+      ) {
         return true;
       }
       if (kind === "file" && normalized.endsWith(".log")) {
@@ -134,7 +145,11 @@ export async function loadIgnoreFilter(rootDir: string, options: CollectVisibleF
   };
 }
 
-async function collectVisibleFilesFrom(rootDir: string, currentDir: string, filter: IgnoreFilter): Promise<string[]> {
+async function collectVisibleFilesFrom(
+  rootDir: string,
+  currentDir: string,
+  filter: IgnoreFilter,
+): Promise<string[]> {
   const entries = await fs.readdir(currentDir, { withFileTypes: true });
   const results: string[] = [];
   for (const entry of entries) {
@@ -154,7 +169,10 @@ async function collectVisibleFilesFrom(rootDir: string, currentDir: string, filt
   return results;
 }
 
-export async function collectVisibleFiles(rootDir: string, options: CollectVisibleFilesOptions = {}): Promise<string[]> {
+export async function collectVisibleFiles(
+  rootDir: string,
+  options: CollectVisibleFilesOptions = {},
+): Promise<string[]> {
   const filter = await loadIgnoreFilter(rootDir, options);
   const files = await collectVisibleFilesFrom(rootDir, rootDir, filter);
   return files.sort();

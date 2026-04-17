@@ -1,0 +1,9 @@
+dist
+node_modules
+.local-cases
+.worktrees
+init-input
+docs
+references
+*.md
+package-lock.json

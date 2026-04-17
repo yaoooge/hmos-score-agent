@@ -19,7 +19,8 @@ const constraintSummary: ConstraintSummary = {
 const rubricSnapshot: LoadedRubricSnapshot = {
   task_type: "bug_fix",
   evaluation_mode: "auto_precheck_with_human_review",
-  scenario: "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
+  scenario:
+    "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
   scoring_method: "discrete_band",
   scoring_note: "二级指标按离散档位给分，优先看是否命中问题。",
   common_risks: ["因顺手优化造成 diff 噪音和误修。"],
@@ -47,7 +48,12 @@ const rubricSnapshot: LoadedRubricSnapshot = {
 
 test("selectAssistedRuleCandidates keeps deterministic results and extracts should-rule candidates", () => {
   const ruleAuditResults: RuleAuditResult[] = [
-    { rule_id: "ARKTS-MUST-001", rule_source: "must_rule", result: "满足", conclusion: "未发现违规证据。" },
+    {
+      rule_id: "ARKTS-MUST-001",
+      rule_source: "must_rule",
+      result: "满足",
+      conclusion: "未发现违规证据。",
+    },
     {
       rule_id: "ARKTS-SHOULD-001",
       rule_source: "should_rule",
@@ -78,7 +84,10 @@ test("selectAssistedRuleCandidates keeps deterministic results and extracts shou
   assert.equal(result.deterministicRuleResults.length, 1);
   assert.equal(result.assistedRuleCandidates.length, 2);
   assert.equal(result.assistedRuleCandidates[0]?.rule_id, "ARKTS-SHOULD-001");
-  assert.equal(result.assistedRuleCandidates[0]?.why_uncertain, "当前规则需要 Agent 结合上下文做辅助判定。");
+  assert.equal(
+    result.assistedRuleCandidates[0]?.why_uncertain,
+    "当前规则需要 Agent 结合上下文做辅助判定。",
+  );
 });
 
 test("selectAssistedRuleCandidates falls back to shared evidence when rule-level evidence is empty", () => {
@@ -99,8 +108,12 @@ test("selectAssistedRuleCandidates falls back to shared evidence when rule-level
     },
   });
 
-  assert.deepEqual(result.assistedRuleCandidates[0]?.evidence_files, ["entry/src/main/ets/pages/Index.ets"]);
-  assert.deepEqual(result.assistedRuleCandidates[0]?.evidence_snippets, ["@Entry\n@Component\nstruct Index {"]);
+  assert.deepEqual(result.assistedRuleCandidates[0]?.evidence_files, [
+    "entry/src/main/ets/pages/Index.ets",
+  ]);
+  assert.deepEqual(result.assistedRuleCandidates[0]?.evidence_snippets, [
+    "@Entry\n@Component\nstruct Index {",
+  ]);
 });
 
 test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () => {
@@ -155,7 +168,10 @@ test("buildAgentPromptPayload keeps original prompt as fact and renderAgentPromp
   assert.equal(payload.case_context.original_prompt_summary.includes("修复列表页渲染异常"), true);
   assert.equal(payload.deterministic_rule_results.length, 1);
   assert.equal(payload.assisted_rule_candidates.length, 1);
-  assert.deepEqual(payload.response_contract.required_top_level_fields, ["summary", "rule_assessments"]);
+  assert.deepEqual(payload.response_contract.required_top_level_fields, [
+    "summary",
+    "rule_assessments",
+  ]);
   assert.deepEqual(payload.response_contract.rule_assessment_schema.required_fields, [
     "rule_id",
     "decision",
@@ -190,7 +206,8 @@ test("buildRubricSnapshot keeps only evaluation summary required by prompt build
   const snapshot = buildRubricSnapshot({
     taskType: "bug_fix",
     evaluationMode: "auto_precheck_with_human_review",
-    scenario: "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
+    scenario:
+      "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
     scoringMethod: "discrete_band",
     scoringNote: "二级指标按离散档位给分，优先看是否命中问题。",
     commonRisks: ["因顺手优化造成 diff 噪音和误修。"],
@@ -224,7 +241,12 @@ test("buildRubricSnapshot keeps only evaluation summary required by prompt build
 test("mergeRuleAuditResults keeps deterministic results authoritative and maps uncertain agent output to review", () => {
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [
-      { rule_id: "ARKTS-MUST-001", rule_source: "must_rule", result: "满足", conclusion: "本地已确定" },
+      {
+        rule_id: "ARKTS-MUST-001",
+        rule_source: "must_rule",
+        result: "满足",
+        conclusion: "本地已确定",
+      },
     ],
     assistedRuleCandidates: [
       {
@@ -241,8 +263,14 @@ test("mergeRuleAuditResults keeps deterministic results authoritative and maps u
   });
 
   assert.equal(merged.agentRunStatus, "success");
-  assert.equal(merged.mergedRuleAuditResults.find((item) => item.rule_id === "ARKTS-MUST-001")?.result, "满足");
-  assert.equal(merged.mergedRuleAuditResults.find((item) => item.rule_id === "ARKTS-SHOULD-001")?.result, "待人工复核");
+  assert.equal(
+    merged.mergedRuleAuditResults.find((item) => item.rule_id === "ARKTS-MUST-001")?.result,
+    "满足",
+  );
+  assert.equal(
+    merged.mergedRuleAuditResults.find((item) => item.rule_id === "ARKTS-SHOULD-001")?.result,
+    "待人工复核",
+  );
 });
 
 test("mergeRuleAuditResults falls back to local review result when agent output is invalid", () => {

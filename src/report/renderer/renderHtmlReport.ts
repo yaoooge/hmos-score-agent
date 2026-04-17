@@ -361,10 +361,11 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                 <div class="progress-track"><div class="progress-bar" style="width:${dimension.progressPercent}%"></div></div>
                 <p>${escapeHtml(dimension.comment)}</p>
                 <div class="dimension-items">
-                  ${dimension.items.length > 0
-                    ? dimension.items
-                        .map(
-                          (item) => `
+                  ${
+                    dimension.items.length > 0
+                      ? dimension.items
+                          .map(
+                            (item) => `
                             <div class="detail-card">
                               <strong>${escapeHtml(item.name)}</strong>
                               <div class="detail-meta">
@@ -377,9 +378,10 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                               <p>${escapeHtml(item.rationale)}</p>
                               <p class="muted">${escapeHtml(item.evidence)}</p>
                             </div>`,
-                        )
-                        .join("")
-                    : `<p class="empty-state">当前维度没有 item 明细。</p>`}
+                          )
+                          .join("")
+                      : `<p class="empty-state">当前维度没有 item 明细。</p>`
+                  }
                 </div>
               </article>`,
           )
@@ -421,9 +423,12 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
         <div class="rule-toolbar">
           ${(["全部", "不满足", "待人工复核", "满足", "不涉及"] as const)
             .map((filter, index) => {
-              const count = filter === "全部"
-                ? viewModel.ruleAudit.items.length
-                : viewModel.ruleAudit.counts[filter as keyof typeof viewModel.ruleAudit.counts] ?? 0;
+              const count =
+                filter === "全部"
+                  ? viewModel.ruleAudit.items.length
+                  : (viewModel.ruleAudit.counts[
+                      filter as keyof typeof viewModel.ruleAudit.counts
+                    ] ?? 0);
               return `<button type="button" class="filter-chip" data-filter="${filter}" data-active="${index === 0 ? "true" : "false"}">${filter} ${count}</button>`;
             })
             .join("")}

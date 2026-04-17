@@ -19,13 +19,20 @@ async function makeTempDir(t: test.TestContext): Promise<string> {
   return dir;
 }
 
-async function createRuleFixture(t: test.TestContext, files: Record<string, string>): Promise<string> {
+async function createRuleFixture(
+  t: test.TestContext,
+  files: Record<string, string>,
+): Promise<string> {
   const caseDir = await makeTempDir(t);
   await fs.mkdir(path.join(caseDir, "original"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "workspace"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "diff"), { recursive: true });
   await fs.writeFile(path.join(caseDir, "input.txt"), "修复 ArkTS 类型问题", "utf-8");
-  await fs.writeFile(path.join(caseDir, "diff", "changes.patch"), "@@ -0,0 +1,2 @@\n+let x: any = 1;\n+var y = 2;\n", "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    "@@ -0,0 +1,2 @@\n+let x: any = 1;\n+var y = 2;\n",
+    "utf-8",
+  );
 
   for (const [relativePath, content] of Object.entries(files)) {
     const targetPath = path.join(caseDir, "workspace", relativePath);
@@ -58,9 +65,21 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
   });
 
   assert.equal(result.staticRuleAuditResults[0]?.rule_id, "ARKTS-MUST-001");
-  assert.ok(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"));
-  assert.ok(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"));
-  assert.ok(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"));
+  assert.ok(
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+    ),
+  );
+  assert.ok(
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+    ),
+  );
+  assert.ok(
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+    ),
+  );
   assert.ok(result.ruleViolations.length >= 1);
 });
 
@@ -76,7 +95,10 @@ test("runRuleEngine exposes only current rule-audit fields", async (t) => {
   });
 
   assert.equal("ruleAuditResults" in result, false);
-  assert.equal(result.staticRuleAuditResults.some((item) => item.result === "不涉及"), true);
+  assert.equal(
+    result.staticRuleAuditResults.some((item) => item.result === "不涉及"),
+    true,
+  );
 });
 
 test("collectEvidence ignores workspace and original files matched by root gitignore", async (t) => {
@@ -88,7 +110,11 @@ test("collectEvidence ignores workspace and original files matched by root gitig
   await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "build/\n*.tmp\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "original", ".gitignore"), "cache/\n", "utf-8");
   await fs.mkdir(path.join(caseDir, "original", "cache"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "original", "cache", "archived.txt"), "archived\n", "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "original", "cache", "archived.txt"),
+    "archived\n",
+    "utf-8",
+  );
   await fs.writeFile(path.join(caseDir, "workspace", "trace.tmp"), "noise\n", "utf-8");
 
   const evidence = await collectEvidence(makeCaseInput(caseDir));
@@ -110,9 +136,19 @@ test("collectEvidence ignores ohosTest and test directories during rule evaluati
   });
 
   await fs.mkdir(path.join(caseDir, "original", "entry", "src", "test"), { recursive: true });
-  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "ohosTest", "ets"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "original", "entry", "src", "test", "Sample.test.ets"), "archived\n", "utf-8");
-  await fs.writeFile(path.join(caseDir, "original", "entry", "src", "ohosTest", "ets", "Ability.test.ets"), "archived\n", "utf-8");
+  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "ohosTest", "ets"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(caseDir, "original", "entry", "src", "test", "Sample.test.ets"),
+    "archived\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "original", "entry", "src", "ohosTest", "ets", "Ability.test.ets"),
+    "archived\n",
+    "utf-8",
+  );
 
   const evidence = await collectEvidence(makeCaseInput(caseDir));
 
@@ -140,11 +176,15 @@ test("runRuleEngine does not report violations from files ignored by workspace g
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+    ),
     false,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -163,15 +203,21 @@ test("runRuleEngine does not report violations from ohosTest and test directorie
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+    ),
     false,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+    ),
     false,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-FORBID-001" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-FORBID-001" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -189,11 +235,15 @@ test("runRuleEngine still evaluates business code under directories named test",
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+    ),
     true,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+    ),
     true,
   );
 });
@@ -212,7 +262,9 @@ test("runRuleEngine only evaluates code-like files for text syntax rules", async
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -230,15 +282,21 @@ test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => 
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+    ),
     false,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+    ),
     false,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -282,7 +340,9 @@ intNum = 1.1;
     "ARKTS-PERF-SHOULD-002",
   ]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -296,7 +356,9 @@ intNum = 1.1;
     "ARKTS-PERF-SHOULD-006",
   ]) {
     assert.equal(
-      result.staticRuleAuditResults.some((item) => item.rule_id === ruleId && item.result === "不涉及"),
+      result.staticRuleAuditResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不涉及",
+      ),
       true,
       ruleId,
     );
@@ -315,7 +377,9 @@ test("runRuleEngine does not treat hex color literals in ets files as private fi
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -344,7 +408,9 @@ test("runRuleEngine ignores block comments when evaluating operator line-break s
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-SHOULD-013" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-SHOULD-013" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -373,7 +439,9 @@ test("runRuleEngine ignores block comment numbering when evaluating float litera
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-SHOULD-020" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-SHOULD-020" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -399,11 +467,15 @@ test("runRuleEngine does not treat object property values as this-type usage", a
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-011" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-011" && item.result === "不满足",
+    ),
     false,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
+    ),
     false,
   );
 });
@@ -411,7 +483,8 @@ test("runRuleEngine does not treat object property values as this-type usage", a
 test("runRuleEngine builds fallback evidence snippets when patch paths include workspace prefix", async (t) => {
   const caseDir = await createRuleFixture(t, {
     ".gitignore": ".hvigor/\n",
-    "entry/src/main/ets/common/models/Restaurant.ts": "export interface Restaurant { id: string; }\n",
+    "entry/src/main/ets/common/models/Restaurant.ts":
+      "export interface Restaurant { id: string; }\n",
     "entry/src/main/ets/pages/Index.ets": "@Entry\n@Component\nstruct Index {}\n",
   });
 
@@ -433,7 +506,9 @@ test("runRuleEngine builds fallback evidence snippets when patch paths include w
     taskType: "bug_fix",
   });
 
-  assert.deepEqual(result.ruleEvidenceIndex.__fallback__?.evidenceFiles, ["workspace/entry/src/main/ets/pages/Index.ets"]);
+  assert.deepEqual(result.ruleEvidenceIndex.__fallback__?.evidenceFiles, [
+    "workspace/entry/src/main/ets/pages/Index.ets",
+  ]);
   assert.equal((result.ruleEvidenceIndex.__fallback__?.evidenceSnippets.length ?? 0) > 0, true);
 });
 
@@ -449,12 +524,16 @@ test("runRuleEngine marks unsupported rules without direct evidence as 不涉及
   });
 
   assert.equal(
-    result.staticRuleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及"),
+    result.staticRuleAuditResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及",
+    ),
     true,
   );
   assert.equal(
     result.staticRuleAuditResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-004" && item.conclusion.includes("未发现相关实现证据，当前不涉及。"),
+      (item) =>
+        item.rule_id === "ARKTS-MUST-004" &&
+        item.conclusion.includes("未发现相关实现证据，当前不涉及。"),
     ),
     true,
   );
@@ -471,13 +550,20 @@ test("runRuleEngine keeps unsupported no-evidence rules out of agent candidates"
     taskType: "full_generation",
   });
 
-  assert.equal(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005"), true);
-  assert.equal(result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-004"), false);
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005"),
+    true,
+  );
+  assert.equal(
+    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-004"),
+    false,
+  );
 });
 
 test("runRuleEngine allows Symbol.iterator but rejects Symbol()", async (t) => {
   const caseDir = await createRuleFixture(t, {
-    "entry/src/main/ets/pages/Index.ets": "const allowed = Symbol.iterator;\nconst bad = Symbol('x');\n",
+    "entry/src/main/ets/pages/Index.ets":
+      "const allowed = Symbol.iterator;\nconst bad = Symbol('x');\n",
   });
 
   const result = await runRuleEngine({
@@ -487,12 +573,15 @@ test("runRuleEngine allows Symbol.iterator but rejects Symbol()", async (t) => {
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-002" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-002" && item.result === "不满足",
+    ),
     true,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-002" && item.conclusion.includes("仅允许使用 Symbol.iterator"),
+      (item) =>
+        item.rule_id === "ARKTS-MUST-002" && item.conclusion.includes("仅允许使用 Symbol.iterator"),
     ),
     true,
   );
@@ -510,7 +599,10 @@ test("runRuleEngine classifies every registered rule from rule packs into determ
   });
 
   assert.equal(result.staticRuleAuditResults.length, listRegisteredRules().length);
-  assert.equal(result.deterministicRuleResults.length + result.assistedRuleCandidates.length, listRegisteredRules().length);
+  assert.equal(
+    result.deterministicRuleResults.length + result.assistedRuleCandidates.length,
+    listRegisteredRules().length,
+  );
 });
 
 test("runRuleEngine flags unsupported module system patterns in ets files", async (t) => {
@@ -525,11 +617,15 @@ test("runRuleEngine flags unsupported module system patterns in ets files", asyn
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-025" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-025" && item.result === "不满足",
+    ),
     true,
   );
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-026" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-026" && item.result === "不满足",
+    ),
     true,
   );
 });
@@ -546,7 +642,9 @@ test("runRuleEngine flags Array<T> style as should-rule violation", async (t) =>
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-SHOULD-021" && item.result === "不满足"),
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-SHOULD-021" && item.result === "不满足",
+    ),
     true,
   );
 });
@@ -585,7 +683,9 @@ test("runRuleEngine flags unsupported type signatures and constructor parameter 
     "ARKTS-MUST-020",
   ]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -613,7 +713,9 @@ test("runRuleEngine flags restricted runtime interfaces and NaN comparisons", as
 
   for (const ruleId of ["ARKTS-MUST-027", "ARKTS-MUST-028", "ARKTS-MUST-029"]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -641,7 +743,9 @@ test("runRuleEngine flags advanced type features and expression-style declaratio
 
   for (const ruleId of ["ARKTS-MUST-011", "ARKTS-MUST-015"]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -679,7 +783,9 @@ test("runRuleEngine flags object layout mutation and unsupported exception or fu
 
   for (const ruleId of ["ARKTS-MUST-017", "ARKTS-MUST-021", "ARKTS-MUST-022"]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -715,7 +821,9 @@ test("runRuleEngine flags forbidden weak typing and dynamic syntax patterns", as
     "ARKTS-FORBID-006",
   ]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -726,7 +834,7 @@ test("runRuleEngine flags dynamic property access and common style should-rules"
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": [
       "globalThis.cache = store;",
-      "if (ready) console.info(\"ready\");",
+      'if (ready) console.info("ready");',
       "if (other)",
       "{",
       "\tconsole.info(other);",
@@ -761,7 +869,9 @@ test("runRuleEngine flags dynamic property access and common style should-rules"
     "ARKTS-SHOULD-020",
   ]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -803,7 +913,9 @@ test("runRuleEngine flags forbidden risky control-flow and runtime interfaces", 
     "ARKTS-FORBID-012",
   ]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );
@@ -840,9 +952,17 @@ test("runRuleEngine marks AST-related unsupported rules without direct evidence 
     taskType: "full_generation",
   });
 
-  for (const ruleId of ["ARKTS-MUST-004", "ARKTS-MUST-013", "ARKTS-MUST-014", "ARKTS-MUST-024", "ARKTS-FORBID-009"]) {
+  for (const ruleId of [
+    "ARKTS-MUST-004",
+    "ARKTS-MUST-013",
+    "ARKTS-MUST-014",
+    "ARKTS-MUST-024",
+    "ARKTS-FORBID-009",
+  ]) {
     assert.equal(
-      result.staticRuleAuditResults.some((item) => item.rule_id === ruleId && item.result === "不涉及"),
+      result.staticRuleAuditResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不涉及",
+      ),
       true,
       ruleId,
     );
@@ -869,13 +989,11 @@ test("runRuleEngine flags remaining text-based formatting should-rules", async (
     taskType: "continuation",
   });
 
-  for (const ruleId of [
-    "ARKTS-SHOULD-012",
-    "ARKTS-SHOULD-013",
-    "ARKTS-SHOULD-016",
-  ]) {
+  for (const ruleId of ["ARKTS-SHOULD-012", "ARKTS-SHOULD-013", "ARKTS-SHOULD-016"]) {
     assert.equal(
-      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
       true,
       ruleId,
     );

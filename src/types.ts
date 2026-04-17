@@ -183,7 +183,14 @@ export interface AgentPromptPayload {
       overall_confidence: ["high", "medium", "low"];
     };
     rule_assessment_schema: {
-      required_fields: ["rule_id", "decision", "confidence", "reason", "evidence_used", "needs_human_review"];
+      required_fields: [
+        "rule_id",
+        "decision",
+        "confidence",
+        "reason",
+        "evidence_used",
+        "needs_human_review",
+      ];
       decision_enum: ["violation", "pass", "not_applicable", "uncertain"];
       confidence_enum: ["high", "medium", "low"];
     };

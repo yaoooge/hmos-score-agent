@@ -7,10 +7,7 @@ import {
   parseConstraintSummary,
 } from "../agent/taskUnderstanding.js";
 import type { ArtifactStore } from "../io/artifactStore.js";
-import {
-  emitNodeFailed,
-  emitNodeStarted,
-} from "../workflow/observability/nodeCustomEvents.js";
+import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 import type {
   ConstraintSummary,
@@ -49,7 +46,9 @@ const representativeExtensions = new Set([
   ".md",
 ]);
 
-function isDeps(value: TaskUnderstandingDeps | LangGraphRunnableConfig | undefined): value is TaskUnderstandingDeps {
+function isDeps(
+  value: TaskUnderstandingDeps | LangGraphRunnableConfig | undefined,
+): value is TaskUnderstandingDeps {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -132,9 +131,15 @@ async function collectProjectStructure(rootPath: string): Promise<ProjectStructu
   const implementationHints = [
     modulePaths.length > 0 ? `HarmonyOS 模块: ${modulePaths.join(", ")}` : "",
     files.some((file) => file.endsWith(".ets")) ? "技术栈: ArkTS/ETS 页面与组件实现" : "",
-    files.some((file) => file.includes("/viewmodels/")) ? "分层: 存在 viewmodels 目录，需保持状态管理分层" : "",
-    files.some((file) => file.includes("/components/")) ? "分层: 存在 components 目录，需复用组件边界" : "",
-    files.some((file) => file.includes("/resources/")) ? "资源: 存在 resources 目录，需遵循资源引用约束" : "",
+    files.some((file) => file.includes("/viewmodels/"))
+      ? "分层: 存在 viewmodels 目录，需保持状态管理分层"
+      : "",
+    files.some((file) => file.includes("/components/"))
+      ? "分层: 存在 components 目录，需复用组件边界"
+      : "",
+    files.some((file) => file.includes("/resources/"))
+      ? "资源: 存在 resources 目录，需遵循资源引用约束"
+      : "",
   ].filter(Boolean);
 
   return {
@@ -270,7 +275,11 @@ async function persistConstraintSummary(
   if (!deps.artifactStore || !state.caseDir) {
     return;
   }
-  await deps.artifactStore.writeJson(state.caseDir, "intermediate/constraint-summary.json", summary);
+  await deps.artifactStore.writeJson(
+    state.caseDir,
+    "intermediate/constraint-summary.json",
+    summary,
+  );
 }
 
 export async function taskUnderstandingNode(

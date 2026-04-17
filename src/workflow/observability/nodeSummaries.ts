@@ -36,7 +36,9 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
         (update.staticRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];
       const ruleViolations = (update.ruleViolations as unknown[] | undefined) ?? [];
       const rulesCount = staticRuleAuditResults.length;
-      const uncertainCount = staticRuleAuditResults.filter((item) => item.result === "未接入判定器").length;
+      const uncertainCount = staticRuleAuditResults.filter(
+        (item) => item.result === "未接入判定器",
+      ).length;
       return `rules=${rulesCount} violations=${ruleViolations.length} uncertain=${uncertainCount}`;
     }
     case "rubricPreparationNode": {
@@ -54,7 +56,8 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
     case "agentAssistedRuleNode":
       return `status=${String(update.agentRunStatus ?? "")} outputLength=${String(String(update.agentRawOutputText ?? "").length)}`;
     case "ruleMergeNode": {
-      const mergedRuleAuditResults = (update.mergedRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];
+      const mergedRuleAuditResults =
+        (update.mergedRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];
       return `merged=${mergedRuleAuditResults.length} reviewRequired=${mergedRuleAuditResults.filter((item) => item.result === "待人工复核").length}`;
     }
     case "scoringOrchestrationNode": {

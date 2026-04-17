@@ -34,7 +34,9 @@ type DeterministicStaticRuleAuditResult = StaticRuleAuditResult & {
   result: Exclude<StaticRuleAuditResult["result"], "未接入判定器">;
 };
 
-function isDeterministicStaticRule(rule: StaticRuleAuditResult): rule is DeterministicStaticRuleAuditResult {
+function isDeterministicStaticRule(
+  rule: StaticRuleAuditResult,
+): rule is DeterministicStaticRuleAuditResult {
   return rule.result !== "未接入判定器";
 }
 
@@ -44,7 +46,9 @@ export async function runRuleEngine(input: {
   taskType: TaskType;
 }): Promise<RuleEngineOutput> {
   const evidence = await collectEvidence(input.caseInput);
-  const evaluatedRules = listRegisteredRules().map((rule) => evaluateRegisteredRule(rule, evidence));
+  const evaluatedRules = listRegisteredRules().map((rule) =>
+    evaluateRegisteredRule(rule, evidence),
+  );
 
   const ruleViolations: RuleViolation[] = evaluatedRules
     .filter((rule) => rule.result === "不满足")
@@ -63,7 +67,11 @@ export async function runRuleEngine(input: {
       {
         evidenceFiles: rule.matchedFiles,
         evidenceSnippets: rule.matchedFiles
-          .map((relativePath) => evidence.workspaceFiles.find((file) => file.relativePath === relativePath)?.content ?? "")
+          .map(
+            (relativePath) =>
+              evidence.workspaceFiles.find((file) => file.relativePath === relativePath)?.content ??
+              "",
+          )
           .filter(Boolean)
           .map((content) => content.slice(0, 200)),
       },
@@ -78,22 +86,27 @@ export async function runRuleEngine(input: {
     evidenceFiles: fallbackEvidenceFiles,
     evidenceSnippets: fallbackEvidenceFiles
       .map((relativePath) => normalizeWorkspaceRelativePath(relativePath))
-      .map((relativePath) => evidence.workspaceFiles.find((file) => file.relativePath === relativePath)?.content ?? "")
+      .map(
+        (relativePath) =>
+          evidence.workspaceFiles.find((file) => file.relativePath === relativePath)?.content ?? "",
+      )
       .filter(Boolean)
       .map((content) => content.slice(0, 200)),
   };
 
-  const staticRuleAuditResults: StaticRuleAuditResult[] = evaluatedRules.map(({ matchedFiles: _matchedFiles, ...rule }) => {
-    const directEvidence = ruleEvidenceIndex[rule.rule_id];
-    if (rule.result === "未接入判定器" && (directEvidence?.evidenceFiles?.length ?? 0) === 0) {
-      return {
-        ...rule,
-        result: "不涉及",
-        conclusion: "未发现相关实现证据，当前不涉及。",
-      };
-    }
-    return rule;
-  });
+  const staticRuleAuditResults: StaticRuleAuditResult[] = evaluatedRules.map(
+    ({ matchedFiles: _matchedFiles, ...rule }) => {
+      const directEvidence = ruleEvidenceIndex[rule.rule_id];
+      if (rule.result === "未接入判定器" && (directEvidence?.evidenceFiles?.length ?? 0) === 0) {
+        return {
+          ...rule,
+          result: "不涉及",
+          conclusion: "未发现相关实现证据，当前不涉及。",
+        };
+      }
+      return rule;
+    },
+  );
   const deterministicRuleResults: RuleAuditResult[] = staticRuleAuditResults
     .filter(isDeterministicStaticRule)
     .map((rule) => ({

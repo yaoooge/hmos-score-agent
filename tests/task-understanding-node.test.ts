@@ -23,18 +23,35 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
   const artifactStore = new ArtifactStore(rootDir);
   const caseDir = await artifactStore.ensureCaseDir("case-agent");
 
-  await fs.mkdir(path.join(originalProjectPath, "entry", "src", "main", "ets", "pages"), { recursive: true });
-  await fs.mkdir(path.join(originalProjectPath, "entry", "src", "main", "ets", "restaurant", "viewmodels"), {
+  await fs.mkdir(path.join(originalProjectPath, "entry", "src", "main", "ets", "pages"), {
     recursive: true,
   });
+  await fs.mkdir(
+    path.join(originalProjectPath, "entry", "src", "main", "ets", "restaurant", "viewmodels"),
+    {
+      recursive: true,
+    },
+  );
   await fs.mkdir(generatedProjectPath, { recursive: true });
-  await fs.writeFile(path.join(originalProjectPath, "entry", "src", "main", "module.json5"), "{module:{name:'entry'}}");
+  await fs.writeFile(
+    path.join(originalProjectPath, "entry", "src", "main", "module.json5"),
+    "{module:{name:'entry'}}",
+  );
   await fs.writeFile(
     path.join(originalProjectPath, "entry", "src", "main", "ets", "pages", "Index.ets"),
     "import { RestaurantListPage } from '../restaurant/pages/RestaurantListPage';\n",
   );
   await fs.writeFile(
-    path.join(originalProjectPath, "entry", "src", "main", "ets", "restaurant", "viewmodels", "RestaurantListVM.ts"),
+    path.join(
+      originalProjectPath,
+      "entry",
+      "src",
+      "main",
+      "ets",
+      "restaurant",
+      "viewmodels",
+      "RestaurantListVM.ts",
+    ),
     "export class RestaurantListVM {}\n",
   );
   await fs.writeFile(
@@ -57,9 +74,18 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     async understandTask(input: TaskUnderstandingAgentInput): Promise<string> {
       calls.push(input);
       return JSON.stringify({
-        explicitConstraints: ["任务类型: bug_fix", "行业: 餐饮", "场景: 餐厅列表页", "目标: 修复评分筛选异常"],
+        explicitConstraints: [
+          "任务类型: bug_fix",
+          "行业: 餐饮",
+          "场景: 餐厅列表页",
+          "目标: 修复评分筛选异常",
+        ],
         contextualConstraints: ["模块: entry", "实现约束: 保持 restaurant viewmodel 与 pages 分层"],
-        implicitConstraints: ["修改范围: 2 个 ArkTS/TS 文件", "侵入程度: 中等", "改动类型: UI 接入与筛选逻辑"],
+        implicitConstraints: [
+          "修改范围: 2 个 ArkTS/TS 文件",
+          "侵入程度: 中等",
+          "改动类型: UI 接入与筛选逻辑",
+        ],
         classificationHints: ["bug_fix", "has_patch"],
       });
     },
@@ -82,7 +108,10 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.promptText, "修复餐厅列表页评分筛选 bug");
   assert.equal(calls[0]?.projectStructure.modulePaths.includes("entry"), true);
-  assert.equal(calls[0]?.projectStructure.representativeFiles.includes("entry/src/main/ets/pages/Index.ets"), true);
+  assert.equal(
+    calls[0]?.projectStructure.representativeFiles.includes("entry/src/main/ets/pages/Index.ets"),
+    true,
+  );
   assert.deepEqual(calls[0]?.patchSummary.changedFiles, [
     "entry/src/main/ets/pages/Index.ets",
     "entry/src/main/ets/restaurant/viewmodels/RestaurantListVM.ts",

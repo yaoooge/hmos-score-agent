@@ -26,10 +26,7 @@ export async function generateCasePatch(caseDir: string, outputPath: string): Pr
   const originalDir = path.join(resolvedCaseDir, "original");
   const workspaceDir = path.join(resolvedCaseDir, "workspace");
 
-  await Promise.all([
-    fs.access(originalDir),
-    fs.access(workspaceDir),
-  ]);
+  await Promise.all([fs.access(originalDir), fs.access(workspaceDir)]);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "case-patch-"));
@@ -53,7 +50,11 @@ export async function generateCasePatch(caseDir: string, outputPath: string): Pr
     );
     patchText = result.stdout;
   } catch (error) {
-    const execError = error as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    const execError = error as NodeJS.ErrnoException & {
+      code?: number;
+      stdout?: string;
+      stderr?: string;
+    };
     if (execError.code === 1 && typeof execError.stdout === "string") {
       patchText = execError.stdout;
     } else {

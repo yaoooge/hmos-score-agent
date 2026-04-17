@@ -4,4 +4,3 @@ import type { StaticRuleAuditResult } from "../../types.js";
 export interface EvaluatedRule extends StaticRuleAuditResult {
   matchedFiles: string[];
 }
-

@@ -297,12 +297,7 @@
         "unit_name": { "type": "string" },
         "generated_at": { "type": "string" }
       },
-      "required": [
-        "report_file_name",
-        "result_json_file_name",
-        "unit_name",
-        "generated_at"
-      ],
+      "required": ["report_file_name", "result_json_file_name", "unit_name", "generated_at"],
       "additionalProperties": false
     }
   },

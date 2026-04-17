@@ -51,8 +51,18 @@ test("loadRubricForTaskType reads the latest structured rubric config from repo-
 test("computeScoreBreakdown applies penalties and hard-gate caps", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const ruleAuditResults: RuleAuditResult[] = [
-    { rule_id: "ARKTS-MUST-006", rule_source: "must_rule", result: "不满足", conclusion: "matched any" },
-    { rule_id: "ARKTS-MUST-005", rule_source: "must_rule", result: "不满足", conclusion: "matched var" },
+    {
+      rule_id: "ARKTS-MUST-006",
+      rule_source: "must_rule",
+      result: "不满足",
+      conclusion: "matched any",
+    },
+    {
+      rule_id: "ARKTS-MUST-005",
+      rule_source: "must_rule",
+      result: "不满足",
+      conclusion: "matched var",
+    },
   ];
 
   const result = computeScoreBreakdown({
@@ -66,7 +76,10 @@ test("computeScoreBreakdown applies penalties and hard-gate caps", async () => {
       workspaceFileCount: 4,
       originalFileCount: 3,
       changedFileCount: 2,
-      changedFiles: ["entry/src/main/ets/pages/Index.ets", "entry/src/main/ets/common/models/Restaurant.ts"],
+      changedFiles: [
+        "entry/src/main/ets/pages/Index.ets",
+        "entry/src/main/ets/common/models/Restaurant.ts",
+      ],
       hasPatch: true,
     },
   });

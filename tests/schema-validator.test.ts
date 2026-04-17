@@ -24,7 +24,8 @@ function makeValidResultJson(): Record<string, unknown> {
     rubric_summary: {
       task_type: "bug_fix",
       evaluation_mode: "auto_precheck_with_human_review",
-      scenario: "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
+      scenario:
+        "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
       scoring_method: "discrete_band",
       scoring_note: "二级指标按离散档位给分。",
       common_risks: ["因顺手优化造成 diff 噪音和误修。"],

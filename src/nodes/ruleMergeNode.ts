@@ -18,7 +18,11 @@ export async function ruleMergeNode(
       };
     }
 
-    if (state.agentRunStatus === "failed" || state.agentRunStatus === "skipped" || !state.agentRawOutputText) {
+    if (
+      state.agentRunStatus === "failed" ||
+      state.agentRunStatus === "skipped" ||
+      !state.agentRawOutputText
+    ) {
       const mergedRuleAuditResults = [
         ...(state.deterministicRuleResults ?? []),
         ...(state.assistedRuleCandidates ?? []).map((candidate) => ({

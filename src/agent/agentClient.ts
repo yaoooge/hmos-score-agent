@@ -101,9 +101,12 @@ export class ChatModelClient implements AgentClient {
         }>;
       };
     } catch (error) {
-      throw new Error(`Agent 返回了无效 JSON，HTTP ${response.status}，响应：${response.bodyText}`, {
-        cause: error,
-      });
+      throw new Error(
+        `Agent 返回了无效 JSON，HTTP ${response.status}，响应：${response.bodyText}`,
+        {
+          cause: error,
+        },
+      );
     }
 
     const content = data.choices?.[0]?.message?.content;

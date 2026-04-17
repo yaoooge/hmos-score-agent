@@ -19,7 +19,11 @@ test("loadIgnoreFilter applies root gitignore patterns and built-in fallback ign
   await fs.mkdir(path.join(rootDir, "build"), { recursive: true });
   await fs.mkdir(path.join(rootDir, "foo-build"), { recursive: true });
   await fs.mkdir(path.join(rootDir, ".git"), { recursive: true });
-  await fs.writeFile(path.join(rootDir, ".gitignore"), "dist/\n*.cache\nentry/build\nbar*\nfoo*/\n", "utf-8");
+  await fs.writeFile(
+    path.join(rootDir, ".gitignore"),
+    "dist/\n*.cache\nentry/build\nbar*\nfoo*/\n",
+    "utf-8",
+  );
   await fs.writeFile(path.join(rootDir, "src", "Index.ets"), "let value = 1;\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "build", "artifact.txt"), "noise\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "foo-build", "artifact.txt"), "noise\n", "utf-8");
@@ -58,17 +62,38 @@ test("collectVisibleFiles returns only non-ignored relative paths", async (t) =>
 test("collectVisibleFiles supports evaluation-only ignored path prefixes without hiding business paths", async (t) => {
   const rootDir = await makeTempDir(t);
   await fs.mkdir(path.join(rootDir, "entry", "src", "main", "ets"), { recursive: true });
-  await fs.mkdir(path.join(rootDir, "entry", "src", "main", "ets", "pages", "test"), { recursive: true });
+  await fs.mkdir(path.join(rootDir, "entry", "src", "main", "ets", "pages", "test"), {
+    recursive: true,
+  });
   await fs.mkdir(path.join(rootDir, "entry", "src", "test"), { recursive: true });
   await fs.mkdir(path.join(rootDir, "entry", "src", "ohosTest", "ets"), { recursive: true });
-  await fs.writeFile(path.join(rootDir, "entry", "src", "main", "ets", "Index.ets"), "let value = 1;\n", "utf-8");
-  await fs.writeFile(path.join(rootDir, "entry", "src", "main", "ets", "pages", "test", "Index.ets"), "var y = 2;\n", "utf-8");
-  await fs.writeFile(path.join(rootDir, "entry", "src", "test", "LocalUnit.test.ets"), "let x: any = 1;\n", "utf-8");
-  await fs.writeFile(path.join(rootDir, "entry", "src", "ohosTest", "ets", "Ability.test.ets"), "var y = 2;\n", "utf-8");
+  await fs.writeFile(
+    path.join(rootDir, "entry", "src", "main", "ets", "Index.ets"),
+    "let value = 1;\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(rootDir, "entry", "src", "main", "ets", "pages", "test", "Index.ets"),
+    "var y = 2;\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(rootDir, "entry", "src", "test", "LocalUnit.test.ets"),
+    "let x: any = 1;\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(rootDir, "entry", "src", "ohosTest", "ets", "Ability.test.ets"),
+    "var y = 2;\n",
+    "utf-8",
+  );
 
   const files = await collectVisibleFiles(rootDir, {
     extraIgnoredPathPrefixes: ["entry/src/test", "entry/src/ohosTest"],
   });
 
-  assert.deepEqual(files, ["entry/src/main/ets/Index.ets", "entry/src/main/ets/pages/test/Index.ets"]);
+  assert.deepEqual(files, [
+    "entry/src/main/ets/Index.ets",
+    "entry/src/main/ets/pages/test/Index.ets",
+  ]);
 });

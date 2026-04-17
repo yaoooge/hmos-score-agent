@@ -19,12 +19,11 @@ async function main(): Promise<void> {
     : path.join(resolvedCasePath, "diff", "changes.patch");
 
   await generateCasePatch(resolvedCasePath, outputPath);
-  // eslint-disable-next-line no-console
+
   console.log(`Patch generated at ${outputPath}`);
 }
 
 main().catch((error: unknown) => {
-  // eslint-disable-next-line no-console
   console.error(error);
   process.exit(1);
 });

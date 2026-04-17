@@ -3,7 +3,12 @@ import type { RegisteredRule, RuleSource } from "../../engine/ruleTypes.js";
 const defaultFileExtensions = [".ets"];
 
 // createPendingRule 用于声明已纳入规则包、但当前版本仍需 agent 辅助的规则。
-export function createPendingRule(pack_id: string, rule_source: RuleSource, rule_id: string, summary: string): RegisteredRule {
+export function createPendingRule(
+  pack_id: string,
+  rule_source: RuleSource,
+  rule_id: string,
+  summary: string,
+): RegisteredRule {
   return {
     pack_id,
     rule_id,

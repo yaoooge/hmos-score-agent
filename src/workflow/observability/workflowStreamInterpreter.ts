@@ -34,10 +34,9 @@ export function interpretStreamChunk(chunk: StreamChunk): WorkflowLifecycleEvent
   }
 
   if (mode === "updates") {
-    const [nodeId, update] = Object.entries(payload as Record<string, Record<string, unknown>>)[0] as [
-      WorkflowNodeId,
-      Record<string, unknown>,
-    ];
+    const [nodeId, update] = Object.entries(
+      payload as Record<string, Record<string, unknown>>,
+    )[0] as [WorkflowNodeId, Record<string, unknown>];
 
     return {
       level: "info",
