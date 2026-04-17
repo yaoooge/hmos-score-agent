@@ -76,7 +76,7 @@ test("runRuleEngine exposes only current rule-audit fields", async (t) => {
   });
 
   assert.equal("ruleAuditResults" in result, false);
-  assert.equal(result.staticRuleAuditResults.some((item) => item.result === "未接入判定器"), true);
+  assert.equal(result.staticRuleAuditResults.some((item) => item.result === "不涉及"), true);
 });
 
 test("collectEvidence ignores workspace and original files matched by root gitignore", async (t) => {
@@ -243,7 +243,7 @@ test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => 
   );
 });
 
-test("runRuleEngine evaluates arkts-performance rules and keeps pending rules explicit", async (t) => {
+test("runRuleEngine evaluates arkts-performance rules and marks unsupported no-evidence rules as not applicable", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": `
 function add(left?: number, right?: number): number {
@@ -296,7 +296,7 @@ intNum = 1.1;
     "ARKTS-PERF-SHOULD-006",
   ]) {
     assert.equal(
-      result.staticRuleAuditResults.some((item) => item.rule_id === ruleId && item.result === "未接入判定器"),
+      result.staticRuleAuditResults.some((item) => item.rule_id === ruleId && item.result === "不涉及"),
       true,
       ruleId,
     );
@@ -437,7 +437,7 @@ test("runRuleEngine builds fallback evidence snippets when patch paths include w
   assert.equal((result.ruleEvidenceIndex.__fallback__?.evidenceSnippets.length ?? 0) > 0, true);
 });
 
-test("runRuleEngine marks unsupported rules as 未接入判定器 instead of 不涉及", async (t) => {
+test("runRuleEngine marks unsupported rules without direct evidence as 不涉及", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
   });
@@ -449,18 +449,18 @@ test("runRuleEngine marks unsupported rules as 未接入判定器 instead of 不
   });
 
   assert.equal(
-    result.staticRuleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-004" && item.result === "未接入判定器"),
+    result.staticRuleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及"),
     true,
   );
   assert.equal(
     result.staticRuleAuditResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-004" && item.conclusion.includes("类型、枚举、接口和命名空间名称必须唯一"),
+      (item) => item.rule_id === "ARKTS-MUST-004" && item.conclusion.includes("未发现相关实现证据，当前不涉及。"),
     ),
     true,
   );
 });
 
-test("runRuleEngine keeps deterministic results separated from agent candidates", async (t) => {
+test("runRuleEngine keeps unsupported no-evidence rules out of agent candidates", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let x: any = 1;\nvar y = 2;\n",
   });
@@ -472,7 +472,7 @@ test("runRuleEngine keeps deterministic results separated from agent candidates"
   });
 
   assert.equal(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005"), true);
-  assert.equal(result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-004"), true);
+  assert.equal(result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-004"), false);
 });
 
 test("runRuleEngine allows Symbol.iterator but rejects Symbol()", async (t) => {
@@ -810,7 +810,7 @@ test("runRuleEngine flags forbidden risky control-flow and runtime interfaces", 
   }
 });
 
-test("runRuleEngine keeps AST-related pending rules inside assisted candidates", async (t) => {
+test("runRuleEngine marks AST-related unsupported rules without direct evidence as 不涉及", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": [
       "class Demo {}",
@@ -842,11 +842,12 @@ test("runRuleEngine keeps AST-related pending rules inside assisted candidates",
 
   for (const ruleId of ["ARKTS-MUST-004", "ARKTS-MUST-013", "ARKTS-MUST-014", "ARKTS-MUST-024", "ARKTS-FORBID-009"]) {
     assert.equal(
-      result.assistedRuleCandidates.some((item) => item.rule_id === ruleId),
+      result.staticRuleAuditResults.some((item) => item.rule_id === ruleId && item.result === "不涉及"),
       true,
       ruleId,
     );
   }
+  assert.equal(result.assistedRuleCandidates.length, 0);
 });
 
 test("runRuleEngine flags remaining text-based formatting should-rules", async (t) => {

@@ -88,10 +88,7 @@ export async function reportGenerationNode(
     }
 
     validateReportResult(resultJson, schemaPath);
-
-    const htmlReport = `<!doctype html><html><head><meta charset="utf-8"><title>评分报告</title></head><body><h1>评分报告</h1><p>用例：${state.caseInput.caseId}</p><p>总分：${state.scoreComputation.totalScore}</p><pre>${JSON.stringify(resultJson, null, 2)}</pre></body></html>`;
-
-    return { resultJson, htmlReport };
+    return { resultJson };
   } catch (error) {
     emitNodeFailed("reportGenerationNode", error);
     throw error;

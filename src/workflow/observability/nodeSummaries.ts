@@ -70,6 +70,8 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
     }
     case "reportGenerationNode":
       return `resultReady=${String(Boolean(update.resultJson))} htmlLength=${String(String(update.htmlReport ?? "").length)}`;
+    case "artifactPostProcessNode":
+      return `htmlLength=${String(String(update.htmlReport ?? "").length)} reportReady=${String(Boolean(update.htmlReport))}`;
     case "persistAndUploadNode": {
       const uploadMessage = String(update.uploadMessage ?? "");
       const uploadStatus = uploadMessage.includes("跳过")

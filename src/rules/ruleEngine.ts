@@ -75,7 +75,17 @@ export async function runRuleEngine(input: {
       .map((content) => content.slice(0, 200)),
   };
 
-  const staticRuleAuditResults: StaticRuleAuditResult[] = evaluatedRules.map(({ matchedFiles: _matchedFiles, ...rule }) => rule);
+  const staticRuleAuditResults: StaticRuleAuditResult[] = evaluatedRules.map(({ matchedFiles: _matchedFiles, ...rule }) => {
+    const directEvidence = ruleEvidenceIndex[rule.rule_id];
+    if (rule.result === "未接入判定器" && (directEvidence?.evidenceFiles?.length ?? 0) === 0) {
+      return {
+        ...rule,
+        result: "不涉及",
+        conclusion: "未发现相关实现证据，当前不涉及。",
+      };
+    }
+    return rule;
+  });
   const deterministicRuleResults: RuleAuditResult[] = staticRuleAuditResults.filter(
     (rule): rule is RuleAuditResult => rule.result !== "未接入判定器",
   );
@@ -86,14 +96,8 @@ export async function runRuleEngine(input: {
       rule_source: rule.rule_source,
       why_uncertain: rule.conclusion,
       local_preliminary_signal: "未接入判定器",
-      evidence_files:
-        ruleEvidenceIndex[rule.rule_id]?.evidenceFiles?.length
-          ? ruleEvidenceIndex[rule.rule_id].evidenceFiles
-          : fallbackEvidenceFiles,
-      evidence_snippets:
-        ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets?.length
-          ? ruleEvidenceIndex[rule.rule_id].evidenceSnippets
-          : ruleEvidenceIndex.__fallback__?.evidenceSnippets ?? [],
+      evidence_files: ruleEvidenceIndex[rule.rule_id]?.evidenceFiles ?? [],
+      evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
     }));
 
   return {

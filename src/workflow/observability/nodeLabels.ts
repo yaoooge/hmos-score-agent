@@ -11,6 +11,7 @@ const NODE_LABELS: Record<WorkflowNodeId, string> = {
   ruleMergeNode: "规则结果合并",
   scoringOrchestrationNode: "评分编排",
   reportGenerationNode: "报告生成",
+  artifactPostProcessNode: "产物后处理",
   persistAndUploadNode: "结果落盘与上传",
 };
 

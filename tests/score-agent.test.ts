@@ -7,6 +7,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { ArtifactStore } from "../src/io/artifactStore.js";
 import { loadCaseFromPath } from "../src/io/caseLoader.js";
 import { inputClassificationNode } from "../src/nodes/inputClassificationNode.js";
+import { artifactPostProcessNode } from "../src/nodes/artifactPostProcessNode.js";
 import { persistAndUploadNode } from "../src/nodes/persistAndUploadNode.js";
 import { reportGenerationNode } from "../src/nodes/reportGenerationNode.js";
 import { ruleAuditNode } from "../src/nodes/ruleAuditNode.js";
@@ -195,7 +196,11 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   assert.equal(Array.isArray(result.staticRuleAuditResults), true);
   assert.equal(Array.isArray(result.deterministicRuleResults), true);
   assert.equal(Array.isArray(result.assistedRuleCandidates), true);
-  assert.equal(result.assistedRuleCandidates?.some((item) => item.rule_id === "ARKTS-MUST-004"), true);
+  assert.equal(result.assistedRuleCandidates?.length, 0);
+  assert.equal(
+    result.deterministicRuleResults?.some((item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及"),
+    true,
+  );
 });
 
 test("ruleMergeNode returns deterministic results directly when there are no assisted candidates", async () => {
@@ -318,6 +323,132 @@ test("scoring and report nodes fall back to deterministic results when merge out
   assert.deepEqual(reportResult.resultJson?.rule_audit_results, deterministicRuleResults);
 });
 
+test("reportGenerationNode only returns schema-valid resultJson without html report", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const scoringResult = await scoringOrchestrationNode({
+    taskType: "bug_fix",
+    staticRuleAuditResults: [],
+    deterministicRuleResults: [],
+    ruleViolations: [],
+    constraintSummary: {
+      explicitConstraints: [],
+      contextualConstraints: [],
+      implicitConstraints: [],
+      classificationHints: ["bug_fix"],
+    },
+    featureExtraction: {
+      basicFeatures: [],
+      structuralFeatures: [],
+      semanticFeatures: [],
+      changeFeatures: [],
+    },
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/Index.ets"],
+      hasPatch: true,
+    },
+  } as never);
+
+  const reportResult = await reportGenerationNode(
+    {
+      taskType: "bug_fix",
+      caseInput: {
+        caseId: "case-1",
+        promptText: "请修复餐厅列表页中的 bug",
+        originalProjectPath: "/tmp/original",
+        generatedProjectPath: "/tmp/workspace",
+      },
+      constraintSummary: {
+        explicitConstraints: [],
+        contextualConstraints: [],
+        implicitConstraints: [],
+        classificationHints: ["bug_fix"],
+      },
+      rubricSnapshot: {
+        task_type: "bug_fix",
+        evaluation_mode: "auto_precheck_with_human_review",
+        scenario: "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
+        scoring_method: "discrete_band",
+        scoring_note: "二级指标按离散档位给分。",
+        common_risks: ["因顺手优化造成 diff 噪音和误修。"],
+        report_emphasis: ["是否命中问题点。"],
+        dimension_summaries: [
+          {
+            name: "改动精准度与最小侵入性",
+            weight: 25,
+            intent: "评价是否精准修复问题且控制改动范围",
+            item_summaries: [
+              {
+                name: "问题点命中程度",
+                weight: 10,
+                scoring_bands: [{ score: 10, criteria: "修改直接命中根因或完整故障链路。" }],
+              },
+            ],
+          },
+        ],
+        hard_gates: [{ id: "G4", score_cap: 59 }],
+        review_rule_summary: ["关键分段分数需要人工复核"],
+      },
+      deterministicRuleResults: [],
+      scoreComputation: scoringResult.scoreComputation,
+      ruleViolations: [],
+    } as never,
+    { referenceRoot },
+  );
+
+  assert.ok(reportResult.resultJson);
+  assert.equal(reportResult.htmlReport, undefined);
+});
+
+test("artifactPostProcessNode generates layered html report from resultJson", async () => {
+  const postProcessResult = await artifactPostProcessNode({
+    resultJson: {
+      basic_info: {
+        task_type: "bug_fix",
+      },
+      overall_conclusion: {
+        total_score: 97.6,
+        hard_gate_triggered: false,
+        summary: "整体质量较高，建议优先复核低置信度项。",
+      },
+      dimension_results: [
+        {
+          dimension_name: "改动精准度与最小侵入性",
+          dimension_intent: "评价是否精准修复问题且控制改动范围",
+          score: 22,
+          max_score: 25,
+          comment: "整体较好",
+          item_results: [],
+        },
+      ],
+      risks: [],
+      strengths: ["命中主要问题点"],
+      main_issues: ["存在 1 条待人工复核规则"],
+      human_review_items: [],
+      final_recommendation: ["优先复核低置信度指标"],
+      rule_audit_results: [
+        {
+          rule_id: "ARKTS-MUST-005",
+          rule_source: "must_rule",
+          result: "不满足",
+          conclusion: "检测到 any 类型使用。",
+        },
+      ],
+      report_meta: {
+        unit_name: "case-1",
+        generated_at: "2026-04-17T04:00:00.000Z",
+      },
+    },
+  } as never);
+
+  assert.match(postProcessResult.htmlReport ?? "", /维度得分概览/);
+  assert.match(postProcessResult.htmlReport ?? "", /待人工复核/);
+  assert.match(postProcessResult.htmlReport ?? "", /规则审计结果/);
+  assert.doesNotMatch(postProcessResult.htmlReport ?? "", /<pre>\s*\{/);
+});
+
 test("persistAndUploadNode writes deterministic rule audit artifacts and falls back merged output to deterministic results", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -417,6 +548,9 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.ok(ruleAuditJson.length > 10);
   assert.ok(ruleAuditJson.some((item: { result: string }) => item.result === "不满足"));
   assert.match(reportHtml, /评分报告/);
+  assert.match(reportHtml, /维度得分概览/);
+  assert.match(reportHtml, /规则审计结果/);
+  assert.doesNotMatch(reportHtml, /<pre>\s*\{/);
 });
 
 test("runScoreWorkflow emits Chinese descriptive text in result.json and report.html", async (t) => {
@@ -455,7 +589,7 @@ test("runScoreWorkflow emits Chinese descriptive text in result.json and report.
   assert.doesNotMatch(reportHtml, /Score Report/);
 });
 
-test("runScoreWorkflow exposes merged agent-assisted results for downstream scoring", async (t) => {
+test("runScoreWorkflow skips agent assistance when unsupported rules have no direct evidence", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -467,24 +601,11 @@ test("runScoreWorkflow exposes merged agent-assisted results for downstream scor
     workspaceContent: "let x: any = 1;\nvar y = 2;\n",
   });
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
+  let invoked = false;
   const agentClient = {
     async evaluateRules(): Promise<string> {
-      return JSON.stringify({
-        summary: {
-          assistant_scope: "本次仅辅助弱规则判定",
-          overall_confidence: "medium",
-        },
-        rule_assessments: [
-          {
-            rule_id: "ARKTS-SHOULD-002",
-            decision: "uncertain",
-            confidence: "low",
-            reason: "证据不足，需要人工复核。",
-            evidence_used: ["entry/src/main/ets/Index.ets"],
-            needs_human_review: true,
-          },
-        ],
-      });
+      invoked = true;
+      return "{}";
     },
   };
 
@@ -496,21 +617,19 @@ test("runScoreWorkflow exposes merged agent-assisted results for downstream scor
     agentClient,
   } as never);
 
-  assert.equal(result.agentRunStatus, "success");
+  assert.equal(invoked, false);
+  assert.equal(result.agentRunStatus, "not_enabled");
   assert.equal(Array.isArray(result.mergedRuleAuditResults), true);
   assert.equal(
-    (result.mergedRuleAuditResults as Array<{ rule_id: string; result: string; conclusion: string }>).some(
-      (item) =>
-        item.rule_id === "ARKTS-SHOULD-002" &&
-        item.result === "待人工复核" &&
-        item.conclusion === "证据不足，需要人工复核。",
+    (result.mergedRuleAuditResults as Array<{ rule_id: string; result: string }>).some(
+      (item) => item.rule_id === "ARKTS-SHOULD-002" && item.result === "不涉及",
     ),
     true,
   );
-  assert.equal(result.agentAssistedRuleResults?.rule_assessments[0]?.rule_id, "ARKTS-SHOULD-002");
+  assert.equal(result.agentAssistedRuleResults, undefined);
 });
 
-test("runScoreWorkflow falls back and persists agent artifacts when agent output is invalid", async (t) => {
+test("runScoreWorkflow persists skipped agent artifacts when unsupported rules have no direct evidence", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -522,8 +641,10 @@ test("runScoreWorkflow falls back and persists agent artifacts when agent output
     workspaceContent: "let x: any = 1;\nvar y = 2;\n",
   });
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
+  let invoked = false;
   const agentClient = {
     async evaluateRules(): Promise<string> {
+      invoked = true;
       return "not-json";
     },
   };
@@ -545,11 +666,13 @@ test("runScoreWorkflow falls back and persists agent artifacts when agent output
     await fs.readFile(path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"), "utf-8"),
   );
 
-  assert.equal(result.agentRunStatus, "invalid_output");
+  assert.equal(invoked, false);
+  assert.equal(result.agentRunStatus, "not_enabled");
   assert.match(agentPromptText, /你不是最终评分器/);
   assert.equal(Array.isArray(agentPromptPayload.assisted_rule_candidates), true);
+  assert.equal(agentPromptPayload.assisted_rule_candidates.length, 0);
   assert.equal(Array.isArray(mergedAudit), true);
-  assert.equal(agentResult.status, "invalid_output");
+  assert.equal(agentResult.status, "not_enabled");
 });
 
 test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
@@ -576,9 +699,11 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
 
   assert.match(logText, /节点开始 node=taskUnderstandingNode label=任务理解/);
   assert.match(logText, /节点开始 node=ruleAuditNode label=规则审计/);
+  assert.match(logText, /节点开始 node=artifactPostProcessNode label=产物后处理/);
   assert.match(logText, /节点开始 node=persistAndUploadNode label=结果落盘与上传/);
   assert.match(logText, /节点完成 node=inputClassificationNode label=任务分类 summary=taskType=bug_fix/);
   assert.match(logText, /节点完成 node=scoringOrchestrationNode label=评分编排 summary=totalScore=/);
+  assert.match(logText, /节点完成 node=artifactPostProcessNode label=产物后处理 summary=htmlLength=/);
 });
 
 test("runScoreWorkflow writes warning logs when agent assistance is skipped", async (t) => {
@@ -603,8 +728,8 @@ test("runScoreWorkflow writes warning logs when agent assistance is skipped", as
 
   const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
-  assert.match(logText, /\[WARN\] agent 辅助判定跳过 reason=未配置 agent client/);
-  assert.doesNotMatch(logText, /\[INFO\] agent 辅助判定跳过 reason=未配置 agent client/);
+  assert.match(logText, /\[WARN\] agent 辅助判定跳过 reason=无候选规则/);
+  assert.doesNotMatch(logText, /\[INFO\] agent 辅助判定跳过 reason=无候选规则/);
 });
 
 test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async (t) => {
@@ -633,7 +758,7 @@ test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async
   assert.equal(mergedAudit.some((item: { result: string }) => item.result === "未接入判定器"), false);
 });
 
-test("runScoreWorkflow builds agent candidates from static unsupported rules", async (t) => {
+test("runScoreWorkflow keeps unsupported rules without direct evidence out of agent candidates", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -658,12 +783,37 @@ test("runScoreWorkflow builds agent candidates from static unsupported rules", a
     await fs.readFile(path.join(caseDir, "inputs", "agent-prompt-payload.json"), "utf-8"),
   );
 
+  assert.deepEqual(agentPromptPayload.assisted_rule_candidates, []);
+});
+
+test("runScoreWorkflow does not send unsupported should rules without direct evidence to agent review", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    promptText: "请修复餐厅列表页中的 bug",
+    withPatch: true,
+    workspaceContent: "let x: any = 1;\nvar y = 2;\n",
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+
+  await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+    agentClient: undefined,
+  });
+
+  const resultJson = JSON.parse(await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
+
   assert.equal(
-    agentPromptPayload.assisted_rule_candidates.some((item: { rule_id: string }) => item.rule_id === "ARKTS-MUST-004"),
-    true,
-  );
-  assert.equal(
-    agentPromptPayload.assisted_rule_candidates.some((item: { rule_id: string }) => item.rule_id === "ARKTS-MUST-005"),
+    resultJson.rule_audit_results.some(
+      (item: { rule_source: string; result: string }) =>
+        item.rule_source === "should_rule" && item.result === "待人工复核",
+    ),
     false,
   );
 });

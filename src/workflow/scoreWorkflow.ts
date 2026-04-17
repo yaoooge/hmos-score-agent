@@ -5,6 +5,7 @@ import { ArtifactStore } from "../io/artifactStore.js";
 import { CaseLogger } from "../io/caseLogger.js";
 import { agentAssistedRuleNode } from "../nodes/agentAssistedRuleNode.js";
 import { agentPromptBuilderNode } from "../nodes/agentPromptBuilderNode.js";
+import { artifactPostProcessNode } from "../nodes/artifactPostProcessNode.js";
 import { inputClassificationNode } from "../nodes/inputClassificationNode.js";
 import { featureExtractionNode } from "../nodes/featureExtractionNode.js";
 import { persistAndUploadNode } from "../nodes/persistAndUploadNode.js";
@@ -48,6 +49,7 @@ export async function runScoreWorkflow(input: {
     .addNode("ruleMergeNode", (s) => ruleMergeNode(s, { logger }))
     .addNode("scoringOrchestrationNode", (s) => scoringOrchestrationNode(s))
     .addNode("reportGenerationNode", (s) => reportGenerationNode(s, { referenceRoot: input.referenceRoot }))
+    .addNode("artifactPostProcessNode", (s) => artifactPostProcessNode(s))
     .addNode("persistAndUploadNode", (s) =>
       persistAndUploadNode(s, {
         artifactStore: input.artifactStore,
@@ -65,7 +67,8 @@ export async function runScoreWorkflow(input: {
     .addEdge("agentAssistedRuleNode", "ruleMergeNode")
     .addEdge("ruleMergeNode", "scoringOrchestrationNode")
     .addEdge("scoringOrchestrationNode", "reportGenerationNode")
-    .addEdge("reportGenerationNode", "persistAndUploadNode")
+    .addEdge("reportGenerationNode", "artifactPostProcessNode")
+    .addEdge("artifactPostProcessNode", "persistAndUploadNode")
     .addEdge("persistAndUploadNode", END)
     .compile();
 

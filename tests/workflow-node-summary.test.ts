@@ -5,6 +5,7 @@ import { summarizeNodeUpdate } from "../src/workflow/observability/nodeSummaries
 
 test("getNodeLabel returns Chinese labels for workflow nodes", () => {
   assert.equal(getNodeLabel("taskUnderstandingNode"), "任务理解");
+  assert.equal(getNodeLabel("artifactPostProcessNode"), "产物后处理");
   assert.equal(getNodeLabel("persistAndUploadNode"), "结果落盘与上传");
 });
 
@@ -112,9 +113,15 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   assert.equal(
     summarizeNodeUpdate("reportGenerationNode", {
       resultJson: { ok: true },
+    }),
+    "resultReady=true htmlLength=0",
+  );
+
+  assert.equal(
+    summarizeNodeUpdate("artifactPostProcessNode", {
       htmlReport: "<html></html>",
     }),
-    "resultReady=true htmlLength=13",
+    "htmlLength=13 reportReady=true",
   );
 
   assert.equal(

@@ -103,6 +103,28 @@ test("selectAssistedRuleCandidates falls back to shared evidence when rule-level
   assert.deepEqual(result.assistedRuleCandidates[0]?.evidence_snippets, ["@Entry\n@Component\nstruct Index {"]);
 });
 
+test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "ARKTS-SHOULD-003",
+        rule_source: "should_rule",
+        why_uncertain: "需要语义判断",
+        local_preliminary_signal: "unknown",
+        evidence_files: ["entry/src/main/ets/pages/Index.ets"],
+        evidence_snippets: ["let ready = false;"],
+      },
+    ],
+    agentOutputText:
+      '{"summary":{"assistant_scope":"本次仅辅助弱规则判定","overall_confidence":"high"},"rule_assessments":[{"rule_id":"ARKTS-SHOULD-003","decision":"not_applicable","confidence":"high","reason":"未看到相关实现证据，当前不涉及。","evidence_used":[],"needs_human_review":false}]}',
+  });
+
+  assert.equal(merged.agentRunStatus, "success");
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "不涉及");
+  assert.equal(merged.mergedRuleAuditResults[0]?.conclusion, "未看到相关实现证据，当前不涉及。");
+});
+
 test("buildAgentPromptPayload keeps original prompt as fact and renderAgentPrompt outputs Chinese-only contract", () => {
   const payload = buildAgentPromptPayload({
     caseInput: {

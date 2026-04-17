@@ -9,6 +9,7 @@ export type WorkflowNodeId =
   | "ruleMergeNode"
   | "scoringOrchestrationNode"
   | "reportGenerationNode"
+  | "artifactPostProcessNode"
   | "persistAndUploadNode";
 
 export type WorkflowNodeUpdate = Record<string, unknown>;

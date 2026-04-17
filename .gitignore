@@ -5,3 +5,4 @@ dist/
 .local-cases/
 .worktrees/
 .swift-cache/
+.superpowers/
