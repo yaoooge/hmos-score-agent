@@ -61,7 +61,7 @@ test("generateCasePatch respects original and workspace root gitignore files", a
   await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "generated/\n*.log\n", "utf-8");
   await fs.mkdir(path.join(caseDir, "original", "tmp"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "workspace", "generated"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "original", "tmp", "legacy.txt"), "legacy\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "original", "tmp", "archived.txt"), "archived\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "generated", "artifact.txt"), "compiled any\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "trace.log"), "compiled any\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "src", "feature.txt"), "restaurant-grid-updated\n", "utf-8");
@@ -69,7 +69,7 @@ test("generateCasePatch respects original and workspace root gitignore files", a
   await generateCasePatch(caseDir, patchPath);
 
   const patchText = await fs.readFile(patchPath, "utf-8");
-  assert.doesNotMatch(patchText, /original\/tmp\/legacy\.txt/);
+  assert.doesNotMatch(patchText, /original\/tmp\/archived\.txt/);
   assert.doesNotMatch(patchText, /workspace\/generated\/artifact\.txt/);
   assert.doesNotMatch(patchText, /workspace\/trace\.log/);
   assert.match(patchText, /restaurant-grid-updated/);

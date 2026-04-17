@@ -4,18 +4,17 @@ export interface AgentClient {
   evaluateRules(input: { prompt: string; payload: AgentPromptPayload }): Promise<string>;
 }
 
-export interface CompatibleChatModelClientOptions {
+export interface ChatModelClientOptions {
   baseUrl: string;
   apiKey: string;
   model: string;
 }
 
-// CompatibleChatModelClient 负责调用兼容 chat completions 的模型服务接口。
-export class CompatibleChatModelClient implements AgentClient {
-  constructor(private readonly options: CompatibleChatModelClientOptions) {}
+export class ChatModelClient implements AgentClient {
+  constructor(private readonly options: ChatModelClientOptions) {}
 
   async evaluateRules(input: { prompt: string; payload: AgentPromptPayload }): Promise<string> {
-    const baseRequest = {
+    const response = await this.requestCompletion({
       model: this.options.model,
       temperature: 0,
       messages: [
@@ -24,18 +23,10 @@ export class CompatibleChatModelClient implements AgentClient {
           content: input.prompt,
         },
       ],
-    };
-
-    const firstAttempt = await this.requestCompletion({
-      ...baseRequest,
       response_format: { type: "json_object" },
     });
-    if (!firstAttempt.ok && this.shouldRetryWithoutResponseFormat(firstAttempt.bodyText)) {
-      const fallbackAttempt = await this.requestCompletion(baseRequest);
-      return this.extractMessageContent(fallbackAttempt);
-    }
 
-    return this.extractMessageContent(firstAttempt);
+    return this.extractMessageContent(response);
   }
 
   private async requestCompletion(body: Record<string, unknown>): Promise<{
@@ -58,31 +49,49 @@ export class CompatibleChatModelClient implements AgentClient {
     };
   }
 
-  private shouldRetryWithoutResponseFormat(bodyText: string): boolean {
-    return /Unknown parameter: 'text\.format\.name'/.test(bodyText) || /response_format/i.test(bodyText);
-  }
-
   private extractMessageContent(response: { ok: boolean; status: number; bodyText: string }): string {
     if (!response.ok) {
       throw new Error(`Agent 调用失败，HTTP ${response.status}，响应：${response.bodyText}`);
     }
 
-    const data = JSON.parse(response.bodyText) as {
+    let data: {
       choices?: Array<{
         message?: {
           content?: string | Array<{ type?: string; text?: string }>;
         };
       }>;
     };
+    try {
+      data = JSON.parse(response.bodyText) as {
+        choices?: Array<{
+          message?: {
+            content?: string | Array<{ type?: string; text?: string }>;
+          };
+        }>;
+      };
+    } catch (error) {
+      throw new Error(`Agent 返回了无效 JSON，HTTP ${response.status}，响应：${response.bodyText}`, {
+        cause: error,
+      });
+    }
+
     const content = data.choices?.[0]?.message?.content;
     if (typeof content === "string") {
       return content;
     }
     if (Array.isArray(content)) {
-      return content
-        .map((item) => (typeof item.text === "string" ? item.text : ""))
+      const textContent = content
+        .filter(
+          (item): item is { type: "text" | "output_text"; text: string } =>
+            (item.type === "text" || item.type === "output_text") && typeof item.text === "string",
+        )
+        .map((item) => item.text)
         .join("")
         .trim();
+
+      if (textContent.length > 0) {
+        return textContent;
+      }
     }
     throw new Error("Agent 返回内容缺失。");
   }
@@ -97,7 +106,7 @@ export function createDefaultAgentClient(config: {
     return undefined;
   }
 
-  return new CompatibleChatModelClient({
+  return new ChatModelClient({
     baseUrl: config.modelProviderBaseUrl,
     apiKey: config.modelProviderApiKey,
     model: config.modelProviderModel ?? "gpt-5.4",

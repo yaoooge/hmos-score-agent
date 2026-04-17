@@ -11,7 +11,9 @@ export async function scoringOrchestrationNode(
   try {
     const config = getConfig();
     const effectiveRuleAuditResults =
-      (state.mergedRuleAuditResults?.length ?? 0) > 0 ? state.mergedRuleAuditResults : state.ruleAuditResults;
+      (state.mergedRuleAuditResults?.length ?? 0) > 0
+        ? state.mergedRuleAuditResults
+        : state.deterministicRuleResults ?? [];
     const rubric = await loadRubricForTaskType(state.taskType, config.referenceRoot);
     const scoreBreakdown = computeScoreBreakdown({
       taskType: state.taskType,

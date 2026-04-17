@@ -217,7 +217,7 @@ test("generateCasePatch respects original and workspace root gitignore files", a
   await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "generated/\n*.log\n", "utf-8");
   await fs.mkdir(path.join(caseDir, "original", "tmp"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "workspace", "generated"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "original", "tmp", "legacy.txt"), "legacy\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "original", "tmp", "archived.txt"), "archived\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "generated", "artifact.txt"), "compiled any\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "trace.log"), "compiled any\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "src", "feature.txt"), "restaurant-grid-updated\n", "utf-8");
@@ -225,7 +225,7 @@ test("generateCasePatch respects original and workspace root gitignore files", a
   await generateCasePatch(caseDir, patchPath);
 
   const patchText = await fs.readFile(patchPath, "utf-8");
-  assert.doesNotMatch(patchText, /original\/tmp\/legacy\.txt/);
+  assert.doesNotMatch(patchText, /original\/tmp\/archived\.txt/);
   assert.doesNotMatch(patchText, /workspace\/generated\/artifact\.txt/);
   assert.doesNotMatch(patchText, /workspace\/trace\.log/);
   assert.match(patchText, /restaurant-grid-updated/);
@@ -291,7 +291,7 @@ test("collectEvidence ignores workspace and original files matched by root gitig
   await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "build/\n*.tmp\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "original", ".gitignore"), "cache/\n", "utf-8");
   await fs.mkdir(path.join(caseDir, "original", "cache"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "original", "cache", "legacy.txt"), "legacy\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "original", "cache", "archived.txt"), "archived\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "trace.tmp"), "noise\n", "utf-8");
 
   const evidence = await collectEvidence(makeCaseInput(caseDir));
@@ -363,8 +363,14 @@ test("runRuleEngine does not report violations from files ignored by workspace g
     taskType: "full_generation",
   });
 
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"), false);
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"), false);
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    false,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    false,
+  );
 });
 ```
 

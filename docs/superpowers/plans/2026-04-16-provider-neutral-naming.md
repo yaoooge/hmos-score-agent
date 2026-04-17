@@ -70,10 +70,10 @@ git commit -m "refactor: use provider-neutral runtime config names"
 - [ ] **Step 1: Write the failing test**
 
 ```typescript
-import { CompatibleChatModelClient } from "../src/agent/agentClient.js";
+import { ChatModelClient } from "../src/agent/agentClient.js";
 
-test("CompatibleChatModelClient retries without response_format when provider rejects it", async () => {
-  const client = new CompatibleChatModelClient({
+test("ChatModelClient retries without response_format when provider rejects it", async () => {
+  const client = new ChatModelClient({
     baseUrl: "https://api.example.com/v1",
     apiKey: "sk-test",
     model: "gpt-5.4",
@@ -85,18 +85,18 @@ test("CompatibleChatModelClient retries without response_format when provider re
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- tests/agent-client.test.ts tests/score-agent.test.ts`
-Expected: FAIL，提示旧版品牌 client 仍是旧导出或 workflow 仍读取旧品牌字段
+Expected: FAIL，提示旧版命名 client 仍是旧导出或 workflow 仍读取旧字段
 
 - [ ] **Step 3: Write minimal implementation**
 
 ```typescript
-export interface CompatibleChatModelClientOptions {
+export interface ChatModelClientOptions {
   baseUrl: string;
   apiKey: string;
   model: string;
 }
 
-export class CompatibleChatModelClient implements AgentClient {}
+export class ChatModelClient implements AgentClient {}
 
 export function createDefaultAgentClient(config: {
   modelProviderBaseUrl?: string;

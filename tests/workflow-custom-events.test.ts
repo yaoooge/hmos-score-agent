@@ -14,7 +14,6 @@ test("taskUnderstandingNode emits custom start events through LangGraph writer",
         originalProjectPath: "/tmp/original",
         generatedProjectPath: "/tmp/workspace",
       },
-      originalPromptText: originalPrompt,
     } as never,
     {
       writer: (chunk: Record<string, unknown>) => events.push(chunk),

@@ -4,6 +4,41 @@ import { validateReportResult } from "../report/schemaValidator.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
+function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unknown>> {
+  const rubricSummary = state.rubricSnapshot;
+  const dimensionScores = state.scoreComputation.dimensionScores;
+  const submetricDetails = state.scoreComputation.submetricDetails;
+
+  return (rubricSummary?.dimension_summaries ?? []).map((dimensionSummary) => {
+    const dimensionScore = dimensionScores.find((item) => item.dimension_name === dimensionSummary.name);
+
+    return {
+      dimension_name: dimensionSummary.name,
+      dimension_intent: dimensionSummary.intent,
+      score: dimensionScore?.score ?? 0,
+      max_score: dimensionScore?.max_score ?? dimensionSummary.weight,
+      comment: dimensionScore?.comment ?? "",
+      item_results: dimensionSummary.item_summaries.map((itemSummary) => {
+        const detail = submetricDetails.find(
+          (item) => item.dimension_name === dimensionSummary.name && item.metric_name === itemSummary.name,
+        );
+        const matchedBand = itemSummary.scoring_bands.find((band) => band.score === detail?.score) ?? null;
+
+        return {
+          item_name: itemSummary.name,
+          item_weight: itemSummary.weight,
+          score: detail?.score ?? 0,
+          matched_band: matchedBand,
+          confidence: detail?.confidence ?? "low",
+          review_required: detail?.review_required ?? true,
+          rationale: detail?.rationale ?? "缺少对应评分明细。",
+          evidence: detail?.evidence ?? "缺少对应证据。",
+        };
+      }),
+    };
+  });
+}
+
 export async function reportGenerationNode(
   state: ScoreGraphState,
   config: { referenceRoot: string },
@@ -15,7 +50,9 @@ export async function reportGenerationNode(
     const schema = JSON.parse(schemaText) as object;
 
     const effectiveRuleAuditResults =
-      (state.mergedRuleAuditResults?.length ?? 0) > 0 ? state.mergedRuleAuditResults : state.ruleAuditResults;
+      (state.mergedRuleAuditResults?.length ?? 0) > 0
+        ? state.mergedRuleAuditResults
+        : state.deterministicRuleResults ?? [];
 
     const resultJson: Record<string, unknown> = {
       basic_info: {
@@ -28,9 +65,9 @@ export async function reportGenerationNode(
         target_scope: state.caseInput.generatedProjectPath,
         task_type_basis: state.constraintSummary.classificationHints.join("; "),
       },
+      rubric_summary: state.rubricSnapshot,
       overall_conclusion: state.scoreComputation.overallConclusion,
-      dimension_scores: state.scoreComputation.dimensionScores,
-      submetric_details: state.scoreComputation.submetricDetails,
+      dimension_results: buildDimensionResults(state),
       rule_violations: state.ruleViolations,
       risks: state.scoreComputation.risks,
       strengths: state.scoreComputation.strengths,

@@ -126,21 +126,21 @@ test("runSingleCase stores artifacts under timestamp_taskType_uniqueId directori
   }
 });
 
-test("runSingleCase writes prompt snapshot and case-info metadata into inputs", async (t) => {
+test("runSingleCase omits prompt snapshots and writes updated case-info metadata into inputs", async (t) => {
   const fixture = await createLauncherCaseFixture(t);
   process.env.LOCAL_CASE_ROOT = fixture.localCaseRoot;
   process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
 
   try {
     const result = await runSingleCase(fixture.casePath);
-    const promptText = await fs.readFile(path.join(result.caseDir, "inputs", "prompt.txt"), "utf-8");
+    await assert.rejects(fs.readFile(path.join(result.caseDir, "inputs", "prompt.txt"), "utf-8"));
+    await assert.rejects(fs.readFile(path.join(result.caseDir, "inputs", "original-prompt.txt"), "utf-8"));
     const caseInfo = JSON.parse(await fs.readFile(path.join(result.caseDir, "inputs", "case-info.json"), "utf-8"));
 
-    assert.equal(promptText, "请修复页面中的 bug");
     assert.equal(caseInfo.task_type, "bug_fix");
     assert.equal(caseInfo.source_case_path, fixture.casePath);
     assert.equal(caseInfo.patch_path.endsWith("changes.patch"), true);
-    assert.equal(caseInfo.original_prompt_file, "inputs/original-prompt.txt");
+    assert.equal("original_prompt_file" in caseInfo, false);
     assert.equal(caseInfo.agent_prompt_file, "inputs/agent-prompt.txt");
     assert.equal(typeof caseInfo.agent_assistance_enabled, "boolean");
     assert.equal(typeof caseInfo.agent_model, "string");

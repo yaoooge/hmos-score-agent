@@ -15,7 +15,9 @@ export async function ruleAuditNode(
     });
 
     return {
-      ruleAuditResults: result.ruleAuditResults,
+      staticRuleAuditResults: result.staticRuleAuditResults,
+      deterministicRuleResults: result.deterministicRuleResults,
+      assistedRuleCandidates: result.assistedRuleCandidates,
       ruleEvidenceIndex: result.ruleEvidenceIndex,
       ruleViolations: result.ruleViolations,
       evidenceSummary: result.evidenceSummary,

@@ -54,3 +54,21 @@ test("collectVisibleFiles returns only non-ignored relative paths", async (t) =>
 
   assert.deepEqual(files, ["foo-build.txt", "src/Index.ets"]);
 });
+
+test("collectVisibleFiles supports evaluation-only ignored path prefixes without hiding business paths", async (t) => {
+  const rootDir = await makeTempDir(t);
+  await fs.mkdir(path.join(rootDir, "entry", "src", "main", "ets"), { recursive: true });
+  await fs.mkdir(path.join(rootDir, "entry", "src", "main", "ets", "pages", "test"), { recursive: true });
+  await fs.mkdir(path.join(rootDir, "entry", "src", "test"), { recursive: true });
+  await fs.mkdir(path.join(rootDir, "entry", "src", "ohosTest", "ets"), { recursive: true });
+  await fs.writeFile(path.join(rootDir, "entry", "src", "main", "ets", "Index.ets"), "let value = 1;\n", "utf-8");
+  await fs.writeFile(path.join(rootDir, "entry", "src", "main", "ets", "pages", "test", "Index.ets"), "var y = 2;\n", "utf-8");
+  await fs.writeFile(path.join(rootDir, "entry", "src", "test", "LocalUnit.test.ets"), "let x: any = 1;\n", "utf-8");
+  await fs.writeFile(path.join(rootDir, "entry", "src", "ohosTest", "ets", "Ability.test.ets"), "var y = 2;\n", "utf-8");
+
+  const files = await collectVisibleFiles(rootDir, {
+    extraIgnoredPathPrefixes: ["entry/src/test", "entry/src/ohosTest"],
+  });
+
+  assert.deepEqual(files, ["entry/src/main/ets/Index.ets", "entry/src/main/ets/pages/test/Index.ets"]);
+});

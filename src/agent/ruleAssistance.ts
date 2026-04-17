@@ -53,50 +53,25 @@ type MergeRuleAuditResultsOutput = {
 };
 
 const agentResponseSchema = z.object({
-  summary: z.object({
-    assistant_scope: z.string(),
-    overall_confidence: z.enum(["high", "medium", "low"]),
-  }),
-  rule_assessments: z.array(
-    z.object({
-      rule_id: z.string(),
-      decision: z.enum(["violation", "pass", "not_applicable", "uncertain"]),
-      confidence: z.enum(["high", "medium", "low"]),
-      reason: z.string(),
-      evidence_used: z.array(z.string()),
-      needs_human_review: z.boolean(),
-    }),
-  ),
-});
-
-const compatibleChineseAgentResponseSchema = z.object({
-  case_id: z.string().optional(),
-  assisted_rule_judgments: z.array(
-    z.object({
-      rule_id: z.string(),
-      result: z.enum(["满足", "不满足", "不涉及", "无法判断"]).optional(),
-      judgment: z.enum(["满足", "不满足", "不涉及", "无法判断"]).optional(),
-      confidence: z.enum(["高", "中", "低"]),
-      needs_human_review: z.boolean(),
-      reason: z.string(),
-      evidence_used: z.array(z.string()).optional(),
-    }),
-  ),
   summary: z
     .object({
-      needs_human_review: z.boolean().optional(),
-      reason: z.string().optional(),
+      assistant_scope: z.string(),
+      overall_confidence: z.enum(["high", "medium", "low"]),
     })
-    .optional(),
-  global_assessment: z
-    .object({
-      needs_human_review: z.boolean().optional(),
-      overall_needs_human_review: z.boolean().optional(),
-      reason: z.string().optional(),
-      summary: z.string().optional(),
-    })
-    .optional(),
-});
+    .strict(),
+  rule_assessments: z.array(
+    z
+      .object({
+        rule_id: z.string(),
+        decision: z.enum(["violation", "pass", "not_applicable", "uncertain"]),
+        confidence: z.enum(["high", "medium", "low"]),
+        reason: z.string(),
+        evidence_used: z.array(z.string()),
+        needs_human_review: z.boolean(),
+      })
+      .strict(),
+  ),
+}).strict();
 
 // selectAssistedRuleCandidates 根据当前快速版策略，优先把 should_rule 交给 Agent 辅助判定。
 export function selectAssistedRuleCandidates(
@@ -140,10 +115,23 @@ export function buildRubricSnapshot(rubric: LoadedRubric): LoadedRubricSnapshot 
   return {
     task_type: rubric.taskType,
     evaluation_mode: rubric.evaluationMode,
+    scenario: rubric.scenario,
+    scoring_method: rubric.scoringMethod,
+    scoring_note: rubric.scoringNote,
+    common_risks: rubric.commonRisks,
+    report_emphasis: rubric.reportEmphasis,
     dimension_summaries: rubric.dimensions.map((dimension) => ({
       name: dimension.name,
       weight: dimension.weight,
-      item_names: dimension.items.map((item) => item.name),
+      intent: dimension.intent,
+      item_summaries: dimension.items.map((item) => ({
+        name: item.name,
+        weight: item.weight,
+        scoring_bands: item.scoringBands.map((band) => ({
+          score: band.score,
+          criteria: band.criteria,
+        })),
+      })),
     })),
     hard_gates: rubric.hardGates.map((gate) => ({
       id: gate.id,
@@ -177,6 +165,16 @@ export function buildAgentPromptPayload(input: BuildAgentPromptPayloadInput): Ag
       output_language: "zh-CN",
       json_only: true,
       fallback_rule: "不确定时必须返回 needs_human_review=true",
+      required_top_level_fields: ["summary", "rule_assessments"],
+      summary_schema: {
+        assistant_scope: "string",
+        overall_confidence: ["high", "medium", "low"],
+      },
+      rule_assessment_schema: {
+        required_fields: ["rule_id", "decision", "confidence", "reason", "evidence_used", "needs_human_review"],
+        decision_enum: ["violation", "pass", "not_applicable", "uncertain"],
+        confidence_enum: ["high", "medium", "low"],
+      },
     },
   };
 }
@@ -186,10 +184,40 @@ export function renderAgentPrompt(payload: AgentPromptPayload): string {
   return [
     "你不是最终评分器，而是评分工作流中的辅助判定模块。",
     "你只需要基于提供的证据，对 assisted_rule_candidates 中的候选弱规则给出结构化辅助判断。",
+    "rubric_summary 已包含任务场景、一级维度、二级维度和分档标准；辅助判定时要结合这些评分重点理解风险。",
     "请优先依据证据文件和代码片段，不要改写 deterministic_rule_results 中的本地已确定结果。",
     "当证据不足或无法稳定判断时，必须返回 needs_human_review=true。",
     "所有描述型文案必须使用中文。",
     "只能输出 JSON，不允许输出额外说明性文本。",
+    "输出必须严格匹配下面的字段契约；字段名不一致将被判定为无效输出。",
+    "顶层只能包含 summary 和 rule_assessments。",
+    "summary 必须包含 assistant_scope、overall_confidence。",
+    "rule_assessments 中的每一项必须包含 rule_id、decision、confidence、reason、evidence_used、needs_human_review。",
+    "summary 和 rule_assessments 内的对象都不得补充额外字段。",
+    "decision 只能是 violation、pass、not_applicable、uncertain。",
+    "confidence 只能是 high、medium、low。",
+    "请直接输出一个 JSON object，不要使用 markdown 代码块，不要补充解释。",
+    "合法输出示例：",
+    JSON.stringify(
+      {
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "medium",
+        },
+        rule_assessments: [
+          {
+            rule_id: "ARKTS-SHOULD-001",
+            decision: "uncertain",
+            confidence: "low",
+            reason: "证据不足，需要人工复核。",
+            evidence_used: ["entry/src/main/ets/pages/Index.ets"],
+            needs_human_review: true,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
     "",
     JSON.stringify(payload, null, 2),
   ].join("\n");
@@ -201,40 +229,6 @@ function makeFallbackResult(candidate: AssistedRuleCandidate): RuleAuditResult {
     rule_source: candidate.rule_source,
     result: "待人工复核",
     conclusion: `Agent 未能提供有效判定，候选规则 ${candidate.rule_id} 已回退为待人工复核。`,
-  };
-}
-
-function normalizeCompatibleChineseResponse(parsed: unknown): AgentAssistedRuleResult | null {
-  const validation = compatibleChineseAgentResponseSchema.safeParse(parsed);
-  if (!validation.success) {
-    return null;
-  }
-
-  return {
-    summary: {
-      assistant_scope: "本次仅辅助弱规则判定",
-      overall_confidence:
-        validation.data.assisted_rule_judgments.some((item) => item.confidence === "低")
-          ? "low"
-          : validation.data.assisted_rule_judgments.some((item) => item.confidence === "中")
-            ? "medium"
-            : "high",
-    },
-    rule_assessments: validation.data.assisted_rule_judgments.map((item) => ({
-      rule_id: item.rule_id,
-      decision:
-        (item.result ?? item.judgment) === "满足"
-          ? "pass"
-          : (item.result ?? item.judgment) === "不满足"
-            ? "violation"
-            : (item.result ?? item.judgment) === "不涉及"
-              ? "not_applicable"
-              : "uncertain",
-      confidence: item.confidence === "高" ? "high" : item.confidence === "中" ? "medium" : "low",
-      reason: item.reason,
-      evidence_used: item.evidence_used ?? [],
-      needs_human_review: item.needs_human_review,
-    })),
   };
 }
 
@@ -294,8 +288,7 @@ export function mergeRuleAuditResults(input: MergeRuleAuditResultsInput): MergeR
   }
 
   const validation = agentResponseSchema.safeParse(parsed);
-  const agentAssistedRuleResults = validation.success ? validation.data : normalizeCompatibleChineseResponse(parsed);
-  if (!agentAssistedRuleResults) {
+  if (!validation.success) {
     return {
       agentRunStatus: "invalid_output",
       agentAssistedRuleResults: null,
@@ -306,6 +299,7 @@ export function mergeRuleAuditResults(input: MergeRuleAuditResultsInput): MergeR
     };
   }
 
+  const agentAssistedRuleResults = validation.data;
   const assessmentByRuleId = new Map(agentAssistedRuleResults.rule_assessments.map((item) => [item.rule_id, item]));
   const mergedCandidates = input.assistedRuleCandidates.map((candidate) => {
     const assessment = assessmentByRuleId.get(candidate.rule_id);

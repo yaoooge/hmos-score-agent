@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { collectEvidence } from "../src/rules/evidenceCollector.js";
+import { listRegisteredRules } from "../src/rules/engine/rulePackRegistry.js";
 import { runRuleEngine } from "../src/rules/ruleEngine.js";
 import type { CaseInput } from "../src/types.js";
 
@@ -56,11 +57,26 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
     taskType: "full_generation",
   });
 
-  assert.equal(result.ruleAuditResults[0]?.rule_id, "ARKTS-MUST-001");
-  assert.ok(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"));
-  assert.ok(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"));
-  assert.ok(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"));
+  assert.equal(result.staticRuleAuditResults[0]?.rule_id, "ARKTS-MUST-001");
+  assert.ok(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"));
+  assert.ok(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"));
+  assert.ok(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"));
   assert.ok(result.ruleViolations.length >= 1);
+});
+
+test("runRuleEngine exposes only current rule-audit fields", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal("ruleAuditResults" in result, false);
+  assert.equal(result.staticRuleAuditResults.some((item) => item.result === "未接入判定器"), true);
 });
 
 test("collectEvidence ignores workspace and original files matched by root gitignore", async (t) => {
@@ -72,8 +88,31 @@ test("collectEvidence ignores workspace and original files matched by root gitig
   await fs.writeFile(path.join(caseDir, "workspace", ".gitignore"), "build/\n*.tmp\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "original", ".gitignore"), "cache/\n", "utf-8");
   await fs.mkdir(path.join(caseDir, "original", "cache"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "original", "cache", "legacy.txt"), "legacy\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "original", "cache", "archived.txt"), "archived\n", "utf-8");
   await fs.writeFile(path.join(caseDir, "workspace", "trace.tmp"), "noise\n", "utf-8");
+
+  const evidence = await collectEvidence(makeCaseInput(caseDir));
+
+  assert.deepEqual(
+    evidence.workspaceFiles.map((item) => item.relativePath),
+    ["entry/src/main/ets/pages/Index.ets"],
+  );
+  assert.deepEqual(evidence.originalFiles, []);
+  assert.equal(evidence.summary.workspaceFileCount, 1);
+  assert.equal(evidence.summary.originalFileCount, 0);
+});
+
+test("collectEvidence ignores ohosTest and test directories during rule evaluation", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "entry/src/test/LocalUnit.test.ets": "let x: any = 1;\n",
+    "entry/src/ohosTest/ets/test/Ability.test.ets": "var y = 2;\n",
+  });
+
+  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "test"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "ohosTest", "ets"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "original", "entry", "src", "test", "Sample.test.ets"), "archived\n", "utf-8");
+  await fs.writeFile(path.join(caseDir, "original", "entry", "src", "ohosTest", "ets", "Ability.test.ets"), "archived\n", "utf-8");
 
   const evidence = await collectEvidence(makeCaseInput(caseDir));
 
@@ -100,8 +139,63 @@ test("runRuleEngine does not report violations from files ignored by workspace g
     taskType: "full_generation",
   });
 
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"), false);
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"), false);
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    false,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    false,
+  );
+});
+
+test("runRuleEngine does not report violations from ohosTest and test directories", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "entry/src/test/LocalUnit.test.ets": "let x: any = 1;\n",
+    "entry/src/ohosTest/ets/test/Ability.test.ets": "var y = 2;\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    false,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    false,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-FORBID-001" && item.result === "不满足"),
+    false,
+  );
+});
+
+test("runRuleEngine still evaluates business code under directories named test", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/test/Index.ets": "var y = 2;\nlet x: any = 1;\n",
+    "entry/src/test/LocalUnit.test.ets": "let ignored: any = 1;\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    true,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    true,
+  );
 });
 
 test("runRuleEngine only evaluates code-like files for text syntax rules", async (t) => {
@@ -117,7 +211,10 @@ test("runRuleEngine only evaluates code-like files for text syntax rules", async
     taskType: "full_generation",
   });
 
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"), false);
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"),
+    false,
+  );
 });
 
 test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => {
@@ -132,9 +229,18 @@ test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => 
     taskType: "full_generation",
   });
 
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"), false);
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"), false);
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"), false);
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"),
+    false,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足"),
+    false,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足"),
+    false,
+  );
 });
 
 test("runRuleEngine does not treat hex color literals in ets files as private field syntax", async (t) => {
@@ -148,7 +254,98 @@ test("runRuleEngine does not treat hex color literals in ets files as private fi
     taskType: "full_generation",
   });
 
-  assert.equal(result.ruleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"), false);
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足"),
+    false,
+  );
+});
+
+test("runRuleEngine ignores block comments when evaluating operator line-break style", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "/**",
+      " * 说明注释",
+      " * 使用组件",
+      " */",
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  build() {",
+      "    Column() {}",
+      "  }",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-SHOULD-013" && item.result === "不满足"),
+    false,
+  );
+});
+
+test("runRuleEngine ignores block comment numbering when evaluating float literal style", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "/**",
+      " * 1. 第一条说明",
+      " * 2. 第二条说明",
+      " */",
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  build() {",
+      "    Column() {}",
+      "  }",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-SHOULD-020" && item.result === "不满足"),
+    false,
+  );
+});
+
+test("runRuleEngine does not treat object property values as this-type usage", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  private scroller: Scroller = new Scroller();",
+      "  build() {",
+      "    Child({ selectedValue: this.scroller })",
+      "  }",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-011" && item.result === "不满足"),
+    false,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足"),
+    false,
+  );
 });
 
 test("runRuleEngine builds fallback evidence snippets when patch paths include workspace prefix", async (t) => {
@@ -178,4 +375,448 @@ test("runRuleEngine builds fallback evidence snippets when patch paths include w
 
   assert.deepEqual(result.ruleEvidenceIndex.__fallback__?.evidenceFiles, ["workspace/entry/src/main/ets/pages/Index.ets"]);
   assert.equal((result.ruleEvidenceIndex.__fallback__?.evidenceSnippets.length ?? 0) > 0, true);
+});
+
+test("runRuleEngine marks unsupported rules as 未接入判定器 instead of 不涉及", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.staticRuleAuditResults.some((item) => item.rule_id === "ARKTS-MUST-004" && item.result === "未接入判定器"),
+    true,
+  );
+  assert.equal(
+    result.staticRuleAuditResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-004" && item.conclusion.includes("类型、枚举、接口和命名空间名称必须唯一"),
+    ),
+    true,
+  );
+});
+
+test("runRuleEngine keeps deterministic results separated from agent candidates", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let x: any = 1;\nvar y = 2;\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005"), true);
+  assert.equal(result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-004"), true);
+});
+
+test("runRuleEngine allows Symbol.iterator but rejects Symbol()", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "const allowed = Symbol.iterator;\nconst bad = Symbol('x');\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-002" && item.result === "不满足"),
+    true,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-002" && item.conclusion.includes("仅允许使用 Symbol.iterator"),
+    ),
+    true,
+  );
+});
+
+test("runRuleEngine classifies every registered rule from rule packs into deterministic or agent-assisted", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(result.staticRuleAuditResults.length, listRegisteredRules().length);
+  assert.equal(result.deterministicRuleResults.length + result.assistedRuleCandidates.length, listRegisteredRules().length);
+});
+
+test("runRuleEngine flags unsupported module system patterns in ets files", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "const fs = require('fs')\n// @ts-ignore\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "bug_fix",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-025" && item.result === "不满足"),
+    true,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-026" && item.result === "不满足"),
+    true,
+  );
+});
+
+test("runRuleEngine flags Array<T> style as should-rule violation", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let values: Array<string> = [];\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-SHOULD-021" && item.result === "不满足"),
+    true,
+  );
+});
+
+test("runRuleEngine flags unsupported type signatures and constructor parameter properties", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "interface Callable {",
+      "  (value: number): string;",
+      "  new (name: string): Callable;",
+      "  [key: string]: string;",
+      "}",
+      "class Demo {",
+      "  static {}",
+      "  static {}",
+      "  constructor(public name: string) {}",
+      "}",
+      "const value = <number>input;",
+      "for (const key in payload) {}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  for (const ruleId of [
+    "ARKTS-MUST-007",
+    "ARKTS-MUST-008",
+    "ARKTS-MUST-009",
+    "ARKTS-MUST-010",
+    "ARKTS-MUST-012",
+    "ARKTS-MUST-018",
+    "ARKTS-MUST-020",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine flags restricted runtime interfaces and NaN comparisons", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "eval('doSomething()');",
+      "target.__proto__ = source;",
+      "const raw = __defineGetter__;",
+      "let first = 1, second = 2;",
+      "if (value === NaN) {",
+      "  console.info(value);",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "bug_fix",
+  });
+
+  for (const ruleId of ["ARKTS-MUST-027", "ARKTS-MUST-028", "ARKTS-MUST-029"]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine flags advanced type features and expression-style declarations", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "type Pair = Left & Right;",
+      "type Result<T> = T extends string ? Success : Failure;",
+      "type Capture<T> = T extends infer R ? R : never;",
+      "type Self = this;",
+      "type Name = User['name'];",
+      "const render = function () { return 1; };",
+      "const LocalClass = class {};",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  for (const ruleId of ["ARKTS-MUST-011", "ARKTS-MUST-015"]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine flags object layout mutation and unsupported exception or function patterns", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "delete profile.name;",
+      "Demo.prototype = factory();",
+      "try {",
+      "  throw 'boom';",
+      "} catch (error: any) {",
+      "  console.info(error);",
+      "}",
+      "function outer() {",
+      "  function inner() { return 1; }",
+      "  return inner();",
+      "}",
+      "function* iterate() {",
+      "  yield 1;",
+      "}",
+      "function badThis() {",
+      "  return this;",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "bug_fix",
+  });
+
+  for (const ruleId of ["ARKTS-MUST-017", "ARKTS-MUST-021", "ARKTS-MUST-022"]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine flags forbidden weak typing and dynamic syntax patterns", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "let value: any = source;",
+      "delete profile.name;",
+      "const displayName = profile['name'];",
+      "type Pair = Left & Right;",
+      "const render = function () { return 1; };",
+      "for (const key in profile) {",
+      "  console.info(key);",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  for (const ruleId of [
+    "ARKTS-FORBID-001",
+    "ARKTS-FORBID-002",
+    "ARKTS-FORBID-003",
+    "ARKTS-FORBID-004",
+    "ARKTS-FORBID-005",
+    "ARKTS-FORBID-006",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine flags dynamic property access and common style should-rules", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "globalThis.cache = store;",
+      "if (ready) console.info(\"ready\");",
+      "if (other)",
+      "{",
+      "\tconsole.info(other);",
+      "}",
+      "if (failed) {",
+      "  console.info(failed);",
+      "}",
+      "else {",
+      "  console.info('retry');",
+      "}",
+      "const ratio = .5;",
+      "const name = user['name'];",
+      `const longLine = "${"a".repeat(130)}";`,
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  for (const ruleId of [
+    "ARKTS-MUST-001",
+    "ARKTS-SHOULD-001",
+    "ARKTS-SHOULD-009",
+    "ARKTS-SHOULD-010",
+    "ARKTS-SHOULD-011",
+    "ARKTS-SHOULD-015",
+    "ARKTS-SHOULD-017",
+    "ARKTS-SHOULD-018",
+    "ARKTS-SHOULD-020",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine flags forbidden risky control-flow and runtime interfaces", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "try {",
+      "  throw 'boom';",
+      "} catch (error: unknown) {",
+      "  console.info(error);",
+      "}",
+      "const dynamicRequire = require('lib');",
+      "eval('run()');",
+      "if (flag = check()) {",
+      "  console.info(flag);",
+      "}",
+      "try {",
+      "  work();",
+      "} finally {",
+      "  return;",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "bug_fix",
+  });
+
+  for (const ruleId of [
+    "ARKTS-FORBID-007",
+    "ARKTS-FORBID-008",
+    "ARKTS-FORBID-010",
+    "ARKTS-FORBID-011",
+    "ARKTS-FORBID-012",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine keeps AST-related pending rules inside assisted candidates", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "class Demo {}",
+      "interface Demo { value: number }",
+      "let payload: { name: string } = { name: 'demo' };",
+      "const rawConfig = { enabled: true, retries: 3 };",
+      "const values = [];",
+      "const mixed = [1, 'two'];",
+      "enum Status {",
+      "  Ready = 1,",
+      "  Done = 'done',",
+      "}",
+      "enum Mode {",
+      "  Active = getMode(),",
+      "}",
+      "namespace Utils {",
+      "  let active = true;",
+      "}",
+      "namespace Utils {}",
+      "const nsRef = Utils;",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  for (const ruleId of ["ARKTS-MUST-004", "ARKTS-MUST-013", "ARKTS-MUST-014", "ARKTS-MUST-024", "ARKTS-FORBID-009"]) {
+    assert.equal(
+      result.assistedRuleCandidates.some((item) => item.rule_id === ruleId),
+      true,
+      ruleId,
+    );
+  }
+});
+
+test("runRuleEngine flags remaining text-based formatting should-rules", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "switch (mode) {",
+      "case 'A':",
+      "console.info('a');",
+      "}",
+      "const total = base",
+      "  + delta;",
+      "const many = { a: 1, b: 2, c: 3, d: 4, e: 5 };",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  for (const ruleId of [
+    "ARKTS-SHOULD-012",
+    "ARKTS-SHOULD-013",
+    "ARKTS-SHOULD-016",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === ruleId && item.result === "不满足"),
+      true,
+      ruleId,
+    );
+  }
 });

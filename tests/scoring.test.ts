@@ -22,11 +22,30 @@ const featureExtraction: FeatureExtraction = {
   changeFeatures: ["patch available"],
 };
 
-test("loadRubricForTaskType reads dimension and hard-gate config from repo-local rubric", async () => {
+test("loadRubricForTaskType reads the latest structured rubric config from repo-local yaml", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
-  assert.ok(rubric.dimensions.length > 0);
-  assert.ok(rubric.hardGates.some((gate) => gate.id === "G4"));
+
+  assert.equal(rubric.taskType, "bug_fix");
   assert.equal(rubric.evaluationMode, "auto_precheck_with_human_review");
+  assert.ok(rubric.hardGates.some((gate) => gate.id === "G4"));
+  assert.equal(rubric.scoringMethod, "discrete_band");
+  assert.match(rubric.scoringNote, /是否命中问题/);
+  assert.ok(rubric.commonRisks.includes("因顺手优化造成 diff 噪音和误修。"));
+  assert.ok(rubric.reportEmphasis.includes("是否命中问题点。"));
+  assert.ok(rubric.dimensions.length > 0);
+
+  const precisionDimension = rubric.dimensions[0];
+  assert.equal(precisionDimension.name, "改动精准度与最小侵入性");
+  assert.match(precisionDimension.intent, /精准修复问题/);
+
+  const rootCauseItem = precisionDimension.items[0];
+  assert.equal(rootCauseItem.name, "问题点命中程度");
+  assert.equal(rootCauseItem.weight, 10);
+  assert.deepEqual(
+    rootCauseItem.scoringBands.map((band) => band.score),
+    [10, 8, 6, 3, 0],
+  );
+  assert.match(rootCauseItem.scoringBands[0].criteria, /直接命中根因/);
 });
 
 test("computeScoreBreakdown applies penalties and hard-gate caps", async () => {

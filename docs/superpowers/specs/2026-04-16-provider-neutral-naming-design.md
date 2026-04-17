@@ -44,7 +44,7 @@
 
 ### 4.2 只保留协议语义，不保留品牌语义
 
-当前 client 本质上是“兼容 chat completions 的模型服务客户端”，因此可以保留 `Compatible` 一类语义，但不能保留品牌命名。
+当前 client 本质上是“遵循 chat completions 协议的模型服务客户端”，因此应直接使用协议导向的中立命名，而不是带历史迁移语义的命名。
 
 ### 4.3 一次切干净
 
@@ -61,7 +61,7 @@
 - 本地测试通过
 - 构建通过
 - 真实评分 CLI 继续可运行
-- 当前兼容接口的降级重试与输出归一化能力不回退
+- 当前 chat completions 接口的请求与输出归一化能力不回退
 
 ## 5. 总体方案
 
@@ -92,8 +92,8 @@
 
 替换为中立命名：
 
-- `CompatibleChatModelClient`
-- `CompatibleChatModelClientOptions`
+- `ChatModelClient`
+- `ChatModelClientOptions`
 
 `AgentClient` 接口名称保持不变，因为它本身已经是业务抽象，不带供应商耦合。
 
@@ -141,8 +141,8 @@
 
 统一使用：
 
-- `CompatibleChatModelClient`
-- `CompatibleChatModelClientOptions`
+- `ChatModelClient`
+- `ChatModelClientOptions`
 
 ### 6.4 交互层字段
 

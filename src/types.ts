@@ -30,6 +30,13 @@ export interface RuleAuditResult {
   conclusion: string;
 }
 
+export interface StaticRuleAuditResult {
+  rule_id: string;
+  rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
+  result: "满足" | "不满足" | "不涉及" | "未接入判定器";
+  conclusion: string;
+}
+
 export interface RuleViolation {
   rule_source: string;
   rule_id: string;
@@ -97,10 +104,23 @@ export type AgentRunStatus = "not_enabled" | "success" | "failed" | "invalid_out
 export interface LoadedRubricSnapshot {
   task_type: TaskType;
   evaluation_mode: string;
+  scenario: string;
+  scoring_method: string;
+  scoring_note: string;
+  common_risks: string[];
+  report_emphasis: string[];
   dimension_summaries: Array<{
     name: string;
     weight: number;
-    item_names: string[];
+    intent: string;
+    item_summaries: Array<{
+      name: string;
+      weight: number;
+      scoring_bands: Array<{
+        score: number;
+        criteria: string;
+      }>;
+    }>;
   }>;
   hard_gates: Array<{
     id: string;
@@ -128,6 +148,16 @@ export interface AgentPromptPayload {
     output_language: "zh-CN";
     json_only: true;
     fallback_rule: "不确定时必须返回 needs_human_review=true";
+    required_top_level_fields: ["summary", "rule_assessments"];
+    summary_schema: {
+      assistant_scope: "string";
+      overall_confidence: ["high", "medium", "low"];
+    };
+    rule_assessment_schema: {
+      required_fields: ["rule_id", "decision", "confidence", "reason", "evidence_used", "needs_human_review"];
+      decision_enum: ["violation", "pass", "not_applicable", "uncertain"];
+      confidence_enum: ["high", "medium", "low"];
+    };
   };
 }
 

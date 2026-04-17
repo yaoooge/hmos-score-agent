@@ -34,6 +34,96 @@
       ],
       "additionalProperties": false
     },
+    "rubric_summary": {
+      "type": "object",
+      "properties": {
+        "task_type": {
+          "type": "string",
+          "enum": ["full_generation", "continuation", "bug_fix"]
+        },
+        "evaluation_mode": {
+          "type": "string",
+          "enum": ["auto_precheck", "auto_precheck_with_human_review"]
+        },
+        "scenario": { "type": "string" },
+        "scoring_method": { "type": "string" },
+        "scoring_note": { "type": "string" },
+        "common_risks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "report_emphasis": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dimension_summaries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "weight": { "type": "number" },
+              "intent": { "type": "string" },
+              "item_summaries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "weight": { "type": "number" },
+                    "scoring_bands": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "score": { "type": "number" },
+                          "criteria": { "type": "string" }
+                        },
+                        "required": ["score", "criteria"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["name", "weight", "scoring_bands"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["name", "weight", "intent", "item_summaries"],
+            "additionalProperties": false
+          }
+        },
+        "hard_gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "score_cap": { "type": "number" }
+            },
+            "required": ["id", "score_cap"],
+            "additionalProperties": false
+          }
+        },
+        "review_rule_summary": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": [
+        "task_type",
+        "evaluation_mode",
+        "scenario",
+        "scoring_method",
+        "scoring_note",
+        "common_risks",
+        "report_emphasis",
+        "dimension_summaries",
+        "hard_gates",
+        "review_rule_summary"
+      ],
+      "additionalProperties": false
+    },
     "overall_conclusion": {
       "type": "object",
       "properties": {
@@ -44,44 +134,67 @@
       "required": ["total_score", "hard_gate_triggered", "summary"],
       "additionalProperties": false
     },
-    "dimension_scores": {
+    "dimension_results": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
           "dimension_name": { "type": "string" },
+          "dimension_intent": { "type": "string" },
           "score": { "type": "number" },
           "max_score": { "type": "number" },
-          "comment": { "type": "string" }
-        },
-        "required": ["dimension_name", "score", "max_score", "comment"],
-        "additionalProperties": false
-      }
-    },
-    "submetric_details": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "dimension_name": { "type": "string" },
-          "metric_name": { "type": "string" },
-          "score": { "type": "number" },
-          "confidence": {
-            "type": "string",
-            "enum": ["high", "medium", "low"]
-          },
-          "review_required": { "type": "boolean" },
-          "rationale": { "type": "string" },
-          "evidence": { "type": "string" }
+          "comment": { "type": "string" },
+          "item_results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_name": { "type": "string" },
+                "item_weight": { "type": "number" },
+                "score": { "type": "number" },
+                "matched_band": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "score": { "type": "number" },
+                        "criteria": { "type": "string" }
+                      },
+                      "required": ["score", "criteria"],
+                      "additionalProperties": false
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": ["high", "medium", "low"]
+                },
+                "review_required": { "type": "boolean" },
+                "rationale": { "type": "string" },
+                "evidence": { "type": "string" }
+              },
+              "required": [
+                "item_name",
+                "item_weight",
+                "score",
+                "matched_band",
+                "confidence",
+                "review_required",
+                "rationale",
+                "evidence"
+              ],
+              "additionalProperties": false
+            }
+          }
         },
         "required": [
           "dimension_name",
-          "metric_name",
+          "dimension_intent",
           "score",
-          "confidence",
-          "review_required",
-          "rationale",
-          "evidence"
+          "max_score",
+          "comment",
+          "item_results"
         ],
         "additionalProperties": false
       }
@@ -152,7 +265,7 @@
       "type": "array",
       "items": { "type": "string" }
     },
-    "legacy_issues": {
+    "current_limitations": {
       "type": "array",
       "items": { "type": "string" }
     },
@@ -195,9 +308,9 @@
   },
   "required": [
     "basic_info",
+    "rubric_summary",
     "overall_conclusion",
-    "dimension_scores",
-    "submetric_details",
+    "dimension_results",
     "rule_violations",
     "risks",
     "strengths",

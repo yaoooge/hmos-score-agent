@@ -1,22 +1,24 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { collectEvidence } from "./evidenceCollector.js";
-import { evaluateTextRule } from "./textRuleEvaluator.js";
-import { CaseInput, RuleAuditResult, RuleEvidenceIndex, RuleViolation, TaskType } from "../types.js";
-
-type RuleDocEntry = {
-  id: string;
-};
-
-type RulesDoc = {
-  must_rules: RuleDocEntry[];
-  should_rules: RuleDocEntry[];
-  forbidden_patterns: RuleDocEntry[];
-};
+import { listRegisteredRules } from "./engine/rulePackRegistry.js";
+import type { RegisteredRule } from "./engine/ruleTypes.js";
+import { runProjectStructureRule } from "./evaluators/projectStructureEvaluator.js";
+import type { EvaluatedRule } from "./evaluators/shared.js";
+import { runTextPatternRule } from "./evaluators/textPatternEvaluator.js";
+import {
+  AssistedRuleCandidate,
+  CaseInput,
+  RuleAuditResult,
+  RuleEvidenceIndex,
+  RuleViolation,
+  StaticRuleAuditResult,
+  TaskType,
+} from "../types.js";
 
 // Rule engine 的输出会被 workflow 直接写盘并送入 scoring engine。
 export interface RuleEngineOutput {
-  ruleAuditResults: RuleAuditResult[];
+  staticRuleAuditResults: StaticRuleAuditResult[];
+  deterministicRuleResults: RuleAuditResult[];
+  assistedRuleCandidates: AssistedRuleCandidate[];
   ruleViolations: RuleViolation[];
   ruleEvidenceIndex: RuleEvidenceIndex;
   evidenceSummary: {
@@ -33,25 +35,9 @@ export async function runRuleEngine(input: {
   caseInput: CaseInput;
   taskType: TaskType;
 }): Promise<RuleEngineOutput> {
-  // 这里故意不做完整 YAML 反序列化，只抽取我们当前真正需要的 rule id 顺序。
-  const yamlPath = path.join(input.referenceRoot, "arkts_internal_rules.yaml");
-  const text = await fs.readFile(yamlPath, "utf-8");
-  const doc = parseRulesDoc(text);
   const evidence = await collectEvidence(input.caseInput);
+  const evaluatedRules = listRegisteredRules().map((rule) => evaluateRegisteredRule(rule, evidence));
 
-  const evaluateGroup = (
-    ruleSource: RuleAuditResult["rule_source"],
-    rules: RuleDocEntry[] | undefined,
-  ) =>
-    (rules ?? []).map((rule) => evaluateTextRule(rule.id, ruleSource, evidence));
-
-  const evaluatedRules = [
-    ...evaluateGroup("must_rule", doc.must_rules),
-    ...evaluateGroup("should_rule", doc.should_rules),
-    ...evaluateGroup("forbidden_pattern", doc.forbidden_patterns),
-  ];
-
-  // 违反规则时同步生成更适合 report schema 的 violation 结构。
   const ruleViolations: RuleViolation[] = evaluatedRules
     .filter((rule) => rule.result === "不满足")
     .map((rule) => ({
@@ -79,6 +65,7 @@ export async function runRuleEngine(input: {
     evidence.changedFiles.length > 0
       ? evidence.changedFiles.slice(0, 3)
       : evidence.workspaceFiles.slice(0, 3).map((file) => file.relativePath);
+
   ruleEvidenceIndex.__fallback__ = {
     evidenceFiles: fallbackEvidenceFiles,
     evidenceSnippets: fallbackEvidenceFiles
@@ -88,46 +75,58 @@ export async function runRuleEngine(input: {
       .map((content) => content.slice(0, 200)),
   };
 
+  const staticRuleAuditResults: StaticRuleAuditResult[] = evaluatedRules.map(({ matchedFiles: _matchedFiles, ...rule }) => rule);
+  const deterministicRuleResults: RuleAuditResult[] = staticRuleAuditResults.filter(
+    (rule): rule is RuleAuditResult => rule.result !== "未接入判定器",
+  );
+  const assistedRuleCandidates: AssistedRuleCandidate[] = staticRuleAuditResults
+    .filter((rule) => rule.result === "未接入判定器")
+    .map((rule) => ({
+      rule_id: rule.rule_id,
+      rule_source: rule.rule_source,
+      why_uncertain: rule.conclusion,
+      local_preliminary_signal: "未接入判定器",
+      evidence_files:
+        ruleEvidenceIndex[rule.rule_id]?.evidenceFiles?.length
+          ? ruleEvidenceIndex[rule.rule_id].evidenceFiles
+          : fallbackEvidenceFiles,
+      evidence_snippets:
+        ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets?.length
+          ? ruleEvidenceIndex[rule.rule_id].evidenceSnippets
+          : ruleEvidenceIndex.__fallback__?.evidenceSnippets ?? [],
+    }));
+
   return {
-    ruleAuditResults: evaluatedRules.map(({ supported: _supported, matchedFiles: _matchedFiles, ...rule }) => rule),
+    staticRuleAuditResults,
+    deterministicRuleResults,
+    assistedRuleCandidates,
     ruleViolations,
     ruleEvidenceIndex,
     evidenceSummary: evidence.summary,
   };
 }
 
-function normalizeWorkspaceRelativePath(relativePath: string): string {
-  return relativePath.replace(/^workspace\//, "").replace(/^original\//, "");
-}
-
-function parseRulesDoc(text: string): RulesDoc {
-  // 源规则文件里存在部分对通用 YAML parser 不友好的文本内容，这里走稳妥的分组扫描。
-  const doc: RulesDoc = {
-    must_rules: [],
-    should_rules: [],
-    forbidden_patterns: [],
-  };
-  let currentSection: keyof RulesDoc | null = null;
-
-  for (const line of text.split(/\r?\n/)) {
-    if (/^must_rules:\s*$/.test(line)) {
-      currentSection = "must_rules";
-      continue;
-    }
-    if (/^should_rules:\s*$/.test(line)) {
-      currentSection = "should_rules";
-      continue;
-    }
-    if (/^forbidden_patterns:\s*$/.test(line)) {
-      currentSection = "forbidden_patterns";
-      continue;
-    }
-
-    const match = line.match(/^\s*-\s+id:\s+([A-Z0-9-]+)/);
-    if (currentSection && match) {
-      doc[currentSection].push({ id: match[1] });
-    }
+function evaluateRegisteredRule(
+  rule: RegisteredRule,
+  evidence: Awaited<ReturnType<typeof collectEvidence>>,
+): EvaluatedRule {
+  if (rule.detector_kind === "text_pattern") {
+    return runTextPatternRule(rule, evidence);
   }
 
-  return doc;
+  if (rule.detector_kind === "project_structure") {
+    return runProjectStructureRule(rule, evidence);
+  }
+
+  return {
+    rule_id: rule.rule_id,
+    rule_source: rule.rule_source,
+    result: "未接入判定器",
+    conclusion: `${rule.summary} 当前版本未接入对应判定器。`,
+    matchedFiles: [],
+  };
+}
+
+function normalizeWorkspaceRelativePath(relativePath: string): string {
+  return relativePath.replace(/^workspace\//, "").replace(/^original\//, "");
 }

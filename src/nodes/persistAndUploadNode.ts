@@ -13,12 +13,11 @@ export async function persistAndUploadNode(
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("persistAndUploadNode");
   try {
-    await deps.artifactStore.writeText(state.caseDir, "inputs/original-prompt.txt", state.originalPromptText ?? state.caseInput.promptText);
     await deps.artifactStore.writeText(state.caseDir, "inputs/agent-prompt.txt", state.agentPromptText ?? "");
     await deps.artifactStore.writeJson(state.caseDir, "inputs/agent-prompt-payload.json", state.agentPromptPayload ?? {});
     await deps.artifactStore.writeJson(state.caseDir, "intermediate/constraint-summary.json", state.constraintSummary);
     await deps.artifactStore.writeJson(state.caseDir, "intermediate/feature-extraction.json", state.featureExtraction);
-    await deps.artifactStore.writeJson(state.caseDir, "intermediate/rule-audit.json", state.ruleAuditResults);
+    await deps.artifactStore.writeJson(state.caseDir, "intermediate/rule-audit.json", state.deterministicRuleResults ?? []);
     await deps.artifactStore.writeJson(state.caseDir, "intermediate/rubric-snapshot.json", state.rubricSnapshot ?? {});
     await deps.artifactStore.writeJson(
       state.caseDir,
@@ -33,7 +32,7 @@ export async function persistAndUploadNode(
     await deps.artifactStore.writeJson(
       state.caseDir,
       "intermediate/rule-audit-merged.json",
-      state.mergedRuleAuditResults ?? state.ruleAuditResults,
+      state.mergedRuleAuditResults ?? state.deterministicRuleResults ?? [],
     );
     await deps.artifactStore.writeJson(state.caseDir, "outputs/result.json", state.resultJson);
     await deps.artifactStore.writeText(state.caseDir, "outputs/report.html", state.htmlReport);

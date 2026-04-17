@@ -24,6 +24,11 @@ export interface IgnoreFilter {
   isIgnored(relativePath: string, kind: EntryKind): boolean;
 }
 
+// CollectVisibleFilesOptions 允许调用方按场景注入额外忽略目录，而不污染全局默认规则。
+export interface CollectVisibleFilesOptions {
+  extraIgnoredPathPrefixes?: string[];
+}
+
 function normalizeRelativePath(relativePath: string): string {
   return relativePath.split(path.sep).join("/");
 }
@@ -106,13 +111,19 @@ async function loadRules(rootDir: string): Promise<Rule[]> {
   return rules;
 }
 
-export async function loadIgnoreFilter(rootDir: string): Promise<IgnoreFilter> {
+export async function loadIgnoreFilter(rootDir: string, options: CollectVisibleFilesOptions = {}): Promise<IgnoreFilter> {
   const rules = await loadRules(rootDir);
+  const extraIgnoredPathPrefixes = (options.extraIgnoredPathPrefixes ?? [])
+    .map((item) => normalizeRelativePath(item).replace(/\/+$/, ""))
+    .filter(Boolean);
   return {
     isIgnored(relativePath: string, kind: EntryKind): boolean {
       const normalized = normalizeRelativePath(relativePath);
       const segments = normalized.split("/");
       if (segments.some((segment) => BUILTIN_EXACT_NAMES.has(segment))) {
+        return true;
+      }
+      if (extraIgnoredPathPrefixes.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`))) {
         return true;
       }
       if (kind === "file" && normalized.endsWith(".log")) {
@@ -143,8 +154,8 @@ async function collectVisibleFilesFrom(rootDir: string, currentDir: string, filt
   return results;
 }
 
-export async function collectVisibleFiles(rootDir: string): Promise<string[]> {
-  const filter = await loadIgnoreFilter(rootDir);
+export async function collectVisibleFiles(rootDir: string, options: CollectVisibleFilesOptions = {}): Promise<string[]> {
+  const filter = await loadIgnoreFilter(rootDir, options);
   const files = await collectVisibleFilesFrom(rootDir, rootDir, filter);
   return files.sort();
 }

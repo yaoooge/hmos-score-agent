@@ -13,7 +13,7 @@ export async function ruleMergeNode(
     if ((state.assistedRuleCandidates?.length ?? 0) === 0) {
       await deps.logger?.info("agent 辅助判定合并完成 source=deterministic-only");
       return {
-        mergedRuleAuditResults: state.ruleAuditResults,
+        mergedRuleAuditResults: state.deterministicRuleResults ?? [],
         agentAssistedRuleResults: undefined,
       };
     }

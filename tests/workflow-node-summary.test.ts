@@ -50,14 +50,21 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
 
   assert.equal(
     summarizeNodeUpdate("ruleAuditNode", {
-      ruleAuditResults: [
+      staticRuleAuditResults: [
         { rule_id: "R1", result: "满足" },
-        { rule_id: "R2", result: "待人工复核" },
-        { rule_id: "R3", result: "不满足" },
+        { rule_id: "R2", result: "未接入判定器" },
+        { rule_id: "R3", result: "未接入判定器" },
       ],
       ruleViolations: [{ rule_id: "R3" }],
     }),
-    "rules=3 violations=1 uncertain=1",
+    "rules=3 violations=1 uncertain=2",
+  );
+
+  assert.equal(
+    summarizeNodeUpdate("ruleAuditNode", {
+      ruleViolations: [{ rule_id: "R2" }],
+    }),
+    "rules=0 violations=1 uncertain=0",
   );
 
   assert.equal(

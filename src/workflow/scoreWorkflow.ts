@@ -72,7 +72,6 @@ export async function runScoreWorkflow(input: {
   const initialState = {
     caseInput: input.caseInput,
     caseDir: input.caseDir,
-    originalPromptText: input.caseInput.promptText,
   };
   const finalState: Record<string, unknown> = { ...initialState };
   const stream = await graph.stream(initialState, {

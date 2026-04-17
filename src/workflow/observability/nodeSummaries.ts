@@ -32,9 +32,12 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
       return `basic=${lengthOf(featureExtraction?.basicFeatures)} structural=${lengthOf(featureExtraction?.structuralFeatures)} semantic=${lengthOf(featureExtraction?.semanticFeatures)} change=${lengthOf(featureExtraction?.changeFeatures)}`;
     }
     case "ruleAuditNode": {
-      const ruleAuditResults = (update.ruleAuditResults as Array<{ result?: string }> | undefined) ?? [];
+      const staticRuleAuditResults =
+        (update.staticRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];
       const ruleViolations = (update.ruleViolations as unknown[] | undefined) ?? [];
-      return `rules=${ruleAuditResults.length} violations=${ruleViolations.length} uncertain=${ruleAuditResults.filter((item) => item.result === "待人工复核").length}`;
+      const rulesCount = staticRuleAuditResults.length;
+      const uncertainCount = staticRuleAuditResults.filter((item) => item.result === "未接入判定器").length;
+      return `rules=${rulesCount} violations=${ruleViolations.length} uncertain=${uncertainCount}`;
     }
     case "rubricPreparationNode": {
       const rubricSnapshot = update.rubricSnapshot as

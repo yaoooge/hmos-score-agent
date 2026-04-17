@@ -1,4 +1,4 @@
-import { buildAgentPromptPayload, renderAgentPrompt, selectAssistedRuleCandidates } from "../agent/ruleAssistance.js";
+import { buildAgentPromptPayload, renderAgentPrompt } from "../agent/ruleAssistance.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
@@ -10,26 +10,24 @@ export async function agentPromptBuilderNode(
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("agentPromptBuilderNode");
   try {
-    const selection = selectAssistedRuleCandidates(state.ruleAuditResults, {
-      evidenceByRuleId: state.ruleEvidenceIndex,
-      fallbackEvidence: state.ruleEvidenceIndex?.__fallback__,
-    });
+    const deterministicRuleResults = state.deterministicRuleResults ?? [];
+    const assistedRuleCandidates = state.assistedRuleCandidates ?? [];
     const payload = buildAgentPromptPayload({
       caseInput: state.caseInput,
       taskType: state.taskType,
       constraintSummary: state.constraintSummary,
       rubricSnapshot: state.rubricSnapshot,
-      deterministicRuleResults: selection.deterministicRuleResults,
-      assistedRuleCandidates: selection.assistedRuleCandidates,
+      deterministicRuleResults,
+      assistedRuleCandidates,
     });
     const prompt = renderAgentPrompt(payload);
     await deps.logger?.info(
-      `agent prompt 组装完成 candidates=${selection.assistedRuleCandidates.length} deterministic=${selection.deterministicRuleResults.length}`,
+      `agent prompt 组装完成 candidates=${assistedRuleCandidates.length} deterministic=${deterministicRuleResults.length}`,
     );
 
     return {
-      deterministicRuleResults: selection.deterministicRuleResults,
-      assistedRuleCandidates: selection.assistedRuleCandidates,
+      deterministicRuleResults,
+      assistedRuleCandidates,
       agentPromptPayload: payload,
       agentPromptText: prompt,
     };

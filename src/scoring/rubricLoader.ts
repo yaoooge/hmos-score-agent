@@ -7,11 +7,16 @@ import { TaskType } from "../types.js";
 export interface LoadedRubricItem {
   name: string;
   weight: number;
+  scoringBands: Array<{
+    score: number;
+    criteria: string;
+  }>;
 }
 
 export interface LoadedRubricDimension {
   name: string;
   weight: number;
+  intent: string;
   items: LoadedRubricItem[];
 }
 
@@ -23,12 +28,22 @@ export interface LoadedRubricHardGate {
 export interface LoadedRubric {
   taskType: TaskType;
   evaluationMode: string;
+  scenario: string;
+  scoringMethod: string;
+  scoringNote: string;
+  commonRisks: string[];
+  reportEmphasis: string[];
   dimensions: LoadedRubricDimension[];
   hardGates: LoadedRubricHardGate[];
   reviewRules: {
     scoreBands: Array<{ min: number; max: number }>;
   };
 }
+
+type RubricScoreBandDoc = {
+  score: number;
+  criteria: string;
+};
 
 type RubricDoc = {
   modes?: { default_evaluation_mode?: string };
@@ -37,7 +52,21 @@ type RubricDoc = {
   task_templates?: Record<
     TaskType,
     {
-      dimensions?: Array<{ name: string; weight: number; items?: Array<{ name: string; weight: number }> }>;
+      scenario?: string;
+      scoring_method?: string;
+      scoring_note?: string;
+      common_risks?: string[];
+      report_emphasis?: string[];
+      dimensions?: Array<{
+        name: string;
+        weight: number;
+        intent?: string;
+        items?: Array<{
+          name: string;
+          weight: number;
+          scoring_bands?: RubricScoreBandDoc[];
+        }>;
+      }>;
     }
   >;
 };
@@ -63,12 +92,22 @@ export async function loadRubricForTaskType(taskType: TaskType, referenceRoot: s
   return {
     taskType,
     evaluationMode: doc.modes?.default_evaluation_mode ?? "auto_precheck_with_human_review",
+    scenario: template.scenario ?? "",
+    scoringMethod: template.scoring_method ?? "discrete_band",
+    scoringNote: template.scoring_note ?? "",
+    commonRisks: template.common_risks ?? [],
+    reportEmphasis: template.report_emphasis ?? [],
     dimensions: template.dimensions.map((dimension) => ({
       name: dimension.name,
       weight: dimension.weight,
+      intent: dimension.intent ?? "",
       items: (dimension.items ?? []).map((item) => ({
         name: item.name,
         weight: item.weight,
+        scoringBands: (item.scoring_bands ?? []).map((band) => ({
+          score: band.score,
+          criteria: band.criteria,
+        })),
       })),
     })),
     hardGates: (doc.hard_gates ?? [])
