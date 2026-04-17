@@ -22,7 +22,7 @@ test("getConfig defaults referenceRoot to the repo-local scoring references dire
 });
 
 test("repo-local scoring reference files exist", async () => {
-  for (const fileName of ["rubric.yaml", "report_result_schema.json", "arkts_internal_rules.yaml"]) {
+  for (const fileName of ["rubric.yaml", "report_result_schema.json"]) {
     await fs.access(path.resolve(process.cwd(), "references/scoring", fileName));
   }
 });

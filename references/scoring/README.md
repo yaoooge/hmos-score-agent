@@ -1,12 +1,13 @@
 # Scoring References
 
-This directory contains the rubric, schema, and rule assets used by the scoring workflow.
+This directory contains the rubric, schema, and scoring reference notes used by the scoring workflow.
 
 Files in this directory are the repo-local source of truth for:
 
 - `rubric.yaml`
 - `report_result_schema.json`
-- `arkts_internal_rules.yaml`
 - task-type rubric notes and rule application notes
+
+Static scoring rules are maintained in `src/rules/packs/`, not in this references directory.
 
 The runtime default `referenceRoot` resolves to `references/scoring` unless `DEFAULT_REFERENCE_ROOT` is explicitly set.

@@ -1,16 +1,16 @@
 # 规则集应用说明
 
-本文件用于指导评审时，如何将 `arkts_internal_rules.yaml` 中的规则应用到 HarmonyOS / ArkTS / ArkUI 代码评分过程中。
+本文件用于指导评审时，如何将 `src/rules/packs/` 中维护的规则包应用到 HarmonyOS / ArkTS / ArkUI 代码评分过程中。
 
 ## 适用范围
 
-当前说明仅针对以下规则集：
+当前说明覆盖规则包中的以下规则类别：
 
 - `must_rules`
 - `should_rules`
 - `forbidden_patterns`
 
-评审时不要引用未出现在当前规则集中的规则，也不要沿用更旧版本中已经被删除或替换的规则编号。
+评审时不要引用未出现在当前规则包中的规则，也不要沿用更旧版本中已经被删除或替换的规则编号。
 
 ## 规则层原则
 

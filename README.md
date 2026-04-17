@@ -12,7 +12,7 @@
 1. `taskUnderstandingNode`：任务理解（显式/上下文/隐式约束）
 2. `inputClassificationNode`：任务分类（`full_generation` / `continuation` / `bug_fix`）
 3. `featureExtractionNode`：代码特征抽取（基础/结构/语义/变更）
-4. `ruleAuditNode`：规则审计（读取 `arkts_internal_rules.yaml`）
+4. `ruleAuditNode`：规则审计（读取 `src/rules/packs/` 下维护的规则包）
 5. `scoringOrchestrationNode`：评分编排（加权、硬门槛预留）
 6. `reportGenerationNode`：组装 `result.json` 与 HTML 报告内容
 7. `persistAndUploadNode`：落盘并尝试上传 `result.json`
@@ -72,7 +72,8 @@ cp .env.example .env
 
 - `references/scoring/rubric.yaml`
 - `references/scoring/report_result_schema.json`
-- `references/scoring/arkts_internal_rules.yaml`
+
+评分规则不再放在 `references/scoring` 中维护，当前规则源在 `src/rules/packs/`。
 
 ## 3. 本地调试
 
