@@ -30,6 +30,14 @@ export interface RuleEngineOutput {
   };
 }
 
+type DeterministicStaticRuleAuditResult = StaticRuleAuditResult & {
+  result: Exclude<StaticRuleAuditResult["result"], "未接入判定器">;
+};
+
+function isDeterministicStaticRule(rule: StaticRuleAuditResult): rule is DeterministicStaticRuleAuditResult {
+  return rule.result !== "未接入判定器";
+}
+
 export async function runRuleEngine(input: {
   referenceRoot: string;
   caseInput: CaseInput;
@@ -86,9 +94,14 @@ export async function runRuleEngine(input: {
     }
     return rule;
   });
-  const deterministicRuleResults: RuleAuditResult[] = staticRuleAuditResults.filter(
-    (rule): rule is RuleAuditResult => rule.result !== "未接入判定器",
-  );
+  const deterministicRuleResults: RuleAuditResult[] = staticRuleAuditResults
+    .filter(isDeterministicStaticRule)
+    .map((rule) => ({
+      rule_id: rule.rule_id,
+      rule_source: rule.rule_source,
+      result: rule.result,
+      conclusion: rule.conclusion,
+    }));
   const assistedRuleCandidates: AssistedRuleCandidate[] = staticRuleAuditResults
     .filter((rule) => rule.result === "未接入判定器")
     .map((rule) => ({

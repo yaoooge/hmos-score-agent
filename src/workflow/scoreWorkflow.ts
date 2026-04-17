@@ -37,7 +37,9 @@ export async function runScoreWorkflow(input: {
     ? input.agentClient
     : createDefaultAgentClient(config);
   const graph = new StateGraph(ScoreState)
-    .addNode("taskUnderstandingNode", (s) => taskUnderstandingNode(s))
+    .addNode("taskUnderstandingNode", (s, nodeConfig) =>
+      taskUnderstandingNode(s, { agentClient, artifactStore: input.artifactStore, logger }, nodeConfig),
+    )
     .addNode("inputClassificationNode", (s) => inputClassificationNode(s))
     .addNode("featureExtractionNode", (s) => featureExtractionNode(s))
     .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))

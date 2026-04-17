@@ -1,7 +1,9 @@
-import type { AgentPromptPayload } from "../types.js";
+import { renderTaskUnderstandingPrompt } from "./taskUnderstanding.js";
+import type { AgentPromptPayload, TaskUnderstandingAgentInput } from "../types.js";
 
 export interface AgentClient {
   evaluateRules(input: { prompt: string; payload: AgentPromptPayload }): Promise<string>;
+  understandTask(input: TaskUnderstandingAgentInput): Promise<string>;
 }
 
 export interface ChatModelClientOptions {
@@ -20,13 +22,21 @@ export class ChatModelClient implements AgentClient {
   constructor(private readonly options: ChatModelClientOptions) {}
 
   async evaluateRules(input: { prompt: string; payload: AgentPromptPayload }): Promise<string> {
+    return this.completeJsonPrompt(input.prompt);
+  }
+
+  async understandTask(input: TaskUnderstandingAgentInput): Promise<string> {
+    return this.completeJsonPrompt(renderTaskUnderstandingPrompt(input));
+  }
+
+  private async completeJsonPrompt(prompt: string): Promise<string> {
     const requestBody = {
       model: this.options.model,
       temperature: 0,
       messages: [
         {
           role: "user",
-          content: input.prompt,
+          content: prompt,
         },
       ],
       response_format: { type: "json_object" },

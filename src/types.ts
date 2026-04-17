@@ -16,6 +16,35 @@ export interface ConstraintSummary {
   classificationHints: string[];
 }
 
+export interface ProjectStructureSummary {
+  rootPath: string;
+  topLevelEntries: string[];
+  modulePaths: string[];
+  representativeFiles: string[];
+  implementationHints: string[];
+  omittedFileCount: number;
+}
+
+export interface PatchSummary {
+  hasPatch: boolean;
+  changedFiles: string[];
+  affectedRoots: string[];
+  addedLines: number;
+  deletedLines: number;
+  changeTypes: string[];
+  intrusionLevel: "none" | "low" | "medium" | "high";
+  rawPatchLength: number;
+}
+
+export interface TaskUnderstandingAgentInput {
+  caseId: string;
+  promptText: string;
+  originalProjectPath: string;
+  generatedProjectPath: string;
+  projectStructure: ProjectStructureSummary;
+  patchSummary: PatchSummary;
+}
+
 export interface FeatureExtraction {
   basicFeatures: string[];
   structuralFeatures: string[];
