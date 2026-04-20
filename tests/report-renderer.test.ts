@@ -46,6 +46,7 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
     rule_audit_results: [
       {
         rule_id: "ARKTS-MUST-005",
+        rule_summary: "禁止使用 any 类型。",
         rule_source: "must_rule",
         result: "不满足",
         conclusion: "检测到 any 类型使用。",
@@ -85,6 +86,7 @@ test("renderHtmlReport renders summary, full dimension list, filters, and no raw
   assert.match(html, /改动精准度与最小侵入性/);
   assert.match(html, /工程规范与质量/);
   assert.match(html, /规则审计结果/);
+  assert.match(html, /禁止使用 any 类型。/);
   assert.doesNotMatch(html, /建议动作：优先复核低置信度指标/);
   assert.match(html, /data-filter="不满足"/);
   assert.match(html, /data-filter="待人工复核"/);

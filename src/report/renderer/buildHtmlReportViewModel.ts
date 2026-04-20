@@ -45,6 +45,7 @@ export interface HtmlReportViewModel {
     counts: Record<RuleAuditResultLabel, number>;
     items: Array<{
       ruleId: string;
+      ruleSummary: string;
       ruleSource: string;
       result: string;
       conclusion: string;
@@ -233,6 +234,7 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         const current = asRecord(item);
         return {
           ruleId: String(current.rule_id ?? ""),
+          ruleSummary: String(current.rule_summary ?? ""),
           ruleSource: String(current.rule_source ?? ""),
           result: String(current.result ?? ""),
           conclusion: String(current.conclusion ?? ""),

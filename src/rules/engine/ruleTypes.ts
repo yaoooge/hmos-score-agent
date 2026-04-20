@@ -5,6 +5,7 @@ export type StaticRuleResult = "满足" | "不满足" | "不涉及" | "未接入
 // StaticRuleAuditResult 允许暴露静态层内部状态，供 agent 前置链路消费。
 export interface StaticRuleAuditResult {
   rule_id: string;
+  rule_summary?: string;
   rule_source: RuleSource;
   result: StaticRuleResult;
   conclusion: string;

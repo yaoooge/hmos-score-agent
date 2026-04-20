@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { validateReportResult } from "../report/schemaValidator.js";
-import { getRegisteredRulePacks } from "../rules/engine/rulePackRegistry.js";
+import { getRegisteredRulePacks, listRegisteredRules } from "../rules/engine/rulePackRegistry.js";
+import type { RuleAuditResult } from "../types.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
@@ -69,6 +70,20 @@ function formatCaseRulePackDisplayName(packId: string, caseId: string): string {
   return `用例 ${caseId} 约束规则`;
 }
 
+function enrichRuleAuditResultsWithSummary(
+  state: ScoreGraphState,
+  ruleAuditResults: RuleAuditResult[],
+): RuleAuditResult[] {
+  const ruleSummaryById = new Map(
+    listRegisteredRules(state.caseRuleDefinitions ?? []).map((rule) => [rule.rule_id, rule.summary]),
+  );
+
+  return ruleAuditResults.map((rule) => ({
+    ...rule,
+    rule_summary: rule.rule_summary ?? ruleSummaryById.get(rule.rule_id) ?? "",
+  }));
+}
+
 export async function reportGenerationNode(
   state: ScoreGraphState,
   config: { referenceRoot: string },
@@ -83,6 +98,10 @@ export async function reportGenerationNode(
       (state.mergedRuleAuditResults?.length ?? 0) > 0
         ? state.mergedRuleAuditResults
         : (state.deterministicRuleResults ?? []);
+    const effectiveRuleAuditResultsWithSummary = enrichRuleAuditResultsWithSummary(
+      state,
+      effectiveRuleAuditResults,
+    );
     const caseRuleResults = (state.caseRuleDefinitions ?? []).map((definition) => {
       const matchedRule = effectiveRuleAuditResults.find((rule) => rule.rule_id === definition.rule_id);
       return {
@@ -117,7 +136,7 @@ export async function reportGenerationNode(
       main_issues: state.scoreComputation.mainIssues,
       human_review_items: state.scoreComputation.humanReviewItems,
       final_recommendation: state.scoreComputation.finalRecommendation,
-      rule_audit_results: effectiveRuleAuditResults,
+      rule_audit_results: effectiveRuleAuditResultsWithSummary,
       case_rule_results: caseRuleResults,
       report_meta: {
         report_file_name: "report.html",

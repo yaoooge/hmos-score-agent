@@ -27,6 +27,7 @@ export async function ruleMergeNode(
         ...(state.deterministicRuleResults ?? []),
         ...(state.assistedRuleCandidates ?? []).map((candidate) => ({
           rule_id: candidate.rule_id,
+          rule_summary: candidate.rule_summary ?? candidate.rule_name,
           rule_source: candidate.rule_source,
           result: "待人工复核" as const,
           conclusion: `Agent 不可用，候选规则 ${candidate.rule_id} 已回退为待人工复核。`,

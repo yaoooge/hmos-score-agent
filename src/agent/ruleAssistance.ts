@@ -240,6 +240,7 @@ export function renderAgentPrompt(payload: AgentPromptPayload): string {
 function makeFallbackResult(candidate: AssistedRuleCandidate): RuleAuditResult {
   return {
     rule_id: candidate.rule_id,
+    rule_summary: candidate.rule_summary ?? candidate.rule_name,
     rule_source: candidate.rule_source,
     result: "待人工复核",
     conclusion: `Agent 未能提供有效判定，候选规则 ${candidate.rule_id} 已回退为待人工复核。`,
@@ -257,6 +258,7 @@ function mapAssessmentToRuleAuditResult(
   ) {
     return {
       rule_id: candidate.rule_id,
+      rule_summary: candidate.rule_summary ?? candidate.rule_name,
       rule_source: candidate.rule_source,
       result: "待人工复核",
       conclusion: assessment.reason,
@@ -266,6 +268,7 @@ function mapAssessmentToRuleAuditResult(
   if (assessment.decision === "violation") {
     return {
       rule_id: candidate.rule_id,
+      rule_summary: candidate.rule_summary ?? candidate.rule_name,
       rule_source: candidate.rule_source,
       result: "不满足",
       conclusion: assessment.reason,
@@ -275,6 +278,7 @@ function mapAssessmentToRuleAuditResult(
   if (assessment.decision === "pass") {
     return {
       rule_id: candidate.rule_id,
+      rule_summary: candidate.rule_summary ?? candidate.rule_name,
       rule_source: candidate.rule_source,
       result: "满足",
       conclusion: assessment.reason,
@@ -283,6 +287,7 @@ function mapAssessmentToRuleAuditResult(
 
   return {
     rule_id: candidate.rule_id,
+    rule_summary: candidate.rule_summary ?? candidate.rule_name,
     rule_source: candidate.rule_source,
     result: "不涉及",
     conclusion: assessment.reason,

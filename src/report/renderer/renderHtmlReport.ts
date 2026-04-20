@@ -454,7 +454,14 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                   (item) => `
                     <article class="rule-row" data-rule-result="${escapeHtml(item.result)}">
                       <div class="rule-head">
-                        <strong>${escapeHtml(item.ruleId)}</strong>
+                        <div>
+                          <strong>${escapeHtml(item.ruleId)}</strong>
+                          ${
+                            item.ruleSummary
+                              ? `<p class="muted">${escapeHtml(item.ruleSummary)}</p>`
+                              : ""
+                          }
+                        </div>
                         <span class="rule-status ${escapeHtml(item.result)}">${escapeHtml(item.result)}</span>
                       </div>
                       <p class="muted">${escapeHtml(item.ruleSource)}</p>

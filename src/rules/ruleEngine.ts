@@ -50,9 +50,9 @@ export async function runRuleEngine(input: {
   runtimeRules?: CaseRuleDefinition[];
 }): Promise<RuleEngineOutput> {
   const evidence = await collectEvidence(input.caseInput);
-  const evaluatedRules = listRegisteredRules(input.runtimeRules ?? []).map((rule) =>
-    evaluateRegisteredRule(rule, evidence),
-  );
+  const registeredRules = listRegisteredRules(input.runtimeRules ?? []);
+  const ruleSummaryById = new Map(registeredRules.map((rule) => [rule.rule_id, rule.summary]));
+  const evaluatedRules = registeredRules.map((rule) => evaluateRegisteredRule(rule, evidence));
   const evaluatedRuleById = new Map(evaluatedRules.map((rule) => [rule.rule_id, rule]));
   const caseRuleIds = new Set((input.runtimeRules ?? []).map((rule) => rule.rule_id));
 
@@ -100,18 +100,22 @@ export async function runRuleEngine(input: {
       matchedSnippets: _matchedSnippets,
       ...rule
     }) => {
+      const normalizedRule = {
+        ...rule,
+        rule_summary: rule.rule_summary ?? ruleSummaryById.get(rule.rule_id) ?? "",
+      };
       if (caseRuleIds.has(rule.rule_id)) {
-        return rule;
+        return normalizedRule;
       }
       const directEvidence = ruleEvidenceIndex[rule.rule_id];
       if (rule.result === "未接入判定器" && (directEvidence?.evidenceFiles?.length ?? 0) === 0) {
         return {
-          ...rule,
+          ...normalizedRule,
           result: "不涉及",
           conclusion: "未发现相关实现证据，当前不涉及。",
         };
       }
-      return rule;
+      return normalizedRule;
     },
   );
   const deterministicRuleResults: RuleAuditResult[] = staticRuleAuditResults
@@ -119,6 +123,7 @@ export async function runRuleEngine(input: {
     .filter((rule) => !caseRuleIds.has(rule.rule_id))
     .map((rule) => ({
       rule_id: rule.rule_id,
+      rule_summary: rule.rule_summary,
       rule_source: rule.rule_source,
       result: rule.result,
       conclusion: rule.conclusion,
@@ -133,6 +138,7 @@ export async function runRuleEngine(input: {
         | undefined;
       return {
         rule_id: rule.rule_id,
+        rule_summary: rule.rule_summary,
         rule_source: rule.rule_source,
         why_uncertain: rule.conclusion,
         local_preliminary_signal:

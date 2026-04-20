@@ -378,7 +378,12 @@ test("scoring and report nodes fall back to deterministic results when merge out
     { referenceRoot },
   );
 
-  assert.deepEqual(reportResult.resultJson?.rule_audit_results, deterministicRuleResults);
+  assert.deepEqual(reportResult.resultJson?.rule_audit_results, [
+    {
+      ...deterministicRuleResults[0],
+      rule_summary: "禁止使用 var，必须使用 let 或 const。",
+    },
+  ]);
 });
 
 test("reportGenerationNode includes case_rule_results in resultJson", async (t) => {

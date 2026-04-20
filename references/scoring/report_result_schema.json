@@ -315,6 +315,7 @@
         "type": "object",
         "properties": {
           "rule_id": { "type": "string" },
+          "rule_summary": { "type": "string" },
           "rule_source": {
             "type": "string",
             "enum": ["must_rule", "should_rule", "forbidden_pattern"]

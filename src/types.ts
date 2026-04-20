@@ -113,6 +113,7 @@ export interface FeatureExtraction {
 
 export interface RuleAuditResult {
   rule_id: string;
+  rule_summary?: string;
   rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
   result: "满足" | "不满足" | "不涉及" | "待人工复核";
   conclusion: string;
@@ -120,6 +121,7 @@ export interface RuleAuditResult {
 
 export interface StaticRuleAuditResult {
   rule_id: string;
+  rule_summary?: string;
   rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
   result: "满足" | "不满足" | "不涉及" | "未接入判定器";
   conclusion: string;
@@ -187,6 +189,7 @@ export interface CaseRuleStaticPrecheck {
 // AssistedRuleCandidate 描述需要 Agent 辅助判定的弱规则候选及其证据。
 export interface AssistedRuleCandidate {
   rule_id: string;
+  rule_summary?: string;
   rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
   why_uncertain: string;
   local_preliminary_signal: string;
