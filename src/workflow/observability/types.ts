@@ -1,4 +1,5 @@
 export type WorkflowNodeId =
+  | "remoteTaskPreparationNode"
   | "taskUnderstandingNode"
   | "inputClassificationNode"
   | "featureExtractionNode"

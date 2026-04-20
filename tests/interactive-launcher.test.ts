@@ -9,7 +9,6 @@ import { buildRunCaseId } from "../src/service/runCaseId.js";
 import {
   normalizeExecutionMode,
   normalizeLauncherAnswers,
-  normalizeRemoteLauncherAnswers,
   parseLauncherArgs,
 } from "../src/tools/runInteractiveScore.js";
 
@@ -121,18 +120,15 @@ test("normalizeExecutionMode defaults blank input to local", () => {
   assert.equal(normalizeExecutionMode("  "), "local");
 });
 
-test("normalizeExecutionMode accepts remote and rejects unsupported values", () => {
-  assert.equal(normalizeExecutionMode("remote"), "remote");
-  assert.equal(normalizeExecutionMode(" remote "), "remote");
-  assert.throws(() => normalizeExecutionMode("network"), /执行模式仅支持 local 或 remote/);
-});
-
-test("normalizeRemoteLauncherAnswers trims downloadUrl", () => {
-  const result = normalizeRemoteLauncherAnswers({
-    downloadUrl: "  https://example.com/api/evaluation-tasks/next  ",
-  });
-
-  assert.equal(result.downloadUrl, "https://example.com/api/evaluation-tasks/next");
+test("normalizeExecutionMode rejects removed remote launcher mode", () => {
+  assert.throws(
+    () => normalizeExecutionMode("remote"),
+    /执行模式仅支持 local。远端任务请直接调用 \/score\/run-remote-task 接口。/,
+  );
+  assert.throws(
+    () => normalizeExecutionMode("network"),
+    /执行模式仅支持 local。远端任务请直接调用 \/score\/run-remote-task 接口。/,
+  );
 });
 
 test("launcher source uses provider-neutral env names and prompts", async () => {
@@ -141,8 +137,9 @@ test("launcher source uses provider-neutral env names and prompts", async () => 
     "utf-8",
   );
   assert.match(source, /执行模式/);
-  assert.match(source, /downloadUrl/);
-  assert.match(source, /runRemoteTask/);
+  assert.equal(/downloadUrl/.test(source), false);
+  assert.equal(/runRemoteTask/.test(source), false);
+  assert.match(source, /run-remote-task/);
   assert.match(source, /模型服务 baseURL|MODEL_PROVIDER_BASE_URL/);
   assert.match(source, /模型服务 apiKey|MODEL_PROVIDER_API_KEY/);
 });

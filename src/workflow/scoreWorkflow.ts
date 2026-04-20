@@ -10,25 +10,41 @@ import { inputClassificationNode } from "../nodes/inputClassificationNode.js";
 import { featureExtractionNode } from "../nodes/featureExtractionNode.js";
 import { persistAndUploadNode } from "../nodes/persistAndUploadNode.js";
 import { reportGenerationNode } from "../nodes/reportGenerationNode.js";
+import { remoteTaskPreparationNode } from "../nodes/remoteTaskPreparationNode.js";
 import { rubricPreparationNode } from "../nodes/rubricPreparationNode.js";
 import { ruleAuditNode } from "../nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../nodes/ruleMergeNode.js";
 import { scoringOrchestrationNode } from "../nodes/scoringOrchestrationNode.js";
 import { taskUnderstandingNode } from "../nodes/taskUnderstandingNode.js";
-import { CaseInput } from "../types.js";
+import { CaseInput, RemoteEvaluationTask } from "../types.js";
 import { ScoreState } from "./state.js";
 import { WorkflowEventLogger } from "./observability/workflowEventLogger.js";
 import { interpretStreamChunk } from "./observability/workflowStreamInterpreter.js";
 
-export async function runScoreWorkflow(input: {
+type LocalWorkflowInput = {
   caseInput: CaseInput;
+  caseDir: string;
+  sourceCasePath?: string;
+  referenceRoot: string;
+  artifactStore: ArtifactStore;
+  uploadEndpoint?: string;
+  uploadToken?: string;
+  agentClient?: AgentClient;
+};
+
+type RemoteWorkflowInput = {
+  remoteTask: RemoteEvaluationTask;
   caseDir: string;
   referenceRoot: string;
   artifactStore: ArtifactStore;
   uploadEndpoint?: string;
   uploadToken?: string;
   agentClient?: AgentClient;
-}): Promise<Record<string, unknown>> {
+};
+
+export async function runScoreWorkflow(
+  input: LocalWorkflowInput | RemoteWorkflowInput,
+): Promise<Record<string, unknown>> {
   const config = getConfig();
   const logger = new CaseLogger(input.artifactStore, input.caseDir);
   const workflowLogger = new WorkflowEventLogger(logger);
@@ -37,6 +53,7 @@ export async function runScoreWorkflow(input: {
     ? input.agentClient
     : createDefaultAgentClient(config);
   const graph = new StateGraph(ScoreState)
+    .addNode("remoteTaskPreparationNode", (s) => remoteTaskPreparationNode(s))
     .addNode("taskUnderstandingNode", (s, nodeConfig) =>
       taskUnderstandingNode(
         s,
@@ -65,7 +82,8 @@ export async function runScoreWorkflow(input: {
         uploadToken: input.uploadToken,
       }),
     )
-    .addEdge(START, "taskUnderstandingNode")
+    .addEdge(START, "remoteTaskPreparationNode")
+    .addEdge("remoteTaskPreparationNode", "taskUnderstandingNode")
     .addEdge("taskUnderstandingNode", "inputClassificationNode")
     .addEdge("inputClassificationNode", "featureExtractionNode")
     .addEdge("featureExtractionNode", "ruleAuditNode")
@@ -80,27 +98,44 @@ export async function runScoreWorkflow(input: {
     .addEdge("persistAndUploadNode", END)
     .compile();
 
-  const initialState = {
-    caseInput: input.caseInput,
-    caseDir: input.caseDir,
-  };
-  const finalState: Record<string, unknown> = { ...initialState };
-  const stream = await graph.stream(initialState, {
-    streamMode: ["updates", "custom"],
-  });
-
-  for await (const chunk of stream) {
-    const interpreted = interpretStreamChunk(chunk as [string, unknown]);
-    if (interpreted) {
-      await workflowLogger.log(interpreted);
+  const initialState = (() => {
+    if ("remoteTask" in input) {
+      return {
+        remoteTask: input.remoteTask,
+        caseDir: input.caseDir,
+      };
     }
 
-    if (Array.isArray(chunk) && chunk[0] === "updates") {
-      const payload = chunk[1] as Record<string, Record<string, unknown>>;
-      for (const update of Object.values(payload)) {
-        Object.assign(finalState, update);
+    return {
+      caseInput: input.caseInput,
+      sourceCasePath: input.sourceCasePath,
+      caseDir: input.caseDir,
+    };
+  })();
+  const finalState: Record<string, unknown> = { ...initialState };
+  try {
+    const stream = await graph.stream(initialState, {
+      streamMode: ["updates", "custom"],
+    });
+
+    for await (const chunk of stream) {
+      const interpreted = interpretStreamChunk(chunk as [string, unknown]);
+      if (interpreted) {
+        await workflowLogger.log(interpreted);
+      }
+
+      if (Array.isArray(chunk) && chunk[0] === "updates") {
+        const payload = chunk[1] as Record<string, Record<string, unknown>>;
+        for (const update of Object.values(payload)) {
+          Object.assign(finalState, update);
+        }
       }
     }
+  } catch (error) {
+    if (error instanceof Error) {
+      Object.assign(error, { workflowState: finalState });
+    }
+    throw error;
   }
 
   return finalState;

@@ -1,11 +1,12 @@
 import { pathToFileURL } from "node:url";
 import express, { Request, Response } from "express";
 import { getConfig } from "./config.js";
-import { resolveDefaultCasePath, runRemoteTask, runSingleCase } from "./service.js";
+import { resolveDefaultCasePath, runRemoteEvaluationTask, runSingleCase } from "./service.js";
+import type { RemoteEvaluationTask } from "./types.js";
 
 type AppDeps = {
   runSingleCase: typeof runSingleCase;
-  runRemoteTask: typeof runRemoteTask;
+  runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
 };
 
 export function createRunHandler(deps: AppDeps) {
@@ -23,14 +24,10 @@ export function createRunHandler(deps: AppDeps) {
   };
 }
 
-export function createRunRemoteHandler(deps: AppDeps) {
+export function createRunRemoteTaskHandler(deps: AppDeps) {
   return async (req: Request, res: Response) => {
     try {
-      const downloadUrl = String(req.body?.downloadUrl ?? "");
-      if (!downloadUrl) {
-        throw new Error("downloadUrl 不能为空");
-      }
-      const result = await deps.runRemoteTask(downloadUrl);
+      const result = await deps.runRemoteEvaluationTask(req.body as RemoteEvaluationTask);
       res.json({ success: true, ...result });
     } catch (error) {
       res.status(500).json({
@@ -43,10 +40,10 @@ export function createRunRemoteHandler(deps: AppDeps) {
 
 export function createApp(deps: {
   runSingleCase: typeof runSingleCase;
-  runRemoteTask: typeof runRemoteTask;
+  runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
 } = {
   runSingleCase,
-  runRemoteTask,
+  runRemoteEvaluationTask,
 }) {
   const app = express();
   app.use(express.json());
@@ -56,7 +53,7 @@ export function createApp(deps: {
   });
 
   app.post("/score/run", createRunHandler(deps));
-  app.post("/score/run-remote", createRunRemoteHandler(deps));
+  app.post("/score/run-remote-task", createRunRemoteTaskHandler(deps));
 
   return app;
 }

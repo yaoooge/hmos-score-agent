@@ -10,6 +10,7 @@ import {
   EvidenceSummary,
   FeatureExtraction,
   LoadedRubricSnapshot,
+  RemoteEvaluationTask,
   RuleEvidenceIndex,
   RuleAuditResult,
   StaticRuleAuditResult,
@@ -19,7 +20,15 @@ import {
 } from "../types.js";
 
 export const ScoreState = Annotation.Root({
+  remoteTask: Annotation<RemoteEvaluationTask>(),
   caseInput: Annotation<CaseInput>(),
+  sourceCasePath: Annotation<string>(),
+  remoteTaskRootDir: Annotation<string>(),
+  inputMode: Annotation<string>(),
+  passthrough: Annotation<boolean>(),
+  originalFileCount: Annotation<number>(),
+  workspaceFileCount: Annotation<number>(),
+  hasPatch: Annotation<boolean>(),
   caseDir: Annotation<string>(),
   effectivePatchPath: Annotation<string>(),
   caseRuleDefinitions: Annotation<CaseRuleDefinition[]>(),

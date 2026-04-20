@@ -3,28 +3,21 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { pathToFileURL } from "node:url";
 import { upsertEnvVars } from "../io/envFile.js";
-import { resolveDefaultCasePath, runRemoteTask, runSingleCase } from "../service.js";
+import { resolveDefaultCasePath, runSingleCase } from "../service.js";
 
-export type LauncherExecutionMode = "local" | "remote";
+export type LauncherExecutionMode = "local";
 
 type LauncherAnswers = {
   baseURL: string;
   apiKey: string;
 };
 
-type RemoteLauncherAnswers = {
-  downloadUrl: string;
-};
-
 export function normalizeExecutionMode(rawMode: string): LauncherExecutionMode {
   const mode = rawMode.trim().toLowerCase();
-  if (!mode) {
+  if (!mode || mode === "local") {
     return "local";
   }
-  if (mode === "local" || mode === "remote") {
-    return mode;
-  }
-  throw new Error("执行模式仅支持 local 或 remote。");
+  throw new Error("执行模式仅支持 local。远端任务请直接调用 /score/run-remote-task 接口。");
 }
 
 // 交互层只做最小归一化，方便测试，也避免把业务逻辑埋进 readline 里。
@@ -32,14 +25,6 @@ export function normalizeLauncherAnswers(answers: LauncherAnswers): LauncherAnsw
   return {
     baseURL: answers.baseURL.trim(),
     apiKey: answers.apiKey.trim(),
-  };
-}
-
-export function normalizeRemoteLauncherAnswers(
-  answers: RemoteLauncherAnswers,
-): RemoteLauncherAnswers {
-  return {
-    downloadUrl: answers.downloadUrl.trim(),
   };
 }
 
@@ -56,7 +41,7 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
   const rl = createInterface({ input, output });
   try {
     const executionMode = normalizeExecutionMode(
-      await rl.question("执行模式 [local/remote] (default: local): "),
+      await rl.question("执行模式 [local] (default: local): "),
     );
     const rawBaseURL =
       (await rl.question(
@@ -87,24 +72,6 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
 
     process.env.MODEL_PROVIDER_BASE_URL = baseURL;
     process.env.MODEL_PROVIDER_API_KEY = apiKey;
-
-    if (executionMode === "remote") {
-      const { downloadUrl } = normalizeRemoteLauncherAnswers({
-        downloadUrl: await rl.question("下载任务 downloadUrl: "),
-      });
-
-      if (!downloadUrl) {
-        throw new Error("downloadUrl 不能为空。");
-      }
-
-      const result = await runRemoteTask(downloadUrl);
-      console.log(`评分完成，结果目录：${result.caseDir}`);
-      console.log(`远程任务 ID：${result.taskId}`);
-      if (result.uploadMessage) {
-        console.log(`上传信息：${result.uploadMessage}`);
-      }
-      return;
-    }
 
     const casePath = parseLauncherArgs(argv);
     const result = await runSingleCase(casePath);
