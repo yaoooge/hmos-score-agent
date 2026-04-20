@@ -57,6 +57,18 @@ export async function reportGenerationNode(
       (state.mergedRuleAuditResults?.length ?? 0) > 0
         ? state.mergedRuleAuditResults
         : (state.deterministicRuleResults ?? []);
+    const caseRuleResults = (state.caseRuleDefinitions ?? []).map((definition) => {
+      const matchedRule = effectiveRuleAuditResults.find((rule) => rule.rule_id === definition.rule_id);
+      return {
+        rule_id: definition.rule_id,
+        rule_name: definition.rule_name,
+        priority: definition.priority,
+        rule_source: definition.rule_source,
+        result: matchedRule?.result ?? "待人工复核",
+        conclusion: matchedRule?.conclusion ?? "缺少最终规则判定结果。",
+        hard_gate_triggered: definition.priority === "P0" && matchedRule?.result === "不满足",
+      };
+    });
 
     const resultJson: Record<string, unknown> = {
       basic_info: {
@@ -79,6 +91,7 @@ export async function reportGenerationNode(
       human_review_items: state.scoreComputation.humanReviewItems,
       final_recommendation: state.scoreComputation.finalRecommendation,
       rule_audit_results: effectiveRuleAuditResults,
+      case_rule_results: caseRuleResults,
       report_meta: {
         report_file_name: "report.html",
         result_json_file_name: "result.json",

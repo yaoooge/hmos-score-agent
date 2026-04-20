@@ -5,6 +5,7 @@ import {
   AgentRunStatus,
   AssistedRuleCandidate,
   CaseInput,
+  CaseRuleDefinition,
   ConstraintSummary,
   EvidenceSummary,
   FeatureExtraction,
@@ -20,6 +21,8 @@ import {
 export const ScoreState = Annotation.Root({
   caseInput: Annotation<CaseInput>(),
   caseDir: Annotation<string>(),
+  effectivePatchPath: Annotation<string>(),
+  caseRuleDefinitions: Annotation<CaseRuleDefinition[]>(),
   constraintSummary: Annotation<ConstraintSummary>(),
   taskType: Annotation<TaskType>(),
   featureExtraction: Annotation<FeatureExtraction>(),

@@ -15,6 +15,7 @@ export async function loadCaseFromPath(casePath: string): Promise<CaseInput> {
   const originalProjectPath = path.join(resolved, "original");
   const generatedProjectPath = path.join(resolved, "workspace");
   const patchCandidate = path.join(resolved, "diff", "changes.patch");
+  const expectedConstraintsCandidate = path.join(resolved, "expected_constraints.yaml");
 
   let patchPath: string | undefined;
   try {
@@ -24,11 +25,20 @@ export async function loadCaseFromPath(casePath: string): Promise<CaseInput> {
     patchPath = undefined;
   }
 
+  let expectedConstraintsPath: string | undefined;
+  try {
+    await fs.access(expectedConstraintsCandidate);
+    expectedConstraintsPath = expectedConstraintsCandidate;
+  } catch {
+    expectedConstraintsPath = undefined;
+  }
+
   return {
     caseId: path.basename(resolved),
     promptText,
     originalProjectPath,
     generatedProjectPath,
     patchPath,
+    expectedConstraintsPath,
   };
 }

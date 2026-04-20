@@ -77,6 +77,7 @@ function makeValidResultJson(): Record<string, unknown> {
       },
     ],
     rule_violations: [],
+    case_rule_results: [],
     risks: [],
     strengths: [],
     main_issues: [],
@@ -95,6 +96,24 @@ function makeValidResultJson(): Record<string, unknown> {
 test("validateReportResult accepts schema-valid output", () => {
   const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
   assert.doesNotThrow(() => validateReportResult(makeValidResultJson(), schemaPath));
+});
+
+test("validateReportResult accepts result with case_rule_results", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.case_rule_results = [
+    {
+      rule_id: "HM-REQ-008-01",
+      rule_name: "必须使用 LoginWithHuaweiIDButton",
+      priority: "P0",
+      rule_source: "must_rule",
+      result: "满足",
+      conclusion: "ok",
+      hard_gate_triggered: false,
+    },
+  ];
+
+  assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
 });
 
 test("validateReportResult rejects invalid output with a useful error", () => {

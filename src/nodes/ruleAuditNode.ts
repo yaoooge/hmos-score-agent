@@ -12,6 +12,7 @@ export async function ruleAuditNode(
       referenceRoot: config.referenceRoot,
       caseInput: state.caseInput,
       taskType: state.taskType,
+      runtimeRules: state.caseRuleDefinitions,
     });
 
     return {

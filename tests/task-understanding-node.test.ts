@@ -138,3 +138,69 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
   );
   assert.deepEqual(persisted, result.constraintSummary);
 });
+
+test("taskUnderstandingNode generates patch when case patch is absent and loads case rules", async (t) => {
+  const rootDir = await makeTempDir(t);
+  const originalProjectPath = path.join(rootDir, "original");
+  const generatedProjectPath = path.join(rootDir, "workspace");
+  const expectedConstraintsPath = path.join(rootDir, "expected_constraints.yaml");
+  const artifactStore = new ArtifactStore(rootDir);
+  const caseDir = await artifactStore.ensureCaseDir("case-agent");
+
+  await fs.mkdir(path.join(originalProjectPath, "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(generatedProjectPath, "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(originalProjectPath, "entry", "src", "main", "ets", "Index.ets"),
+    "Text('old')\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(generatedProjectPath, "entry", "src", "main", "ets", "Index.ets"),
+    "Text('new')\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    expectedConstraintsPath,
+    [
+      "constraints:",
+      "  - id: HM-REQ-008-01",
+      "    name: 登录按钮",
+      "    description: 必须存在登录按钮",
+      "    priority: P0",
+      "    rules:",
+      "      - target: '**/pages/*.ets'",
+      "        ast:",
+      "          - type: call",
+      "            name: LoginWithHuaweiIDButton",
+      "        llm: 检查登录按钮是否存在",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await taskUnderstandingNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-agent",
+        promptText: "新增登录能力",
+        originalProjectPath,
+        generatedProjectPath,
+        expectedConstraintsPath,
+      },
+    } as never,
+    { artifactStore },
+  );
+
+  assert.equal(typeof result.effectivePatchPath, "string");
+  assert.equal(result.caseRuleDefinitions?.length, 1);
+  const patchText = await fs.readFile(result.effectivePatchPath as string, "utf-8");
+  assert.match(patchText, /diff --git/);
+  const persistedRules = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "case-rule-definitions.json"), "utf-8"),
+  );
+  assert.equal(persistedRules.length, 1);
+});

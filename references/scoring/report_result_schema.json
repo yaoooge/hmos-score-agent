@@ -225,6 +225,34 @@
         "additionalProperties": false
       }
     },
+    "case_rule_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule_id": { "type": "string" },
+          "rule_name": { "type": "string" },
+          "priority": { "type": "string", "enum": ["P0", "P1"] },
+          "rule_source": { "type": "string", "enum": ["must_rule", "should_rule"] },
+          "result": {
+            "type": "string",
+            "enum": ["满足", "不满足", "不涉及", "待人工复核"]
+          },
+          "conclusion": { "type": "string" },
+          "hard_gate_triggered": { "type": "boolean" }
+        },
+        "required": [
+          "rule_id",
+          "rule_name",
+          "priority",
+          "rule_source",
+          "result",
+          "conclusion",
+          "hard_gate_triggered"
+        ],
+        "additionalProperties": false
+      }
+    },
     "risks": {
       "type": "array",
       "items": {
@@ -312,6 +340,7 @@
     "overall_conclusion",
     "dimension_results",
     "rule_violations",
+    "case_rule_results",
     "risks",
     "strengths",
     "main_issues",

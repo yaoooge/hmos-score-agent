@@ -46,6 +46,26 @@ export interface CaseInput {
   originalProjectPath: string;
   generatedProjectPath: string;
   patchPath?: string;
+  expectedConstraintsPath?: string;
+}
+
+export type CaseConstraintPriority = "P0" | "P1";
+
+export interface CaseRuleDefinition {
+  pack_id: string;
+  rule_id: string;
+  rule_name: string;
+  rule_source: "must_rule" | "should_rule";
+  summary: string;
+  priority: CaseConstraintPriority;
+  detector_kind: "case_constraint";
+  detector_config: {
+    targetPatterns: string[];
+    astSignals: Array<Record<string, string>>;
+    llmPrompt: string;
+  };
+  fallback_policy: "agent_assisted";
+  is_case_rule: true;
 }
 
 export interface ConstraintSummary {
@@ -164,6 +184,20 @@ export interface AssistedRuleCandidate {
   local_preliminary_signal: string;
   evidence_files: string[];
   evidence_snippets: string[];
+  rule_name?: string;
+  priority?: CaseConstraintPriority;
+  llm_prompt?: string;
+  is_case_rule?: boolean;
+}
+
+export interface CaseRuleResult {
+  rule_id: string;
+  rule_name: string;
+  priority: CaseConstraintPriority;
+  rule_source: "must_rule" | "should_rule";
+  result: "满足" | "不满足" | "不涉及" | "待人工复核";
+  conclusion: string;
+  hard_gate_triggered: boolean;
 }
 
 export type AgentRunStatus = "not_enabled" | "success" | "failed" | "invalid_output" | "skipped";

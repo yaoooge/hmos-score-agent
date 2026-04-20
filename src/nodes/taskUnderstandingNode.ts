@@ -7,9 +7,12 @@ import {
   parseConstraintSummary,
 } from "../agent/taskUnderstanding.js";
 import type { ArtifactStore } from "../io/artifactStore.js";
+import { generateCasePatch } from "../io/patchGenerator.js";
+import { loadCaseConstraintRules } from "../rules/caseConstraintLoader.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 import type {
+  CaseRuleDefinition,
   ConstraintSummary,
   PatchSummary,
   ProjectStructureSummary,
@@ -282,6 +285,38 @@ async function persistConstraintSummary(
   );
 }
 
+async function ensureEffectivePatchPath(
+  state: ScoreGraphState,
+  deps: TaskUnderstandingDeps,
+): Promise<string | undefined> {
+  if (state.caseInput.patchPath) {
+    return state.caseInput.patchPath;
+  }
+  if (!deps.artifactStore || !state.caseDir) {
+    return undefined;
+  }
+
+  const caseRoot = path.dirname(state.caseInput.originalProjectPath);
+  const outputPath = path.join(state.caseDir, "intermediate", "generated.patch");
+  return generateCasePatch(caseRoot, outputPath);
+}
+
+async function persistCaseRuleDefinitions(
+  state: ScoreGraphState,
+  deps: TaskUnderstandingDeps,
+  caseRuleDefinitions: CaseRuleDefinition[],
+): Promise<void> {
+  if (!deps.artifactStore || !state.caseDir) {
+    return;
+  }
+
+  await deps.artifactStore.writeJson(
+    state.caseDir,
+    "intermediate/case-rule-definitions.json",
+    caseRuleDefinitions,
+  );
+}
+
 export async function taskUnderstandingNode(
   state: ScoreGraphState,
   depsOrConfig: TaskUnderstandingDeps | LangGraphRunnableConfig = {},
@@ -293,7 +328,9 @@ export async function taskUnderstandingNode(
 
   try {
     const projectStructure = await collectProjectStructure(state.caseInput.originalProjectPath);
-    const patchSummary = await readPatchSummary(state.caseInput.patchPath);
+    const effectivePatchPath = await ensureEffectivePatchPath(state, deps);
+    const patchSummary = await readPatchSummary(effectivePatchPath);
+    const caseRuleDefinitions = await loadCaseConstraintRules(state.caseInput);
     const agentInput: TaskUnderstandingAgentInput = {
       caseId: state.caseInput.caseId,
       promptText: state.caseInput.promptText,
@@ -304,8 +341,11 @@ export async function taskUnderstandingNode(
     };
     const constraintSummary = await understandWithAgent(agentInput, deps);
     await persistConstraintSummary(state, deps, constraintSummary);
+    await persistCaseRuleDefinitions(state, deps, caseRuleDefinitions);
 
     return {
+      effectivePatchPath,
+      caseRuleDefinitions,
       constraintSummary,
     };
   } catch (error) {

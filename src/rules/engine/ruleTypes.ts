@@ -10,7 +10,11 @@ export interface StaticRuleAuditResult {
   conclusion: string;
 }
 
-export type DetectorKind = "text_pattern" | "project_structure" | "not_implemented";
+export type DetectorKind =
+  | "text_pattern"
+  | "project_structure"
+  | "case_constraint"
+  | "not_implemented";
 
 // RegisteredRule 描述规则包中的单条规则定义，不直接绑定具体 evaluator 实现。
 export interface RegisteredRule {
@@ -21,6 +25,9 @@ export interface RegisteredRule {
   detector_kind: DetectorKind;
   detector_config: Record<string, unknown>;
   fallback_policy: "agent_assisted" | "not_applicable";
+  rule_name?: string;
+  priority?: "P0" | "P1";
+  is_case_rule?: boolean;
 }
 
 export interface RegisteredRulePack {

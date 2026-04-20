@@ -1,11 +1,13 @@
 import { collectEvidence } from "./evidenceCollector.js";
 import { listRegisteredRules } from "./engine/rulePackRegistry.js";
 import type { RegisteredRule } from "./engine/ruleTypes.js";
+import { runCaseConstraintRule } from "./evaluators/caseConstraintEvaluator.js";
 import { runProjectStructureRule } from "./evaluators/projectStructureEvaluator.js";
 import type { EvaluatedRule } from "./evaluators/shared.js";
 import { runTextPatternRule } from "./evaluators/textPatternEvaluator.js";
 import {
   AssistedRuleCandidate,
+  CaseRuleDefinition,
   CaseInput,
   RuleAuditResult,
   RuleEvidenceIndex,
@@ -18,6 +20,7 @@ import {
 export interface RuleEngineOutput {
   staticRuleAuditResults: StaticRuleAuditResult[];
   deterministicRuleResults: RuleAuditResult[];
+  caseRuleResults: RuleAuditResult[];
   assistedRuleCandidates: AssistedRuleCandidate[];
   ruleViolations: RuleViolation[];
   ruleEvidenceIndex: RuleEvidenceIndex;
@@ -44,9 +47,10 @@ export async function runRuleEngine(input: {
   referenceRoot: string;
   caseInput: CaseInput;
   taskType: TaskType;
+  runtimeRules?: CaseRuleDefinition[];
 }): Promise<RuleEngineOutput> {
   const evidence = await collectEvidence(input.caseInput);
-  const evaluatedRules = listRegisteredRules().map((rule) =>
+  const evaluatedRules = listRegisteredRules(input.runtimeRules ?? []).map((rule) =>
     evaluateRegisteredRule(rule, evidence),
   );
 
@@ -115,20 +119,30 @@ export async function runRuleEngine(input: {
       result: rule.result,
       conclusion: rule.conclusion,
     }));
+  const caseRuleIds = new Set((input.runtimeRules ?? []).map((rule) => rule.rule_id));
+  const caseRuleResults = deterministicRuleResults.filter((rule) => caseRuleIds.has(rule.rule_id));
   const assistedRuleCandidates: AssistedRuleCandidate[] = staticRuleAuditResults
     .filter((rule) => rule.result === "未接入判定器")
-    .map((rule) => ({
-      rule_id: rule.rule_id,
-      rule_source: rule.rule_source,
-      why_uncertain: rule.conclusion,
-      local_preliminary_signal: "未接入判定器",
-      evidence_files: ruleEvidenceIndex[rule.rule_id]?.evidenceFiles ?? [],
-      evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
-    }));
+    .map((rule) => {
+      const runtimeRule = (input.runtimeRules ?? []).find((item) => item.rule_id === rule.rule_id);
+      return {
+        rule_id: rule.rule_id,
+        rule_source: rule.rule_source,
+        why_uncertain: rule.conclusion,
+        local_preliminary_signal: "未接入判定器",
+        evidence_files: ruleEvidenceIndex[rule.rule_id]?.evidenceFiles ?? [],
+        evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
+        rule_name: runtimeRule?.rule_name,
+        priority: runtimeRule?.priority,
+        llm_prompt: runtimeRule?.detector_config.llmPrompt,
+        is_case_rule: runtimeRule?.is_case_rule,
+      };
+    });
 
   return {
     staticRuleAuditResults,
     deterministicRuleResults,
+    caseRuleResults,
     assistedRuleCandidates,
     ruleViolations,
     ruleEvidenceIndex,
@@ -146,6 +160,10 @@ function evaluateRegisteredRule(
 
   if (rule.detector_kind === "project_structure") {
     return runProjectStructureRule(rule, evidence);
+  }
+
+  if (rule.detector_kind === "case_constraint") {
+    return runCaseConstraintRule(rule, evidence);
   }
 
   return {

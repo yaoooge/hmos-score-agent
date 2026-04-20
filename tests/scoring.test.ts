@@ -3,7 +3,12 @@ import path from "node:path";
 import test from "node:test";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import { computeScoreBreakdown } from "../src/scoring/scoringEngine.js";
-import type { ConstraintSummary, FeatureExtraction, RuleAuditResult } from "../src/types.js";
+import type {
+  ConstraintSummary,
+  FeatureExtraction,
+  RuleAuditResult,
+  CaseRuleDefinition,
+} from "../src/types.js";
 
 const referenceRoot = path.resolve(process.cwd(), "references/scoring");
 
@@ -90,4 +95,53 @@ test("computeScoreBreakdown applies penalties and hard-gate caps", async () => {
   assert.ok(result.overallConclusion.total_score <= 69);
   assert.ok(result.humanReviewItems.length > 0);
   assert.ok(result.risks.length > 0);
+});
+
+test("computeScoreBreakdown triggers hard gate when case P0 rule fails", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const caseRuleDefinitions: CaseRuleDefinition[] = [
+    {
+      pack_id: "case-requirement_004",
+      rule_id: "HM-REQ-008-01",
+      rule_name: "必须使用 LoginWithHuaweiIDButton",
+      rule_source: "must_rule",
+      summary: "登录页必须使用 LoginWithHuaweiIDButton",
+      priority: "P0",
+      detector_kind: "case_constraint",
+      detector_config: {
+        targetPatterns: ["**/pages/*.ets"],
+        astSignals: [{ type: "call", name: "LoginWithHuaweiIDButton" }],
+        llmPrompt: "检查登录按钮",
+      },
+      fallback_policy: "agent_assisted",
+      is_case_rule: true,
+    },
+  ];
+
+  const result = computeScoreBreakdown({
+    taskType: "full_generation",
+    rubric,
+    ruleAuditResults: [
+      {
+        rule_id: "HM-REQ-008-01",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "未使用 LoginWithHuaweiIDButton",
+      },
+    ],
+    ruleViolations: [],
+    constraintSummary,
+    featureExtraction,
+    evidenceSummary: {
+      workspaceFileCount: 4,
+      originalFileCount: 3,
+      changedFileCount: 2,
+      changedFiles: ["entry/src/main/ets/pages/LoginPage.ets"],
+      hasPatch: true,
+    },
+    caseRuleDefinitions,
+  });
+
+  assert.equal(result.hardGateTriggered, true);
+  assert.match(result.hardGateReason ?? "", /case_rule/i);
 });

@@ -6,7 +6,7 @@ import test from "node:test";
 import { collectEvidence } from "../src/rules/evidenceCollector.js";
 import { listRegisteredRules } from "../src/rules/engine/rulePackRegistry.js";
 import { runRuleEngine } from "../src/rules/ruleEngine.js";
-import type { CaseInput } from "../src/types.js";
+import type { CaseInput, CaseRuleDefinition } from "../src/types.js";
 
 const referenceRoot = path.resolve(process.cwd(), "references/scoring");
 
@@ -97,6 +97,105 @@ test("runRuleEngine exposes only current rule-audit fields", async (t) => {
   assert.equal("ruleAuditResults" in result, false);
   assert.equal(
     result.staticRuleAuditResults.some((item) => item.result === "不涉及"),
+    true,
+  );
+});
+
+test("runRuleEngine evaluates runtime case rules and exposes caseRuleResults", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets":
+      "import { LoginWithHuaweiIDButton } from '@kit.AccountKit';\nLoginWithHuaweiIDButton()\n",
+    "entry/src/main/module.json5": '{ "module": { "name": "entry" } }\n',
+  });
+
+  const runtimeRules: CaseRuleDefinition[] = [
+    {
+      pack_id: "case-requirement_004",
+      rule_id: "HM-REQ-008-01",
+      rule_name: "必须使用 LoginWithHuaweiIDButton",
+      rule_source: "must_rule",
+      summary: "登录页必须使用 LoginWithHuaweiIDButton",
+      priority: "P0",
+      detector_kind: "case_constraint",
+      detector_config: {
+        targetPatterns: ["**/pages/*.ets"],
+        astSignals: [
+          { type: "import", module: "@kit.AccountKit" },
+          { type: "call", name: "LoginWithHuaweiIDButton" },
+        ],
+        llmPrompt: "检查是否从 @kit.AccountKit 导入并使用 LoginWithHuaweiIDButton",
+      },
+      fallback_policy: "agent_assisted",
+      is_case_rule: true,
+    },
+    {
+      pack_id: "case-requirement_004",
+      rule_id: "HM-REQ-008-06",
+      rule_name: "module.json5 需配置 Client ID",
+      rule_source: "should_rule",
+      summary: "module.json5 需配置 Client ID",
+      priority: "P1",
+      detector_kind: "case_constraint",
+      detector_config: {
+        targetPatterns: ["**/module.json5"],
+        astSignals: [{ type: "json_key", name: "metadata" }],
+        llmPrompt: "检查 module.json5 是否配置 metadata",
+      },
+      fallback_policy: "agent_assisted",
+      is_case_rule: true,
+    },
+  ];
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules,
+  });
+
+  assert.equal(
+    result.caseRuleResults.some((item) => item.rule_id === "HM-REQ-008-01"),
+    true,
+  );
+  assert.equal(
+    result.assistedRuleCandidates.some((item) => item.rule_id === "HM-REQ-008-06"),
+    true,
+  );
+});
+
+test("runRuleEngine marks missing case targets as violations", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/Index.ets": "Text('plain')\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "case-requirement_004",
+        rule_id: "HM-REQ-008-01",
+        rule_name: "必须使用 LoginWithHuaweiIDButton",
+        rule_source: "must_rule",
+        summary: "登录页必须使用 LoginWithHuaweiIDButton",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/pages/*.ets"],
+          astSignals: [{ type: "call", name: "LoginWithHuaweiIDButton" }],
+          llmPrompt: "检查登录页按钮",
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "HM-REQ-008-01" && item.result === "不满足",
+    ),
     true,
   );
 });
