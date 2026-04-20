@@ -280,6 +280,24 @@ test("collectEvidence ignores ohosTest and test directories during rule evaluati
   assert.equal(evidence.summary.originalFileCount, 0);
 });
 
+test("collectEvidence ignores module-level ohosTest and test directories during rule evaluation", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "commons/commonLib/src/test/LocalUnit.test.ets": "let x: any = 1;\n",
+    "commons/commonLib/src/ohosTest/ets/test/Ability.test.ets": "var y = 2;\n",
+    "features/home/src/test/LocalUnit.test.ets": "let z: any = 1;\n",
+    "features/home/src/ohosTest/ets/test/Ability.test.ets": "var w = 2;\n",
+  });
+
+  const evidence = await collectEvidence(makeCaseInput(caseDir));
+
+  assert.deepEqual(
+    evidence.workspaceFiles.map((item) => item.relativePath),
+    ["entry/src/main/ets/pages/Index.ets"],
+  );
+  assert.equal(evidence.summary.workspaceFileCount, 1);
+});
+
 test("runRuleEngine does not report violations from files ignored by workspace gitignore", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
@@ -599,6 +617,87 @@ test("runRuleEngine does not treat object property values as this-type usage", a
   );
 });
 
+test("runRuleEngine avoids known false positives from valid ArkTS syntax", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "function helper(): number {",
+      "  return 1;",
+      "}",
+      "function secondHelper(): number {",
+      "  return helper();",
+      "}",
+      "class ViewModel {",
+      "  tabList: string[] = [];",
+      "}",
+      "struct Index {",
+      "  private vm: ViewModel = new ViewModel();",
+      "  private listeners: string[] = [];",
+      "  build() {",
+      "    const authRequest = new AuthRequest();",
+      "    authRequest.scopes = ['phone'];",
+      "    authRequest.permissions = ['serviceauthcode'];",
+      "    const resourceName = imageUrl.split('//')[1];",
+      "    if (paramsArr.length && paramsArr[0]) {",
+      "      console.info(paramsArr[0]);",
+      "    }",
+      "    if (this.listeners.indexOf(listener) < 0) {",
+      "      console.info(listener);",
+      "    }",
+      "    for (let i = 0; i < paramsArr.length; i++) {",
+      "      console.info(paramsArr[i]);",
+      "    }",
+      "    let pref = dataPreferences.getPreferencesSync(context, { name: CardManager.KEY_CARD_ID });",
+      "    let windowModel: WindowModel = AppStorageV2.connect(WindowModel, () => new WindowModel())!;",
+      "    Tabs()",
+      "      .tabBar(this.tabBarBuilder(this.vm.tabList[0], 0))",
+      "      .indicator({",
+      "        color: $r('app.color.tab_indicator_color'),",
+      "        height: 2,",
+      "        width: 20,",
+      "        marginTop: 8,",
+      "        borderRadius: 2",
+      "      })",
+      "    const dialogConfig: DialogConfig = {",
+      "      onConfirm: (value?: string) => {",
+      "        console.info(value);",
+      "      }",
+      "    };",
+      "    this.render(dialogConfig);",
+      "  }",
+      "  subscribe(eventType: string, callback: (event?: string) => void) {",
+      "    callback(eventType);",
+      "  }",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  for (const ruleId of [
+    "ARKTS-MUST-001",
+    "ARKTS-MUST-022",
+    "ARKTS-MUST-028",
+    "ARKTS-SHOULD-011",
+    "ARKTS-SHOULD-016",
+    "ARKTS-FORBID-001",
+    "ARKTS-FORBID-005",
+    "ARKTS-FORBID-011",
+    "ARKTS-PERF-FORBID-001",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
+      false,
+      ruleId,
+    );
+  }
+});
+
 test("runRuleEngine builds fallback evidence snippets when patch paths include workspace prefix", async (t) => {
   const caseDir = await createRuleFixture(t, {
     ".gitignore": ".hvigor/\n",
@@ -766,6 +865,50 @@ test("runRuleEngine flags Array<T> style as should-rule violation", async (t) =>
     ),
     true,
   );
+});
+
+test("runRuleEngine reports text-pattern violations with concrete line locations", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "let ok: string[] = [];",
+      "let values: Array<string> = [];",
+      "let more: Array<number> = [];",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const ruleResult = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKTS-SHOULD-021",
+  );
+  const violation = result.ruleViolations.find((item) => item.rule_id === "ARKTS-SHOULD-021");
+  const evidence = result.ruleEvidenceIndex["ARKTS-SHOULD-021"];
+
+  assert.equal(ruleResult?.result, "不满足");
+  assert.match(
+    ruleResult?.conclusion ?? "",
+    /entry\/src\/main\/ets\/pages\/Index\.ets:2/,
+  );
+  assert.match(
+    ruleResult?.conclusion ?? "",
+    /entry\/src\/main\/ets\/pages\/Index\.ets:3/,
+  );
+  assert.deepEqual(violation?.affected_items, [
+    "entry/src/main/ets/pages/Index.ets:2",
+    "entry/src/main/ets/pages/Index.ets:3",
+  ]);
+  assert.deepEqual(evidence?.evidenceFiles, [
+    "entry/src/main/ets/pages/Index.ets:2",
+    "entry/src/main/ets/pages/Index.ets:3",
+  ]);
+  assert.deepEqual(evidence?.evidenceSnippets, [
+    "entry/src/main/ets/pages/Index.ets:2: let values: Array<string> = [];",
+    "entry/src/main/ets/pages/Index.ets:3: let more: Array<number> = [];",
+  ]);
 });
 
 test("runRuleEngine flags unsupported type signatures and constructor parameter properties", async (t) => {

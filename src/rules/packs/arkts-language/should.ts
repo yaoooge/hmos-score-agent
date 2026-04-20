@@ -70,7 +70,7 @@ export const arktsShouldRules: RegisteredRule[] = [
     "should_rule",
     "ARKTS-SHOULD-011",
     "条件语句和循环语句建议使用大括号。",
-    ["\\b(?:if|for|while)\\s*\\([^)]*\\)\\s*[^\\s{]"],
+    ["^\\s*(?:if|for|while)\\s*\\((?:[^()]|\\([^()]*\\))*\\)\\s*(?!\\{)\\S"],
   ),
   createTextRule(
     "arkts-language",
@@ -108,7 +108,7 @@ export const arktsShouldRules: RegisteredRule[] = [
     "ARKTS-SHOULD-016",
     "对象字面量属性超过 4 个时建议统一换行。",
     [
-      "\\{\\s*(?:[A-Za-z_$][\\w$]*\\s*:\\s*[^,{}\\n]+,\\s*){4,}[A-Za-z_$][\\w$]*\\s*:\\s*[^,{}\\n]+\\s*\\}",
+      "\\{[ \\t]*(?:[A-Za-z_$][\\w$]*[ \\t]*:[ \\t]*[^,{}\\n]+,[ \\t]*){4,}[A-Za-z_$][\\w$]*[ \\t]*:[ \\t]*[^,{}\\n]+[ \\t]*\\}",
     ],
   ),
   createTextRule(

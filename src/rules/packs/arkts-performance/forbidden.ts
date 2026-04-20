@@ -7,7 +7,7 @@ export const arktsPerformanceForbiddenRules: RegisteredRule[] = [
     "forbidden_pattern",
     "ARKTS-PERF-FORBID-001",
     "禁止使用可选参数 ? 作为性能敏感函数参数形式。",
-    ["\\bfunction\\s+[A-Za-z_$][\\w$]*\\s*\\([^)]*\\?:[^)]*\\)", "\\([^)]*\\?:[^)]*\\)\\s*=>"],
+    ["\\bfunction\\s+[A-Za-z_$][\\w$]*\\s*\\([^)]*\\?:[^)]*\\)"],
   ),
   createTextRule(
     "arkts-performance",

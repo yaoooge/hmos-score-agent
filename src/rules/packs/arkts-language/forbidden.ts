@@ -24,7 +24,7 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "ARKTS-FORBID-003",
     "禁止使用数字键、普通字符串键、索引签名、索引访问类型或未声明字段进行对象成员访问。",
     [
-      "\\[['\"][^'\"]+['\"]\\]|\\[[^\\]]+\\s*:\\s*[^\\]]+\\]\\s*:\\s*[^;={]+;?|type\\s+[A-Za-z_$][\\w$<>,\\s]*=\\s*[A-Za-z_$][\\w$<>]*\\s*\\[\\s*(?:[\"'][^\"']+[\"']|[A-Za-z_$][\\w$]*)\\s*\\]",
+      "\\b[A-Za-z_$][\\w$]*\\s*\\[\\s*['\"][^'\"]+['\"]\\s*\\]|\\[[^\\]]+\\s*:\\s*[^\\]]+\\]\\s*:\\s*[^;={]+;?|type\\s+[A-Za-z_$][\\w$<>,\\s]*=\\s*[A-Za-z_$][\\w$<>]*\\s*\\[\\s*(?:[\"'][^\"']+[\"']|[A-Za-z_$][\\w$]*)\\s*\\]",
     ],
   ),
   createTextRule(
@@ -42,7 +42,7 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "ARKTS-FORBID-005",
     "禁止使用 function expression、class expression、嵌套函数声明、generator、独立 this、构造签名或调用签名类型。",
     [
-      "^\\s*\\([^)]*\\)\\s*:\\s*[^=][^;{]*;?$|^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$|=\\s*function\\b|=\\s*class\\b|function\\s*\\*|\\bfunction\\s+\\w+\\([^)]*\\)\\s*\\{[\\s\\S]*\\bfunction\\s+\\w+\\(|\\bfunction\\s+\\w+\\([^)]*\\)\\s*\\{[\\s\\S]*\\bthis\\b",
+      "^\\s*\\([^)]*\\)\\s*:\\s*[^=][^;{]*;?$|^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$|=\\s*function\\b|=\\s*class\\b|function\\s*\\*",
     ],
   ),
   createTextRule(
@@ -90,7 +90,9 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "forbidden_pattern",
     "ARKTS-FORBID-011",
     "禁止在 if、while、for 或其他控制性条件表达式中直接进行赋值。",
-    ["\\b(?:if|while|for)\\s*\\([^)]*[^=!<>]=[^=][^)]*\\)"],
+    [
+      "\\b(?:if|while)\\s*\\((?:[^()]|\\([^()]*\\))*[^=!<>]=[^=](?:[^()]|\\([^()]*\\))*\\)|\\bfor\\s*\\([^;)]*;[^;)]*[^=!<>]=[^=][^;)]*;",
+    ],
   ),
   createTextRule(
     "arkts-language",

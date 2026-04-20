@@ -7,7 +7,7 @@ export const arktsMustRules: RegisteredRule[] = [
     "must_rule",
     "ARKTS-MUST-001",
     "对象属性名必须是合法标识符，禁止依赖数字键或普通字符串键的动态属性访问。",
-    ["\\[['\"][^'\"]+['\"]\\]|\\[\\s*\\d+\\s*\\]"],
+    ["\\b[A-Za-z_$][\\w$]*\\s*\\[\\s*['\"][^'\"]+['\"]\\s*\\]"],
   ),
   createTextRule(
     "arkts-language",
@@ -151,9 +151,7 @@ export const arktsMustRules: RegisteredRule[] = [
     "must_rule",
     "ARKTS-MUST-022",
     "禁止在普通函数或静态方法中使用 this，禁止嵌套函数声明与生成器函数。",
-    [
-      "function\\s*\\*|\\bfunction\\s+\\w+\\([^)]*\\)\\s*\\{[\\s\\S]*\\bfunction\\s+\\w+\\(|\\bfunction\\s+\\w+\\([^)]*\\)\\s*\\{[\\s\\S]*\\bthis\\b",
-    ],
+    ["function\\s*\\*"],
   ),
   createPendingRule(
     "arkts-language",
@@ -195,7 +193,9 @@ export const arktsMustRules: RegisteredRule[] = [
     "must_rule",
     "ARKTS-MUST-028",
     "多个变量定义和赋值语句不允许写在一行。",
-    ["\\b(?:let|const|var)\\s+[^;\\n]+,\\s*[^;\\n]+;|=[^;\\n]*;[^\\n=]*="],
+    [
+      "\\b(?:let|const|var)\\s+[A-Za-z_$][\\w$]*(?:\\s*:[^=,;\\n]+)?(?:\\s*=\\s*[^,();\\n]+)?,\\s*[A-Za-z_$][\\w$]*(?:\\s*[:=]|[,;])|(?<![!<>=])=(?![=>])[^;\\n]*;[^\\n;]*[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*|\\[[^\\]]+\\])?\\s*(?<![!<>=])=(?![=>])",
+    ],
   ),
   createTextRule(
     "arkts-language",

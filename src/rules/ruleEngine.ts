@@ -62,7 +62,7 @@ export async function runRuleEngine(input: {
       rule_source: rule.rule_source,
       rule_id: rule.rule_id,
       rule_summary: rule.conclusion,
-      affected_items: rule.matchedFiles,
+      affected_items: getRuleEvidenceFiles(rule),
       handling_result: "待人工复核",
       evidence: rule.conclusion,
     }));
@@ -71,15 +71,8 @@ export async function runRuleEngine(input: {
     evaluatedRules.map((rule) => [
       rule.rule_id,
       {
-        evidenceFiles: rule.matchedFiles,
-        evidenceSnippets: rule.matchedFiles
-          .map(
-            (relativePath) =>
-              evidence.workspaceFiles.find((file) => file.relativePath === relativePath)?.content ??
-              "",
-          )
-          .filter(Boolean)
-          .map((content) => content.slice(0, 200)),
+        evidenceFiles: getRuleEvidenceFiles(rule),
+        evidenceSnippets: getRuleEvidenceSnippets(rule, evidence.workspaceFiles),
       },
     ]),
   );
@@ -101,7 +94,12 @@ export async function runRuleEngine(input: {
   };
 
   const staticRuleAuditResults: StaticRuleAuditResult[] = evaluatedRules.map(
-    ({ matchedFiles: _matchedFiles, ...rule }) => {
+    ({
+      matchedFiles: _matchedFiles,
+      matchedLocations: _matchedLocations,
+      matchedSnippets: _matchedSnippets,
+      ...rule
+    }) => {
       if (caseRuleIds.has(rule.rule_id)) {
         return rule;
       }
@@ -188,4 +186,27 @@ function evaluateRegisteredRule(
 
 function normalizeWorkspaceRelativePath(relativePath: string): string {
   return relativePath.replace(/^workspace\//, "").replace(/^original\//, "");
+}
+
+function getRuleEvidenceFiles(rule: EvaluatedRule): string[] {
+  return (rule.matchedLocations?.length ?? 0) > 0
+    ? (rule.matchedLocations ?? [])
+    : rule.matchedFiles;
+}
+
+function getRuleEvidenceSnippets(
+  rule: EvaluatedRule,
+  workspaceFiles: Awaited<ReturnType<typeof collectEvidence>>["workspaceFiles"],
+): string[] {
+  if ((rule.matchedSnippets?.length ?? 0) > 0) {
+    return rule.matchedSnippets ?? [];
+  }
+
+  return rule.matchedFiles
+    .map(
+      (relativePath) =>
+        workspaceFiles.find((file) => file.relativePath === relativePath)?.content ?? "",
+    )
+    .filter(Boolean)
+    .map((content) => content.slice(0, 200));
 }

@@ -4,6 +4,7 @@ import { CaseInput, EvidenceSummary } from "../types.js";
 import { collectVisibleFiles } from "../io/gitignoreMatcher.js";
 
 const RULE_EVALUATION_IGNORED_PATH_PREFIXES = ["entry/src/test", "entry/src/ohosTest"];
+const RULE_EVALUATION_IGNORED_PATH_PATTERN = /(?:^|\/)src\/(?:test|ohosTest)(?:\/|$)/;
 
 // 规则引擎只看这个归一化视图，不直接耦合真实目录结构。
 export interface WorkspaceFile {
@@ -23,10 +24,12 @@ export async function collectEvidence(caseInput: CaseInput): Promise<CollectedEv
   // 这里同时收集 workspace/original/patch 三类证据，供规则和评分共用。
   const workspaceFilePaths = await collectVisibleFiles(caseInput.generatedProjectPath, {
     extraIgnoredPathPrefixes: RULE_EVALUATION_IGNORED_PATH_PREFIXES,
-  });
+  }).then((files) => files.filter((relativePath) => !isRuleEvaluationIgnoredPath(relativePath)));
   const originalFiles = await collectVisibleFiles(caseInput.originalProjectPath, {
     extraIgnoredPathPrefixes: RULE_EVALUATION_IGNORED_PATH_PREFIXES,
-  }).catch(() => []);
+  })
+    .then((files) => files.filter((relativePath) => !isRuleEvaluationIgnoredPath(relativePath)))
+    .catch(() => []);
   const workspaceFiles = await Promise.all(
     workspaceFilePaths.map(async (relativePath) => ({
       relativePath,
@@ -65,4 +68,8 @@ export async function collectEvidence(caseInput: CaseInput): Promise<CollectedEv
       hasPatch: Boolean(patchText),
     },
   };
+}
+
+function isRuleEvaluationIgnoredPath(relativePath: string): boolean {
+  return RULE_EVALUATION_IGNORED_PATH_PATTERN.test(relativePath);
 }

@@ -13,6 +13,17 @@ function shouldKeepComments(patterns: string[]): boolean {
   );
 }
 
+function matchesAnyPattern(patterns: RegExp[], content: string): boolean {
+  return patterns.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(content);
+  });
+}
+
+function splitLines(source: string): string[] {
+  return source.split(/\r?\n/);
+}
+
 // stripCommentsPreserveLayout 仅移除注释内容，并尽量保留换行与列宽，避免影响按行规则。
 function stripCommentsPreserveLayout(source: string): string {
   let result = "";
@@ -112,6 +123,52 @@ function stripCommentsPreserveLayout(source: string): string {
   return result;
 }
 
+interface TextPatternMatch {
+  relativePath: string;
+  lineLocations: string[];
+  lineSnippets: string[];
+}
+
+function findTextPatternMatch(
+  file: CollectedEvidence["workspaceFiles"][number],
+  patterns: RegExp[],
+  keepComments: boolean,
+): TextPatternMatch | undefined {
+  const normalizedContent = keepComments ? file.content : stripCommentsPreserveLayout(file.content);
+
+  if (!matchesAnyPattern(patterns, normalizedContent)) {
+    return undefined;
+  }
+
+  const originalLines = splitLines(file.content);
+  const normalizedLines = splitLines(normalizedContent);
+  const seenLocations = new Set<string>();
+  const lineLocations: string[] = [];
+  const lineSnippets: string[] = [];
+
+  normalizedLines.forEach((line, index) => {
+    if (!matchesAnyPattern(patterns, line)) {
+      return;
+    }
+
+    const lineNumber = index + 1;
+    const location = `${file.relativePath}:${lineNumber}`;
+    if (seenLocations.has(location)) {
+      return;
+    }
+
+    seenLocations.add(location);
+    lineLocations.push(location);
+    lineSnippets.push(`${location}: ${(originalLines[index] ?? "").trim()}`);
+  });
+
+  return {
+    relativePath: file.relativePath,
+    lineLocations,
+    lineSnippets,
+  };
+}
+
 // 文本规则完全由规则包中的 detector_config 驱动。
 export function runTextPatternRule(
   rule: RegisteredRule,
@@ -126,15 +183,14 @@ export function runTextPatternRule(
   const patterns = compilePatterns(patternTexts);
   const keepComments = shouldKeepComments(patternTexts);
 
-  const matchedFiles = evidence.workspaceFiles
+  const matches = evidence.workspaceFiles
     .filter((file) => fileExtensions.includes(path.extname(file.relativePath).toLowerCase()))
-    .filter((file) => {
-      const normalizedContent = keepComments
-        ? file.content
-        : stripCommentsPreserveLayout(file.content);
-      return patterns.some((pattern) => pattern.test(normalizedContent));
-    })
-    .map((file) => file.relativePath);
+    .map((file) => findTextPatternMatch(file, patterns, keepComments))
+    .filter((match): match is TextPatternMatch => Boolean(match));
+  const matchedFiles = matches.map((match) => match.relativePath);
+  const matchedLocations = matches.flatMap((match) => match.lineLocations);
+  const matchedSnippets = matches.flatMap((match) => match.lineSnippets);
+  const conclusionLocations = matchedLocations.length > 0 ? matchedLocations : matchedFiles;
 
   return {
     rule_id: rule.rule_id,
@@ -142,8 +198,10 @@ export function runTextPatternRule(
     result: matchedFiles.length > 0 ? "不满足" : "满足",
     conclusion:
       matchedFiles.length > 0
-        ? `${rule.summary} 检测到规则命中，文件：${matchedFiles.join(", ")}`
+        ? `${rule.summary} 检测到规则命中，文件：${conclusionLocations.join(", ")}`
         : "未发现该规则的命中证据。",
     matchedFiles,
+    matchedLocations,
+    matchedSnippets,
   };
 }
