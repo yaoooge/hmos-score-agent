@@ -143,6 +143,50 @@ test("computeScoreBreakdown snaps penalized submetric scores to declared discret
   }
 });
 
+test("computeScoreBreakdown maps array type style rules only to type-related rubric items", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+
+  const result = computeScoreBreakdown({
+    taskType: "full_generation",
+    rubric,
+    ruleAuditResults: [
+      {
+        rule_id: "ARKTS-SHOULD-021",
+        rule_source: "should_rule",
+        result: "不满足",
+        conclusion: "使用 T[] 表示数组类型，而不是 Array<T>。",
+      },
+    ],
+    ruleViolations: [],
+    constraintSummary,
+    featureExtraction,
+    evidenceSummary: {
+      workspaceFileCount: 4,
+      originalFileCount: 3,
+      changedFileCount: 2,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const namingMetric = result.submetricDetails.find(
+    (detail) => detail.metric_name === "命名表达清晰度",
+  );
+  const complexityMetric = result.submetricDetails.find(
+    (detail) => detail.metric_name === "复杂度控制",
+  );
+  const arktsMetric = result.submetricDetails.find(
+    (detail) => detail.metric_name === "ArkTS/ArkUI语法与类型安全",
+  );
+
+  assert.equal(namingMetric?.score, 5);
+  assert.equal(namingMetric?.rationale, "按 rubric 基线满分初始化。");
+  assert.equal(complexityMetric?.score, 5);
+  assert.equal(complexityMetric?.rationale, "按 rubric 基线满分初始化。");
+  assert.equal(arktsMetric?.score, 6);
+  assert.match(arktsMetric?.rationale ?? "", /ARKTS-SHOULD-021/);
+});
+
 test("computeScoreBreakdown triggers hard gate when case P0 rule fails", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const caseRuleDefinitions: CaseRuleDefinition[] = [

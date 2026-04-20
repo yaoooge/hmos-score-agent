@@ -26,7 +26,7 @@ type ComputeScoreInput = {
 };
 
 type MetricPenaltyRule = {
-  keywords: string[];
+  metricNames: string[];
   ratio: number;
   confidence: "medium" | "low";
   reviewRequired: boolean;
@@ -73,32 +73,174 @@ function snapScoreToDeclaredBand(
   }, scoringBands[0].score);
 }
 
-function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
-  // 首版只做“规则源 -> 扣分档位”的粗映射，先把主链闭环起来。
-  if (rule.rule_source === "must_rule") {
-    return [
-      {
-        keywords: ["语法", "类型", "错误"],
-        ratio: 0.35,
-        confidence: "medium",
-        reviewRequired: true,
-      },
-      { keywords: ["规范", "ArkTS"], ratio: 0.25, confidence: "medium", reviewRequired: true },
-    ];
-  }
-  if (rule.rule_source === "forbidden_pattern") {
-    return [
-      { keywords: ["风险", "安全", "边界"], ratio: 0.5, confidence: "low", reviewRequired: true },
-    ];
-  }
+const typeSafetyMetrics = [
+  "ArkTS/ArkUI语法与类型安全",
+  "ArkTS约束遵循度",
+  "ArkTS/ArkUI规范符合度",
+];
+const staticQualityMetrics = ["静态坏味道控制"];
+const namingMetrics = ["命名表达清晰度", "命名与风格一致性"];
+const complexityMetrics = ["复杂度控制"];
+const stateFlowMetrics = ["状态与数据流组织", "状态接入合理性"];
+const stabilityRiskMetrics = ["稳定性风险", "回归风险控制"];
+const securityBoundaryMetrics = ["安全与边界意识", "安全/边界意识"];
+const performanceRiskMetrics = ["性能风险"];
+
+function makePenaltyRule(input: {
+  metricNames: string[];
+  ratio: number;
+  confidence?: "medium" | "low";
+  reviewRequired?: boolean;
+}): MetricPenaltyRule[] {
   return [
     {
-      keywords: ["复杂度", "可维护", "坏味道"],
-      ratio: 0.15,
-      confidence: "medium",
-      reviewRequired: false,
+      metricNames: input.metricNames,
+      ratio: input.ratio,
+      confidence: input.confidence ?? "medium",
+      reviewRequired: input.reviewRequired ?? true,
     },
   ];
+}
+
+function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
+  const typeRuleIds = new Set([
+    "ARKTS-MUST-001",
+    "ARKTS-MUST-002",
+    "ARKTS-MUST-003",
+    "ARKTS-MUST-004",
+    "ARKTS-MUST-006",
+    "ARKTS-MUST-007",
+    "ARKTS-MUST-008",
+    "ARKTS-MUST-010",
+    "ARKTS-MUST-011",
+    "ARKTS-MUST-012",
+    "ARKTS-MUST-013",
+    "ARKTS-MUST-014",
+    "ARKTS-MUST-016",
+    "ARKTS-MUST-018",
+    "ARKTS-MUST-019",
+    "ARKTS-MUST-021",
+    "ARKTS-MUST-023",
+    "ARKTS-MUST-024",
+    "ARKTS-MUST-026",
+    "ARKTS-MUST-029",
+    "ARKTS-SHOULD-002",
+    "ARKTS-SHOULD-003",
+    "ARKTS-SHOULD-019",
+    "ARKTS-SHOULD-021",
+    "ARKTS-FORBID-001",
+    "ARKTS-FORBID-003",
+    "ARKTS-FORBID-004",
+    "ARKTS-FORBID-007",
+  ]);
+  const namingRuleIds = new Set([
+    "ARKTS-SHOULD-004",
+    "ARKTS-SHOULD-005",
+    "ARKTS-SHOULD-006",
+    "ARKTS-SHOULD-007",
+    "ARKTS-SHOULD-008",
+  ]);
+  const styleRuleIds = new Set([
+    "ARKTS-MUST-005",
+    "ARKTS-MUST-028",
+    "ARKTS-SHOULD-009",
+    "ARKTS-SHOULD-010",
+    "ARKTS-SHOULD-012",
+    "ARKTS-SHOULD-013",
+    "ARKTS-SHOULD-014",
+    "ARKTS-SHOULD-015",
+    "ARKTS-SHOULD-016",
+    "ARKTS-SHOULD-017",
+    "ARKTS-SHOULD-018",
+    "ARKTS-SHOULD-020",
+  ]);
+  const controlFlowRuleIds = new Set([
+    "ARKTS-MUST-020",
+    "ARKTS-MUST-022",
+    "ARKTS-MUST-030",
+    "ARKTS-SHOULD-011",
+    "ARKTS-FORBID-005",
+    "ARKTS-FORBID-006",
+    "ARKTS-FORBID-011",
+    "ARKTS-FORBID-012",
+  ]);
+  const runtimeRiskRuleIds = new Set([
+    "ARKTS-MUST-015",
+    "ARKTS-MUST-017",
+    "ARKTS-MUST-025",
+    "ARKTS-MUST-027",
+    "ARKTS-FORBID-002",
+    "ARKTS-FORBID-008",
+    "ARKTS-FORBID-009",
+    "ARKTS-FORBID-010",
+    "ARKTS-PERF-FORBID-001",
+  ]);
+
+  if (typeRuleIds.has(rule.rule_id)) {
+    return makePenaltyRule({
+      metricNames:
+        rule.rule_source === "forbidden_pattern"
+          ? [...typeSafetyMetrics, ...stabilityRiskMetrics, ...securityBoundaryMetrics]
+          : typeSafetyMetrics,
+      ratio: rule.rule_source === "must_rule" ? 0.35 : 0.15,
+      confidence: rule.rule_source === "forbidden_pattern" ? "low" : "medium",
+      reviewRequired: rule.rule_source !== "should_rule",
+    });
+  }
+  if (namingRuleIds.has(rule.rule_id)) {
+    return makePenaltyRule({
+      metricNames: namingMetrics,
+      ratio: 0.15,
+      reviewRequired: false,
+    });
+  }
+  if (styleRuleIds.has(rule.rule_id)) {
+    return makePenaltyRule({
+      metricNames: staticQualityMetrics,
+      ratio: rule.rule_source === "must_rule" ? 0.25 : 0.15,
+      reviewRequired: rule.rule_source === "must_rule",
+    });
+  }
+  if (controlFlowRuleIds.has(rule.rule_id)) {
+    return makePenaltyRule({
+      metricNames: [...complexityMetrics, ...staticQualityMetrics, ...stabilityRiskMetrics],
+      ratio: rule.rule_source === "forbidden_pattern" ? 0.5 : 0.25,
+      confidence: rule.rule_source === "forbidden_pattern" ? "low" : "medium",
+    });
+  }
+  if (rule.rule_id === "ARKTS-PERF-FORBID-001") {
+    return makePenaltyRule({
+      metricNames: [...performanceRiskMetrics, ...typeSafetyMetrics],
+      ratio: 0.5,
+      confidence: "low",
+    });
+  }
+  if (runtimeRiskRuleIds.has(rule.rule_id)) {
+    return makePenaltyRule({
+      metricNames: [...stabilityRiskMetrics, ...securityBoundaryMetrics, ...typeSafetyMetrics],
+      ratio: rule.rule_source === "forbidden_pattern" ? 0.5 : 0.35,
+      confidence: rule.rule_source === "forbidden_pattern" ? "low" : "medium",
+    });
+  }
+  if (rule.rule_id === "ARKTS-SHOULD-001") {
+    return makePenaltyRule({
+      metricNames: [...stateFlowMetrics, ...stabilityRiskMetrics],
+      ratio: 0.15,
+      reviewRequired: false,
+    });
+  }
+
+  if (rule.rule_source === "must_rule") {
+    return makePenaltyRule({ metricNames: typeSafetyMetrics, ratio: 0.35 });
+  }
+  if (rule.rule_source === "forbidden_pattern") {
+    return makePenaltyRule({
+      metricNames: [...stabilityRiskMetrics, ...securityBoundaryMetrics],
+      ratio: 0.5,
+      confidence: "low",
+    });
+  }
+  return [];
 }
 
 function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
@@ -186,17 +328,8 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
 
     const penaltyRules = findPenaltyRules(rule);
     for (const detail of details) {
-      const combinedText = `${detail.dimension_name} ${detail.metric_name}`;
-      if (
-        !penaltyRules.some((penalty) =>
-          penalty.keywords.some((keyword) => combinedText.includes(keyword)),
-        )
-      ) {
-        continue;
-      }
-
       const penalty = penaltyRules.find((candidate) =>
-        candidate.keywords.some((keyword) => combinedText.includes(keyword)),
+        candidate.metricNames.includes(detail.metric_name),
       );
       if (!penalty) {
         continue;
