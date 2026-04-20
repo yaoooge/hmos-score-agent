@@ -7,6 +7,8 @@ function lengthOf(value: unknown): number {
 // summarizeNodeUpdate 负责把节点 update 收敛成稳定的摘要字符串。
 export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNodeUpdate): string {
   switch (nodeId) {
+    case "remoteTaskPreparationNode":
+      return `mode=${String(update.inputMode ?? update.mode ?? "")} originalFiles=${String(update.originalFileCount ?? 0)} workspaceFiles=${String(update.workspaceFileCount ?? 0)} hasPatch=${String(Boolean(update.hasPatch))}`;
     case "taskUnderstandingNode": {
       const summary = update.constraintSummary as
         | {

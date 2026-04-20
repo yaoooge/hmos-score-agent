@@ -121,15 +121,7 @@ curl -X POST http://localhost:3000/score/run \
   -d '{"casePath":"cases/bug_fix_001"}'
 ```
 
-触发远程网络用例评分：
-
-```bash
-curl -X POST http://localhost:3000/score/run-remote \
-  -H "Content-Type: application/json" \
-  -d '{"downloadUrl":"http://localhost:3000/api/evaluation-tasks/next"}'
-```
-
-远程下载接口需要返回如下任务结构：
+触发云端直推远程评分任务：
 
 ```json
 {
@@ -151,6 +143,32 @@ curl -X POST http://localhost:3000/score/run-remote \
   "token": "后续 callback 鉴权使用",
   "callback": "http://localhost:3000/api/evaluation-tasks/callback"
 }
+```
+
+调用方式：
+
+```bash
+curl -X POST http://localhost:3000/score/run-remote-task \
+  -H "Content-Type: application/json" \
+  -d '{
+    "taskId": 4,
+    "testCase": {
+      "id": 8,
+      "name": "123222",
+      "type": "requirement",
+      "description": "2222222",
+      "input": "222222222",
+      "expectedOutput": "2222222211",
+      "fileUrl": "https://example.com/original.json"
+    },
+    "executionResult": {
+      "isBuildSuccess": true,
+      "outputCodeUrl": "https://example.com/workspace.json",
+      "diffFileUrl": "https://example.com/changes.patch"
+    },
+    "token": "后续 callback 鉴权使用",
+    "callback": "http://localhost:3000/api/evaluation-tasks/callback"
+  }'
 ```
 
 当前远程资源格式约定：

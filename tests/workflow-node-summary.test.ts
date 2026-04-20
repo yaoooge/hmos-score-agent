@@ -4,12 +4,23 @@ import { getNodeLabel } from "../src/workflow/observability/nodeLabels.js";
 import { summarizeNodeUpdate } from "../src/workflow/observability/nodeSummaries.js";
 
 test("getNodeLabel returns Chinese labels for workflow nodes", () => {
+  assert.equal(getNodeLabel("remoteTaskPreparationNode"), "远端任务预处理");
   assert.equal(getNodeLabel("taskUnderstandingNode"), "任务理解");
   assert.equal(getNodeLabel("artifactPostProcessNode"), "产物后处理");
   assert.equal(getNodeLabel("persistAndUploadNode"), "结果落盘与上传");
 });
 
 test("summarizeNodeUpdate returns concise summaries for key node updates", () => {
+  assert.equal(
+    summarizeNodeUpdate("remoteTaskPreparationNode", {
+      mode: "remote",
+      originalFileCount: 1,
+      workspaceFileCount: 1,
+      hasPatch: true,
+    }),
+    "mode=remote originalFiles=1 workspaceFiles=1 hasPatch=true",
+  );
+
   assert.equal(
     summarizeNodeUpdate("taskUnderstandingNode", {
       constraintSummary: {

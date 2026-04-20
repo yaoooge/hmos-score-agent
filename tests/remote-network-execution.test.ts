@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createApp, createRunRemoteHandler } from "../src/index.js";
-import { runRemoteTask } from "../src/service.js";
+import { createApp, createRunRemoteTaskHandler } from "../src/index.js";
+import { runRemoteEvaluationTask } from "../src/service.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-network-execution-"));
@@ -20,14 +20,13 @@ function createManifest(content: string): { files: Array<{ path: string; content
   };
 }
 
-test("runRemoteTask downloads remote case artifacts and uploads callback payload with token header", async (t) => {
+test("runRemoteEvaluationTask executes a pushed remote task and uploads callback payload", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
   const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
   process.env.LOCAL_CASE_ROOT = localCaseRoot;
   process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
 
-  const downloadUrl = "https://remote.example.com/api/evaluation-tasks/next";
   const originalUrl = "https://remote.example.com/assets/original.json";
   const workspaceUrl = "https://remote.example.com/assets/workspace.json";
   const patchUrl = "https://remote.example.com/assets/changes.patch";
@@ -37,31 +36,6 @@ test("runRemoteTask downloads remote case artifacts and uploads callback payload
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
-
-    if (url === downloadUrl) {
-      return new Response(
-        JSON.stringify({
-          taskId: 4,
-          testCase: {
-            id: 8,
-            name: "remote-case",
-            type: "requirement",
-            description: "新增页面",
-            input: "请实现登录页",
-            expectedOutput: "实现登录页",
-            fileUrl: originalUrl,
-          },
-          executionResult: {
-            isBuildSuccess: true,
-            outputCodeUrl: workspaceUrl,
-            diffFileUrl: patchUrl,
-          },
-          token: "remote-token",
-          callback: callbackUrl,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    }
 
     if (url === originalUrl) {
       return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
@@ -115,7 +89,25 @@ test("runRemoteTask downloads remote case artifacts and uploads callback payload
     }
   });
 
-  const result = await runRemoteTask(downloadUrl);
+  const result = await runRemoteEvaluationTask({
+    taskId: 4,
+    testCase: {
+      id: 8,
+      name: "remote-case",
+      type: "requirement",
+      description: "新增页面",
+      input: "请实现登录页",
+      expectedOutput: "实现登录页",
+      fileUrl: originalUrl,
+    },
+    executionResult: {
+      isBuildSuccess: true,
+      outputCodeUrl: workspaceUrl,
+      diffFileUrl: patchUrl,
+    },
+    token: "remote-token",
+    callback: callbackUrl,
+  });
 
   assert.equal(result.taskId, 4);
   assert.equal(callbackCalls.length, 1);
@@ -131,16 +123,16 @@ test("runRemoteTask downloads remote case artifacts and uploads callback payload
   assert.equal(callbackCalls[0]?.body.totalScore, resultJson.overall_conclusion.total_score);
 });
 
-test("createApp exposes POST /score/run-remote and forwards the downloadUrl", async () => {
-  const calls: string[] = [];
+test("createApp exposes POST /score/run-remote-task and removes the old downloadUrl route", async () => {
+  const calls: Array<Record<string, unknown>> = [];
   const deps = {
     runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
-    runRemoteTask: async (downloadUrl: string) => {
-      calls.push(downloadUrl);
+    runRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
+      calls.push(remoteTask);
       return { caseDir: "/tmp/remote-case", taskId: 99, uploadMessage: "callback uploaded" };
     },
   };
-  const app = createApp(deps);
+  const app = createApp(deps as never);
   const routerStack = (
     app as unknown as {
       router?: {
@@ -148,8 +140,9 @@ test("createApp exposes POST /score/run-remote and forwards the downloadUrl", as
       };
     }
   ).router?.stack;
-  const route = routerStack?.find((layer) => layer.route?.path === "/score/run-remote");
-  const handler = createRunRemoteHandler(deps);
+  const route = routerStack?.find((layer) => layer.route?.path === "/score/run-remote-task");
+  const oldRoute = routerStack?.find((layer) => layer.route?.path === "/score/run-remote");
+  const handler = createRunRemoteTaskHandler(deps as never);
   const responseState: {
     statusCode: number;
     body?: Record<string, unknown>;
@@ -166,17 +159,22 @@ test("createApp exposes POST /score/run-remote and forwards the downloadUrl", as
   };
 
   assert.equal(route?.route?.methods?.post, true);
+  assert.equal(oldRoute, undefined);
   await handler(
     {
       body: {
-        downloadUrl: "https://remote.example.com/api/evaluation-tasks/next",
+        taskId: 100,
+        testCase: { id: 1, name: "x", type: "requirement", description: "", input: "", expectedOutput: "", fileUrl: "https://remote.example.com/original.json" },
+        executionResult: { isBuildSuccess: true, outputCodeUrl: "https://remote.example.com/workspace.json" },
+        token: "remote-token",
+        callback: "https://remote.example.com/callback",
       },
     } as never,
     response as never,
   );
 
   assert.equal(responseState.statusCode, 200);
-  assert.deepEqual(calls, ["https://remote.example.com/api/evaluation-tasks/next"]);
+  assert.equal(calls.length, 1);
   assert.equal(responseState.body?.success, true);
   assert.equal(responseState.body?.taskId, 99);
   assert.equal(responseState.body?.caseDir, "/tmp/remote-case");
