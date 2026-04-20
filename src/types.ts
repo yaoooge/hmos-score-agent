@@ -176,6 +176,14 @@ export interface EvidenceSummary {
   hasPatch: boolean;
 }
 
+export interface CaseRuleStaticPrecheck {
+  target_matched: boolean;
+  target_files: string[];
+  signal_status: "all_matched" | "partial_matched" | "none_matched" | "no_target_files";
+  matched_tokens: string[];
+  summary: string;
+}
+
 // AssistedRuleCandidate 描述需要 Agent 辅助判定的弱规则候选及其证据。
 export interface AssistedRuleCandidate {
   rule_id: string;
@@ -187,6 +195,8 @@ export interface AssistedRuleCandidate {
   rule_name?: string;
   priority?: CaseConstraintPriority;
   llm_prompt?: string;
+  ast_signals?: Array<Record<string, string>>;
+  static_precheck?: CaseRuleStaticPrecheck;
   is_case_rule?: boolean;
 }
 

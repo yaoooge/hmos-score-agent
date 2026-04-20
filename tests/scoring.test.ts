@@ -97,6 +97,52 @@ test("computeScoreBreakdown applies penalties and hard-gate caps", async () => {
   assert.ok(result.risks.length > 0);
 });
 
+test("computeScoreBreakdown snaps penalized submetric scores to declared discrete bands", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const ruleAuditResults: RuleAuditResult[] = [
+    {
+      rule_id: "ARKTS-MUST-006",
+      rule_source: "must_rule",
+      result: "不满足",
+      conclusion: "matched any",
+    },
+  ];
+
+  const result = computeScoreBreakdown({
+    taskType: "bug_fix",
+    rubric,
+    ruleAuditResults,
+    ruleViolations: [],
+    constraintSummary,
+    featureExtraction,
+    evidenceSummary: {
+      workspaceFileCount: 4,
+      originalFileCount: 3,
+      changedFileCount: 2,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const arktsMetric = result.submetricDetails.find(
+    (detail) =>
+      detail.dimension_name === "代码正确性与静态质量" &&
+      detail.metric_name === "ArkTS/ArkUI语法与类型安全",
+  );
+  assert.equal(arktsMetric?.score, 6);
+
+  for (const detail of result.submetricDetails) {
+    const rubricDimension = rubric.dimensions.find((dimension) => dimension.name === detail.dimension_name);
+    const rubricItem = rubricDimension?.items.find((item) => item.name === detail.metric_name);
+    assert.ok(rubricItem, `missing rubric item for ${detail.dimension_name} / ${detail.metric_name}`);
+    assert.equal(
+      rubricItem?.scoringBands.some((band) => band.score === detail.score),
+      true,
+      `score ${detail.score} should match one declared band for ${detail.dimension_name} / ${detail.metric_name}`,
+    );
+  }
+});
+
 test("computeScoreBreakdown triggers hard gate when case P0 rule fails", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const caseRuleDefinitions: CaseRuleDefinition[] = [

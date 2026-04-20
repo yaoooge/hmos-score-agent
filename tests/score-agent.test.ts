@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
+import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
 import { ArtifactStore } from "../src/io/artifactStore.js";
 import { loadCaseFromPath } from "../src/io/caseLoader.js";
 import { inputClassificationNode } from "../src/nodes/inputClassificationNode.js";
@@ -13,6 +14,7 @@ import { reportGenerationNode } from "../src/nodes/reportGenerationNode.js";
 import { ruleAuditNode } from "../src/nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
 import { scoringOrchestrationNode } from "../src/nodes/scoringOrchestrationNode.js";
+import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import { runScoreWorkflow } from "../src/workflow/scoreWorkflow.js";
 import type { CaseInput } from "../src/types.js";
 
@@ -594,6 +596,83 @@ test("reportGenerationNode only returns schema-valid resultJson without html rep
 
   assert.ok(reportResult.resultJson);
   assert.equal(reportResult.htmlReport, undefined);
+});
+
+test("reportGenerationNode assigns matched bands for computed submetric scores", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const deterministicRuleResults = [
+    {
+      rule_id: "ARKTS-MUST-006",
+      rule_source: "must_rule" as const,
+      result: "不满足" as const,
+      conclusion: "matched any",
+    },
+  ];
+  const scoringResult = await scoringOrchestrationNode({
+    taskType: "bug_fix",
+    deterministicRuleResults,
+    ruleViolations: [],
+    constraintSummary: {
+      explicitConstraints: [],
+      contextualConstraints: [],
+      implicitConstraints: [],
+      classificationHints: ["bug_fix"],
+    },
+    featureExtraction: {
+      basicFeatures: [],
+      structuralFeatures: [],
+      semanticFeatures: [],
+      changeFeatures: [],
+    },
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  } as never);
+
+  const reportResult = await reportGenerationNode(
+    {
+      taskType: "bug_fix",
+      caseInput: {
+        caseId: "case-1",
+        promptText: "请修复餐厅列表页中的 bug",
+        originalProjectPath: "/tmp/original",
+        generatedProjectPath: "/tmp/workspace",
+      },
+      constraintSummary: {
+        explicitConstraints: [],
+        contextualConstraints: [],
+        implicitConstraints: [],
+        classificationHints: ["bug_fix"],
+      },
+      rubricSnapshot: buildRubricSnapshot(rubric),
+      deterministicRuleResults,
+      scoreComputation: scoringResult.scoreComputation,
+      ruleViolations: [],
+    } as never,
+    { referenceRoot },
+  );
+
+  const dimensionResults = Array.isArray(reportResult.resultJson?.dimension_results)
+    ? reportResult.resultJson.dimension_results
+    : [];
+  for (const dimension of dimensionResults) {
+    const itemResults =
+      typeof dimension === "object" && dimension !== null && Array.isArray(dimension.item_results)
+        ? dimension.item_results
+        : [];
+    for (const item of itemResults) {
+      assert.notEqual(
+        typeof item === "object" && item !== null ? item.matched_band : null,
+        null,
+        "expected every scored item to resolve a matched scoring band",
+      );
+    }
+  }
 });
 
 test("artifactPostProcessNode generates layered html report from resultJson", async () => {

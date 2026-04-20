@@ -219,6 +219,14 @@ test("buildAgentPromptPayload keeps case rule metadata on assisted candidates", 
       rule_name: "module.json5 需配置 Client ID",
       priority: "P1",
       llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
+      ast_signals: [{ type: "json_key", name: "metadata" }],
+      static_precheck: {
+        target_matched: true,
+        target_files: ["entry/src/main/module.json5"],
+        signal_status: "all_matched",
+        matched_tokens: ["metadata"],
+        summary: "静态预判在目标文件中发现了 metadata 信号，但最终结论需由 Agent 判定。",
+      },
       is_case_rule: true,
     },
   ];
@@ -240,6 +248,13 @@ test("buildAgentPromptPayload keeps case rule metadata on assisted candidates", 
 
   assert.equal(payload.assisted_rule_candidates[0]?.rule_name, "module.json5 需配置 Client ID");
   assert.equal(payload.assisted_rule_candidates[0]?.priority, "P1");
+  assert.deepEqual(payload.assisted_rule_candidates[0]?.ast_signals, [
+    { type: "json_key", name: "metadata" },
+  ]);
+  assert.equal(
+    payload.assisted_rule_candidates[0]?.static_precheck?.signal_status,
+    "all_matched",
+  );
 });
 
 test("buildRubricSnapshot keeps only evaluation summary required by prompt building", () => {

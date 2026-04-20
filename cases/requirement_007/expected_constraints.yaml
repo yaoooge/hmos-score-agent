@@ -1,0 +1,32 @@
+constraints:
+  - id: HM-REQ-010-01
+    name: 首页必须新增当前位置或本地频道展示区，并支持用户主动刷新定位结果
+    description: 首页必须新增当前位置或本地频道展示区，并支持用户主动刷新定位结果
+    priority: P0
+    rules:
+      - target: '**/Home*.ets'
+        llm: 检查首页是否新增当前位置、本地频道或本地资讯展示区，并提供手动刷新入口，而不是只在后台静默获取位置
+  - id: HM-REQ-010-02
+    name: 必须按需申请定位权限并通过 Location Kit 获取设备当前位置
+    description: 必须按需申请定位权限并通过 Location Kit 获取设备当前位置
+    priority: P0
+    rules:
+      - target: '**/*.ets'
+        ast:
+          - type: call
+            name: getCurrentLocation
+        llm: 检查是否完成了权限申请与 Location Kit 定位调用，能够实际获取设备当前位置，而不是仅停留在字符串、注释或模拟状态
+  - id: HM-REQ-010-03
+    name: 定位结果必须驱动首页城市标识或本地资讯内容更新，拒绝授权时要有非阻断式降级
+    description: 定位结果必须驱动首页城市标识或本地资讯内容更新，拒绝授权时要有非阻断式降级
+    priority: P1
+    rules:
+      - target: '**/*.ets'
+        llm: 检查定位成功后是否利用位置信息更新首页城市标识、本地资讯文案或分组内容，并在用户拒绝授权时仍可继续浏览通用新闻内容
+  - id: HM-REQ-010-04
+    name: 必须复用现有首页刷新链路和权限工具，以增量方式完成位置能力接入
+    description: 必须复用现有首页刷新链路和权限工具，以增量方式完成位置能力接入
+    priority: P1
+    rules:
+      - target: '**/*.ets'
+        llm: 检查是否复用了现有 PermissionUtil、首页刷新或列表更新机制来接入定位能力，而不是推倒重做首页结构

@@ -45,6 +45,34 @@ function makeMetricKey(dimensionName: string, metricName: string): string {
   return `${dimensionName}::${metricName}`;
 }
 
+function getInitialMetricScore(item: LoadedRubric["dimensions"][number]["items"][number]): number {
+  if (item.scoringBands.length === 0) {
+    return item.weight;
+  }
+  return Math.max(...item.scoringBands.map((band) => band.score));
+}
+
+function snapScoreToDeclaredBand(
+  score: number,
+  scoringBands: Array<{ score: number }>,
+): number {
+  if (scoringBands.length === 0) {
+    return roundScore(score);
+  }
+
+  return scoringBands.reduce((bestScore, band) => {
+    const bestDistance = Math.abs(bestScore - score);
+    const currentDistance = Math.abs(band.score - score);
+    if (currentDistance < bestDistance) {
+      return band.score;
+    }
+    if (currentDistance === bestDistance) {
+      return Math.min(bestScore, band.score);
+    }
+    return bestScore;
+  }, scoringBands[0].score);
+}
+
 function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
   // 首版只做“规则源 -> 扣分档位”的粗映射，先把主链闭环起来。
   if (rule.rule_source === "must_rule") {
@@ -127,12 +155,17 @@ function shouldForceReview(
 }
 
 export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputation {
+  const rubricItemMap = new Map(
+    input.rubric.dimensions.flatMap((dimension) =>
+      dimension.items.map((item) => [makeMetricKey(dimension.name, item.name), item] as const),
+    ),
+  );
   // 所有子指标先按 rubric 满分初始化，再叠加规则修正。
   const details: SubmetricDetail[] = input.rubric.dimensions.flatMap((dimension) =>
     dimension.items.map((item) => ({
       dimension_name: dimension.name,
       metric_name: item.name,
-      score: item.weight,
+      score: getInitialMetricScore(item),
       confidence: "high" as const,
       review_required: false,
       rationale: "按 rubric 基线满分初始化。",
@@ -174,9 +207,8 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
         continue;
       }
 
-      const maxScore = input.rubric.dimensions
-        .find((dimension) => dimension.name === detail.dimension_name)
-        ?.items.find((item) => item.name === detail.metric_name)?.weight;
+      const maxScore = rubricItemMap.get(makeMetricKey(detail.dimension_name, detail.metric_name))
+        ?.weight;
       if (maxScore === undefined) {
         continue;
       }
@@ -196,6 +228,11 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
       description: rule.conclusion,
       evidence: rule.conclusion,
     });
+  }
+
+  for (const detail of details) {
+    const rubricItem = rubricItemMap.get(makeMetricKey(detail.dimension_name, detail.metric_name));
+    detail.score = snapScoreToDeclaredBand(detail.score, rubricItem?.scoringBands ?? []);
   }
 
   const dimensionScores: DimensionScore[] = input.rubric.dimensions.map((dimension) => {

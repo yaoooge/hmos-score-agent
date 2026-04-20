@@ -53,6 +53,8 @@ export async function runRuleEngine(input: {
   const evaluatedRules = listRegisteredRules(input.runtimeRules ?? []).map((rule) =>
     evaluateRegisteredRule(rule, evidence),
   );
+  const evaluatedRuleById = new Map(evaluatedRules.map((rule) => [rule.rule_id, rule]));
+  const caseRuleIds = new Set((input.runtimeRules ?? []).map((rule) => rule.rule_id));
 
   const ruleViolations: RuleViolation[] = evaluatedRules
     .filter((rule) => rule.result === "不满足")
@@ -100,6 +102,9 @@ export async function runRuleEngine(input: {
 
   const staticRuleAuditResults: StaticRuleAuditResult[] = evaluatedRules.map(
     ({ matchedFiles: _matchedFiles, ...rule }) => {
+      if (caseRuleIds.has(rule.rule_id)) {
+        return rule;
+      }
       const directEvidence = ruleEvidenceIndex[rule.rule_id];
       if (rule.result === "未接入判定器" && (directEvidence?.evidenceFiles?.length ?? 0) === 0) {
         return {
@@ -113,28 +118,34 @@ export async function runRuleEngine(input: {
   );
   const deterministicRuleResults: RuleAuditResult[] = staticRuleAuditResults
     .filter(isDeterministicStaticRule)
+    .filter((rule) => !caseRuleIds.has(rule.rule_id))
     .map((rule) => ({
       rule_id: rule.rule_id,
       rule_source: rule.rule_source,
       result: rule.result,
       conclusion: rule.conclusion,
     }));
-  const caseRuleIds = new Set((input.runtimeRules ?? []).map((rule) => rule.rule_id));
-  const caseRuleResults = deterministicRuleResults.filter((rule) => caseRuleIds.has(rule.rule_id));
+  const caseRuleResults: RuleAuditResult[] = [];
   const assistedRuleCandidates: AssistedRuleCandidate[] = staticRuleAuditResults
-    .filter((rule) => rule.result === "未接入判定器")
+    .filter((rule) => rule.result === "未接入判定器" || caseRuleIds.has(rule.rule_id))
     .map((rule) => {
       const runtimeRule = (input.runtimeRules ?? []).find((item) => item.rule_id === rule.rule_id);
+      const staticPrecheck = evaluatedRuleById.get(rule.rule_id)?.preliminaryData?.static_precheck as
+        | AssistedRuleCandidate["static_precheck"]
+        | undefined;
       return {
         rule_id: rule.rule_id,
         rule_source: rule.rule_source,
         why_uncertain: rule.conclusion,
-        local_preliminary_signal: "未接入判定器",
+        local_preliminary_signal:
+          staticPrecheck?.signal_status ?? (runtimeRule?.is_case_rule ? "unknown" : "未接入判定器"),
         evidence_files: ruleEvidenceIndex[rule.rule_id]?.evidenceFiles ?? [],
         evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
         rule_name: runtimeRule?.rule_name,
         priority: runtimeRule?.priority,
         llm_prompt: runtimeRule?.detector_config.llmPrompt,
+        ast_signals: runtimeRule?.detector_config.astSignals,
+        static_precheck: staticPrecheck,
         is_case_rule: runtimeRule?.is_case_rule,
       };
     });

@@ -101,7 +101,7 @@ test("runRuleEngine exposes only current rule-audit fields", async (t) => {
   );
 });
 
-test("runRuleEngine evaluates runtime case rules and exposes caseRuleResults", async (t) => {
+test("runRuleEngine routes all runtime case rules to agent candidates and keeps static results non-final", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets":
       "import { LoginWithHuaweiIDButton } from '@kit.AccountKit';\nLoginWithHuaweiIDButton()\n",
@@ -154,16 +154,30 @@ test("runRuleEngine evaluates runtime case rules and exposes caseRuleResults", a
   });
 
   assert.equal(
-    result.caseRuleResults.some((item) => item.rule_id === "HM-REQ-008-01"),
+    result.caseRuleResults.length,
+    0,
+  );
+  assert.equal(
+    result.deterministicRuleResults.some((item) => item.rule_id === "HM-REQ-008-01"),
+    false,
+  );
+  assert.equal(
+    result.assistedRuleCandidates.some((item) => item.rule_id === "HM-REQ-008-01"),
     true,
   );
   assert.equal(
     result.assistedRuleCandidates.some((item) => item.rule_id === "HM-REQ-008-06"),
     true,
   );
+  assert.equal(
+    result.staticRuleAuditResults.some(
+      (item) => item.rule_id === "HM-REQ-008-01" && item.result === "未接入判定器",
+    ),
+    true,
+  );
 });
 
-test("runRuleEngine marks missing case targets as violations", async (t) => {
+test("runRuleEngine keeps missing case targets in agent candidates instead of static violations", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/Index.ets": "Text('plain')\n",
   });
@@ -193,10 +207,16 @@ test("runRuleEngine marks missing case targets as violations", async (t) => {
   });
 
   assert.equal(
-    result.deterministicRuleResults.some(
-      (item) => item.rule_id === "HM-REQ-008-01" && item.result === "不满足",
-    ),
+    result.deterministicRuleResults.some((item) => item.rule_id === "HM-REQ-008-01"),
+    false,
+  );
+  assert.equal(
+    result.assistedRuleCandidates.some((item) => item.rule_id === "HM-REQ-008-01"),
     true,
+  );
+  assert.equal(
+    result.ruleViolations.some((item) => item.rule_id === "HM-REQ-008-01"),
+    false,
   );
 });
 
