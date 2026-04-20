@@ -24,7 +24,7 @@
 
 ### 输入与输出
 
-- 默认输入目录：`init-input`
+- 默认输入目录：`cases/` 下按名称排序后的首个用例目录
 - 用例输入结构（骨架约定）：
   - `input.txt`：prompt
   - `original/`：原始工程
@@ -89,7 +89,7 @@ cp .env.example .env
 直接跑默认用例：
 
 ```bash
-npm run dev:cli -- --case init-input
+npm run dev:cli -- --case cases/bug_fix_001
 ```
 
 成功后终端会打印用例产物目录，例如：
@@ -118,7 +118,7 @@ curl http://localhost:3000/health
 ```bash
 curl -X POST http://localhost:3000/score/run \
   -H "Content-Type: application/json" \
-  -d '{"casePath":"init-input"}'
+  -d '{"casePath":"cases/bug_fix_001"}'
 ```
 
 ## 4. 常用命令
@@ -148,7 +148,7 @@ npm run launch:score -- --case examples/my-case
 
 1. 在终端里询问 `MODEL_PROVIDER_BASE_URL` 和 `MODEL_PROVIDER_API_KEY`
 2. 将输入结果写入项目根目录 `.env`
-3. 读取 `--case` 指定目录；未指定时默认读取 `init-input/`
+3. 读取 `--case` 指定目录；未指定时默认读取 `cases/` 下按名称排序后的首个用例目录
 4. 启动评分流程
 5. 在 `.local-cases/` 下创建 `时间_task_type_唯一id` 目录并写入产物
 6. 将初始 prompt 落盘到 `inputs/prompt.txt`
@@ -157,10 +157,10 @@ npm run launch:score -- --case examples/my-case
 
 ### Patch 生成说明
 
-`init-input/workspace` 应作为主仓库中的普通目录使用，不依赖独立 Git 仓库。需要 patch 时，统一通过目录差异生成：
+`cases/<caseId>/workspace` 应作为主仓库中的普通目录使用，不依赖独立 Git 仓库。需要 patch 时，统一通过目录差异生成：
 
 ```bash
-npm run case:patch -- --case init-input
+npm run case:patch -- --case cases/bug_fix_001
 ```
 
 底层等价于在用例目录执行：

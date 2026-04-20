@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { upsertEnvVars } from "../src/io/envFile.js";
-import { runSingleCase } from "../src/service.js";
+import { resolveDefaultCasePath, runSingleCase } from "../src/service.js";
 import { buildRunCaseId } from "../src/service/runCaseId.js";
 import { normalizeLauncherAnswers, parseLauncherArgs } from "../src/tools/runInteractiveScore.js";
 
@@ -21,6 +21,14 @@ async function createTempEnv(t: test.TestContext, content: string): Promise<stri
   const envPath = path.join(dir, ".env");
   await fs.writeFile(envPath, content, "utf-8");
   return envPath;
+}
+
+async function createCaseDirectory(rootDir: string, caseName: string): Promise<string> {
+  const casePath = path.join(rootDir, "cases", caseName);
+  await fs.mkdir(path.join(casePath, "original"), { recursive: true });
+  await fs.mkdir(path.join(casePath, "workspace"), { recursive: true });
+  await fs.writeFile(path.join(casePath, "input.txt"), `case ${caseName}\n`, "utf-8");
+  return casePath;
 }
 
 // 统一构造 launcher 用例，避免每个测试重复拼装目录结构。
@@ -112,12 +120,36 @@ test("launcher source uses provider-neutral env names and prompts", async () => 
   assert.match(source, /模型服务 apiKey|MODEL_PROVIDER_API_KEY/);
 });
 
-test("parseLauncherArgs resolves explicit --case and falls back to init-input", () => {
+test("resolveDefaultCasePath picks the first case directory under cases", async (t) => {
+  const originalCwd = process.cwd();
+  const tempRoot = await makeTempDir(t);
+  t.after(() => {
+    process.chdir(originalCwd);
+  });
+
+  await createCaseDirectory(tempRoot, "z_last_case");
+  await createCaseDirectory(tempRoot, "a_first_case");
+  process.chdir(tempRoot);
+
+  assert.equal(resolveDefaultCasePath(), path.resolve(process.cwd(), "cases", "a_first_case"));
+});
+
+test("parseLauncherArgs resolves explicit --case and falls back to the first case under cases", async (t) => {
+  const originalCwd = process.cwd();
+  const tempRoot = await makeTempDir(t);
+  t.after(() => {
+    process.chdir(originalCwd);
+  });
+
+  await createCaseDirectory(tempRoot, "bug_fix_001");
+  await createCaseDirectory(tempRoot, "requirement_004");
+  process.chdir(tempRoot);
+
   assert.equal(
     parseLauncherArgs(["--case", "examples/custom-case"]),
     path.resolve(process.cwd(), "examples/custom-case"),
   );
-  assert.equal(parseLauncherArgs([]), path.resolve(process.cwd(), "init-input"));
+  assert.equal(parseLauncherArgs([]), path.resolve(process.cwd(), "cases", "bug_fix_001"));
 });
 
 test("runSingleCase stores artifacts under timestamp_taskType_uniqueId directories", async (t) => {

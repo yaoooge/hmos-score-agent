@@ -5,11 +5,23 @@
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
     "deviceTypes": [
-      "phone"
+      "phone",
+      "tablet"
     ],
     "deliveryWithInstall": true,
-    "installationFree": false,
+    "installationFree": true,
     "pages": "$profile:main_pages",
+    "metadata": [
+      {
+        "name": "client_id",
+        "value": "atomic-service-client-id"
+      }
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
@@ -20,30 +32,17 @@
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        "launchType": "singleton",
         "skills": [
           {
             "entities": [
               "entity.system.home"
             ],
             "actions": [
-              "ohos.want.action.home"
+              "action.system.home"
             ]
           }
         ]
-      }
-    ],
-    "extensionAbilities": [
-      {
-        "name": "EntryBackupAbility",
-        "srcEntry": "./ets/entrybackupability/EntryBackupAbility.ets",
-        "type": "backup",
-        "exported": false,
-        "metadata": [
-          {
-            "name": "ohos.extension.backup",
-            "resource": "$profile:backup_config"
-          }
-        ],
       }
     ]
   }

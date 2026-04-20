@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { getConfig } from "./config.js";
 import { ArtifactStore } from "./io/artifactStore.js";
@@ -83,5 +84,20 @@ export async function runSingleCase(
 }
 
 export function resolveDefaultCasePath(): string {
-  return path.resolve(process.cwd(), "init-input");
+  const caseRoot = path.resolve(process.cwd(), "cases");
+  if (!fs.existsSync(caseRoot) || !fs.statSync(caseRoot).isDirectory()) {
+    throw new Error(`Default case root does not exist: ${caseRoot}`);
+  }
+
+  const firstCaseEntry = fs
+    .readdirSync(caseRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name, "en"))
+    .find((entry) => fs.existsSync(path.join(caseRoot, entry.name, "input.txt")));
+
+  if (!firstCaseEntry) {
+    throw new Error(`No valid cases found under default case root: ${caseRoot}`);
+  }
+
+  return path.join(caseRoot, firstCaseEntry.name);
 }

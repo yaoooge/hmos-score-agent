@@ -1,6 +1,6 @@
 import express from "express";
 import { getConfig } from "./config.js";
-import { runSingleCase } from "./service.js";
+import { resolveDefaultCasePath, runSingleCase } from "./service.js";
 
 const app = express();
 app.use(express.json());
@@ -11,7 +11,7 @@ app.get("/health", (_req, res) => {
 
 app.post("/score/run", async (req, res) => {
   try {
-    const casePath = String(req.body?.casePath ?? "init-input");
+    const casePath = String(req.body?.casePath ?? resolveDefaultCasePath());
     const result = await runSingleCase(casePath);
     res.json({ success: true, ...result });
   } catch (error) {
