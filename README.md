@@ -12,10 +12,15 @@
 1. `taskUnderstandingNode`：任务理解（显式/上下文/隐式约束）
 2. `inputClassificationNode`：任务分类（`full_generation` / `continuation` / `bug_fix`）
 3. `featureExtractionNode`：代码特征抽取（基础/结构/语义/变更）
-4. `ruleAuditNode`：规则审计（读取 `src/rules/packs/` 下维护的规则包）
-5. `scoringOrchestrationNode`：评分编排（加权、硬门槛预留）
-6. `reportGenerationNode`：组装 `result.json` 与 HTML 报告内容
-7. `persistAndUploadNode`：落盘并尝试上传 `result.json`
+4. `ruleAuditNode`：规则审计，产出确定性规则结果、Agent 辅助候选规则、证据索引和违规项
+5. `rubricPreparationNode`：按任务类型加载 rubric，并生成评分快照
+6. `agentPromptBuilderNode`：基于任务信息、rubric、规则结果组装 Agent 判定 prompt 与 payload
+7. `agentAssistedRuleNode`：调用 Agent 对候选规则做辅助判定；无候选或未配置 client 时会跳过
+8. `ruleMergeNode`：合并确定性规则结果与 Agent 判定结果；Agent 不可用时回退为“待人工复核”
+9. `scoringOrchestrationNode`：基于合并后的规则审计结果、rubric、特征与约束执行评分编排
+10. `reportGenerationNode`：生成并校验结构化 `result.json`
+11. `artifactPostProcessNode`：基于 `result.json` 渲染 `report.html`
+12. `persistAndUploadNode`：写入输入/中间产物/输出文件，并按配置尝试上传 `result.json`
 
 ### 输入与输出
 
@@ -68,12 +73,14 @@ cp .env.example .env
 - `UPLOAD_ENDPOINT`：结果上传地址（为空则跳过上传）
 - `UPLOAD_TOKEN`：上传鉴权 token（可选）
 
-默认参考资源已经内置到仓库：
+默认参考资源：
 
 - `references/scoring/rubric.yaml`
 - `references/scoring/report_result_schema.json`
 
-评分规则不再放在 `references/scoring` 中维护，当前规则源在 `src/rules/packs/`。
+评分规则:
+
+-  `src/rules/packs/`。
 
 ## 3. 本地调试
 
