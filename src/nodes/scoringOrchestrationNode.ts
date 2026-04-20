@@ -23,6 +23,7 @@ export async function scoringOrchestrationNode(
       constraintSummary: state.constraintSummary,
       featureExtraction: state.featureExtraction,
       evidenceSummary: state.evidenceSummary,
+      caseRuleDefinitions: state.caseRuleDefinitions,
     });
 
     return {

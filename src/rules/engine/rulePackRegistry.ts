@@ -27,6 +27,6 @@ export function getRegisteredRulePacks(): RegisteredRulePack[] {
   return registeredRulePacks;
 }
 
-export function listRegisteredRules(): RegisteredRule[] {
-  return registeredRulePacks.flatMap((pack) => pack.rules);
+export function listRegisteredRules(runtimeRules: RegisteredRule[] = []): RegisteredRule[] {
+  return [...registeredRulePacks.flatMap((pack) => pack.rules), ...runtimeRules];
 }

@@ -288,6 +288,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
         <a href="#dimensions">维度得分</a>
         <a href="#human-review">待人工复核</a>
         <a href="#rule-audit">规则审计结果</a>
+        <a href="#case-rules">用例规则结果</a>
         <a href="#risks">风险与问题</a>
         <a href="#strengths">亮点与建议</a>
       </nav>
@@ -449,6 +450,36 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                 )
                 .join("")
             : `<p class="empty-state">${escapeHtml(viewModel.ruleAudit.emptyState)}</p>`
+        }
+      </section>
+
+      <section id="case-rules" class="section-card">
+        <div class="section-title">
+          <h2>用例规则结果</h2>
+          <small>展示用例约束规则的最终判定与硬门槛状态</small>
+        </div>
+        ${
+          viewModel.caseRules.items.length > 0
+            ? viewModel.caseRules.items
+                .map(
+                  (item) => `
+                    <article class="rule-row">
+                      <div class="rule-head">
+                        <div>
+                          <strong>${escapeHtml(item.ruleId)}</strong>
+                          <p class="muted">${escapeHtml(item.ruleName || "未命名用例规则")}</p>
+                        </div>
+                        <span class="rule-status ${escapeHtml(item.result)}">${escapeHtml(item.result)}</span>
+                      </div>
+                      <div class="detail-meta">
+                        <span>优先级 ${escapeHtml(item.priority || "未知")}</span>
+                        <span>${item.hardGateTriggered ? "已触发硬门槛" : "未触发硬门槛"}</span>
+                      </div>
+                      <p>${escapeHtml(item.conclusion)}</p>
+                    </article>`,
+                )
+                .join("")
+            : `<p class="empty-state">${escapeHtml(viewModel.caseRules.emptyState)}</p>`
         }
       </section>
 

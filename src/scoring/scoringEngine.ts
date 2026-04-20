@@ -1,4 +1,5 @@
 import {
+  CaseRuleDefinition,
   ConstraintSummary,
   DimensionScore,
   EvidenceSummary,
@@ -21,6 +22,7 @@ type ComputeScoreInput = {
   constraintSummary: ConstraintSummary;
   featureExtraction: FeatureExtraction;
   evidenceSummary: EvidenceSummary;
+  caseRuleDefinitions?: CaseRuleDefinition[];
 };
 
 type MetricPenaltyRule = {
@@ -79,6 +81,17 @@ function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
     (rule) => rule.rule_source === "forbidden_pattern",
   );
   const triggered: GateTrigger[] = [];
+  const caseMustRuleIds = new Set(
+    (input.caseRuleDefinitions ?? [])
+      .filter((rule) => rule.priority === "P0")
+      .map((rule) => rule.rule_id),
+  );
+
+  if (
+    violatedRules.some((rule) => caseMustRuleIds.has(rule.rule_id) && rule.result === "不满足")
+  ) {
+    triggered.push({ id: "G1", reason: "case_rule: 存在 P0 用例约束不满足。" });
+  }
 
   if (mustViolations.length >= 2) {
     triggered.push({ id: "G1", reason: "存在多条 must_rule 违规，说明静态质量问题较为集中。" });

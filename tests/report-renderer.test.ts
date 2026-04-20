@@ -114,3 +114,28 @@ test("buildHtmlReportViewModel merges rule review items into the human review se
   assert.equal(viewModel.humanReview.items[0]?.item, "规则复核：ARKTS-SHOULD-002");
   assert.equal(viewModel.humanReview.items[0]?.currentAssessment, "证据不足，需要人工复核。");
 });
+
+test("renderHtmlReport renders case rule section with priority and hard gate state", () => {
+  const html = renderHtmlReport(
+    buildHtmlReportViewModel(
+      makeResultJson({
+        case_rule_results: [
+          {
+            rule_id: "HM-REQ-008-01",
+            rule_name: "必须使用 LoginWithHuaweiIDButton",
+            priority: "P0",
+            rule_source: "must_rule",
+            result: "不满足",
+            conclusion: "未使用 LoginWithHuaweiIDButton",
+            hard_gate_triggered: true,
+          },
+        ],
+      }),
+    ),
+  );
+
+  assert.match(html, /用例规则结果/);
+  assert.match(html, /HM-REQ-008-01/);
+  assert.match(html, /P0/);
+  assert.match(html, /已触发硬门槛/);
+});

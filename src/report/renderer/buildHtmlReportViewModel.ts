@@ -51,6 +51,17 @@ export interface HtmlReportViewModel {
     }>;
     emptyState: string;
   };
+  caseRules: {
+    items: Array<{
+      ruleId: string;
+      ruleName: string;
+      priority: string;
+      result: string;
+      conclusion: string;
+      hardGateTriggered: boolean;
+    }>;
+    emptyState: string;
+  };
   risks: { items: string[]; emptyState: string };
   issues: { items: string[]; emptyState: string };
   strengths: string[];
@@ -116,6 +127,9 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
     : [];
   const ruleAuditResults = Array.isArray(resultJson.rule_audit_results)
     ? resultJson.rule_audit_results
+    : [];
+  const caseRuleResults = Array.isArray(resultJson.case_rule_results)
+    ? resultJson.case_rule_results
     : [];
   const risks = Array.isArray(resultJson.risks) ? resultJson.risks : [];
   const mainIssues = asStringArray(resultJson.main_issues);
@@ -215,6 +229,20 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         };
       }),
       emptyState: "当前没有可展示的规则审计结果。",
+    },
+    caseRules: {
+      items: caseRuleResults.map((item) => {
+        const current = asRecord(item);
+        return {
+          ruleId: String(current.rule_id ?? ""),
+          ruleName: String(current.rule_name ?? ""),
+          priority: String(current.priority ?? ""),
+          result: String(current.result ?? ""),
+          conclusion: String(current.conclusion ?? ""),
+          hardGateTriggered: Boolean(current.hard_gate_triggered),
+        };
+      }),
+      emptyState: "当前没有可展示的用例规则结果。",
     },
     risks: {
       items: risks.map(formatRiskItem),

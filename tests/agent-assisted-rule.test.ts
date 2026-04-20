@@ -7,7 +7,12 @@ import {
   renderAgentPrompt,
   selectAssistedRuleCandidates,
 } from "../src/agent/ruleAssistance.js";
-import type { ConstraintSummary, LoadedRubricSnapshot, RuleAuditResult } from "../src/types.js";
+import type {
+  AssistedRuleCandidate,
+  ConstraintSummary,
+  LoadedRubricSnapshot,
+  RuleAuditResult,
+} from "../src/types.js";
 
 const constraintSummary: ConstraintSummary = {
   explicitConstraints: ["修复列表页渲染异常"],
@@ -200,6 +205,41 @@ test("buildAgentPromptPayload keeps original prompt as fact and renderAgentPromp
   assert.match(prompt, /问题点命中程度/);
   assert.match(prompt, /修改直接命中根因/);
   assert.match(prompt, /二级维度/);
+});
+
+test("buildAgentPromptPayload keeps case rule metadata on assisted candidates", () => {
+  const assistedRuleCandidates: AssistedRuleCandidate[] = [
+    {
+      rule_id: "HM-REQ-008-06",
+      rule_source: "should_rule",
+      why_uncertain: "需要结合上下文判断 metadata 是否为 Client ID",
+      local_preliminary_signal: "unknown",
+      evidence_files: ["entry/src/main/module.json5"],
+      evidence_snippets: ['{ "module": { "name": "entry" } }'],
+      rule_name: "module.json5 需配置 Client ID",
+      priority: "P1",
+      llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
+      is_case_rule: true,
+    },
+  ];
+
+  const payload = buildAgentPromptPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "实现登录流程",
+      originalProjectPath: "/tmp/original",
+      generatedProjectPath: "/tmp/workspace",
+      patchPath: "/tmp/changes.patch",
+    },
+    taskType: "full_generation",
+    constraintSummary,
+    rubricSnapshot,
+    deterministicRuleResults: [],
+    assistedRuleCandidates,
+  });
+
+  assert.equal(payload.assisted_rule_candidates[0]?.rule_name, "module.json5 需配置 Client ID");
+  assert.equal(payload.assisted_rule_candidates[0]?.priority, "P1");
 });
 
 test("buildRubricSnapshot keeps only evaluation summary required by prompt building", () => {

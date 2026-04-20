@@ -30,13 +30,15 @@ async function makeTempDir(t: test.TestContext): Promise<string> {
 async function writeCaseFixture(
   rootDir: string,
   options: {
+    caseId?: string;
     promptText?: string;
     withPatch?: boolean;
     workspaceContent?: string;
     originalContent?: string;
+    expectedConstraintsYaml?: string;
   } = {},
 ): Promise<string> {
-  const caseDir = path.join(rootDir, "sample-case");
+  const caseDir = path.join(rootDir, options.caseId ?? "sample-case");
   await fs.mkdir(path.join(caseDir, "original", "entry", "src", "main", "ets"), {
     recursive: true,
   });
@@ -63,6 +65,13 @@ async function writeCaseFixture(
     await fs.writeFile(
       path.join(caseDir, "diff", "changes.patch"),
       "diff --git a/entry/src/main/ets/Index.ets b/entry/src/main/ets/Index.ets\n@@ -1 +1 @@\n-let count: number = 1;\n+let count: any = 2;\n",
+      "utf-8",
+    );
+  }
+  if (options.expectedConstraintsYaml) {
+    await fs.writeFile(
+      path.join(caseDir, "expected_constraints.yaml"),
+      options.expectedConstraintsYaml,
       "utf-8",
     );
   }
@@ -110,6 +119,32 @@ test("loadCaseFromPath leaves patch undefined when diff file is absent", async (
   const caseInput = await loadCaseFromPath(caseDir);
 
   assert.equal(caseInput.patchPath, undefined);
+});
+
+test("loadCaseFromPath exposes expectedConstraintsPath when YAML exists", async (t) => {
+  const rootDir = await makeTempDir(t);
+  const caseDir = await writeCaseFixture(rootDir, {
+    caseId: "requirement_004",
+    expectedConstraintsYaml: `constraints:
+  - id: HM-REQ-008-01
+    name: 必须使用 LoginWithHuaweiIDButton 实现华为账号一键登录
+    description: 登录页必须使用 Account Kit 提供的 LoginWithHuaweiIDButton 组件作为一键登录入口。
+    priority: P0
+    rules:
+      - target: '**/pages/*.ets'
+        ast:
+          - type: import
+            module: '@kit.AccountKit'
+        llm: 检查是否从 @kit.AccountKit 导入并使用了 LoginWithHuaweiIDButton 组件
+`,
+  });
+
+  const caseInput = await loadCaseFromPath(caseDir);
+
+  assert.equal(
+    caseInput.expectedConstraintsPath,
+    path.join(caseDir, "expected_constraints.yaml"),
+  );
 });
 
 test("ArtifactStore creates case directories and persists json/text artifacts", async (t) => {
@@ -344,6 +379,143 @@ test("scoring and report nodes fall back to deterministic results when merge out
   assert.deepEqual(reportResult.resultJson?.rule_audit_results, deterministicRuleResults);
 });
 
+test("reportGenerationNode includes case_rule_results in resultJson", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const scoringResult = await scoringOrchestrationNode({
+    taskType: "full_generation",
+    deterministicRuleResults: [
+      {
+        rule_id: "HM-REQ-008-01",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "未使用 LoginWithHuaweiIDButton",
+      },
+    ],
+    ruleViolations: [],
+    constraintSummary: {
+      explicitConstraints: [],
+      contextualConstraints: [],
+      implicitConstraints: [],
+      classificationHints: ["full_generation"],
+    },
+    featureExtraction: {
+      basicFeatures: [],
+      structuralFeatures: [],
+      semanticFeatures: [],
+      changeFeatures: [],
+    },
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/LoginPage.ets"],
+      hasPatch: true,
+    },
+    caseRuleDefinitions: [
+      {
+        pack_id: "case-requirement_004",
+        rule_id: "HM-REQ-008-01",
+        rule_name: "必须使用 LoginWithHuaweiIDButton",
+        rule_source: "must_rule",
+        summary: "登录页必须使用 LoginWithHuaweiIDButton",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/pages/*.ets"],
+          astSignals: [{ type: "call", name: "LoginWithHuaweiIDButton" }],
+          llmPrompt: "检查登录按钮",
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  } as never);
+
+  const reportResult = await reportGenerationNode(
+    {
+      taskType: "full_generation",
+      caseInput: {
+        caseId: "case-1",
+        promptText: "实现登录流程",
+        originalProjectPath: "/tmp/original",
+        generatedProjectPath: "/tmp/workspace",
+      },
+      constraintSummary: {
+        explicitConstraints: [],
+        contextualConstraints: [],
+        implicitConstraints: [],
+        classificationHints: ["full_generation"],
+      },
+      rubricSnapshot: {
+        task_type: "full_generation",
+        evaluation_mode: "auto_precheck_with_human_review",
+        scenario: "生成登录流程页面",
+        scoring_method: "discrete_band",
+        scoring_note: "按离散档位给分。",
+        common_risks: ["遗漏必达约束。"],
+        report_emphasis: ["case rule 必须清晰展示。"],
+        dimension_summaries: [
+          {
+            name: "需求达成度",
+            weight: 25,
+            intent: "评价需求是否正确落地",
+            item_summaries: [
+              {
+                name: "核心链路达成",
+                weight: 10,
+                scoring_bands: [{ score: 10, criteria: "核心链路完整。" }],
+              },
+            ],
+          },
+        ],
+        hard_gates: [{ id: "G1", score_cap: 59 }],
+        review_rule_summary: [],
+      },
+      deterministicRuleResults: [
+        {
+          rule_id: "HM-REQ-008-01",
+          rule_source: "must_rule",
+          result: "不满足",
+          conclusion: "未使用 LoginWithHuaweiIDButton",
+        },
+      ],
+      caseRuleDefinitions: [
+        {
+          pack_id: "case-requirement_004",
+          rule_id: "HM-REQ-008-01",
+          rule_name: "必须使用 LoginWithHuaweiIDButton",
+          rule_source: "must_rule",
+          summary: "登录页必须使用 LoginWithHuaweiIDButton",
+          priority: "P0",
+          detector_kind: "case_constraint",
+          detector_config: {
+            targetPatterns: ["**/pages/*.ets"],
+            astSignals: [{ type: "call", name: "LoginWithHuaweiIDButton" }],
+            llmPrompt: "检查登录按钮",
+          },
+          fallback_policy: "agent_assisted",
+          is_case_rule: true,
+        },
+      ],
+      scoreComputation: scoringResult.scoreComputation,
+      ruleViolations: [],
+    } as never,
+    { referenceRoot },
+  );
+
+  assert.deepEqual(reportResult.resultJson?.case_rule_results, [
+    {
+      rule_id: "HM-REQ-008-01",
+      rule_name: "必须使用 LoginWithHuaweiIDButton",
+      priority: "P0",
+      rule_source: "must_rule",
+      result: "不满足",
+      conclusion: "未使用 LoginWithHuaweiIDButton",
+      hard_gate_triggered: true,
+    },
+  ]);
+});
+
 test("reportGenerationNode only returns schema-valid resultJson without html report", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const scoringResult = await scoringOrchestrationNode({
@@ -573,6 +745,50 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.match(reportHtml, /维度得分概览/);
   assert.match(reportHtml, /规则审计结果/);
   assert.doesNotMatch(reportHtml, /<pre>\s*\{/);
+});
+
+test("runScoreWorkflow includes case_rule_results and generated patch output", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    caseId: "requirement_004",
+    promptText: "实现登录流程",
+    withPatch: false,
+    workspaceContent: "let x: number = 2;\n",
+    originalContent: "let x: number = 1;\n",
+    expectedConstraintsYaml: `constraints:
+  - id: HM-REQ-008-01
+    name: 必须使用 LoginWithHuaweiIDButton
+    description: 登录页必须使用 LoginWithHuaweiIDButton
+    priority: P0
+    rules:
+      - target: '**/pages/*.ets'
+        ast:
+          - type: call
+            name: LoginWithHuaweiIDButton
+        llm: 检查登录按钮
+`,
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+
+  const result = await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+  });
+
+  const resultJson = result.resultJson as Record<string, unknown>;
+  const generatedPatchText = await fs.readFile(
+    path.join(caseDir, "intermediate", "generated.patch"),
+    "utf-8",
+  );
+
+  assert.equal(Array.isArray(resultJson.case_rule_results), true);
+  assert.match(generatedPatchText, /diff --git/);
 });
 
 test("runScoreWorkflow emits Chinese descriptive text in result.json and report.html", async (t) => {
