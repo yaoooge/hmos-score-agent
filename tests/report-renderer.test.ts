@@ -57,6 +57,16 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
         conclusion: "证据不足，需要人工复核。",
       },
     ],
+    bound_rule_packs: [
+      {
+        pack_id: "arkts-language",
+        display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+      },
+      {
+        pack_id: "case-requirement_004",
+        display_name: "用例 requirement_004 约束规则",
+      },
+    ],
     report_meta: {
       report_file_name: "report.html",
       result_json_file_name: "result.json",
@@ -75,7 +85,7 @@ test("renderHtmlReport renders summary, full dimension list, filters, and no raw
   assert.match(html, /改动精准度与最小侵入性/);
   assert.match(html, /工程规范与质量/);
   assert.match(html, /规则审计结果/);
-  assert.match(html, /建议动作：优先复核低置信度指标/);
+  assert.doesNotMatch(html, /建议动作：优先复核低置信度指标/);
   assert.match(html, /data-filter="不满足"/);
   assert.match(html, /data-filter="待人工复核"/);
   assert.doesNotMatch(html, /<pre>\s*\{/);
@@ -138,4 +148,27 @@ test("renderHtmlReport renders case rule section with priority and hard gate sta
   assert.match(html, /HM-REQ-008-01/);
   assert.match(html, /P0/);
   assert.match(html, /已触发硬门槛/);
+});
+
+test("renderHtmlReport renders bound rule packs inside overall card", () => {
+  const html = renderHtmlReport(buildHtmlReportViewModel(makeResultJson()));
+  const summarySection = html.slice(html.indexOf('<section id="summary"'), html.indexOf('<section id="dimensions"'));
+
+  assert.doesNotMatch(html, /href="#bound-rule-packs"/);
+  assert.doesNotMatch(html, /<section id="bound-rule-packs"/);
+  assert.match(summarySection, /绑定规则集/);
+  assert.match(summarySection, /arkts-language/);
+  assert.match(summarySection, /从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范/);
+  assert.match(summarySection, /case-requirement_004/);
+  assert.match(summarySection, /用例 requirement_004 约束规则/);
+});
+
+test("buildHtmlReportViewModel provides empty state for bound rule packs", () => {
+  const viewModel = buildHtmlReportViewModel(
+    makeResultJson({
+      bound_rule_packs: [],
+    }),
+  );
+
+  assert.equal(viewModel.boundRulePacks.emptyState, "当前没有可展示的绑定规则集。");
 });

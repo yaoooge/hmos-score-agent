@@ -159,6 +159,11 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
         background: linear-gradient(90deg, var(--primary), #5a8eff);
       }
       .muted { color: var(--muted); }
+      .summary-inline-block {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid #d6e5ff;
+      }
       .section-card { padding: 24px; margin-bottom: 18px; }
       .section-title {
         display: flex;
@@ -303,11 +308,19 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
               <span class="badge">${escapeHtml(viewModel.summary.taskType)}</span>
             </div>
             <p>${escapeHtml(viewModel.summary.summaryText)}</p>
-            ${
-              viewModel.summary.recommendationText
-                ? `<p><strong>${escapeHtml(viewModel.summary.recommendationText)}</strong></p>`
-                : ""
-            }
+            <div class="summary-inline-block">
+              <div class="eyebrow">绑定规则集</div>
+              ${
+                viewModel.boundRulePacks.items.length > 0
+                  ? `<ul class="plain-list">${viewModel.boundRulePacks.items
+                      .map(
+                        (item) =>
+                          `<li><strong>${escapeHtml(item.packId)}</strong> ${escapeHtml(item.displayName || "未命名规则集")}</li>`,
+                      )
+                      .join("")}</ul>`
+                  : `<p class="empty-state">${escapeHtml(viewModel.boundRulePacks.emptyState)}</p>`
+              }
+            </div>
           </div>
           <div class="hero-side">
             <div class="mini-card meta-list">

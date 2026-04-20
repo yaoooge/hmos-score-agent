@@ -516,6 +516,20 @@ test("reportGenerationNode includes case_rule_results in resultJson", async (t) 
       hard_gate_triggered: true,
     },
   ]);
+  assert.deepEqual(reportResult.resultJson?.bound_rule_packs, [
+    {
+      pack_id: "arkts-language",
+      display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+    },
+    {
+      pack_id: "arkts-performance",
+      display_name: "ArkTS 高性能编程实践",
+    },
+    {
+      pack_id: "case-requirement_004",
+      display_name: "用例 requirement_004 约束规则",
+    },
+  ]);
 });
 
 test("reportGenerationNode only returns schema-valid resultJson without html report", async (t) => {
@@ -867,6 +881,20 @@ test("runScoreWorkflow includes case_rule_results and generated patch output", a
   );
 
   assert.equal(Array.isArray(resultJson.case_rule_results), true);
+  assert.deepEqual(resultJson.bound_rule_packs, [
+    {
+      pack_id: "arkts-language",
+      display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+    },
+    {
+      pack_id: "arkts-performance",
+      display_name: "ArkTS 高性能编程实践",
+    },
+    {
+      pack_id: "case-case-1",
+      display_name: "用例 case-1 约束规则",
+    },
+  ]);
   assert.match(generatedPatchText, /diff --git/);
 });
 

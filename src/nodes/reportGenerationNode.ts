@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { validateReportResult } from "../report/schemaValidator.js";
+import { getRegisteredRulePacks } from "../rules/engine/rulePackRegistry.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
@@ -41,6 +42,31 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
       }),
     };
   });
+}
+
+function buildBoundRulePacks(state: ScoreGraphState): Array<Record<string, string>> {
+  const builtInPacks = getRegisteredRulePacks().map((pack) => ({
+    pack_id: pack.packId,
+    display_name: pack.displayName,
+  }));
+  const seenPackIds = new Set(builtInPacks.map((pack) => pack.pack_id));
+  const casePacks = Array.from(
+    new Set((state.caseRuleDefinitions ?? []).map((definition) => definition.pack_id)),
+  )
+    .filter((packId) => !seenPackIds.has(packId))
+    .map((packId) => ({
+      pack_id: packId,
+      display_name: formatCaseRulePackDisplayName(packId, state.caseInput.caseId),
+    }));
+
+  return [...builtInPacks, ...casePacks];
+}
+
+function formatCaseRulePackDisplayName(packId: string, caseId: string): string {
+  if (packId.startsWith("case-") && packId.length > "case-".length) {
+    return `用例 ${packId.slice("case-".length)} 约束规则`;
+  }
+  return `用例 ${caseId} 约束规则`;
 }
 
 export async function reportGenerationNode(
@@ -85,6 +111,7 @@ export async function reportGenerationNode(
       overall_conclusion: state.scoreComputation.overallConclusion,
       dimension_results: buildDimensionResults(state),
       rule_violations: state.ruleViolations,
+      bound_rule_packs: buildBoundRulePacks(state),
       risks: state.scoreComputation.risks,
       strengths: state.scoreComputation.strengths,
       main_issues: state.scoreComputation.mainIssues,

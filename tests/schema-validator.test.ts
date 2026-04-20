@@ -77,6 +77,16 @@ function makeValidResultJson(): Record<string, unknown> {
       },
     ],
     rule_violations: [],
+    bound_rule_packs: [
+      {
+        pack_id: "arkts-language",
+        display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+      },
+      {
+        pack_id: "arkts-performance",
+        display_name: "ArkTS 高性能编程实践",
+      },
+    ],
     case_rule_results: [],
     risks: [],
     strengths: [],
@@ -110,6 +120,23 @@ test("validateReportResult accepts result with case_rule_results", () => {
       result: "满足",
       conclusion: "ok",
       hard_gate_triggered: false,
+    },
+  ];
+
+  assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
+});
+
+test("validateReportResult accepts result with bound_rule_packs", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.bound_rule_packs = [
+    {
+      pack_id: "arkts-language",
+      display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+    },
+    {
+      pack_id: "case-requirement_004",
+      display_name: "用例 requirement_004 约束规则",
     },
   ];
 

@@ -225,6 +225,18 @@
         "additionalProperties": false
       }
     },
+    "bound_rule_packs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pack_id": { "type": "string" },
+          "display_name": { "type": "string" }
+        },
+        "required": ["pack_id", "display_name"],
+        "additionalProperties": false
+      }
+    },
     "case_rule_results": {
       "type": "array",
       "items": {
@@ -335,6 +347,7 @@
     "overall_conclusion",
     "dimension_results",
     "rule_violations",
+    "bound_rule_packs",
     "case_rule_results",
     "risks",
     "strengths",

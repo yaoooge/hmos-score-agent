@@ -51,6 +51,13 @@ export interface HtmlReportViewModel {
     }>;
     emptyState: string;
   };
+  boundRulePacks: {
+    items: Array<{
+      packId: string;
+      displayName: string;
+    }>;
+    emptyState: string;
+  };
   caseRules: {
     items: Array<{
       ruleId: string;
@@ -127,6 +134,9 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
     : [];
   const ruleAuditResults = Array.isArray(resultJson.rule_audit_results)
     ? resultJson.rule_audit_results
+    : [];
+  const boundRulePacks = Array.isArray(resultJson.bound_rule_packs)
+    ? resultJson.bound_rule_packs
     : [];
   const caseRuleResults = Array.isArray(resultJson.case_rule_results)
     ? resultJson.case_rule_results
@@ -229,6 +239,16 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         };
       }),
       emptyState: "当前没有可展示的规则审计结果。",
+    },
+    boundRulePacks: {
+      items: boundRulePacks.map((item) => {
+        const current = asRecord(item);
+        return {
+          packId: String(current.pack_id ?? ""),
+          displayName: String(current.display_name ?? ""),
+        };
+      }),
+      emptyState: "当前没有可展示的绑定规则集。",
     },
     caseRules: {
       items: caseRuleResults.map((item) => {
