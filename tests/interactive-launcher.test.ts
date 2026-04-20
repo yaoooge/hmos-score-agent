@@ -6,7 +6,12 @@ import test from "node:test";
 import { upsertEnvVars } from "../src/io/envFile.js";
 import { resolveDefaultCasePath, runSingleCase } from "../src/service.js";
 import { buildRunCaseId } from "../src/service/runCaseId.js";
-import { normalizeLauncherAnswers, parseLauncherArgs } from "../src/tools/runInteractiveScore.js";
+import {
+  normalizeExecutionMode,
+  normalizeLauncherAnswers,
+  normalizeRemoteLauncherAnswers,
+  parseLauncherArgs,
+} from "../src/tools/runInteractiveScore.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "interactive-launcher-"));
@@ -111,11 +116,33 @@ test("normalizeLauncherAnswers keeps the prompted baseURL and apiKey", () => {
   assert.equal(result.apiKey, "sk-test");
 });
 
+test("normalizeExecutionMode defaults blank input to local", () => {
+  assert.equal(normalizeExecutionMode(""), "local");
+  assert.equal(normalizeExecutionMode("  "), "local");
+});
+
+test("normalizeExecutionMode accepts remote and rejects unsupported values", () => {
+  assert.equal(normalizeExecutionMode("remote"), "remote");
+  assert.equal(normalizeExecutionMode(" remote "), "remote");
+  assert.throws(() => normalizeExecutionMode("network"), /执行模式仅支持 local 或 remote/);
+});
+
+test("normalizeRemoteLauncherAnswers trims downloadUrl", () => {
+  const result = normalizeRemoteLauncherAnswers({
+    downloadUrl: "  https://example.com/api/evaluation-tasks/next  ",
+  });
+
+  assert.equal(result.downloadUrl, "https://example.com/api/evaluation-tasks/next");
+});
+
 test("launcher source uses provider-neutral env names and prompts", async () => {
   const source = await fs.readFile(
     path.resolve(process.cwd(), "src/tools/runInteractiveScore.ts"),
     "utf-8",
   );
+  assert.match(source, /执行模式/);
+  assert.match(source, /downloadUrl/);
+  assert.match(source, /runRemoteTask/);
   assert.match(source, /模型服务 baseURL|MODEL_PROVIDER_BASE_URL/);
   assert.match(source, /模型服务 apiKey|MODEL_PROVIDER_API_KEY/);
 });

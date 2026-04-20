@@ -1,5 +1,44 @@
 export type TaskType = "full_generation" | "continuation" | "bug_fix";
 
+export interface RemoteTaskFileManifest {
+  files: Array<{
+    path: string;
+    content: string;
+  }>;
+}
+
+export interface RemoteTestCase {
+  id: number;
+  name: string;
+  type: string;
+  description: string;
+  input: string;
+  expectedOutput: string;
+  fileUrl: string;
+}
+
+export interface RemoteExecutionResult {
+  isBuildSuccess: boolean;
+  outputCodeUrl: string;
+  diffFileUrl?: string;
+}
+
+export interface RemoteEvaluationTask {
+  taskId: number;
+  testCase: RemoteTestCase;
+  executionResult: RemoteExecutionResult;
+  token: string;
+  callback: string;
+}
+
+export interface RemoteCallbackPayload {
+  taskId: number;
+  status: "completed" | "failed";
+  totalScore: number;
+  maxScore: number;
+  resultData: Record<string, unknown>;
+}
+
 // CaseInput 描述单条评分用例的 before/after/prompt/patch 四元组。
 export interface CaseInput {
   caseId: string;
