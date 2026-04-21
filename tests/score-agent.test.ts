@@ -764,7 +764,7 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
         generatedProjectPath: "/tmp/workspace",
       },
       agentPromptText: "",
-      agentPromptPayload: {},
+      agentBootstrapPayload: {},
       constraintSummary: {
         explicitConstraints: [],
         contextualConstraints: [],
@@ -992,9 +992,9 @@ test("runScoreWorkflow skips agent assistance when unsupported rules have no dir
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
   let invoked = false;
   const agentClient = {
-    async evaluateRules(): Promise<string> {
+    async completeJsonPrompt(): Promise<string> {
       invoked = true;
-      return "{}";
+      return '{"action":"final_answer","summary":{"assistant_scope":"本次仅辅助候选规则判定","overall_confidence":"medium"},"rule_assessments":[]}';
     },
   };
 
@@ -1032,7 +1032,7 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
   let invoked = false;
   const agentClient = {
-    async evaluateRules(): Promise<string> {
+    async completeJsonPrompt(): Promise<string> {
       invoked = true;
       return "not-json";
     },
@@ -1051,7 +1051,7 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
     "utf-8",
   );
   const agentPromptPayload = JSON.parse(
-    await fs.readFile(path.join(caseDir, "inputs", "agent-prompt-payload.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "inputs", "agent-bootstrap-payload.json"), "utf-8"),
   );
   const mergedAudit = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
@@ -1065,11 +1065,110 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
 
   assert.equal(invoked, false);
   assert.equal(result.agentRunStatus, "not_enabled");
-  assert.match(agentPromptText, /你不是最终评分器/);
+  assert.match(agentPromptText, /你只能返回 tool_call 或 final_answer/);
   assert.equal(Array.isArray(agentPromptPayload.assisted_rule_candidates), true);
   assert.equal(agentPromptPayload.assisted_rule_candidates.length, 0);
+  assert.equal(Array.isArray(agentPromptPayload.tool_contract.allowed_tools), true);
   assert.equal(Array.isArray(mergedAudit), true);
   assert.equal(agentResult.status, "not_enabled");
+  assert.equal(agentResult.runner_mode, "case_aware");
+});
+
+test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycle logs", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    caseId: "requirement_004",
+    promptText: "实现登录流程",
+    withPatch: false,
+    workspaceContent: "let x: number = 2;\n",
+    originalContent: "let x: number = 1;\n",
+    expectedConstraintsYaml: `constraints:
+  - id: HM-REQ-008-01
+    name: 必须使用 LoginWithHuaweiIDButton
+    description: 登录页必须使用 LoginWithHuaweiIDButton
+    priority: P0
+    rules:
+      - target: '**/pages/*.ets'
+        ast:
+          - type: call
+            name: LoginWithHuaweiIDButton
+        llm: 检查登录按钮
+`,
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+  const outputs = [
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_file",
+      args: { path: "workspace/entry/src/main/ets/Index.ets" },
+      reason: "需要确认是否存在登录按钮调用",
+    }),
+    JSON.stringify({
+      action: "final_answer",
+      summary: {
+        assistant_scope: "本次仅辅助候选规则判定",
+        overall_confidence: "medium",
+      },
+      rule_assessments: [
+        {
+          rule_id: "HM-REQ-008-01",
+          decision: "not_applicable",
+          confidence: "high",
+          reason: "当前文件中未看到登录按钮实现，规则暂不涉及。",
+          evidence_used: ["workspace/entry/src/main/ets/Index.ets"],
+          needs_human_review: false,
+        },
+      ],
+    }),
+  ];
+  const agentClient = {
+    async completeJsonPrompt(): Promise<string> {
+      return outputs.shift() ?? "";
+    },
+  };
+
+  const result = await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+    agentClient,
+  } as never);
+
+  const bootstrapPayload = JSON.parse(
+    await fs.readFile(path.join(caseDir, "inputs", "agent-bootstrap-payload.json"), "utf-8"),
+  );
+  const turns = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "agent-turns.json"), "utf-8"),
+  );
+  const toolTrace = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "agent-tool-trace.json"), "utf-8"),
+  );
+  const agentResult = JSON.parse(
+    await fs.readFile(
+      path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"),
+      "utf-8",
+    ),
+  );
+  const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
+
+  assert.equal(result.agentRunStatus, "success");
+  assert.equal(result.agentRunnerMode, "case_aware");
+  assert.equal(bootstrapPayload.tool_contract.allowed_tools.includes("read_file"), true);
+  assert.equal(Array.isArray(turns), true);
+  assert.equal(turns.length, 2);
+  assert.equal(Array.isArray(toolTrace), true);
+  assert.equal(toolTrace.length, 1);
+  assert.equal(agentResult.runner_mode, "case_aware");
+  assert.equal(agentResult.turn_count, 2);
+  assert.equal(agentResult.tool_call_count, 1);
+  assert.match(runLog, /case-aware agent 判定开始/);
+  assert.match(runLog, /case-aware 工具执行/);
+  assert.match(runLog, /case-aware 判定完成/);
 });
 
 test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
@@ -1191,10 +1290,11 @@ test("runScoreWorkflow keeps unsupported rules without direct evidence out of ag
   });
 
   const agentPromptPayload = JSON.parse(
-    await fs.readFile(path.join(caseDir, "inputs", "agent-prompt-payload.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "inputs", "agent-bootstrap-payload.json"), "utf-8"),
   );
 
   assert.deepEqual(agentPromptPayload.assisted_rule_candidates, []);
+  assert.equal(agentPromptPayload.tool_contract.allowed_tools.includes("read_file"), true);
 });
 
 test("runScoreWorkflow does not send unsupported should rules without direct evidence to agent review", async (t) => {

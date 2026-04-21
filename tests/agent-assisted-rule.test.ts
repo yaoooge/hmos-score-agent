@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildAgentPromptPayload,
+  buildAgentBootstrapPayload,
   buildRubricSnapshot,
   mergeRuleAuditResults,
-  renderAgentPrompt,
+  renderAgentBootstrapPrompt,
   selectAssistedRuleCandidates,
 } from "../src/agent/ruleAssistance.js";
 import type {
@@ -135,7 +135,7 @@ test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () =>
       },
     ],
     agentOutputText:
-      '{"summary":{"assistant_scope":"本次仅辅助弱规则判定","overall_confidence":"high"},"rule_assessments":[{"rule_id":"ARKTS-SHOULD-003","decision":"not_applicable","confidence":"high","reason":"未看到相关实现证据，当前不涉及。","evidence_used":[],"needs_human_review":false}]}',
+      '{"action":"final_answer","summary":{"assistant_scope":"本次仅辅助弱规则判定","overall_confidence":"high"},"rule_assessments":[{"rule_id":"ARKTS-SHOULD-003","decision":"not_applicable","confidence":"high","reason":"未看到相关实现证据，当前不涉及。","evidence_used":[],"needs_human_review":false}]}',
   });
 
   assert.equal(merged.agentRunStatus, "success");
@@ -143,21 +143,20 @@ test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () =>
   assert.equal(merged.mergedRuleAuditResults[0]?.conclusion, "未看到相关实现证据，当前不涉及。");
 });
 
-test("buildAgentPromptPayload keeps original prompt as fact and renderAgentPrompt outputs Chinese-only contract", () => {
-  const payload = buildAgentPromptPayload({
+test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-only prompt", () => {
+  const payload = buildAgentBootstrapPayload({
     caseInput: {
       caseId: "case-1",
-      promptText: "修复列表页渲染异常",
+      promptText: "实现首页本地资讯定位能力",
       originalProjectPath: "/tmp/original",
       generatedProjectPath: "/tmp/workspace",
-      patchPath: "/tmp/changes.patch",
+      patchPath: "/tmp/effective.patch",
     },
-    taskType: "bug_fix",
+    caseRoot: "/tmp/case-root",
+    effectivePatchPath: "/tmp/case-root/intermediate/effective.patch",
+    taskType: "continuation",
     constraintSummary,
     rubricSnapshot,
-    deterministicRuleResults: [
-      { rule_id: "ARKTS-MUST-001", rule_source: "must_rule", result: "满足", conclusion: "ok" },
-    ],
     assistedRuleCandidates: [
       {
         rule_id: "ARKTS-SHOULD-001",
@@ -168,46 +167,68 @@ test("buildAgentPromptPayload keeps original prompt as fact and renderAgentPromp
         evidence_snippets: ["Text(this.message)"],
       },
     ],
+    initialTargetFiles: ["entry/src/main/ets/home/viewmodels/HomePageVM.ets"],
   });
 
-  assert.equal(payload.case_context.original_prompt_summary.includes("修复列表页渲染异常"), true);
-  assert.equal(payload.deterministic_rule_results.length, 1);
-  assert.equal(payload.assisted_rule_candidates.length, 1);
-  assert.deepEqual(payload.response_contract.required_top_level_fields, [
-    "summary",
-    "rule_assessments",
-  ]);
-  assert.deepEqual(payload.response_contract.rule_assessment_schema.required_fields, [
-    "rule_id",
-    "decision",
-    "confidence",
-    "reason",
-    "evidence_used",
-    "needs_human_review",
-  ]);
-
-  const prompt = renderAgentPrompt(payload);
-  assert.match(prompt, /你不是最终评分器/);
-  assert.match(prompt, /所有描述型文案必须使用中文/);
-  assert.match(prompt, /只能输出 JSON/);
-  assert.match(prompt, /summary/);
-  assert.match(prompt, /rule_assessments/);
-  assert.match(prompt, /assistant_scope/);
-  assert.match(prompt, /overall_confidence/);
-  assert.match(prompt, /decision/);
-  assert.match(prompt, /reason/);
-  assert.match(prompt, /evidence_used/);
-  assert.match(prompt, /needs_human_review/);
-  assert.match(prompt, /decision 只能是 violation、pass、not_applicable、uncertain/);
-  assert.match(prompt, /confidence 只能是 high、medium、low/);
-  assert.match(prompt, /不得补充额外字段/);
-  assert.match(prompt, /合法输出示例/);
-  assert.match(prompt, /问题点命中程度/);
-  assert.match(prompt, /修改直接命中根因/);
-  assert.match(prompt, /二级维度/);
+  assert.equal(payload.case_context.case_root, "/tmp/case-root");
+  assert.equal(
+    payload.case_context.effective_patch_path,
+    "/tmp/case-root/intermediate/effective.patch",
+  );
+  assert.equal(payload.initial_target_files[0], "entry/src/main/ets/home/viewmodels/HomePageVM.ets");
+  assert.equal(payload.tool_contract.allowed_tools.includes("read_file"), true);
+  assert.equal(payload.tool_contract.allowed_tools.includes("read_patch"), true);
+  assert.deepEqual(payload.response_contract.action_enum, ["tool_call", "final_answer"]);
 });
 
-test("buildAgentPromptPayload keeps case rule metadata on assisted candidates", () => {
+test("renderAgentBootstrapPrompt instructs the model to choose tool_call or final_answer only", () => {
+  const payload = buildAgentBootstrapPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "修复列表页渲染异常",
+      originalProjectPath: "/tmp/original",
+      generatedProjectPath: "/tmp/workspace",
+      patchPath: "/tmp/effective.patch",
+    },
+    caseRoot: "/tmp/case-root",
+    effectivePatchPath: "/tmp/case-root/intermediate/effective.patch",
+    taskType: "continuation",
+    constraintSummary,
+    rubricSnapshot,
+    assistedRuleCandidates: [
+      {
+        rule_id: "ARKTS-SHOULD-001",
+        rule_source: "should_rule",
+        why_uncertain: "需要结合上下文判断",
+        local_preliminary_signal: "possible_violation",
+        evidence_files: ["entry/src/main/ets/pages/Index.ets"],
+        evidence_snippets: ["Text(this.message)"],
+      },
+    ],
+    initialTargetFiles: ["entry/src/main/ets/home/viewmodels/HomePageVM.ets"],
+  });
+
+  const prompt = renderAgentBootstrapPrompt(payload);
+  assert.match(prompt, /你只能返回 tool_call 或 final_answer/);
+  assert.match(prompt, /case 目录只读工具/);
+  assert.match(prompt, /禁止输出 markdown/);
+  assert.match(prompt, /read_patch/);
+  assert.match(prompt, /read_file/);
+  assert.match(prompt, /final_answer/);
+  assert.match(prompt, /tool_call/);
+  assert.equal(payload.response_contract.output_language, "zh-CN");
+  assert.equal(payload.response_contract.json_only, true);
+  assert.deepEqual(payload.tool_contract.allowed_tools, [
+    "read_patch",
+    "list_dir",
+    "read_file",
+    "read_file_chunk",
+    "grep_in_files",
+    "read_json",
+  ]);
+});
+
+test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates", () => {
   const assistedRuleCandidates: AssistedRuleCandidate[] = [
     {
       rule_id: "HM-REQ-008-06",
@@ -231,7 +252,7 @@ test("buildAgentPromptPayload keeps case rule metadata on assisted candidates", 
     },
   ];
 
-  const payload = buildAgentPromptPayload({
+  const payload = buildAgentBootstrapPayload({
     caseInput: {
       caseId: "case-1",
       promptText: "实现登录流程",
@@ -239,11 +260,13 @@ test("buildAgentPromptPayload keeps case rule metadata on assisted candidates", 
       generatedProjectPath: "/tmp/workspace",
       patchPath: "/tmp/changes.patch",
     },
+    caseRoot: "/tmp/case-root",
+    effectivePatchPath: "/tmp/case-root/intermediate/effective.patch",
     taskType: "full_generation",
     constraintSummary,
     rubricSnapshot,
-    deterministicRuleResults: [],
     assistedRuleCandidates,
+    initialTargetFiles: ["entry/src/main/module.json5"],
   });
 
   assert.equal(payload.assisted_rule_candidates[0]?.rule_name, "module.json5 需配置 Client ID");
@@ -314,7 +337,7 @@ test("mergeRuleAuditResults keeps deterministic results authoritative and maps u
       },
     ],
     agentOutputText:
-      '{"summary":{"assistant_scope":"本次仅辅助弱规则判定","overall_confidence":"medium"},"rule_assessments":[{"rule_id":"ARKTS-SHOULD-001","decision":"uncertain","confidence":"low","reason":"证据不足","evidence_used":["entry/src/main/ets/pages/Index.ets"],"needs_human_review":true}]}',
+      '{"action":"final_answer","summary":{"assistant_scope":"本次仅辅助弱规则判定","overall_confidence":"medium"},"rule_assessments":[{"rule_id":"ARKTS-SHOULD-001","decision":"uncertain","confidence":"low","reason":"证据不足","evidence_used":["entry/src/main/ets/pages/Index.ets"],"needs_human_review":true}]}',
   });
 
   assert.equal(merged.agentRunStatus, "success");

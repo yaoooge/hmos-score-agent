@@ -203,6 +203,14 @@ export interface AssistedRuleCandidate {
   is_case_rule?: boolean;
 }
 
+export type CaseToolName =
+  | "read_patch"
+  | "list_dir"
+  | "read_file"
+  | "read_file_chunk"
+  | "grep_in_files"
+  | "read_json";
+
 export interface CaseRuleResult {
   rule_id: string;
   rule_name: string;
@@ -244,42 +252,30 @@ export interface LoadedRubricSnapshot {
   review_rule_summary: string[];
 }
 
-export interface AgentPromptPayload {
+export interface AgentBootstrapPayload {
   case_context: {
     case_id: string;
+    case_root: string;
     task_type: TaskType;
     original_prompt_summary: string;
-    has_patch: boolean;
-    project_paths: {
-      original_project_path: string;
-      generated_project_path: string;
-    };
+    original_project_path: string;
+    generated_project_path: string;
+    effective_patch_path?: string;
   };
   task_understanding: ConstraintSummary;
   rubric_summary: LoadedRubricSnapshot;
-  deterministic_rule_results: RuleAuditResult[];
   assisted_rule_candidates: AssistedRuleCandidate[];
+  initial_target_files: string[];
+  tool_contract: {
+    allowed_tools: CaseToolName[];
+    max_tool_calls: number;
+    max_total_bytes: number;
+    max_files: number;
+  };
   response_contract: {
+    action_enum: ["tool_call", "final_answer"];
     output_language: "zh-CN";
     json_only: true;
-    fallback_rule: "不确定时必须返回 needs_human_review=true";
-    required_top_level_fields: ["summary", "rule_assessments"];
-    summary_schema: {
-      assistant_scope: "string";
-      overall_confidence: ["high", "medium", "low"];
-    };
-    rule_assessment_schema: {
-      required_fields: [
-        "rule_id",
-        "decision",
-        "confidence",
-        "reason",
-        "evidence_used",
-        "needs_human_review",
-      ];
-      decision_enum: ["violation", "pass", "not_applicable", "uncertain"];
-      confidence_enum: ["high", "medium", "low"];
-    };
   };
 }
 
@@ -298,6 +294,53 @@ export interface AgentAssistedRuleResult {
     overall_confidence: ConfidenceLevel;
   };
   rule_assessments: AgentRuleAssessment[];
+}
+
+export interface CaseAwareAgentToolCallAction {
+  action: "tool_call";
+  tool: CaseToolName;
+  args: Record<string, unknown>;
+  reason: string;
+}
+
+export interface CaseAwareAgentFinalAnswer extends AgentAssistedRuleResult {
+  action: "final_answer";
+}
+
+export type CaseAwareAgentPlannerOutput =
+  | CaseAwareAgentToolCallAction
+  | CaseAwareAgentFinalAnswer;
+
+export interface CaseToolBudgetSnapshot {
+  usedToolCalls: number;
+  usedBytes: number;
+  readFileCount: number;
+  remainingToolCalls: number;
+  remainingBytes: number;
+  remainingFileSlots: number;
+}
+
+export interface CaseToolTraceItem {
+  turn: number;
+  tool: CaseToolName;
+  args: Record<string, unknown>;
+  ok: boolean;
+  error_code?: string;
+  error_message?: string;
+  paths_read: string[];
+  bytes_returned: number;
+  truncated: boolean;
+  budget_after_call: CaseToolBudgetSnapshot;
+}
+
+export interface CaseAwareAgentTurn {
+  turn: number;
+  action: "tool_call" | "final_answer";
+  status: "success" | "error";
+  raw_output_text: string;
+  tool?: CaseToolName;
+  args?: Record<string, unknown>;
+  reason?: string;
 }
 
 export type RuleEvidenceIndex = Record<

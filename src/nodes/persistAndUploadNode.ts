@@ -20,8 +20,8 @@ export async function persistAndUploadNode(
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
-      "inputs/agent-prompt-payload.json",
-      state.agentPromptPayload ?? {},
+      "inputs/agent-bootstrap-payload.json",
+      state.agentBootstrapPayload ?? {},
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
@@ -55,7 +55,21 @@ export async function persistAndUploadNode(
         status: state.agentRunStatus ?? "not_enabled",
         raw_output_text: state.agentRawOutputText ?? "",
         parsed_result: state.agentAssistedRuleResults ?? null,
+        runner_mode: state.agentRunnerMode ?? "case_aware",
+        turn_count: state.agentTurns?.length ?? 0,
+        tool_call_count: state.agentToolTrace?.length ?? 0,
+        forced_finalize_reason: state.forcedFinalizeReason ?? null,
       },
+    );
+    await deps.artifactStore.writeJson(
+      state.caseDir,
+      "intermediate/agent-turns.json",
+      state.agentTurns ?? [],
+    );
+    await deps.artifactStore.writeJson(
+      state.caseDir,
+      "intermediate/agent-tool-trace.json",
+      state.agentToolTrace ?? [],
     );
     await deps.artifactStore.writeJson(
       state.caseDir,

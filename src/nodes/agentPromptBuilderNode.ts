@@ -1,4 +1,5 @@
-import { buildAgentPromptPayload, renderAgentPrompt } from "../agent/ruleAssistance.js";
+import path from "node:path";
+import { buildAgentBootstrapPayload, renderAgentBootstrapPrompt } from "../agent/ruleAssistance.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
@@ -12,23 +13,29 @@ export async function agentPromptBuilderNode(
   try {
     const deterministicRuleResults = state.deterministicRuleResults ?? [];
     const assistedRuleCandidates = state.assistedRuleCandidates ?? [];
-    const payload = buildAgentPromptPayload({
+    const initialTargetFiles = Array.from(
+      new Set(assistedRuleCandidates.flatMap((candidate) => candidate.evidence_files)),
+    ).slice(0, 20);
+    const caseRoot = state.sourceCasePath ?? path.dirname(state.caseInput.originalProjectPath);
+    const payload = buildAgentBootstrapPayload({
       caseInput: state.caseInput,
+      caseRoot,
+      effectivePatchPath: state.effectivePatchPath,
       taskType: state.taskType,
       constraintSummary: state.constraintSummary,
       rubricSnapshot: state.rubricSnapshot,
-      deterministicRuleResults,
       assistedRuleCandidates,
+      initialTargetFiles,
     });
-    const prompt = renderAgentPrompt(payload);
+    const prompt = renderAgentBootstrapPrompt(payload);
     await deps.logger?.info(
-      `agent prompt 组装完成 candidates=${assistedRuleCandidates.length} deterministic=${deterministicRuleResults.length}`,
+      `agent bootstrap 组装完成 candidates=${assistedRuleCandidates.length} deterministic=${deterministicRuleResults.length} targetFiles=${initialTargetFiles.length}`,
     );
 
     return {
       deterministicRuleResults,
       assistedRuleCandidates,
-      agentPromptPayload: payload,
+      agentBootstrapPayload: payload,
       agentPromptText: prompt,
     };
   } catch (error) {

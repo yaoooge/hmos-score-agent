@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type {
   AgentAssistedRuleResult,
-  AgentPromptPayload,
   AgentRunStatus,
+  AgentBootstrapPayload,
   AssistedRuleCandidate,
   ConstraintSummary,
   LoadedRubricSnapshot,
@@ -33,11 +33,13 @@ type BuildAgentPromptPayloadInput = {
     generatedProjectPath: string;
     patchPath?: string;
   };
+  caseRoot: string;
+  effectivePatchPath?: string;
   taskType: TaskType;
   constraintSummary: ConstraintSummary;
   rubricSnapshot: LoadedRubricSnapshot;
-  deterministicRuleResults: RuleAuditResult[];
   assistedRuleCandidates: AssistedRuleCandidate[];
+  initialTargetFiles: string[];
 };
 
 type MergeRuleAuditResultsInput = {
@@ -54,6 +56,7 @@ type MergeRuleAuditResultsOutput = {
 
 const agentResponseSchema = z
   .object({
+    action: z.literal("final_answer"),
     summary: z
       .object({
         assistant_scope: z.string(),
@@ -151,69 +154,65 @@ export function buildRubricSnapshot(rubric: LoadedRubric): LoadedRubricSnapshot 
   };
 }
 
-// buildAgentPromptPayload 把评分上下文组织成可回放的结构化载荷。
-export function buildAgentPromptPayload(input: BuildAgentPromptPayloadInput): AgentPromptPayload {
+// buildAgentBootstrapPayload 把评分上下文组织成 case-aware runner 的 bootstrap 载荷。
+export function buildAgentBootstrapPayload(
+  input: BuildAgentPromptPayloadInput,
+): AgentBootstrapPayload {
   return {
     case_context: {
       case_id: input.caseInput.caseId,
+      case_root: input.caseRoot,
       task_type: input.taskType,
       original_prompt_summary: input.caseInput.promptText,
-      has_patch: Boolean(input.caseInput.patchPath),
-      project_paths: {
-        original_project_path: input.caseInput.originalProjectPath,
-        generated_project_path: input.caseInput.generatedProjectPath,
-      },
+      original_project_path: input.caseInput.originalProjectPath,
+      generated_project_path: input.caseInput.generatedProjectPath,
+      effective_patch_path: input.effectivePatchPath,
     },
     task_understanding: input.constraintSummary,
     rubric_summary: input.rubricSnapshot,
-    deterministic_rule_results: input.deterministicRuleResults,
     assisted_rule_candidates: input.assistedRuleCandidates,
+    initial_target_files: input.initialTargetFiles,
+    tool_contract: {
+      allowed_tools: [
+        "read_patch",
+        "list_dir",
+        "read_file",
+        "read_file_chunk",
+        "grep_in_files",
+        "read_json",
+      ],
+      max_tool_calls: 6,
+      max_total_bytes: 61440,
+      max_files: 20,
+    },
     response_contract: {
+      action_enum: ["tool_call", "final_answer"],
       output_language: "zh-CN",
       json_only: true,
-      fallback_rule: "不确定时必须返回 needs_human_review=true",
-      required_top_level_fields: ["summary", "rule_assessments"],
-      summary_schema: {
-        assistant_scope: "string",
-        overall_confidence: ["high", "medium", "low"],
-      },
-      rule_assessment_schema: {
-        required_fields: [
-          "rule_id",
-          "decision",
-          "confidence",
-          "reason",
-          "evidence_used",
-          "needs_human_review",
-        ],
-        decision_enum: ["violation", "pass", "not_applicable", "uncertain"],
-        confidence_enum: ["high", "medium", "low"],
-      },
     },
   };
 }
 
-// renderAgentPrompt 生成真正发送给 Agent 的中文 prompt，并明确 JSON-only 契约。
-export function renderAgentPrompt(payload: AgentPromptPayload): string {
+// renderAgentBootstrapPrompt 生成 case-aware runner 的首轮 bootstrap prompt。
+export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
   return [
-    "你不是最终评分器，而是评分工作流中的辅助判定模块。",
-    "你只需要基于提供的证据，对 assisted_rule_candidates 中的候选弱规则给出结构化辅助判断。",
-    "rubric_summary 已包含任务场景、一级维度、二级维度和分档标准；辅助判定时要结合这些评分重点理解风险。",
-    "请优先依据证据文件和代码片段，不要改写 deterministic_rule_results 中的本地已确定结果。",
-    "当证据不足或无法稳定判断时，必须返回 needs_human_review=true。",
+    "你是评分工作流中的 case-aware 辅助判定模块。",
+    "你可以在受限预算内调用 case 目录只读工具来补查上下文。",
+    "你只能返回 tool_call 或 final_answer 两种 JSON action。",
+    "tool_call 时必须包含 tool、args、reason；final_answer 时必须包含 action、summary、rule_assessments。",
+    "如果证据不足，必须在对应 rule_assessments 中将 needs_human_review 置为 true。",
     "所有描述型文案必须使用中文。",
-    "只能输出 JSON，不允许输出额外说明性文本。",
-    "输出必须严格匹配下面的字段契约；字段名不一致将被判定为无效输出。",
-    "顶层只能包含 summary 和 rule_assessments。",
-    "summary 必须包含 assistant_scope、overall_confidence。",
-    "rule_assessments 中的每一项必须包含 rule_id、decision、confidence、reason、evidence_used、needs_human_review。",
-    "summary 和 rule_assessments 内的对象都不得补充额外字段。",
-    "decision 只能是 violation、pass、not_applicable、uncertain。",
-    "confidence 只能是 high、medium、low。",
-    "请直接输出一个 JSON object，不要使用 markdown 代码块，不要补充解释。",
-    "合法输出示例：",
+    "禁止输出 markdown、代码块或任何额外解释。",
+    "case 目录只读工具包括：read_patch、list_dir、read_file、read_file_chunk、grep_in_files、read_json。",
+    "请优先从 initial_target_files 和 effective_patch_path 开始收集证据，再决定是否继续读取其他文件。",
+    "最终只对 assisted_rule_candidates 中的候选规则给出判断，不要改写本地静态规则结果。",
+    "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
+    "final_answer 中的 confidence 只能是 high、medium、low。",
+    "请直接输出一个 JSON object。",
+    "合法 final_answer 示例：",
     JSON.stringify(
       {
+        action: "final_answer",
         summary: {
           assistant_scope: "本次仅辅助候选规则判定",
           overall_confidence: "medium",
@@ -337,7 +336,10 @@ export function mergeRuleAuditResults(
 
   return {
     agentRunStatus: "success",
-    agentAssistedRuleResults,
+    agentAssistedRuleResults: {
+      summary: agentAssistedRuleResults.summary,
+      rule_assessments: agentAssistedRuleResults.rule_assessments,
+    },
     mergedRuleAuditResults: [...input.deterministicRuleResults, ...mergedCandidates],
   };
 }
