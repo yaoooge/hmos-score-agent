@@ -7,7 +7,7 @@ test("getNodeLabel returns Chinese labels for workflow nodes", () => {
   assert.equal(getNodeLabel("remoteTaskPreparationNode"), "远端任务预处理");
   assert.equal(getNodeLabel("taskUnderstandingNode"), "任务理解");
   assert.equal(getNodeLabel("artifactPostProcessNode"), "产物后处理");
-  assert.equal(getNodeLabel("persistAndUploadNode"), "结果落盘与上传");
+  assert.equal(getNodeLabel("persistAndUploadNode"), "结果落盘");
 });
 
 test("summarizeNodeUpdate returns concise summaries for key node updates", () => {
@@ -140,8 +140,9 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
 
   assert.equal(
     summarizeNodeUpdate("persistAndUploadNode", {
-      uploadMessage: "未配置 UPLOAD_ENDPOINT，已跳过上传。",
+      resultJson: { ok: true },
+      htmlReport: "<html></html>",
     }),
-    "upload=skipped",
+    "outputsWritten=true htmlLength=13",
   );
 });

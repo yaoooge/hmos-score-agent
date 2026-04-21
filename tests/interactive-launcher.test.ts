@@ -7,7 +7,6 @@ import { upsertEnvVars } from "../src/io/envFile.js";
 import { resolveDefaultCasePath, runSingleCase } from "../src/service.js";
 import { buildRunCaseId } from "../src/service/runCaseId.js";
 import {
-  normalizeExecutionMode,
   normalizeLauncherAnswers,
   parseLauncherArgs,
 } from "../src/tools/runInteractiveScore.js";
@@ -109,26 +108,12 @@ test("normalizeLauncherAnswers keeps the prompted baseURL and apiKey", () => {
   const result = normalizeLauncherAnswers({
     baseURL: "https://api.example/v1",
     apiKey: "sk-test",
+    model: " gpt-5.4-mini ",
   });
 
   assert.equal(result.baseURL, "https://api.example/v1");
   assert.equal(result.apiKey, "sk-test");
-});
-
-test("normalizeExecutionMode defaults blank input to local", () => {
-  assert.equal(normalizeExecutionMode(""), "local");
-  assert.equal(normalizeExecutionMode("  "), "local");
-});
-
-test("normalizeExecutionMode rejects removed remote launcher mode", () => {
-  assert.throws(
-    () => normalizeExecutionMode("remote"),
-    /执行模式仅支持 local。远端任务请直接调用 \/score\/run-remote-task 接口。/,
-  );
-  assert.throws(
-    () => normalizeExecutionMode("network"),
-    /执行模式仅支持 local。远端任务请直接调用 \/score\/run-remote-task 接口。/,
-  );
+  assert.equal(result.model, "gpt-5.4-mini");
 });
 
 test("launcher source uses provider-neutral env names and prompts", async () => {
@@ -136,12 +121,12 @@ test("launcher source uses provider-neutral env names and prompts", async () => 
     path.resolve(process.cwd(), "src/tools/runInteractiveScore.ts"),
     "utf-8",
   );
-  assert.match(source, /执行模式/);
+  assert.equal(/执行模式/.test(source), false);
   assert.equal(/downloadUrl/.test(source), false);
   assert.equal(/runRemoteTask/.test(source), false);
-  assert.match(source, /run-remote-task/);
   assert.match(source, /模型服务 baseURL|MODEL_PROVIDER_BASE_URL/);
   assert.match(source, /模型服务 apiKey|MODEL_PROVIDER_API_KEY/);
+  assert.match(source, /模型服务 model|MODEL_PROVIDER_MODEL/);
 });
 
 test("resolveDefaultCasePath picks the first case directory under cases", async (t) => {
@@ -252,7 +237,7 @@ test("runSingleCase writes key lifecycle events into logs/run.log", async (t) =>
     assert.match(logText, /任务类型判定完成 taskType=bug_fix/);
     assert.match(logText, /工作流执行完成/);
     assert.match(logText, /结果已落盘/);
-    assert.match(logText, /上传跳过/);
+    assert.doesNotMatch(logText, /上传跳过/);
   } finally {
     if (fixture.originalLocalCaseRoot === undefined) {
       delete process.env.LOCAL_CASE_ROOT;

@@ -13,7 +13,7 @@ const NODE_LABELS: Record<WorkflowNodeId, string> = {
   scoringOrchestrationNode: "评分编排",
   reportGenerationNode: "报告生成",
   artifactPostProcessNode: "产物后处理",
-  persistAndUploadNode: "结果落盘与上传",
+  persistAndUploadNode: "结果落盘",
 };
 
 export function getNodeLabel(nodeId: WorkflowNodeId): string {

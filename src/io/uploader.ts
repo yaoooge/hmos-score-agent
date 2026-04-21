@@ -1,11 +1,5 @@
 import { RemoteCallbackPayload } from "../types.js";
 
-export interface UploadPayload {
-  caseId: string;
-  fileName: string;
-  content: string;
-}
-
 async function postJson(
   endpoint: string | undefined,
   headers: Record<string, string>,
@@ -31,20 +25,6 @@ async function postJson(
   }
 
   return { uploaded: true, message: successMessage };
-}
-
-export async function uploadResultJson(
-  endpoint: string | undefined,
-  token: string | undefined,
-  payload: UploadPayload,
-): Promise<{ uploaded: boolean; message: string }> {
-  return postJson(
-    endpoint,
-    token ? { Authorization: `Bearer ${token}` } : {},
-    payload,
-    "未配置 UPLOAD_ENDPOINT，已跳过上传。",
-    "上传成功。",
-  );
 }
 
 export async function uploadTaskCallback(

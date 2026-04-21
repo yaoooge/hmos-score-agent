@@ -27,8 +27,6 @@ type LocalWorkflowInput = {
   sourceCasePath?: string;
   referenceRoot: string;
   artifactStore: ArtifactStore;
-  uploadEndpoint?: string;
-  uploadToken?: string;
   agentClient?: AgentClient;
 };
 
@@ -37,8 +35,6 @@ type RemoteWorkflowInput = {
   caseDir: string;
   referenceRoot: string;
   artifactStore: ArtifactStore;
-  uploadEndpoint?: string;
-  uploadToken?: string;
   agentClient?: AgentClient;
 };
 
@@ -78,8 +74,6 @@ export async function runScoreWorkflow(
     .addNode("persistAndUploadNode", (s) =>
       persistAndUploadNode(s, {
         artifactStore: input.artifactStore,
-        uploadEndpoint: input.uploadEndpoint,
-        uploadToken: input.uploadToken,
       }),
     )
     .addEdge(START, "remoteTaskPreparationNode")

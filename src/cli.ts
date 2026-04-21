@@ -13,9 +13,6 @@ async function main(): Promise<void> {
   const result = await runSingleCase(casePath);
 
   console.log(`评分完成，结果目录：${result.caseDir}`);
-  if (result.uploadMessage) {
-    console.log(`上传信息：${result.uploadMessage}`);
-  }
 }
 
 main().catch((err: unknown) => {

@@ -918,7 +918,7 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   const validate = ajv.compile(schema);
 
   assert.equal(validate(resultJson), true, ajv.errorsText(validate.errors));
-  assert.equal(result.uploadMessage, "未配置 UPLOAD_ENDPOINT，已跳过上传。");
+  assert.equal(result.uploadMessage, undefined);
   assert.equal(resultJson.basic_info.task_type, "bug_fix");
   assert.ok(resultJson.dimension_results.length > 0);
   assert.ok(resultJson.dimension_results[0].item_results.length > 0);
@@ -1354,7 +1354,7 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
   assert.match(logText, /节点开始 node=taskUnderstandingNode label=任务理解/);
   assert.match(logText, /节点开始 node=ruleAuditNode label=规则审计/);
   assert.match(logText, /节点开始 node=artifactPostProcessNode label=产物后处理/);
-  assert.match(logText, /节点开始 node=persistAndUploadNode label=结果落盘与上传/);
+  assert.match(logText, /节点开始 node=persistAndUploadNode label=结果落盘/);
   assert.match(
     logText,
     /节点完成 node=inputClassificationNode label=任务分类 summary=taskType=bug_fix/,

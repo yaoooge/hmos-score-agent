@@ -20,7 +20,7 @@
 9. `scoringOrchestrationNode`：基于合并后的规则审计结果、rubric、特征与约束执行评分编排
 10. `reportGenerationNode`：生成并校验结构化 `result.json`
 11. `artifactPostProcessNode`：基于 `result.json` 渲染 `report.html`
-12. `persistAndUploadNode`：写入输入/中间产物/输出文件，并按配置尝试上传 `result.json`
+12. `persistAndUploadNode`：写入输入/中间产物/输出文件
 
 ### 输入与输出
 
@@ -70,8 +70,6 @@ cp .env.example .env
 - `MODEL_PROVIDER_BASE_URL`：兼容 chat completions 的模型服务地址
 - `MODEL_PROVIDER_API_KEY`：模型服务鉴权密钥
 - `MODEL_PROVIDER_MODEL`：模型名称，默认 `gpt-5.4`
-- `UPLOAD_ENDPOINT`：结果上传地址（为空则跳过上传）
-- `UPLOAD_TOKEN`：上传鉴权 token（可选）
 
 默认参考资源：
 
@@ -96,7 +94,6 @@ npm run dev:cli -- --case cases/bug_fix_001
 
 ```text
 评分完成，结果目录：.../.local-cases/20260416T112233_bug_fix_a1b2c3d4
-上传信息：未配置 UPLOAD_ENDPOINT，已跳过上传。
 ```
 
 ### 3.2 API 调试

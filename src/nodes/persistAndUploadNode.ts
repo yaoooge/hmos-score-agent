@@ -1,5 +1,4 @@
 import { ArtifactStore } from "../io/artifactStore.js";
-import { uploadResultJson } from "../io/uploader.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
@@ -7,8 +6,6 @@ export async function persistAndUploadNode(
   state: ScoreGraphState,
   deps: {
     artifactStore: ArtifactStore;
-    uploadEndpoint?: string;
-    uploadToken?: string;
   },
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("persistAndUploadNode");
@@ -78,12 +75,10 @@ export async function persistAndUploadNode(
     await deps.artifactStore.writeJson(state.caseDir, "outputs/result.json", state.resultJson);
     await deps.artifactStore.writeText(state.caseDir, "outputs/report.html", state.htmlReport);
 
-    const upload = await uploadResultJson(deps.uploadEndpoint, deps.uploadToken, {
-      caseId: state.caseInput.caseId,
-      fileName: "result.json",
-      content: JSON.stringify(state.resultJson),
-    });
-    return { uploadMessage: upload.message };
+    return {
+      resultJson: state.resultJson,
+      htmlReport: state.htmlReport,
+    };
   } catch (error) {
     emitNodeFailed("persistAndUploadNode", error);
     throw error;

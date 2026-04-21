@@ -57,11 +57,7 @@ async function runCaseInput(input: {
       caseDir,
       referenceRoot: config.referenceRoot,
       artifactStore,
-      uploadEndpoint: config.uploadEndpoint,
-      uploadToken: config.uploadToken,
     });
-    const uploadMessage =
-      typeof result.uploadMessage === "string" ? result.uploadMessage : undefined;
     await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
       ...caseInfoBase,
       agent_run_status:
@@ -69,17 +65,9 @@ async function runCaseInput(input: {
     });
     await logger.info("工作流执行完成");
     await logger.info("结果已落盘");
-    if (uploadMessage) {
-      if (uploadMessage.includes("跳过上传")) {
-        await logger.info(`上传跳过 message=${uploadMessage}`);
-      } else {
-        await logger.info(`上传结果 message=${uploadMessage}`);
-      }
-    }
 
     return {
       caseDir,
-      uploadMessage,
       resultJson:
         typeof result.resultJson === "object" && result.resultJson !== null
           ? (result.resultJson as Record<string, unknown>)
@@ -127,7 +115,7 @@ function readWorkflowStateFromError(error: unknown): Record<string, unknown> | u
 
 export async function runSingleCase(
   casePath: string,
-): Promise<{ caseDir: string; uploadMessage?: string }> {
+): Promise<{ caseDir: string }> {
   const caseInput = await loadCaseFromPath(casePath);
   const result = await runCaseInput({
     caseInput,
@@ -136,7 +124,6 @@ export async function runSingleCase(
 
   return {
     caseDir: result.caseDir,
-    uploadMessage: result.uploadMessage,
   };
 }
 
@@ -183,8 +170,6 @@ export async function runRemoteEvaluationTask(
       caseDir,
       referenceRoot: config.referenceRoot,
       artifactStore,
-      uploadEndpoint: config.uploadEndpoint,
-      uploadToken: config.uploadToken,
     });
 
     const caseInput =
@@ -194,9 +179,6 @@ export async function runRemoteEvaluationTask(
     const sourceCasePath =
       typeof workflowResult.sourceCasePath === "string" ? workflowResult.sourceCasePath : null;
     const taskType = typeof workflowResult.taskType === "string" ? workflowResult.taskType : null;
-    const uploadMessage =
-      typeof workflowResult.uploadMessage === "string" ? workflowResult.uploadMessage : undefined;
-
     await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
       ...caseInfoBase,
       source_case_path: sourceCasePath,

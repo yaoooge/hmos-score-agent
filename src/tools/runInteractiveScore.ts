@@ -5,26 +5,18 @@ import { pathToFileURL } from "node:url";
 import { upsertEnvVars } from "../io/envFile.js";
 import { resolveDefaultCasePath, runSingleCase } from "../service.js";
 
-export type LauncherExecutionMode = "local";
-
 type LauncherAnswers = {
   baseURL: string;
   apiKey: string;
+  model: string;
 };
-
-export function normalizeExecutionMode(rawMode: string): LauncherExecutionMode {
-  const mode = rawMode.trim().toLowerCase();
-  if (!mode || mode === "local") {
-    return "local";
-  }
-  throw new Error("执行模式仅支持 local。远端任务请直接调用 /score/run-remote-task 接口。");
-}
 
 // 交互层只做最小归一化，方便测试，也避免把业务逻辑埋进 readline 里。
 export function normalizeLauncherAnswers(answers: LauncherAnswers): LauncherAnswers {
   return {
     baseURL: answers.baseURL.trim(),
     apiKey: answers.apiKey.trim(),
+    model: answers.model.trim(),
   };
 }
 
@@ -40,9 +32,6 @@ export function parseLauncherArgs(argv: string[]): string {
 export async function runInteractiveScore(argv: string[] = process.argv.slice(2)): Promise<void> {
   const rl = createInterface({ input, output });
   try {
-    const executionMode = normalizeExecutionMode(
-      await rl.question("执行模式 [local] (default: local): "),
-    );
     const rawBaseURL =
       (await rl.question(
         `模型服务 baseURL [${process.env.MODEL_PROVIDER_BASE_URL ?? "https://your-model-provider.example/v1"}]: `,
@@ -55,30 +44,36 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
       )) ||
       process.env.MODEL_PROVIDER_API_KEY ||
       "";
-    const { baseURL, apiKey } = normalizeLauncherAnswers({
+    const rawModel =
+      (await rl.question(
+        `模型服务 model [${process.env.MODEL_PROVIDER_MODEL ?? "gpt-5.4"}]: `,
+      )) ||
+      process.env.MODEL_PROVIDER_MODEL ||
+      "gpt-5.4";
+    const { baseURL, apiKey, model } = normalizeLauncherAnswers({
       baseURL: rawBaseURL,
       apiKey: rawApiKey,
+      model: rawModel,
     });
 
-    if (!baseURL || !apiKey) {
-      throw new Error("baseURL 和 apiKey 都不能为空。");
+    if (!baseURL || !apiKey || !model) {
+      throw new Error("baseURL、apiKey 和 model 都不能为空。");
     }
 
     const envPath = path.resolve(process.cwd(), ".env");
     await upsertEnvVars(envPath, {
       MODEL_PROVIDER_BASE_URL: baseURL,
       MODEL_PROVIDER_API_KEY: apiKey,
+      MODEL_PROVIDER_MODEL: model,
     });
 
     process.env.MODEL_PROVIDER_BASE_URL = baseURL;
     process.env.MODEL_PROVIDER_API_KEY = apiKey;
+    process.env.MODEL_PROVIDER_MODEL = model;
 
     const casePath = parseLauncherArgs(argv);
     const result = await runSingleCase(casePath);
     console.log(`评分完成，结果目录：${result.caseDir}`);
-    if (result.uploadMessage) {
-      console.log(`上传信息：${result.uploadMessage}`);
-    }
   } finally {
     rl.close();
   }
