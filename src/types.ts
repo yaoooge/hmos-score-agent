@@ -263,7 +263,6 @@ export interface AgentBootstrapPayload {
     effective_patch_path?: string;
   };
   task_understanding: ConstraintSummary;
-  rubric_summary: LoadedRubricSnapshot;
   assisted_rule_candidates: AssistedRuleCandidate[];
   initial_target_files: string[];
   tool_contract: {
@@ -341,6 +340,28 @@ export interface CaseAwareAgentTurn {
   tool?: CaseToolName;
   args?: Record<string, unknown>;
   reason?: string;
+}
+
+export type CaseAwareRunnerOutcome =
+  | "success"
+  | "request_failed"
+  | "protocol_error"
+  | "tool_budget_exhausted";
+
+export interface CaseAwareRunnerResult {
+  outcome: CaseAwareRunnerOutcome;
+  final_answer?: CaseAwareAgentFinalAnswer;
+  final_answer_raw_text?: string;
+  failure_reason?: string;
+  turns: CaseAwareAgentTurn[];
+  tool_trace: CaseToolTraceItem[];
+}
+
+export interface CaseAwareFinalAnswerValidation {
+  ok: boolean;
+  missing_rule_ids: string[];
+  duplicate_rule_ids: string[];
+  unexpected_rule_ids: string[];
 }
 
 export type RuleEvidenceIndex = Record<
