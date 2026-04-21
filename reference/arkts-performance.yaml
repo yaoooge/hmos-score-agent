@@ -1,0 +1,93 @@
+name: ArkTS 高性能编程实践规则包
+version: v1.0.0
+summary: 基于 ArkTS 高性能编程实践规则整理的内部规则包，按 should / forbidden 分类，用于识别 HarmonyOS NEXT 生成代码中的常见性能风险。
+rule_pack_meta:
+  pack_id: arkts-performance
+  source_name: Huawei-ArkTS-High-Performance-Programming-Practices
+  source_version: performance-rules-2026-04-17
+must_rules: []
+should_rules:
+  - id: ARKTS-PERF-SHOULD-001
+    rule: 不变变量推荐使用 const 声明。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-SHOULD-002
+    rule: number 类型变量初始化后应避免整型与浮点型混用。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \blet\s+([A-Za-z_$][\w$]*)\s*=\s*\d+\s*;[\s\S]{0,200}?\b\1\s*=\s*\d+\.\d+\b
+        - \blet\s+([A-Za-z_$][\w$]*)\s*=\s*\d+\.\d+\s*;[\s\S]{0,200}?\b\1\s*=\s*\d+\b
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-SHOULD-003
+    rule: 数值计算应避免溢出到 INT32 范围外。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-SHOULD-004
+    rule: 循环中应提取不变量，减少重复属性访问次数。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-SHOULD-005
+    rule: 性能敏感场景中建议通过参数传递替代闭包捕获函数外变量。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-SHOULD-006
+    rule: 涉及纯数值计算时推荐使用 TypedArray。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+forbidden_patterns:
+  - id: ARKTS-PERF-FORBID-001
+    rule: 禁止使用可选参数 ? 作为性能敏感函数参数形式。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bfunction\s+[A-Za-z_$][\w$]*\s*\([^)]*\?:[^)]*\)
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-FORBID-002
+    rule: 禁止使用联合类型数组。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \([^\)]*\|[^\)]*\)\s*\[\]
+        - \bArray\s*<[^>]*\|[^>]*>
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-FORBID-003
+    rule: 禁止在数值数组字面量中混用整型和浮点型。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \[[^\]\n]*\b\d+\.\d+\b[^\]\n]*\b\d+\b[^\]\n]*\]
+        - \[[^\]\n]*\b\d+\b[^\]\n]*\b\d+\.\d+\b[^\]\n]*\]
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-FORBID-004
+    rule: 禁止通过超大容量初始化或大跨度下标写入制造稀疏/退化数组。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bnew\s+Array\s*\(\s*(?:102[5-9]|10[3-9]\d|1[1-9]\d\d|[2-9]\d{3,})\s*\)
+        - \b[A-Za-z_$][\w$]*\s*\[\s*(?:102[4-9]|10[3-9]\d|1[1-9]\d\d|[2-9]\d{3,})\s*\]\s*=
+    fallback_policy: agent_assisted
+  - id: ARKTS-PERF-FORBID-005
+    rule: 禁止在循环等热点路径中直接抛出异常。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \b(?:for|while)\s*\([^)]*\)\s*\{[\s\S]{0,400}?\bthrow\s+new\s+Error\b
+    fallback_policy: agent_assisted

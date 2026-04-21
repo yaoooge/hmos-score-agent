@@ -1,0 +1,515 @@
+name: ArkTS TypeScript 适配与编程规范融合规则包
+version: v1.0.0
+summary: 基于《从TypeScript到ArkTS的适配规则》与《ArkTS编程规范》融合提炼的内部规则包，按 must / should / forbidden 分类，用于 HarmonyOS NEXT 生成代码评分与审查。
+rule_pack_meta:
+  pack_id: arkts-language
+  source_name: Huawei-ArkTS-TypeScript-Adaptation-Guide-and-Programming-Guide
+  source_version: merged-html-and-v1-rules-2026-04-08
+must_rules:
+  - id: ARKTS-MUST-001
+    rule: 对象属性名必须是合法标识符，禁止依赖数字键或普通字符串键的动态属性访问。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \b[A-Za-z_$][\w$]*\s*\[\s*['"][^'"]+['"]\s*\]
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-002
+    rule: 禁止使用 Symbol() API，仅允许使用 Symbol.iterator。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bSymbol\s*\(
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-003
+    rule: '禁止使用 #private 字段语法，必须改用 private 关键字。'
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - (?<![\w"'`])#[_$A-Za-z][\w$]*
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-004
+    rule: 类型、枚举、接口和命名空间名称必须唯一，且不得与变量或函数等标识符冲突。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-005
+    rule: 禁止使用 var，必须使用 let 或 const。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bvar\b
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-006
+    rule: 禁止使用 any 和 unknown，必须显式声明具体类型。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ':\s*(any|unknown)\b|\b(as\s+any|as\s+unknown)\b'
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-007
+    rule: 禁止在对象类型中使用 call signature。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ^\s*\([^)]*\)\s*:\s*[^=][^;{]*;?$
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-008
+    rule: 禁止在 type 或 interface 中定义构造签名。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ^\s*new\s*\([^)]*\)\s*:\s*[^;{]+;?$
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-009
+    rule: 一个类中只允许存在一个 static 初始化块。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bstatic\s*\{[\s\S]*\bstatic\s*\{
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-010
+    rule: 禁止使用 index signature。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \[[^\]]+\s*:\s*[^\]]+\]\s*:\s*[^;={]+;?
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-011
+    rule: 禁止使用 intersection types、conditional types、infer、this 类型和索引访问类型。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          type\s+[A-Za-z_$][\w$<>,\s]*=\s*[^;\n]*&[^;\n]*;?|\bextends\b[^?;\n]+\?[^:;\n]+:[^;\n]+|\binfer\b|(?:type\s+[A-Za-z_$][\w$<>,\s]*=\s*this\b|:\s*this\b(?=\s*(?:[,;)=\{]|$)))|type\s+[A-Za-z_$][\w$<>,\s]*=\s*[A-Za-z_$][\w$<>]*\s*\[\s*(?:["'][^"']+["']|[A-Za-z_$][\w$]*)\s*\]
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-012
+    rule: 禁止在构造函数参数中直接声明类字段。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - constructor\s*\((?:(?!\)).)*(?:public|private|protected|readonly)\s+[^)]*\)
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-013
+    rule: 禁止依赖 structural typing、对象字面量类型或无类型对象字面量初始化。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-014
+    rule: 对无法可靠推断元素类型的数组字面量必须补充显式类型。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-015
+    rule: 禁止使用 function expression 和 class expression。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - '=\s*function\b|=\s*class\b'
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-016
+    rule: implements 只能作用于 interface，extends 必须遵循类继承类、接口继承接口。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-017
+    rule: 禁止在运行时修改对象布局，包括 delete 或 prototype 赋值。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bdelete\s+[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])|\b[A-Za-z_$][\w$]*\.prototype\s*=
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-018
+    rule: 类型转换只能使用 as 语法，禁止使用 <Type> 形式的断言。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - '[=(:,]\s*<\s*[A-Za-z_$][\w$<>,.\s]*>\s*[A-Za-z_$({[]'
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-019
+    rule: 限制多态运算符语义，一元运算和 instanceof 需满足 ArkTS 类型约束。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-020
+    rule: 禁止使用解构赋值、解构声明、解构参数、逗号运算符和 for..in。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bfor\s*\([^)]*\bin\b[^)]*\)|\b(?:const|let|var)\s*[\[{][^=\n]*=
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-021
+    rule: 只允许抛出 Error 或其派生类实例，catch 参数不得标注 any 或 unknown。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bthrow\s+(?:["'`]|[0-9[{]|true\b|false\b|null\b|undefined\b)|\bcatch\s*\(\s*[^):]+\s*:\s*(?:any|unknown)\s*\)
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-022
+    rule: 禁止在普通函数或静态方法中使用 this，禁止嵌套函数声明与生成器函数。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - function\s*\*
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-023
+    rule: 展开运算符仅允许用于数组、Array 子类和 TypedArray，且仅在受支持场景中使用。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-024
+    rule: 禁止混合类型枚举、运行时表达式枚举初始化、enum 声明合并和命名空间对象化使用。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-025
+    rule: 禁止使用 require、import 赋值表达式、ambient module、UMD 和 import assertions。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          \brequire\s*\(|\bimport\s+[A-Za-z_$][\w$]*\s*=\s*|\bdeclare\s+module\b|\bexport\s+as\s+namespace\b|\bassert\s*\{
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-026
+    rule: 禁止通过 @ts-ignore、@ts-nocheck 或关闭严格检查的方式绕过类型系统。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - '@ts-ignore|@ts-nocheck'
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-027
+    rule: 禁止使用 eval、__proto__、__defineGetter__ 等受限动态标准库接口。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \beval\s*\(|\b__proto__\b|\b__defineGetter__\b|\b__defineSetter__\b
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-028
+    rule: 多个变量定义和赋值语句不允许写在一行。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          \b(?:let|const|var)\s+[A-Za-z_$][\w$]*(?:\s*:[^=,;\n]+)?(?:\s*=\s*[^,();\n]+)?,\s*[A-Za-z_$][\w$]*(?:\s*[:=]|[,;])|(?<![!<>=])=(?![=>])[^;\n]*;[^\n;]*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])?\s*(?<![!<>=])=(?![=>])
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-029
+    rule: 判断 Number.NaN 时必须使用 Number.isNaN()。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - '[!=]==?\s*(?:Number\.)?NaN\b|\b(?:Number\.)?NaN\s*[!=]==?'
+    fallback_policy: agent_assisted
+  - id: ARKTS-MUST-030
+    rule: 对明显仅用于映射、过滤、查找、归约的数组遍历，优先使用 Array 方法。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+should_rules:
+  - id: ARKTS-SHOULD-001
+    rule: 应避免依赖全局作用域或 globalThis 传递状态。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bglobalThis\b
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-002
+    rule: 仅在确有跨语言调用需要时使用 ESObject，且优先限制在局部变量场景。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-003
+    rule: 不应将 class 当作普通对象值使用。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-004
+    rule: 标识符命名应清晰表达意图，避免单字母、非标准缩写和中文拼音。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-005
+    rule: 类名、枚举名、命名空间名采用 UpperCamelCase 风格。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-006
+    rule: 变量名、方法名、参数名采用 lowerCamelCase 风格。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-007
+    rule: 常量名、枚举值名使用全大写并以下划线分隔。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-008
+    rule: 布尔变量或方法使用 is/has/can/should 等前缀，避免否定式命名。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-009
+    rule: 使用空格缩进，禁止使用 tab。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \t
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-010
+    rule: 建议代码行宽不超过 120 个字符。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ^.{121,}$
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-011
+    rule: 条件语句和循环语句建议使用大括号。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ^\s*(?:if|for|while)\s*\((?:[^()]|\([^()]*\))*\)\s*(?!\{)\S
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-012
+    rule: switch 语句中的 case 和 default 需按层级缩进。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - (^[ \t]*)switch\b[^\n]*\{\r?\n\1(?:case|default)\b
+        - (^[ \t]*)(?:case\b[^\n]*|default)\s*:[ \t]*\r?\n\1\S
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-013
+    rule: 表达式换行应保持一致，运算符放在行末。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ^\s*(?:\+|\-|\*|/|%|&&|\|\||\?\?|===|==|!==|!=|<=|>=|<|>|\?|:)\s+\S
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-014
+    rule: 空格应突出关键字和重要信息，避免不必要空格和多个连续空格。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-015
+    rule: 建议字符串统一使用单引号。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - '"[^"\n]*"'
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-016
+    rule: 对象字面量属性超过 4 个时建议统一换行。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \{[ \t]*(?:[A-Za-z_$][\w$]*[ \t]*:[ \t]*[^,{}\n]+,[ \t]*){4,}[A-Za-z_$][\w$]*[ \t]*:[ \t]*[^,{}\n]+[ \t]*\}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-017
+    rule: else 或 catch 放在前一个代码块闭括号的同一行。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - '}\s*\n\s*(?:else|catch)\b'
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-018
+    rule: 大括号应与控制语句或声明语句位于同一行。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \b(?:if|for|while|switch|else|catch|class|interface|enum|struct|function)\b[^\n{]*\n\s*\{
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-019
+    rule: 建议为类属性添加明确的可访问修饰符。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-020
+    rule: 不建议省略浮点数小数点前后的 0。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - (?<![\w.])\.\d+\b|\b\d+\.(?!\d)
+    fallback_policy: agent_assisted
+  - id: ARKTS-SHOULD-021
+    rule: 使用 T[] 表示数组类型，而不是 Array<T>。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bArray\s*<[^>]+>
+    fallback_policy: agent_assisted
+forbidden_patterns:
+  - id: ARKTS-FORBID-001
+    rule: 禁止使用 any、unknown、@ts-ignore、@ts-nocheck 或 as any 等弱类型逃逸手段。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ':\s*(any|unknown)\b|\b(as\s+any|as\s+unknown)\b|@ts-ignore|@ts-nocheck'
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-002
+    rule: 禁止动态添加或删除对象属性、依赖 prototype 赋值或使用 in 检查成员存在。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          \bdelete\s+[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])|\b[A-Za-z_$][\w$]*\.prototype\s*=|\bin\s+['"]?[A-Za-z_$][\w$]*['"]?\s*\)
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-003
+    rule: 禁止使用数字键、普通字符串键、索引签名、索引访问类型或未声明字段进行对象成员访问。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          \b[A-Za-z_$][\w$]*\s*\[\s*['"][^'"]+['"]\s*\]|\[[^\]]+\s*:\s*[^\]]+\]\s*:\s*[^;={]+;?|type\s+[A-Za-z_$][\w$<>,\s]*=\s*[A-Za-z_$][\w$<>]*\s*\[\s*(?:["'][^"']+["']|[A-Za-z_$][\w$]*)\s*\]
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-004
+    rule: 禁止使用 intersection type、conditional type、infer、this 类型和映射/索引访问类高级类型特性。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          type\s+[A-Za-z_$][\w$<>,\s]*=\s*[^;\n]*&[^;\n]*;?|\bextends\b[^?;\n]+\?[^:;\n]+:[^;\n]+|\binfer\b|(?:type\s+[A-Za-z_$][\w$<>,\s]*=\s*this\b|:\s*this\b(?=\s*(?:[,;)=\{]|$)))|type\s+[A-Za-z_$][\w$<>,\s]*=\s*[A-Za-z_$][\w$<>]*\s*\[\s*(?:["'][^"']+["']|[A-Za-z_$][\w$]*)\s*\]
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-005
+    rule: 禁止使用 function expression、class expression、嵌套函数声明、generator、独立 this、构造签名或调用签名类型。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - ^\s*\([^)]*\)\s*:\s*[^=][^;{]*;?$|^\s*new\s*\([^)]*\)\s*:\s*[^;{]+;?$|=\s*function\b|=\s*class\b|function\s*\*
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-006
+    rule: 禁止使用解构赋值、解构声明、解构参数、for..in、for 外逗号运算符和 with。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bfor\s*\([^)]*\bin\b[^)]*\)|\b(?:const|let|var)\s*[\[{][^=\n]*=|\bwith\s*\(
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-007
+    rule: 禁止抛出 string、number 等非 Error 类型值，或在 catch 中依赖 any/unknown 类型注解。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bthrow\s+(?:["'`]|[0-9[{]|true\b|false\b|null\b|undefined\b)|\bcatch\s*\(\s*[^):]+\s*:\s*(?:any|unknown)\s*\)
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-008
+    rule: 禁止使用 require、UMD、ambient module、模块名通配符、import assertions 或其他 ArkTS 不兼容的模块系统能力。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          \brequire\s*\(|\bimport\s+[A-Za-z_$][\w$]*\s*=\s*|\bdeclare\s+module\b|\bexport\s+as\s+namespace\b|\bassert\s*\{
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-009
+    rule: 禁止枚举混用不同值类型、使用运行时表达式初始化枚举、依赖 enum/声明合并或将命名空间作为运行时对象。
+    detector_kind: not_implemented
+    detector_config: {}
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-010
+    rule: 禁止使用 eval、__proto__、__defineGetter__、Function.apply、Function.call、new.target 或 as const 等受限能力。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          \beval\s*\(|\b__proto__\b|\b__defineGetter__\b|\b__defineSetter__\b|\bFunction\.(?:apply|call)\b|\bnew\.target\b|\bas\s+const\b
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-011
+    rule: 禁止在 if、while、for 或其他控制性条件表达式中直接进行赋值。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - >-
+          \b(?:if|while)\s*\((?:[^()]|\([^()]*\))*[^=!<>]=[^=](?:[^()]|\([^()]*\))*\)|\bfor\s*\([^;)]*;[^;)]*[^=!<>]=[^=][^;)]*;
+    fallback_policy: agent_assisted
+  - id: ARKTS-FORBID-012
+    rule: 禁止在 finally 代码块中使用 return、break、continue 或抛出未处理异常。
+    detector_kind: text_pattern
+    detector_config:
+      fileExtensions:
+        - .ets
+      patterns:
+        - \bfinally\s*\{[\s\S]*\b(?:return|break|continue|throw)\b
+    fallback_policy: agent_assisted
