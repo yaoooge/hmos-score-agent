@@ -263,6 +263,7 @@ export interface AgentBootstrapPayload {
     effective_patch_path?: string;
   };
   task_understanding: ConstraintSummary;
+  rubric_summary: LoadedRubricSnapshot;
   assisted_rule_candidates: AssistedRuleCandidate[];
   initial_target_files: string[];
   tool_contract: {

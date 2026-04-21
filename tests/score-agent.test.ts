@@ -282,7 +282,7 @@ test("ruleMergeNode returns deterministic results directly when there are no ass
   assert.equal(result.agentAssistedRuleResults, undefined);
 });
 
-test("ruleMergeNode preserves structured agent judgments from raw output when provider fails after emitting them", async () => {
+test("ruleMergeNode preserves structured agent judgments from canonical runner result", async () => {
   const result = await ruleMergeNode(
     {
       deterministicRuleResults: [
@@ -315,37 +315,42 @@ test("ruleMergeNode preserves structured agent judgments from raw output when pr
           is_case_rule: true,
         },
       ],
-      agentRunStatus: "failed",
-      agentRawOutputText: JSON.stringify({
-        action: "final_answer",
-        summary: {
-          assistant_scope: "provider 在 repair 轮失败前，已经产出了一版结构化分条判断",
-          overall_confidence: "medium",
+      agentRunStatus: "success",
+      agentRunnerResult: {
+        outcome: "success",
+        final_answer: {
+          action: "final_answer",
+          summary: {
+            assistant_scope: "provider 已产出结构化分条判断",
+            overall_confidence: "medium",
+          },
+          rule_assessments: [
+            {
+              rule_id: "HM-REQ-010-01",
+              decision: "violation",
+              confidence: "high",
+              reason: "首页未发现当前位置展示区或手动刷新定位入口。",
+              evidence_used: ["features/home/src/main/ets/pages/HomePage.ets"],
+              needs_human_review: false,
+            },
+            {
+              rule_id: "HM-REQ-010-02",
+              decision: "uncertain",
+              confidence: "low",
+              reason: "仅看到刷新链路，未见 Location Kit 调用。",
+              evidence_used: ["features/home/src/main/ets/viewModels/HomePageVM.ets"],
+              needs_human_review: true,
+            },
+          ],
         },
-        rule_assessments: [
-          {
-            rule_id: "HM-REQ-010-01",
-            decision: "violation",
-            confidence: "high",
-            reason: "首页未发现当前位置展示区或手动刷新定位入口。",
-            evidence_used: ["features/home/src/main/ets/pages/HomePage.ets"],
-            needs_human_review: false,
-          },
-          {
-            rule_id: "HM-REQ-010-02",
-            decision: "uncertain",
-            confidence: "low",
-            reason: "仅看到刷新链路，未见 Location Kit 调用。",
-            evidence_used: ["features/home/src/main/ets/viewModels/HomePageVM.ets"],
-            needs_human_review: true,
-          },
-        ],
-      }),
+        turns: [],
+        tool_trace: [],
+      },
     } as never,
     {},
   );
 
-  assert.equal(result.agentRunStatus, "failed");
+  assert.equal(result.agentRunStatus, "success");
   assert.equal(result.agentAssistedRuleResults?.rule_assessments.length, 2);
   assert.equal(
     result.mergedRuleAuditResults?.find((item) => item.rule_id === "HM-REQ-010-01")?.result,
@@ -1143,7 +1148,7 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
   );
   const agentResult = JSON.parse(
     await fs.readFile(
-      path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"),
+      path.join(caseDir, "intermediate", "agent-runner-result.json"),
       "utf-8",
     ),
   );
@@ -1155,8 +1160,10 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
   assert.equal(agentPromptPayload.assisted_rule_candidates.length, 0);
   assert.equal(Array.isArray(agentPromptPayload.tool_contract.allowed_tools), true);
   assert.equal(Array.isArray(mergedAudit), true);
-  assert.equal(agentResult.status, "not_enabled");
-  assert.equal(agentResult.runner_mode, "case_aware");
+  assert.equal(agentResult.outcome, "not_enabled");
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"), "utf-8"),
+  );
 });
 
 test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycle logs", async (t) => {
@@ -1235,7 +1242,7 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
   );
   const agentResult = JSON.parse(
     await fs.readFile(
-      path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"),
+      path.join(caseDir, "intermediate", "agent-runner-result.json"),
       "utf-8",
     ),
   );
@@ -1248,9 +1255,9 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
   assert.equal(turns.length, 2);
   assert.equal(Array.isArray(toolTrace), true);
   assert.equal(toolTrace.length, 1);
-  assert.equal(agentResult.runner_mode, "case_aware");
-  assert.equal(agentResult.turn_count, 2);
-  assert.equal(agentResult.tool_call_count, 1);
+  assert.equal(agentResult.outcome, "success");
+  assert.equal(agentResult.turns.length, 2);
+  assert.equal(agentResult.tool_trace.length, 1);
   assert.match(runLog, /case-aware agent 判定开始/);
   assert.match(runLog, /case-aware 工具执行/);
   assert.match(runLog, /case-aware 判定完成/);
@@ -1314,22 +1321,22 @@ test("runScoreWorkflow preserves partial agent traces when provider fails after 
   );
   const agentResult = JSON.parse(
     await fs.readFile(
-      path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"),
+      path.join(caseDir, "intermediate", "agent-runner-result.json"),
       "utf-8",
     ),
   );
   const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
-  assert.equal(result.agentRunStatus, "failed");
+  assert.equal(result.agentRunStatus, "invalid_output");
   assert.equal(Array.isArray(turns), true);
   assert.equal(turns.length, 1);
   assert.equal(turns[0]?.action, "tool_call");
   assert.equal(Array.isArray(toolTrace), true);
   assert.equal(toolTrace.length, 1);
-  assert.equal(agentResult.status, "failed");
-  assert.equal(agentResult.turn_count, 1);
-  assert.equal(agentResult.tool_call_count, 1);
-  assert.equal(agentResult.forced_finalize_reason, "agent_request_failed");
+  assert.equal(agentResult.outcome, "request_failed");
+  assert.equal(agentResult.turns.length, 1);
+  assert.equal(agentResult.tool_trace.length, 1);
+  assert.match(agentResult.failure_reason, /fetch failed/);
   assert.match(runLog, /case-aware 工具执行/);
   assert.match(runLog, /case-aware 模型调用失败/);
 });

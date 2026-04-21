@@ -50,15 +50,14 @@ export async function persistAndUploadNode(
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
-      "intermediate/agent-assisted-rule-result.json",
-      {
-        status: state.agentRunStatus ?? "not_enabled",
-        raw_output_text: state.agentRawOutputText ?? "",
-        parsed_result: state.agentAssistedRuleResults ?? null,
-        runner_mode: state.agentRunnerMode ?? "case_aware",
-        turn_count: state.agentTurns?.length ?? 0,
-        tool_call_count: state.agentToolTrace?.length ?? 0,
-        forced_finalize_reason: state.forcedFinalizeReason ?? null,
+      "intermediate/agent-runner-result.json",
+      state.agentRunnerResult ?? {
+        outcome:
+          state.agentRunStatus === "skipped" || state.agentRunStatus === "not_enabled"
+            ? state.agentRunStatus
+            : "protocol_error",
+        turns: state.agentTurns ?? [],
+        tool_trace: state.agentToolTrace ?? [],
       },
     );
     await deps.artifactStore.writeJson(

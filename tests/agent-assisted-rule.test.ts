@@ -9,6 +9,7 @@ import {
 } from "../src/agent/ruleAssistance.js";
 import type {
   AssistedRuleCandidate,
+  CaseAwareAgentFinalAnswer,
   ConstraintSummary,
   LoadedRubricSnapshot,
   RuleAuditResult,
@@ -50,6 +51,20 @@ const rubricSnapshot: LoadedRubricSnapshot = {
   hard_gates: [{ id: "G4", score_cap: 69 }],
   review_rule_summary: ["关键分段分数需要人工复核"],
 };
+
+function makeFinalAnswer(
+  rule_assessments: CaseAwareAgentFinalAnswer["rule_assessments"],
+  summary: CaseAwareAgentFinalAnswer["summary"] = {
+    assistant_scope: "本次仅辅助弱规则判定",
+    overall_confidence: "medium",
+  },
+): CaseAwareAgentFinalAnswer {
+  return {
+    action: "final_answer",
+    summary,
+    rule_assessments,
+  };
+}
 
 test("selectAssistedRuleCandidates keeps deterministic results and extracts should-rule candidates", () => {
   const ruleAuditResults: RuleAuditResult[] = [
@@ -134,8 +149,22 @@ test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () =>
         evidence_snippets: ["let ready = false;"],
       },
     ],
-    agentOutputText:
-      '{"action":"final_answer","summary":{"assistant_scope":"本次仅辅助弱规则判定","overall_confidence":"high"},"rule_assessments":[{"rule_id":"ARKTS-SHOULD-003","decision":"not_applicable","confidence":"high","reason":"未看到相关实现证据，当前不涉及。","evidence_used":[],"needs_human_review":false}]}',
+    agentFinalAnswer: makeFinalAnswer(
+      [
+        {
+          rule_id: "ARKTS-SHOULD-003",
+          decision: "not_applicable",
+          confidence: "high",
+          reason: "未看到相关实现证据，当前不涉及。",
+          evidence_used: [],
+          needs_human_review: false,
+        },
+      ],
+      {
+        assistant_scope: "本次仅辅助弱规则判定",
+        overall_confidence: "high",
+      },
+    ),
   });
 
   assert.equal(merged.agentRunStatus, "success");
@@ -336,8 +365,16 @@ test("mergeRuleAuditResults keeps deterministic results authoritative and maps u
         evidence_snippets: ["List()"],
       },
     ],
-    agentOutputText:
-      '{"action":"final_answer","summary":{"assistant_scope":"本次仅辅助弱规则判定","overall_confidence":"medium"},"rule_assessments":[{"rule_id":"ARKTS-SHOULD-001","decision":"uncertain","confidence":"low","reason":"证据不足","evidence_used":["entry/src/main/ets/pages/Index.ets"],"needs_human_review":true}]}',
+    agentFinalAnswer: makeFinalAnswer([
+      {
+        rule_id: "ARKTS-SHOULD-001",
+        decision: "uncertain",
+        confidence: "low",
+        reason: "证据不足",
+        evidence_used: ["entry/src/main/ets/pages/Index.ets"],
+        needs_human_review: true,
+      },
+    ]),
   });
 
   assert.equal(merged.agentRunStatus, "success");
@@ -351,7 +388,7 @@ test("mergeRuleAuditResults keeps deterministic results authoritative and maps u
   );
 });
 
-test("mergeRuleAuditResults falls back to local review result when agent output is invalid", () => {
+test("mergeRuleAuditResults falls back to local review result when agent final answer is absent", () => {
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [],
     assistedRuleCandidates: [
@@ -364,7 +401,7 @@ test("mergeRuleAuditResults falls back to local review result when agent output 
         evidence_snippets: ["List()"],
       },
     ],
-    agentOutputText: "not-json",
+    agentFinalAnswer: undefined,
   });
 
   assert.equal(merged.agentRunStatus, "invalid_output");
@@ -387,15 +424,14 @@ test("mergeRuleAuditResults preserves agent summary when structured rule assessm
         is_case_rule: true,
       },
     ],
-    agentOutputText: JSON.stringify({
-      action: "final_answer",
-      summary: {
+    agentFinalAnswer: makeFinalAnswer(
+      [],
+      {
         assistant_scope:
           "未发现 Location Kit、geoLocationManager、getCurrentLocation 或定位权限接入，无法证明本地资讯定位闭环完成。",
         overall_confidence: "high",
       },
-      rule_assessments: [],
-    }),
+    ),
   });
 
   assert.equal(merged.agentRunStatus, "success");
@@ -405,7 +441,41 @@ test("mergeRuleAuditResults preserves agent summary when structured rule assessm
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /缺少针对 HM-REQ-010-01 的结构化判定/);
 });
 
-test("mergeRuleAuditResults rejects outputs that add unexpected fields beyond the new schema", () => {
+test("mergeRuleAuditResults preserves per-rule agent judgement details", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "HM-REQ-010-02",
+        rule_summary: "需要调用定位能力刷新本地资讯",
+        rule_source: "must_rule",
+        why_uncertain: "需要语义判断",
+        local_preliminary_signal: "unknown",
+        evidence_files: ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
+        evidence_snippets: ["requestLocationPermission()"],
+      },
+    ],
+    agentFinalAnswer: makeFinalAnswer([
+      {
+        rule_id: "HM-REQ-010-02",
+        decision: "violation",
+        confidence: "medium",
+        reason: "未发现 Location Kit 调用。",
+        evidence_used: ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
+        needs_human_review: false,
+      },
+    ]),
+  });
+
+  assert.equal(
+    merged.agentAssistedRuleResults?.rule_assessments[0]?.reason,
+    "未发现 Location Kit 调用。",
+  );
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "不满足");
+  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /未发现 Location Kit 调用/);
+});
+
+test("mergeRuleAuditResults falls back when canonical final answer omits a candidate", () => {
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [],
     assistedRuleCandidates: [
@@ -418,28 +488,20 @@ test("mergeRuleAuditResults rejects outputs that add unexpected fields beyond th
         evidence_snippets: ["List()"],
       },
     ],
-    agentOutputText: JSON.stringify({
-      summary: {
-        assistant_scope: "本次仅辅助候选规则判定",
-        overall_confidence: "medium",
+    agentFinalAnswer: makeFinalAnswer([
+      {
+        rule_id: "ARKTS-SHOULD-999",
+        decision: "uncertain",
+        confidence: "low",
+        reason: "无关规则。",
+        evidence_used: [],
+        needs_human_review: true,
       },
-      rule_assessments: [
-        {
-          rule_id: "ARKTS-SHOULD-001",
-          decision: "uncertain",
-          confidence: "low",
-          needs_human_review: true,
-          reason: "证据不足，需要人工复核。",
-          evidence_used: ["entry/src/main/ets/pages/Index.ets"],
-          extra_note: "unexpected",
-        },
-      ],
-      extra_summary: "unexpected",
-    }),
+    ]),
   });
 
-  assert.equal(merged.agentRunStatus, "invalid_output");
-  assert.equal(merged.agentAssistedRuleResults, null);
+  assert.equal(merged.agentRunStatus, "success");
+  assert.equal(merged.agentAssistedRuleResults?.rule_assessments.length, 1);
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
-  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /Agent 未能提供有效判定/);
+  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /未提供规则 ARKTS-SHOULD-001/);
 });

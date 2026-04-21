@@ -1,9 +1,9 @@
-import { z } from "zod";
 import type {
   AgentAssistedRuleResult,
   AgentRunStatus,
   AgentBootstrapPayload,
   AssistedRuleCandidate,
+  CaseAwareAgentFinalAnswer,
   ConstraintSummary,
   LoadedRubricSnapshot,
   RuleAuditResult,
@@ -45,7 +45,7 @@ type BuildAgentPromptPayloadInput = {
 type MergeRuleAuditResultsInput = {
   deterministicRuleResults: RuleAuditResult[];
   assistedRuleCandidates: AssistedRuleCandidate[];
-  agentOutputText: string;
+  agentFinalAnswer?: CaseAwareAgentFinalAnswer;
 };
 
 type MergeRuleAuditResultsOutput = {
@@ -53,30 +53,6 @@ type MergeRuleAuditResultsOutput = {
   agentAssistedRuleResults: AgentAssistedRuleResult | null;
   mergedRuleAuditResults: RuleAuditResult[];
 };
-
-const agentResponseSchema = z
-  .object({
-    action: z.literal("final_answer"),
-    summary: z
-      .object({
-        assistant_scope: z.string(),
-        overall_confidence: z.enum(["high", "medium", "low"]),
-      })
-      .strict(),
-    rule_assessments: z.array(
-      z
-        .object({
-          rule_id: z.string(),
-          decision: z.enum(["violation", "pass", "not_applicable", "uncertain"]),
-          confidence: z.enum(["high", "medium", "low"]),
-          reason: z.string(),
-          evidence_used: z.array(z.string()),
-          needs_human_review: z.boolean(),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
 
 // selectAssistedRuleCandidates 根据当前快速版策略，优先把 should_rule 交给 Agent 辅助判定。
 export function selectAssistedRuleCandidates(
@@ -169,6 +145,7 @@ export function buildAgentBootstrapPayload(
       effective_patch_path: input.effectivePatchPath,
     },
     task_understanding: input.constraintSummary,
+    rubric_summary: input.rubricSnapshot,
     assisted_rule_candidates: input.assistedRuleCandidates,
     initial_target_files: input.initialTargetFiles,
     tool_contract: {
@@ -257,61 +234,27 @@ function makeFallbackResult(
   };
 }
 
-function mapAssessmentToRuleAuditResult(
-  candidate: AssistedRuleCandidate,
-  assessment: AgentAssistedRuleResult["rule_assessments"][number],
-): RuleAuditResult {
-  if (
-    assessment.needs_human_review ||
-    assessment.decision === "uncertain" ||
-    assessment.confidence === "low"
-  ) {
-    return {
-      rule_id: candidate.rule_id,
-      rule_summary: candidate.rule_summary ?? candidate.rule_name,
-      rule_source: candidate.rule_source,
-      result: "待人工复核",
-      conclusion: assessment.reason,
-    };
+function mapAgentDecisionToRuleResult(
+  decision: "violation" | "pass" | "not_applicable" | "uncertain",
+): RuleAuditResult["result"] {
+  switch (decision) {
+    case "violation":
+      return "不满足";
+    case "pass":
+      return "满足";
+    case "not_applicable":
+      return "不涉及";
+    case "uncertain":
+      return "待人工复核";
   }
-
-  if (assessment.decision === "violation") {
-    return {
-      rule_id: candidate.rule_id,
-      rule_summary: candidate.rule_summary ?? candidate.rule_name,
-      rule_source: candidate.rule_source,
-      result: "不满足",
-      conclusion: assessment.reason,
-    };
-  }
-
-  if (assessment.decision === "pass") {
-    return {
-      rule_id: candidate.rule_id,
-      rule_summary: candidate.rule_summary ?? candidate.rule_name,
-      rule_source: candidate.rule_source,
-      result: "满足",
-      conclusion: assessment.reason,
-    };
-  }
-
-  return {
-    rule_id: candidate.rule_id,
-    rule_summary: candidate.rule_summary ?? candidate.rule_name,
-    rule_source: candidate.rule_source,
-    result: "不涉及",
-    conclusion: assessment.reason,
-  };
 }
 
 // mergeRuleAuditResults 负责本地优先合并，保证非法输出时仍能稳定回退。
 export function mergeRuleAuditResults(
   input: MergeRuleAuditResultsInput,
 ): MergeRuleAuditResultsOutput {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(input.agentOutputText);
-  } catch {
+  const agentResult = input.agentFinalAnswer;
+  if (!agentResult) {
     return {
       agentRunStatus: "invalid_output",
       agentAssistedRuleResults: null,
@@ -322,34 +265,38 @@ export function mergeRuleAuditResults(
     };
   }
 
-  const validation = agentResponseSchema.safeParse(parsed);
-  if (!validation.success) {
-    return {
-      agentRunStatus: "invalid_output",
-      agentAssistedRuleResults: null,
-      mergedRuleAuditResults: [
-        ...input.deterministicRuleResults,
-        ...input.assistedRuleCandidates.map((candidate) => makeFallbackResult(candidate)),
-      ],
-    };
-  }
-
-  const agentAssistedRuleResults = validation.data;
   const assessmentByRuleId = new Map(
-    agentAssistedRuleResults.rule_assessments.map((item) => [item.rule_id, item]),
+    agentResult.rule_assessments.map((item) => [item.rule_id, item]),
   );
   const mergedCandidates = input.assistedRuleCandidates.map((candidate) => {
     const assessment = assessmentByRuleId.get(candidate.rule_id);
-    return assessment
-      ? mapAssessmentToRuleAuditResult(candidate, assessment)
-      : makeFallbackResult(candidate, agentAssistedRuleResults.summary);
+    if (!assessment) {
+      if (agentResult.rule_assessments.length === 0) {
+        return makeFallbackResult(candidate, agentResult.summary);
+      }
+      return {
+        rule_id: candidate.rule_id,
+        rule_summary: candidate.rule_summary ?? candidate.rule_name,
+        rule_source: candidate.rule_source,
+        result: "待人工复核" as const,
+        conclusion: `Agent 未提供规则 ${candidate.rule_id} 的分条判定，已回退为待人工复核。`,
+      };
+    }
+
+    return {
+      rule_id: candidate.rule_id,
+      rule_summary: candidate.rule_summary ?? candidate.rule_name,
+      rule_source: candidate.rule_source,
+      result: mapAgentDecisionToRuleResult(assessment.decision),
+      conclusion: assessment.reason,
+    };
   });
 
   return {
     agentRunStatus: "success",
     agentAssistedRuleResults: {
-      summary: agentAssistedRuleResults.summary,
-      rule_assessments: agentAssistedRuleResults.rule_assessments,
+      summary: agentResult.summary,
+      rule_assessments: agentResult.rule_assessments,
     },
     mergedRuleAuditResults: [...input.deterministicRuleResults, ...mergedCandidates],
   };
