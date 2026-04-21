@@ -126,21 +126,23 @@ test("case-aware runner performs a tool_call before emitting final_answer", asyn
     completeJsonPrompt: async () => outputs.shift() ?? "",
   });
 
+  assert.equal(result.outcome, "success");
   assert.equal(result.turns.length, 2);
-  assert.equal(result.toolTrace.length, 1);
-  assert.equal(result.finalAnswer?.action, "final_answer");
-  assert.equal(result.status, "success");
+  assert.equal(result.tool_trace.length, 1);
+  assert.equal(result.final_answer?.action, "final_answer");
+  assert.equal(result.final_answer_raw_text, JSON.stringify(result.final_answer, null, 2));
 });
 
-test("case-aware runner forces finalize after invalid model output retry exhaustion", async () => {
+test("case-aware runner returns protocol_error for invalid model output", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",
     bootstrapPayload: sampleBootstrapPayload,
     completeJsonPrompt: async () => "not-json",
   });
 
-  assert.equal(result.status, "invalid_output");
-  assert.equal(result.forcedFinalizeReason, "invalid_model_output");
+  assert.equal(result.outcome, "protocol_error");
+  assert.equal(result.final_answer, undefined);
+  assert.match(result.failure_reason ?? "", /protocol_error/);
 });
 
 test("case-aware runner exposes canonical final answer text for downstream merge", async () => {
@@ -179,11 +181,11 @@ test("case-aware runner exposes canonical final answer text for downstream merge
       }),
   });
 
-  const downstreamPayload = JSON.parse(result.finalAnswerRawText) as {
+  const downstreamPayload = JSON.parse(result.final_answer_raw_text ?? "{}") as {
     rule_assessments?: Array<{ rule_id: string; decision: string }>;
   };
 
-  assert.equal(result.status, "success");
+  assert.equal(result.outcome, "success");
   assert.equal(downstreamPayload.rule_assessments?.[0]?.rule_id, "HM-REQ-010-01");
   assert.equal(downstreamPayload.rule_assessments?.[0]?.decision, "violation");
 });
@@ -263,12 +265,12 @@ test("case-aware runner rejects incomplete final_answer and asks the agent to co
     },
   });
 
-  assert.equal(result.status, "success");
+  assert.equal(result.outcome, "success");
   assert.equal(result.turns.length, 2);
   assert.equal(result.turns[0]?.action, "final_answer");
   assert.equal(result.turns[0]?.status, "error");
-  assert.equal(result.finalAnswer?.rule_assessments.length, 2);
-  assert.equal(result.finalAnswer?.rule_assessments[1]?.rule_id, "HM-REQ-010-02");
+  assert.equal(result.final_answer?.rule_assessments.length, 2);
+  assert.equal(result.final_answer?.rule_assessments[1]?.rule_id, "HM-REQ-010-02");
   assert.match(prompts[1] ?? "", /HM-REQ-010-02/);
   assert.match(prompts[1] ?? "", /必须补齐每一条候选规则/);
   assert.match(prompts[1] ?? "", /请直接重发完整的 final_answer/);
@@ -315,13 +317,13 @@ test("case-aware runner preserves partial turns and tool trace when model reques
     },
   });
 
-  assert.equal(result.status, "failed");
-  assert.equal(result.forcedFinalizeReason, "agent_request_failed");
+  assert.equal(result.outcome, "request_failed");
+  assert.match(result.failure_reason ?? "", /fetch failed/);
   assert.equal(result.turns.length, 1);
   assert.equal(result.turns[0]?.action, "tool_call");
   assert.equal(result.turns[0]?.status, "success");
-  assert.equal(result.toolTrace.length, 1);
-  assert.equal(result.toolTrace[0]?.tool, "read_file");
+  assert.equal(result.tool_trace.length, 1);
+  assert.equal(result.tool_trace[0]?.tool, "read_file");
 });
 
 test("renderCaseAwareBootstrapPrompt documents exact tool arg schemas and single-action contract", () => {
@@ -415,7 +417,7 @@ test("case-aware runner rejects nested final_answer compatibility shapes", async
       }),
   });
 
-  assert.equal(result.status, "invalid_output");
-  assert.equal(result.finalAnswer, undefined);
-  assert.equal(result.forcedFinalizeReason, "invalid_model_output");
+  assert.equal(result.outcome, "protocol_error");
+  assert.equal(result.final_answer, undefined);
+  assert.match(result.failure_reason ?? "", /protocol_error/);
 });

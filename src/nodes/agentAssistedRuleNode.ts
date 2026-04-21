@@ -21,7 +21,7 @@ export async function agentAssistedRuleNode(
     return {
       agentRunnerMode: "case_aware",
       agentRunStatus: "not_enabled",
-      agentRawOutputText: "",
+      agentRunnerResult: undefined,
       agentTurns: [],
       agentToolTrace: [],
     };
@@ -32,7 +32,7 @@ export async function agentAssistedRuleNode(
     return {
       agentRunnerMode: "case_aware",
       agentRunStatus: "skipped",
-      agentRawOutputText: "",
+      agentRunnerResult: undefined,
       agentTurns: [],
       agentToolTrace: [],
     };
@@ -45,13 +45,14 @@ export async function agentAssistedRuleNode(
       completeJsonPrompt: (prompt) => deps.agentClient!.completeJsonPrompt(prompt),
       logger: deps.logger,
     });
+    const agentRunStatus = runnerResult.final_answer ? "success" : "invalid_output";
     return {
       agentRunnerMode: "case_aware",
-      agentRunStatus: runnerResult.status,
-      agentRawOutputText: runnerResult.finalAnswerRawText,
+      agentRunStatus,
+      agentRunnerResult: runnerResult,
+      agentAssistedRuleResults: runnerResult.final_answer,
       agentTurns: runnerResult.turns,
-      agentToolTrace: runnerResult.toolTrace,
-      forcedFinalizeReason: runnerResult.forcedFinalizeReason,
+      agentToolTrace: runnerResult.tool_trace,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -59,7 +60,12 @@ export async function agentAssistedRuleNode(
     return {
       agentRunnerMode: "case_aware",
       agentRunStatus: "failed",
-      agentRawOutputText: "",
+      agentRunnerResult: {
+        outcome: "request_failed",
+        failure_reason: message,
+        turns: [],
+        tool_trace: [],
+      },
       agentTurns: [],
       agentToolTrace: [],
     };

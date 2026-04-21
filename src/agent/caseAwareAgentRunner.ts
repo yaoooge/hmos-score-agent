@@ -1,7 +1,7 @@
 import type {
   AgentBootstrapPayload,
-  AgentRunStatus,
   CaseAwareAgentFinalAnswer,
+  CaseAwareRunnerResult,
   CaseAwareAgentTurn,
   CaseToolTraceItem,
 } from "../types.js";
@@ -11,7 +11,11 @@ import {
   renderCaseAwareFollowupPrompt,
   renderCaseAwareRepairPrompt,
 } from "./caseAwarePrompt.js";
-import { parseCaseAwarePlannerOutputStrict } from "./caseAwareProtocol.js";
+import {
+  describeFinalAnswerValidationFailure,
+  parseCaseAwarePlannerOutputStrict,
+  validateCaseAwareFinalAnswerAgainstCandidates,
+} from "./caseAwareProtocol.js";
 import { getCaseAwareAgentNextStep } from "./caseAwareAgentGraph.js";
 
 export async function runCaseAwareAgent(input: {
@@ -23,14 +27,7 @@ export async function runCaseAwareAgent(input: {
     warn(message: string): Promise<void>;
     error(message: string): Promise<void>;
   };
-}): Promise<{
-  status: AgentRunStatus;
-  turns: CaseAwareAgentTurn[];
-  toolTrace: CaseToolTraceItem[];
-  finalAnswer?: CaseAwareAgentFinalAnswer;
-  finalAnswerRawText: string;
-  forcedFinalizeReason?: string;
-}> {
+}): Promise<CaseAwareRunnerResult> {
   const executor = createCaseToolExecutor({
     caseRoot: input.caseRoot,
     effectivePatchPath: input.bootstrapPayload.case_context.effective_patch_path,
@@ -41,10 +38,10 @@ export async function runCaseAwareAgent(input: {
   const turns: CaseAwareAgentTurn[] = [];
   const toolTrace: CaseToolTraceItem[] = [];
   let latestObservation = "";
-  let finalAnswerRawText = "";
+  let finalAnswerRawText: string | undefined;
   let finalAnswer: CaseAwareAgentFinalAnswer | undefined;
-  let status: AgentRunStatus | undefined;
-  let forcedFinalizeReason: string | undefined;
+  let outcome: CaseAwareRunnerResult["outcome"] | undefined;
+  let failureReason: string | undefined;
   let repairPrompt: string | undefined;
 
   await input.logger?.info(
@@ -77,37 +74,36 @@ export async function runCaseAwareAgent(input: {
     try {
       rawText = await input.completeJsonPrompt(prompt);
     } catch (error) {
-      status = "failed";
-      forcedFinalizeReason = "agent_request_failed";
-      const message = error instanceof Error ? error.message : String(error);
-      await input.logger?.error(`case-aware 模型调用失败 turn=${turn} error=${message}`);
+      outcome = "request_failed";
+      failureReason = error instanceof Error ? error.message : String(error);
+      await input.logger?.error(`case-aware 模型调用失败 turn=${turn} error=${failureReason}`);
       break;
     }
 
     let decision;
     try {
       decision = parseCaseAwarePlannerOutputStrict(rawText);
-    } catch {
-      status = "invalid_output";
+    } catch (error) {
+      outcome = "protocol_error";
       finalAnswerRawText = rawText;
-      forcedFinalizeReason = "invalid_model_output";
-      await input.logger?.warn(`case-aware 输出无效 turn=${turn}`);
+      failureReason = error instanceof Error ? error.message : String(error);
+      await input.logger?.warn(`case-aware 输出违反协议 turn=${turn} error=${failureReason}`);
       break;
     }
 
     const nextStep = getCaseAwareAgentNextStep({
       decision,
-      status,
+      status: undefined,
       toolCallsUsed: toolTrace.length,
       maxToolCalls: input.bootstrapPayload.tool_contract.max_tool_calls,
     });
 
     if (decision.action === "final_answer") {
-      const missingRuleIds = findMissingCandidateRuleIds(
+      const validation = validateCaseAwareFinalAnswerAgainstCandidates(
         decision,
         input.bootstrapPayload.assisted_rule_candidates,
       );
-      if (missingRuleIds.length > 0) {
+      if (!validation.ok) {
         finalAnswerRawText = JSON.stringify(decision, null, 2);
         turns.push({
           turn,
@@ -120,25 +116,27 @@ export async function runCaseAwareAgent(input: {
             validation_error: "incomplete_final_answer",
             message:
               "final_answer 必须补齐每一条候选规则的结论，不能只输出总体判断或部分 rule_assessments。",
-            missing_rule_ids: missingRuleIds,
+            missing_rule_ids: validation.missing_rule_ids,
+            duplicate_rule_ids: validation.duplicate_rule_ids,
+            unexpected_rule_ids: validation.unexpected_rule_ids,
             received_rule_ids: decision.rule_assessments.map((item) => item.rule_id),
           },
           null,
           2,
         );
         await input.logger?.warn(
-          `case-aware final_answer 不完整 turn=${turn} missingRules=${missingRuleIds.join(",")}`,
+          `case-aware final_answer 不完整 turn=${turn} detail=${describeFinalAnswerValidationFailure(validation)}`,
         );
         repairPrompt = renderCaseAwareRepairPrompt({
           bootstrapPayload: input.bootstrapPayload,
           turn: turn + 1,
-          missingRuleIds,
+          missingRuleIds: validation.missing_rule_ids,
           receivedRuleIds: decision.rule_assessments.map((item) => item.rule_id),
           latestObservation,
         });
         if (turn >= maxTurns) {
-          status = "invalid_output";
-          forcedFinalizeReason = "incomplete_final_answer";
+          outcome = "protocol_error";
+          failureReason = `protocol_error: ${describeFinalAnswerValidationFailure(validation)}`;
           break;
         }
         continue;
@@ -146,7 +144,7 @@ export async function runCaseAwareAgent(input: {
 
       finalAnswer = decision;
       finalAnswerRawText = JSON.stringify(decision, null, 2);
-      status = "success";
+      outcome = "success";
       turns.push({
         turn,
         action: "final_answer",
@@ -160,8 +158,8 @@ export async function runCaseAwareAgent(input: {
     }
 
     if (nextStep !== "tool_executor") {
-      status = "invalid_output";
-      forcedFinalizeReason = "tool_budget_exceeded";
+      outcome = "tool_budget_exhausted";
+      failureReason = "tool_budget_exceeded";
       await input.logger?.warn(`case-aware 结束但未产出 final_answer turn=${turn}`);
       break;
     }
@@ -214,34 +212,18 @@ export async function runCaseAwareAgent(input: {
         toolResult.error.code === "byte_budget_exceeded" ||
         toolResult.error.code === "file_budget_exceeded")
     ) {
-      status = "invalid_output";
-      forcedFinalizeReason = toolResult.error.code;
+      outcome = "tool_budget_exhausted";
+      failureReason = toolResult.error.code;
       break;
     }
   }
 
   return {
-    status: status ?? "invalid_output",
+    outcome: outcome ?? "protocol_error",
     turns,
-    toolTrace,
-    finalAnswer,
-    finalAnswerRawText,
-    forcedFinalizeReason,
+    tool_trace: toolTrace,
+    final_answer: finalAnswer,
+    final_answer_raw_text: finalAnswerRawText,
+    failure_reason: failureReason,
   };
-}
-
-function findMissingCandidateRuleIds(
-  finalAnswer: CaseAwareAgentFinalAnswer,
-  candidates: AgentBootstrapPayload["assisted_rule_candidates"],
-): string[] {
-  const expectedRuleIds = new Set(candidates.map((candidate) => candidate.rule_id));
-  const receivedRuleIds = new Set(
-    finalAnswer.rule_assessments
-      .map((assessment) => assessment.rule_id)
-      .filter((ruleId) => expectedRuleIds.has(ruleId)),
-  );
-
-  return candidates
-    .map((candidate) => candidate.rule_id)
-    .filter((ruleId) => !receivedRuleIds.has(ruleId));
 }
