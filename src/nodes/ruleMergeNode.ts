@@ -18,10 +18,7 @@ export async function ruleMergeNode(
       };
     }
 
-    if (
-      state.agentRunStatus === "skipped" ||
-      state.agentRunStatus === "not_enabled"
-    ) {
+    if (state.agentRunStatus === "skipped" || state.agentRunStatus === "not_enabled") {
       const mergedRuleAuditResults = [
         ...(state.deterministicRuleResults ?? []),
         ...(state.assistedRuleCandidates ?? []).map((candidate) => ({
@@ -45,8 +42,11 @@ export async function ruleMergeNode(
       assistedRuleCandidates: state.assistedRuleCandidates ?? [],
       agentFinalAnswer: finalAnswer,
     });
-    const effectiveAgentRunStatus =
-      finalAnswer ? "success" : (state.agentRunStatus === "failed" ? state.agentRunStatus : merged.agentRunStatus);
+    const effectiveAgentRunStatus = finalAnswer
+      ? "success"
+      : state.agentRunStatus === "failed"
+        ? state.agentRunStatus
+        : merged.agentRunStatus;
     await deps.logger?.info(`agent 辅助判定合并完成 status=${effectiveAgentRunStatus}`);
 
     return {

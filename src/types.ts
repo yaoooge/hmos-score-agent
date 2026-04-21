@@ -307,9 +307,7 @@ export interface CaseAwareAgentFinalAnswer extends AgentAssistedRuleResult {
   action: "final_answer";
 }
 
-export type CaseAwareAgentPlannerOutput =
-  | CaseAwareAgentToolCallAction
-  | CaseAwareAgentFinalAnswer;
+export type CaseAwareAgentPlannerOutput = CaseAwareAgentToolCallAction | CaseAwareAgentFinalAnswer;
 
 export interface CaseToolBudgetSnapshot {
   usedToolCalls: number;

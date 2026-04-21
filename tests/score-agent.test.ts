@@ -143,10 +143,7 @@ test("loadCaseFromPath exposes expectedConstraintsPath when YAML exists", async 
 
   const caseInput = await loadCaseFromPath(caseDir);
 
-  assert.equal(
-    caseInput.expectedConstraintsPath,
-    path.join(caseDir, "expected_constraints.yaml"),
-  );
+  assert.equal(caseInput.expectedConstraintsPath, path.join(caseDir, "expected_constraints.yaml"));
 });
 
 test("ArtifactStore creates case directories and persists json/text artifacts", async (t) => {
@@ -1147,10 +1144,7 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
     await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
   );
   const agentResult = JSON.parse(
-    await fs.readFile(
-      path.join(caseDir, "intermediate", "agent-runner-result.json"),
-      "utf-8",
-    ),
+    await fs.readFile(path.join(caseDir, "intermediate", "agent-runner-result.json"), "utf-8"),
   );
 
   assert.equal(invoked, false);
@@ -1241,10 +1235,7 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
     await fs.readFile(path.join(caseDir, "intermediate", "agent-tool-trace.json"), "utf-8"),
   );
   const agentResult = JSON.parse(
-    await fs.readFile(
-      path.join(caseDir, "intermediate", "agent-runner-result.json"),
-      "utf-8",
-    ),
+    await fs.readFile(path.join(caseDir, "intermediate", "agent-runner-result.json"), "utf-8"),
   );
   const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
@@ -1320,10 +1311,7 @@ test("runScoreWorkflow preserves partial agent traces when provider fails after 
     await fs.readFile(path.join(caseDir, "intermediate", "agent-tool-trace.json"), "utf-8"),
   );
   const agentResult = JSON.parse(
-    await fs.readFile(
-      path.join(caseDir, "intermediate", "agent-runner-result.json"),
-      "utf-8",
-    ),
+    await fs.readFile(path.join(caseDir, "intermediate", "agent-runner-result.json"), "utf-8"),
   );
   const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 

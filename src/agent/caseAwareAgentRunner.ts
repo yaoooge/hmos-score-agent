@@ -38,7 +38,7 @@ export async function runCaseAwareAgent(input: {
   const turns: CaseAwareAgentTurn[] = [];
   const toolTrace: CaseToolTraceItem[] = [];
   let latestObservation = "";
-  let finalAnswerRawText: string | undefined;
+  let finalAnswerRawJson: string | undefined;
   let finalAnswer: CaseAwareAgentFinalAnswer | undefined;
   let outcome: CaseAwareRunnerResult["outcome"] | undefined;
   let failureReason: string | undefined;
@@ -85,7 +85,7 @@ export async function runCaseAwareAgent(input: {
       decision = parseCaseAwarePlannerOutputStrict(rawText);
     } catch (error) {
       outcome = "protocol_error";
-      finalAnswerRawText = rawText;
+      finalAnswerRawJson = rawText;
       failureReason = error instanceof Error ? error.message : String(error);
       await input.logger?.warn(`case-aware 输出违反协议 turn=${turn} error=${failureReason}`);
       break;
@@ -104,7 +104,7 @@ export async function runCaseAwareAgent(input: {
         input.bootstrapPayload.assisted_rule_candidates,
       );
       if (!validation.ok) {
-        finalAnswerRawText = JSON.stringify(decision, null, 2);
+        finalAnswerRawJson = JSON.stringify(decision, null, 2);
         turns.push({
           turn,
           action: "final_answer",
@@ -143,7 +143,7 @@ export async function runCaseAwareAgent(input: {
       }
 
       finalAnswer = decision;
-      finalAnswerRawText = JSON.stringify(decision, null, 2);
+      finalAnswerRawJson = JSON.stringify(decision, null, 2);
       outcome = "success";
       turns.push({
         turn,
@@ -223,7 +223,7 @@ export async function runCaseAwareAgent(input: {
     turns,
     tool_trace: toolTrace,
     final_answer: finalAnswer,
-    final_answer_raw_text: finalAnswerRawText,
+    final_answer_raw_text: finalAnswerRawJson,
     failure_reason: failureReason,
   };
 }

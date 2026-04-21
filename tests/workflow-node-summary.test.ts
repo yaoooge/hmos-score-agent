@@ -43,7 +43,10 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   assert.equal(
     summarizeNodeUpdate("agentAssistedRuleNode", {
       agentRunStatus: "success",
-      agentRawOutputText: '{"ok":true}',
+      agentRunnerResult: {
+        outcome: "success",
+        final_answer_raw_text: '{"ok":true}',
+      },
     }),
     "status=success outputLength=11",
   );

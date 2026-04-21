@@ -55,8 +55,16 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
     }
     case "agentPromptBuilderNode":
       return `deterministic=${lengthOf(update.deterministicRuleResults)} candidates=${lengthOf(update.assistedRuleCandidates)} promptLength=${String(String(update.agentPromptText ?? "").length)}`;
-    case "agentAssistedRuleNode":
-      return `status=${String(update.agentRunStatus ?? "")} outputLength=${String(String(update.agentRawOutputText ?? "").length)}`;
+    case "agentAssistedRuleNode": {
+      const runnerResult = update.agentRunnerResult as
+        | {
+            outcome?: string;
+            final_answer_raw_text?: string;
+          }
+        | undefined;
+      const outputLength = String(runnerResult?.final_answer_raw_text ?? "").length;
+      return `status=${String(update.agentRunStatus ?? runnerResult?.outcome ?? "")} outputLength=${String(outputLength)}`;
+    }
     case "ruleMergeNode": {
       const mergedRuleAuditResults =
         (update.mergedRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];

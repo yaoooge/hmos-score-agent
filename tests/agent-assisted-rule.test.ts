@@ -204,7 +204,10 @@ test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-
     payload.case_context.effective_patch_path,
     "/tmp/case-root/intermediate/effective.patch",
   );
-  assert.equal(payload.initial_target_files[0], "entry/src/main/ets/home/viewmodels/HomePageVM.ets");
+  assert.equal(
+    payload.initial_target_files[0],
+    "entry/src/main/ets/home/viewmodels/HomePageVM.ets",
+  );
   assert.equal(payload.tool_contract.allowed_tools.includes("read_file"), true);
   assert.equal(payload.tool_contract.allowed_tools.includes("read_patch"), true);
   assert.deepEqual(payload.response_contract.action_enum, ["tool_call", "final_answer"]);
@@ -303,10 +306,7 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
   assert.deepEqual(payload.assisted_rule_candidates[0]?.ast_signals, [
     { type: "json_key", name: "metadata" },
   ]);
-  assert.equal(
-    payload.assisted_rule_candidates[0]?.static_precheck?.signal_status,
-    "all_matched",
-  );
+  assert.equal(payload.assisted_rule_candidates[0]?.static_precheck?.signal_status, "all_matched");
 });
 
 test("buildRubricSnapshot keeps only evaluation summary required by prompt building", () => {
@@ -424,21 +424,21 @@ test("mergeRuleAuditResults preserves agent summary when structured rule assessm
         is_case_rule: true,
       },
     ],
-    agentFinalAnswer: makeFinalAnswer(
-      [],
-      {
-        assistant_scope:
-          "未发现 Location Kit、geoLocationManager、getCurrentLocation 或定位权限接入，无法证明本地资讯定位闭环完成。",
-        overall_confidence: "high",
-      },
-    ),
+    agentFinalAnswer: makeFinalAnswer([], {
+      assistant_scope:
+        "未发现 Location Kit、geoLocationManager、getCurrentLocation 或定位权限接入，无法证明本地资讯定位闭环完成。",
+      overall_confidence: "high",
+    }),
   });
 
   assert.equal(merged.agentRunStatus, "success");
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /未发现 Location Kit/);
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /整体置信度：high/);
-  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /缺少针对 HM-REQ-010-01 的结构化判定/);
+  assert.match(
+    merged.mergedRuleAuditResults[0]?.conclusion ?? "",
+    /缺少针对 HM-REQ-010-01 的结构化判定/,
+  );
 });
 
 test("mergeRuleAuditResults preserves per-rule agent judgement details", () => {
