@@ -49,7 +49,7 @@ export async function runRuleEngine(input: {
   taskType: TaskType;
   runtimeRules?: CaseRuleDefinition[];
 }): Promise<RuleEngineOutput> {
-  const evidence = await collectEvidence(input.caseInput);
+  const evidence = await collectEvidence(input.caseInput, { taskType: input.taskType });
   const registeredRules = listRegisteredRules(input.runtimeRules ?? []);
   const ruleSummaryById = new Map(registeredRules.map((rule) => [rule.rule_id, rule.summary]));
   const evaluatedRules = registeredRules.map((rule) => evaluateRegisteredRule(rule, evidence));

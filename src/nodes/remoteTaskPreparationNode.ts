@@ -17,6 +17,10 @@ function buildRemotePrompt(task: RemoteEvaluationTask): string {
     .join("\n\n");
 }
 
+function shouldMaterializeExpectedConstraints(expectedOutput: string): boolean {
+  return expectedOutput.trim().startsWith("constraints:");
+}
+
 export async function remoteTaskPreparationNode(
   state: ScoreGraphState,
 ): Promise<Partial<ScoreGraphState>> {
@@ -39,6 +43,13 @@ export async function remoteTaskPreparationNode(
     const casePath = path.join(rootDir, `remote-task-${state.remoteTask.taskId}`);
     await fs.mkdir(casePath, { recursive: true });
     await fs.writeFile(path.join(casePath, "input.txt"), buildRemotePrompt(state.remoteTask), "utf-8");
+    if (shouldMaterializeExpectedConstraints(state.remoteTask.testCase.expectedOutput)) {
+      await fs.writeFile(
+        path.join(casePath, "expected_constraints.yaml"),
+        state.remoteTask.testCase.expectedOutput,
+        "utf-8",
+      );
+    }
 
     const originalFiles = await downloadManifestToDirectory(
       state.remoteTask.testCase.fileUrl,

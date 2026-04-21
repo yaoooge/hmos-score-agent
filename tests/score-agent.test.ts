@@ -903,6 +903,41 @@ test("runScoreWorkflow includes case_rule_results and generated patch output", a
   assert.match(generatedPatchText, /diff --git/);
 });
 
+test("runScoreWorkflow feeds generated patch into incremental scoring instead of reporting patch context missing", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    caseId: "bug_fix_generated_patch",
+    promptText: "修复首页定位展示异常",
+    withPatch: false,
+    originalContent: "let count: number = 1;\n",
+    workspaceContent: "let count: number = 2;\n",
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+
+  const result = await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+  });
+
+  const resultJson = result.resultJson as {
+    human_review_items?: Array<{ item?: string }>;
+  };
+  const generatedPatchPath = path.join(caseDir, "intermediate", "generated.patch");
+  const generatedPatchText = await fs.readFile(generatedPatchPath, "utf-8");
+
+  assert.match(generatedPatchText, /diff --git/);
+  assert.equal(
+    resultJson.human_review_items?.some((item) => item.item === "Patch 上下文缺失"),
+    false,
+  );
+});
+
 test("runScoreWorkflow emits Chinese descriptive text in result.json and report.html", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);

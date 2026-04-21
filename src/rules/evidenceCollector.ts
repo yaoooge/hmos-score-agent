@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { CaseInput, EvidenceSummary } from "../types.js";
+import { CaseInput, EvidenceSummary, TaskType } from "../types.js";
 import { collectVisibleFiles } from "../io/gitignoreMatcher.js";
 
 const RULE_EVALUATION_IGNORED_PATH_PREFIXES = ["entry/src/test", "entry/src/ohosTest"];
@@ -20,7 +20,31 @@ export interface CollectedEvidence {
   summary: EvidenceSummary;
 }
 
-export async function collectEvidence(caseInput: CaseInput): Promise<CollectedEvidence> {
+function normalizeRelativePath(relativePath: string): string {
+  return relativePath.replace(/^workspace\//, "").replace(/^original\//, "");
+}
+
+function extractChangedFilesFromPatch(patchText: string | undefined): string[] {
+  if (!patchText) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      Array.from(
+        patchText.matchAll(/^(?:diff --git a\/.+? b\/(.+)|\+\+\+ b\/(.+))$/gm),
+      )
+        .map((match) => match[1] ?? match[2] ?? "")
+        .map((relativePath) => normalizeRelativePath(relativePath))
+        .filter(Boolean),
+    ),
+  );
+}
+
+export async function collectEvidence(
+  caseInput: CaseInput,
+  options: { taskType?: TaskType } = {},
+): Promise<CollectedEvidence> {
   // 这里同时收集 workspace/original/patch 三类证据，供规则和评分共用。
   const workspaceFilePaths = await collectVisibleFiles(caseInput.generatedProjectPath, {
     extraIgnoredPathPrefixes: RULE_EVALUATION_IGNORED_PATH_PREFIXES,
@@ -44,24 +68,22 @@ export async function collectEvidence(caseInput: CaseInput): Promise<CollectedEv
     patchText = undefined;
   }
 
-  const changedFiles = patchText
-    ? Array.from(
-        new Set(
-          // 目前只从 unified diff 中提取 `+++ b/...` 作为变更文件来源。
-          Array.from(patchText.matchAll(/^\+\+\+ b\/(.+)$/gm))
-            .map((match) => match[1])
-            .filter(Boolean),
-        ),
-      )
-    : [];
+  const changedFiles = extractChangedFilesFromPatch(patchText);
+  const shouldLimitToChangedFiles =
+    options.taskType !== undefined &&
+    options.taskType !== "full_generation" &&
+    changedFiles.length > 0;
+  const scopedWorkspaceFiles = shouldLimitToChangedFiles
+    ? workspaceFiles.filter((file) => changedFiles.includes(file.relativePath))
+    : workspaceFiles;
 
   return {
-    workspaceFiles,
+    workspaceFiles: scopedWorkspaceFiles,
     originalFiles,
     patchText,
     changedFiles,
     summary: {
-      workspaceFileCount: workspaceFiles.length,
+      workspaceFileCount: scopedWorkspaceFiles.length,
       originalFileCount: originalFiles.length,
       changedFileCount: changedFiles.length,
       changedFiles,

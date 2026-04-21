@@ -290,14 +290,42 @@ async function ensureEffectivePatchPath(
   deps: TaskUnderstandingDeps,
 ): Promise<string | undefined> {
   if (state.caseInput.patchPath) {
+    const patchText = await fs.readFile(state.caseInput.patchPath, "utf-8").catch(() => "");
+
+    if (patchText.trim().length > 0) {
+      if (!deps.artifactStore || !state.caseDir) {
+        return state.caseInput.patchPath;
+      }
+
+      const outputPath = path.join(state.caseDir, "intermediate", "effective.patch");
+      await deps.artifactStore.writeText(
+        state.caseDir,
+        path.relative(state.caseDir, outputPath),
+        patchText,
+      );
+      return outputPath;
+    }
+  }
+
+  if (!deps.artifactStore || !state.caseDir) {
     return state.caseInput.patchPath;
   }
-  if (!deps.artifactStore || !state.caseDir) {
-    return undefined;
+
+  const outputPath = path.join(
+    state.caseDir,
+    "intermediate",
+    state.caseInput.patchPath ? "effective.patch" : "generated.patch",
+  );
+
+  if (state.caseInput.patchPath) {
+    await deps.artifactStore.writeText(
+      state.caseDir,
+      path.relative(state.caseDir, outputPath),
+      "",
+    );
   }
 
   const caseRoot = path.dirname(state.caseInput.originalProjectPath);
-  const outputPath = path.join(state.caseDir, "intermediate", "generated.patch");
   return generateCasePatch(caseRoot, outputPath);
 }
 
@@ -344,6 +372,10 @@ export async function taskUnderstandingNode(
     await persistCaseRuleDefinitions(state, deps, caseRuleDefinitions);
 
     return {
+      caseInput: {
+        ...state.caseInput,
+        patchPath: effectivePatchPath,
+      },
       effectivePatchPath,
       caseRuleDefinitions,
       constraintSummary,

@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import express, { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import { getConfig } from "./config.js";
 import { resolveDefaultCasePath, runRemoteEvaluationTask, runSingleCase } from "./service.js";
 import type { RemoteEvaluationTask } from "./types.js";
@@ -38,6 +38,31 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
   };
 }
 
+export function createCorsMiddleware() {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const origin = req.header("Origin") ?? "*";
+    const requestedHeaders = req.header("Access-Control-Request-Headers");
+
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin, Access-Control-Request-Headers");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      requestedHeaders && requestedHeaders.length > 0
+        ? requestedHeaders
+        : "Content-Type, Authorization, token",
+    );
+    res.setHeader("Access-Control-Max-Age", "600");
+
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+
+    next();
+  };
+}
+
 export function createApp(deps: {
   runSingleCase: typeof runSingleCase;
   runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
@@ -46,6 +71,7 @@ export function createApp(deps: {
   runRemoteEvaluationTask,
 }) {
   const app = express();
+  app.use(createCorsMiddleware());
   app.use(express.json());
 
   app.get("/health", (_req, res) => {

@@ -199,8 +199,60 @@ test("taskUnderstandingNode generates patch when case patch is absent and loads 
   assert.equal(result.caseRuleDefinitions?.length, 1);
   const patchText = await fs.readFile(result.effectivePatchPath as string, "utf-8");
   assert.match(patchText, /diff --git/);
+  assert.equal(result.caseInput?.patchPath, result.effectivePatchPath);
+  assert.equal(
+    (result.effectivePatchPath as string).startsWith(path.join(caseDir, "intermediate")),
+    true,
+  );
   const persistedRules = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "case-rule-definitions.json"), "utf-8"),
   );
   assert.equal(persistedRules.length, 1);
+});
+
+test("taskUnderstandingNode regenerates patch when provided patch file is empty", async (t) => {
+  const rootDir = await makeTempDir(t);
+  const originalProjectPath = path.join(rootDir, "original");
+  const generatedProjectPath = path.join(rootDir, "workspace");
+  const patchPath = path.join(rootDir, "diff", "changes.patch");
+  const artifactStore = new ArtifactStore(rootDir);
+  const caseDir = await artifactStore.ensureCaseDir("case-empty-patch");
+
+  await fs.mkdir(path.join(originalProjectPath, "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(generatedProjectPath, "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.dirname(patchPath), { recursive: true });
+  await fs.writeFile(
+    path.join(originalProjectPath, "entry", "src", "main", "ets", "Index.ets"),
+    "Text('old')\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(generatedProjectPath, "entry", "src", "main", "ets", "Index.ets"),
+    "Text('new')\n",
+    "utf-8",
+  );
+  await fs.writeFile(patchPath, "", "utf-8");
+
+  const result = await taskUnderstandingNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-empty-patch",
+        promptText: "增量修改首页文案",
+        originalProjectPath,
+        generatedProjectPath,
+        patchPath,
+      },
+    } as never,
+    { artifactStore },
+  );
+
+  assert.equal(result.caseInput?.patchPath, path.join(caseDir, "intermediate", "effective.patch"));
+  const effectivePatchText = await fs.readFile(result.caseInput?.patchPath as string, "utf-8");
+  assert.match(effectivePatchText, /diff --git/);
+  assert.match(effectivePatchText, /Index\.ets/);
 });

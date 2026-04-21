@@ -298,6 +298,41 @@ test("collectEvidence ignores module-level ohosTest and test directories during 
   assert.equal(evidence.summary.workspaceFileCount, 1);
 });
 
+test("runRuleEngine limits incremental rule evaluation to changed files when patch is available", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/ChangedPage.ets": "let count: number = 1;\n",
+    "entry/src/main/ets/pages/LegacyPage.ets": "let risk: any = 1;\nvar count = 2;\n",
+  });
+
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      "diff --git a/entry/src/main/ets/pages/ChangedPage.ets b/entry/src/main/ets/pages/ChangedPage.ets",
+      "@@ -1 +1 @@",
+      "-let count: number = 0;",
+      "+let count: number = 1;",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  assert.equal(result.evidenceSummary.hasPatch, true);
+  assert.deepEqual(result.evidenceSummary.changedFiles, ["entry/src/main/ets/pages/ChangedPage.ets"]);
+  assert.equal(
+    result.deterministicRuleResults.some(
+      (item) =>
+        ["ARKTS-MUST-005", "ARKTS-MUST-006", "ARKTS-FORBID-001"].includes(item.rule_id) &&
+        item.result === "不满足",
+    ),
+    false,
+  );
+});
+
 test("runRuleEngine does not report violations from files ignored by workspace gitignore", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
@@ -725,7 +760,7 @@ test("runRuleEngine builds fallback evidence snippets when patch paths include w
   });
 
   assert.deepEqual(result.ruleEvidenceIndex.__fallback__?.evidenceFiles, [
-    "workspace/entry/src/main/ets/pages/Index.ets",
+    "entry/src/main/ets/pages/Index.ets",
   ]);
   assert.equal((result.ruleEvidenceIndex.__fallback__?.evidenceSnippets.length ?? 0) > 0, true);
 });

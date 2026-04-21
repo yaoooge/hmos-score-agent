@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createApp, createRunRemoteTaskHandler } from "../src/index.js";
+import { createApp, createCorsMiddleware, createRunRemoteTaskHandler } from "../src/index.js";
 import { runRemoteEvaluationTask } from "../src/service.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
@@ -178,4 +178,87 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   assert.equal(responseState.body?.success, true);
   assert.equal(responseState.body?.taskId, 99);
   assert.equal(responseState.body?.caseDir, "/tmp/remote-case");
+});
+
+test("createCorsMiddleware handles preflight and non-preflight remote task requests", async () => {
+  const middleware = createCorsMiddleware();
+  const origin = "http://47.100.28.161:3000";
+
+  const preflightResponseState: {
+    statusCode?: number;
+    headers: Record<string, string>;
+    ended: boolean;
+  } = {
+    headers: {},
+    ended: false,
+  };
+  let preflightNextCalled = false;
+  const preflightResponse = {
+    setHeader(name: string, value: string) {
+      preflightResponseState.headers[name.toLowerCase()] = value;
+    },
+    status(code: number) {
+      preflightResponseState.statusCode = code;
+      return preflightResponse;
+    },
+    end() {
+      preflightResponseState.ended = true;
+      return preflightResponse;
+    },
+  };
+
+  await middleware(
+    {
+      method: "OPTIONS",
+      header(name: string) {
+        const headers: Record<string, string> = {
+          origin,
+          "access-control-request-headers": "content-type",
+        };
+        return headers[name.toLowerCase()];
+      },
+    } as never,
+    preflightResponse as never,
+    () => {
+      preflightNextCalled = true;
+    },
+  );
+
+  assert.equal(preflightResponseState.statusCode, 204);
+  assert.equal(preflightResponseState.headers["access-control-allow-origin"], origin);
+  assert.match(preflightResponseState.headers["access-control-allow-methods"] ?? "", /POST/);
+  assert.match(preflightResponseState.headers["access-control-allow-headers"] ?? "", /content-type/i);
+  assert.equal(preflightResponseState.ended, true);
+  assert.equal(preflightNextCalled, false);
+
+  const requestResponseState: {
+    headers: Record<string, string>;
+  } = {
+    headers: {},
+  };
+  let nextCalled = false;
+  const requestResponse = {
+    setHeader(name: string, value: string) {
+      requestResponseState.headers[name.toLowerCase()] = value;
+    },
+  };
+
+  await middleware(
+    {
+      method: "POST",
+      header(name: string) {
+        const headers: Record<string, string> = {
+          origin,
+        };
+        return headers[name.toLowerCase()];
+      },
+    } as never,
+    requestResponse as never,
+    () => {
+      nextCalled = true;
+    },
+  );
+
+  assert.equal(requestResponseState.headers["access-control-allow-origin"], origin);
+  assert.equal(nextCalled, true);
 });
