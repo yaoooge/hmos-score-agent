@@ -532,6 +532,187 @@ bootstrap payload 包含：
 - `CaseAwareAgentState`
 - `CaseAwareAgentFinalAnswer`
 
+## Observability and Logging
+
+本轮 agent 交互必须同时产出两类日志：
+
+1. 面向人阅读的 `logs/run.log`
+2. 面向回放和调试的结构化轨迹文件
+
+两者都需要，但职责不同：
+
+- `run.log` 用于快速看链路走到了哪里、为什么停下
+- 结构化轨迹用于复现 agent 每一轮到底读了什么、为什么做出最终判断
+
+### Runtime Log Goals
+
+必须能快速回答以下问题：
+
+1. 这轮 agent 判定有没有进入 case-aware runner
+2. agent 一共跑了几轮
+3. 每轮是继续读文件还是已经收敛
+4. 读了哪些工具、哪些文件、是否命中预算上限
+5. 为什么进入 `forced_finalize`
+6. 最终哪些规则被判为人工复核，原因是什么
+
+### Required `run.log` Events
+
+建议新增以下日志事件，全部沿用现有中文风格。
+
+#### 1. Runner 启动
+
+示例：
+
+```text
+[INFO] case-aware agent 判定开始 candidates=4 caseId=remote-task-3 hasPatch=true
+```
+
+#### 2. Bootstrap 完成
+
+示例：
+
+```text
+[INFO] case-aware bootstrap 完成 targetFiles=14 initialPatch=true toolBudget=6 byteBudget=61440
+```
+
+#### 3. Planner 轮次开始
+
+示例：
+
+```text
+[INFO] case-aware planner 开始 turn=1 remainingTools=6 remainingBytes=61440
+```
+
+#### 4. Planner 决策
+
+若返回工具调用：
+
+```text
+[INFO] case-aware planner 决策 turn=1 action=tool_call tool=read_file reason=需要确认首页 ViewModel 是否驱动本地资讯状态
+```
+
+若返回最终答案：
+
+```text
+[INFO] case-aware planner 决策 turn=3 action=final_answer confidence=medium
+```
+
+#### 5. 工具执行开始
+
+示例：
+
+```text
+[INFO] case-aware 工具执行开始 turn=1 tool=read_file path=entry/src/main/ets/home/viewmodels/HomePageVM.ets
+```
+
+#### 6. 工具执行结果
+
+成功：
+
+```text
+[INFO] case-aware 工具执行完成 turn=1 tool=read_file bytes=8421 truncated=false
+```
+
+失败：
+
+```text
+[WARN] case-aware 工具执行失败 turn=2 tool=read_file code=path_out_of_scope
+```
+
+#### 7. 预算状态变化
+
+示例：
+
+```text
+[INFO] case-aware 预算更新 turn=2 usedTools=2 usedBytes=16384 remainingTools=4 remainingBytes=45056
+```
+
+#### 8. 强制收敛
+
+示例：
+
+```text
+[WARN] case-aware 强制收敛 reason=tool_budget_exceeded
+```
+
+或：
+
+```text
+[WARN] case-aware 强制收敛 reason=invalid_model_output retryExhausted=true
+```
+
+#### 9. 最终判定摘要
+
+示例：
+
+```text
+[INFO] case-aware 判定完成 turns=3 reviewedRules=4 humanReview=2 status=success
+```
+
+### Structured Trace Files
+
+除 `run.log` 外，还必须落盘以下结构化产物。
+
+#### `intermediate/agent-turns.json`
+
+用途：记录每一轮模型交互概览。
+
+每轮至少包含：
+
+- `turn`
+- `action`
+- `tool?`
+- `reason`
+- `remaining_tool_budget`
+- `remaining_byte_budget`
+- `status`
+- `final_answer_summary?`
+
+#### `intermediate/agent-tool-trace.json`
+
+用途：记录工具调用明细，便于复盘。
+
+每条至少包含：
+
+- `turn`
+- `tool`
+- `args`
+- `ok`
+- `error_code?`
+- `paths_read`
+- `bytes_returned`
+- `truncated`
+- `budget_after_call`
+
+#### `intermediate/agent-assisted-rule-result.json`
+
+当前文件已存在，后续继续保留，但需要补充：
+
+- `runner_mode: "case_aware"`
+- `turn_count`
+- `tool_call_count`
+- `forced_finalize_reason?`
+
+### Logging Granularity Rules
+
+为避免 `run.log` 噪音失控，日志粒度按下面规则控制：
+
+- 不在 `run.log` 中打印完整文件内容
+- 不在 `run.log` 中打印完整 patch 文本
+- 文件路径允许打印
+- 工具参数允许打印摘要，不打印大段正文
+- 大段返回内容只进入结构化 trace 文件
+
+### Failure Visibility
+
+任何导致 agent 收敛失败的原因，都必须同时出现在：
+
+- `run.log`
+- `agent-tool-trace.json` 或 `agent-turns.json`
+- `intermediate/agent-assisted-rule-result.json`
+
+这样用户在只看 `run.log` 时能知道失败原因，在深入排查时又能看到结构化证据。
+
 ## Error Handling
 
 ### 1. Invalid Model Output
@@ -611,6 +792,7 @@ bootstrap payload 包含：
 
 - `agentAssistedRuleNode` 内发生多轮工具补读
 - `persistAndUploadNode` 能写出工具 trace 和轮次记录
+- `run.log` 中包含 case-aware runner 的关键生命周期日志
 - `result.json` schema 不变
 - callback 链路不受影响
 
@@ -633,7 +815,7 @@ bootstrap payload 包含：
 3. 真实回放中，agent 的证据不再仅来自文件头 200 字截断片段。
 4. `result.json`、`case_rule_results`、callback 结构保持不变。
 5. 工具越界、预算耗尽、非法 JSON 不会导致整个 workflow 失败。
-6. 对当前远端定位资讯用例，至少有一条原本因上下文不足而人工复核的规则，能够获得更高置信度判断，或至少在 trace 中证明 agent 已读取足够上下文后再决定人工复核。
+6. 对当前远端定位资讯用例，至少有一条原本因上下文不足而人工复核的规则，能够获得更高置信度判断，或至少在 trace 和 `run.log` 中证明 agent 已读取足够上下文后再决定人工复核。
 
 ## Open Decisions Resolved
 
