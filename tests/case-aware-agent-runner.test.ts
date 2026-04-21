@@ -5,7 +5,10 @@ import path from "node:path";
 import test from "node:test";
 import { runCaseAwareAgent } from "../src/agent/caseAwareAgentRunner.js";
 import { parseCaseAwarePlannerOutputStrict } from "../src/agent/caseAwareProtocol.js";
-import { renderCaseAwareBootstrapPrompt } from "../src/agent/caseAwarePrompt.js";
+import {
+  renderCaseAwareBootstrapPrompt,
+  renderCaseAwareFollowupPrompt,
+} from "../src/agent/caseAwarePrompt.js";
 import type { AgentBootstrapPayload } from "../src/types.js";
 
 const sampleBootstrapPayload: AgentBootstrapPayload = {
@@ -190,8 +193,7 @@ test("case-aware runner exposes canonical final answer text for downstream merge
   assert.equal(downstreamPayload.rule_assessments?.[0]?.decision, "violation");
 });
 
-test("case-aware runner rejects incomplete final_answer and asks the agent to cover every candidate rule", async () => {
-  const prompts: string[] = [];
+test("case-aware runner rejects incomplete final_answer without a second prompt", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",
     bootstrapPayload: {
@@ -215,32 +217,11 @@ test("case-aware runner rejects incomplete final_answer and asks the agent to co
         },
       ],
     },
-    completeJsonPrompt: async (prompt) => {
-      prompts.push(prompt);
-      if (prompts.length === 1) {
-        return JSON.stringify({
-          action: "final_answer",
-          summary: {
-            assistant_scope: "证据已足够，但先只给出一条判断。",
-            overall_confidence: "medium",
-          },
-          rule_assessments: [
-            {
-              rule_id: "HM-REQ-010-01",
-              decision: "pass",
-              confidence: "medium",
-              reason: "已看到当前位置展示。",
-              evidence_used: ["workspace/entry/src/main/ets/home/HomePage.ets"],
-              needs_human_review: false,
-            },
-          ],
-        });
-      }
-
-      return JSON.stringify({
+    completeJsonPrompt: async () =>
+      JSON.stringify({
         action: "final_answer",
         summary: {
-          assistant_scope: "证据已足够，现补齐全部候选规则判断。",
+          assistant_scope: "证据已足够，但只给出一条判断。",
           overall_confidence: "medium",
         },
         rule_assessments: [
@@ -252,29 +233,15 @@ test("case-aware runner rejects incomplete final_answer and asks the agent to co
             evidence_used: ["workspace/entry/src/main/ets/home/HomePage.ets"],
             needs_human_review: false,
           },
-          {
-            rule_id: "HM-REQ-010-02",
-            decision: "violation",
-            confidence: "medium",
-            reason: "未发现 Location Kit 调用。",
-            evidence_used: ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
-            needs_human_review: false,
-          },
         ],
-      });
-    },
+      }),
   });
 
-  assert.equal(result.outcome, "success");
-  assert.equal(result.turns.length, 2);
+  assert.equal(result.outcome, "protocol_error");
+  assert.equal(result.turns.length, 1);
   assert.equal(result.turns[0]?.action, "final_answer");
   assert.equal(result.turns[0]?.status, "error");
-  assert.equal(result.final_answer?.rule_assessments.length, 2);
-  assert.equal(result.final_answer?.rule_assessments[1]?.rule_id, "HM-REQ-010-02");
-  assert.match(prompts[1] ?? "", /HM-REQ-010-02/);
-  assert.match(prompts[1] ?? "", /必须补齐每一条候选规则/);
-  assert.match(prompts[1] ?? "", /请直接重发完整的 final_answer/);
-  assert.match(prompts[1] ?? "", /不要再次输出 summary-only/);
+  assert.match(result.failure_reason ?? "", /missing=HM-REQ-010-02/);
 });
 
 test("case-aware runner preserves partial turns and tool trace when model request fails mid-run", async (t) => {
@@ -338,15 +305,15 @@ test("renderCaseAwareBootstrapPrompt documents exact tool arg schemas and single
   assert.match(prompt, /不要输出多个 JSON object/);
 });
 
-test("bootstrap prompt avoids full executable JSON examples that can be parsed as actions", () => {
+test("bootstrap prompt includes canonical tool_call and final_answer examples", () => {
   const prompt = renderCaseAwareBootstrapPrompt(sampleBootstrapPayload);
 
-  assert.doesNotMatch(prompt, /合法 tool_call 示例/);
-  assert.doesNotMatch(prompt, /合法 final_answer 示例/);
-  assert.doesNotMatch(prompt, /"action": "tool_call"/);
-  assert.doesNotMatch(prompt, /"action": "final_answer"/);
-  assert.match(prompt, /输出一个 JSON object/);
-  assert.match(prompt, /rule_assessments 必须逐条覆盖/);
+  assert.match(prompt, /合法 tool_call 示例/);
+  assert.match(prompt, /合法 final_answer 示例/);
+  assert.match(prompt, /"action": "tool_call"/);
+  assert.match(prompt, /"action": "final_answer"/);
+  assert.match(prompt, /禁止使用 tool_name/);
+  assert.match(prompt, /rule_assessments 必须覆盖全部候选 rule_id/);
 });
 
 test("strict parser is owned by caseAwareProtocol", () => {
@@ -420,4 +387,17 @@ test("case-aware runner rejects nested final_answer compatibility shapes", async
   assert.equal(result.outcome, "protocol_error");
   assert.equal(result.final_answer, undefined);
   assert.match(result.failure_reason ?? "", /protocol_error/);
+});
+
+test("case-aware followup prompt requires the agent to keep using bootstrap canonical formats", () => {
+  const prompt = renderCaseAwareFollowupPrompt({
+    bootstrapPayload: sampleBootstrapPayload,
+    turn: 2,
+    latestObservation: "{\"tool\":\"read_patch\",\"ok\":true}",
+  });
+
+  assert.match(prompt, /必须严格遵守首轮给出的合法 tool_call \/ final_answer 示例格式/);
+  assert.match(prompt, /禁止输出多个顶层 JSON object/);
+  assert.match(prompt, /canonical final_answer/);
+  assert.match(prompt, /canonical tool_call/);
 });

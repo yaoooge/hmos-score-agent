@@ -172,38 +172,60 @@ export function buildAgentBootstrapPayload(
 // renderAgentBootstrapPrompt 生成 case-aware runner 的首轮 bootstrap prompt。
 export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
   const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
+  const exampleRuleId = candidateRuleIds[0] ?? "RULE-ID-EXAMPLE";
+  const toolCallExample = {
+    action: "tool_call",
+    tool: "read_patch",
+    args: payload.case_context.effective_patch_path ? { path: "intermediate/effective.patch" } : {},
+    reason: "先查看补丁内容以定位候选规则相关证据。",
+  };
+  const finalAnswerExample = {
+    action: "final_answer",
+    summary: {
+      assistant_scope: "基于补丁和必要文件上下文完成候选规则辅助判定。",
+      overall_confidence: "medium",
+    },
+    rule_assessments: [
+      {
+        rule_id: exampleRuleId,
+        decision: "uncertain",
+        confidence: "low",
+        reason: "当前证据不足以稳定判断该规则是否满足，需要人工复核。",
+        evidence_used: ["workspace/path/to/evidence.ets"],
+        needs_human_review: true,
+      },
+    ],
+  };
+
   return [
     "你是评分工作流中的 case-aware 辅助判定模块。",
     "你可以在受限预算内调用 case 目录只读工具来补查上下文。",
     "你只能返回 tool_call 或 final_answer 两种 JSON action。",
     "一次只允许输出一个 JSON object，不要输出多个 JSON object，不要把多个 action 串在一起。",
-    "tool_call 时必须包含 tool、args、reason；final_answer 时必须包含 action、summary、rule_assessments。",
+    "合法 tool_call 示例，后续所有 tool_call 必须严格遵守该形状：",
+    JSON.stringify(toolCallExample, null, 2),
+    "合法 final_answer 示例，后续所有 final_answer 必须严格遵守该形状：",
+    JSON.stringify(finalAnswerExample, null, 2),
+    "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
+    "final_answer 中的 confidence 只能是 high、medium、low。",
+    "示例只展示结构，实际输出时必须替换为本次真实证据；final_answer.rule_assessments 必须覆盖全部候选 rule_id。",
     "如果证据不足，必须在对应 rule_assessments 中将 needs_human_review 置为 true。",
     "所有描述型文案必须使用中文。",
-    "禁止输出 markdown、代码块或任何额外解释。",
     "case 目录只读工具包括：read_patch、list_dir、read_file、read_file_chunk、grep_in_files、read_json。",
     "工具参数必须严格匹配以下结构，不允许自造字段名：",
     "read_patch: args 可为空，或仅允许 path 字段。",
     "list_dir: args = { path }，只允许 path 字段。",
     "read_file: args = { path }，只允许 path 字段。",
     "read_file_chunk: args = { path, startLine, lineCount }。",
-    "grep_in_files: args = { pattern, path, limit }。",
+    "grep_in_files: args = { pattern, path, limit }，其中 limit 必须在 1 到 100 之间。",
     "read_json: args = { path }，只允许 path 字段。",
-    "输出结构约束：",
-    "tool_call 必须包含 action=tool_call、tool、args、reason。",
-    "final_answer 必须包含 action=final_answer、summary、rule_assessments。",
-    "summary 必须包含 assistant_scope 与 overall_confidence。",
-    "每条 rule_assessment 必须包含 rule_id、decision、confidence、reason、evidence_used、needs_human_review。",
-    "不要输出示例 JSON，不要输出 markdown，不要输出额外解释。",
+    "不要输出 markdown、代码块或任何额外解释。",
     "请优先从 initial_target_files 和 effective_patch_path 开始收集证据，再决定是否继续读取其他文件。",
     "最终只对 assisted_rule_candidates 中的候选规则给出判断，不要改写本地静态规则结果。",
     `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；final_answer.rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
     candidateRuleIds.length > 0
       ? `本次必须覆盖的 rule_id: ${candidateRuleIds.join(", ")}。`
       : "当前没有 assisted_rule_candidates，只有在上游误调用时才可能看到本提示。",
-    "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
-    "final_answer 中的 confidence 只能是 high、medium、low。",
-    "请直接输出一个 JSON object，不要输出多个 JSON object。",
     "",
     JSON.stringify(payload, null, 2),
   ].join("\n");

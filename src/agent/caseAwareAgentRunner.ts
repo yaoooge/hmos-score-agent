@@ -9,7 +9,6 @@ import { createCaseToolExecutor } from "./caseTools.js";
 import {
   renderCaseAwareBootstrapPrompt,
   renderCaseAwareFollowupPrompt,
-  renderCaseAwareRepairPrompt,
 } from "./caseAwarePrompt.js";
 import {
   describeFinalAnswerValidationFailure,
@@ -42,7 +41,6 @@ export async function runCaseAwareAgent(input: {
   let finalAnswer: CaseAwareAgentFinalAnswer | undefined;
   let outcome: CaseAwareRunnerResult["outcome"] | undefined;
   let failureReason: string | undefined;
-  let repairPrompt: string | undefined;
 
   await input.logger?.info(
     `case-aware agent 判定开始 candidates=${input.bootstrapPayload.assisted_rule_candidates.length} caseId=${input.bootstrapPayload.case_context.case_id} hasPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)}`,
@@ -60,15 +58,13 @@ export async function runCaseAwareAgent(input: {
     );
 
     const prompt =
-      repairPrompt ??
-      (turn === 1
+      turn === 1
         ? renderCaseAwareBootstrapPrompt(input.bootstrapPayload)
         : renderCaseAwareFollowupPrompt({
             bootstrapPayload: input.bootstrapPayload,
             turn,
             latestObservation,
-          }));
-    repairPrompt = undefined;
+          });
 
     let rawText: string;
     try {
@@ -84,9 +80,9 @@ export async function runCaseAwareAgent(input: {
     try {
       decision = parseCaseAwarePlannerOutputStrict(rawText);
     } catch (error) {
-      outcome = "protocol_error";
       finalAnswerRawJson = rawText;
       failureReason = error instanceof Error ? error.message : String(error);
+      outcome = "protocol_error";
       await input.logger?.warn(`case-aware 输出违反协议 turn=${turn} error=${failureReason}`);
       break;
     }
@@ -127,19 +123,9 @@ export async function runCaseAwareAgent(input: {
         await input.logger?.warn(
           `case-aware final_answer 不完整 turn=${turn} detail=${describeFinalAnswerValidationFailure(validation)}`,
         );
-        repairPrompt = renderCaseAwareRepairPrompt({
-          bootstrapPayload: input.bootstrapPayload,
-          turn: turn + 1,
-          missingRuleIds: validation.missing_rule_ids,
-          receivedRuleIds: decision.rule_assessments.map((item) => item.rule_id),
-          latestObservation,
-        });
-        if (turn >= maxTurns) {
-          outcome = "protocol_error";
-          failureReason = `protocol_error: ${describeFinalAnswerValidationFailure(validation)}`;
-          break;
-        }
-        continue;
+        outcome = "protocol_error";
+        failureReason = `protocol_error: ${describeFinalAnswerValidationFailure(validation)}`;
+        break;
       }
 
       finalAnswer = decision;
