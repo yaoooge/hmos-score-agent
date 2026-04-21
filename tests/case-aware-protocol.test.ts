@@ -39,6 +39,19 @@ test("parseCaseAwarePlannerOutputStrict accepts one canonical tool_call object",
   assert.equal(parsed.tool, "read_file");
 });
 
+test("parseCaseAwarePlannerOutputStrict accepts tool_call without optional reason", () => {
+  const parsed = parseCaseAwarePlannerOutputStrict(
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_file",
+      args: { path: "workspace/entry/src/main/ets/home/HomePage.ets" },
+    }),
+  );
+
+  assert.equal(parsed.action, "tool_call");
+  assert.equal(parsed.reason, undefined);
+});
+
 test("parseCaseAwarePlannerOutputStrict accepts one canonical final_answer object", () => {
   const parsed = parseCaseAwarePlannerOutputStrict(
     JSON.stringify({
@@ -84,15 +97,28 @@ test("parseCaseAwarePlannerOutputStrict rejects multiple JSON objects", () => {
   );
 });
 
-test("parseCaseAwarePlannerOutputStrict rejects old nested final_answer shapes", () => {
+test("parseCaseAwarePlannerOutputStrict rejects unrecognized final_answer fields", () => {
   assert.throws(
     () =>
       parseCaseAwarePlannerOutputStrict(
         JSON.stringify({
           action: "final_answer",
-          final_answer: {
-            summary_judgement: "通过",
-            rule_results: [{ rule_id: "HM-REQ-010-01", passed: true }],
+          summary: {
+            assistant_scope: "本次仅辅助候选规则判定",
+            overall_confidence: "medium",
+          },
+          rule_assessments: [
+            {
+              rule_id: "HM-REQ-010-01",
+              decision: "uncertain",
+              confidence: "low",
+              reason: "证据不足。",
+              evidence_used: [],
+              needs_human_review: true,
+            },
+          ],
+          extra_payload: {
+            note: "not part of the canonical schema",
           },
         }),
       ),

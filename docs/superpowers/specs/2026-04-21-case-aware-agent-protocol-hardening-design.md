@@ -28,7 +28,7 @@
 
 - 不重构 `caseTools` 的工具执行逻辑和预算策略
 - 不改变整体评分引擎、分数计算和 HTML 报告的业务结构
-- 不为旧版字段、旧版 provider 输出、旧版嵌套结构保留兼容层
+- 不为历史 provider 输出变体或非 canonical 结构保留兼容层
 - 不继续引入新的“解析失败后猜测修复” heuristics
 - 不新增 provider-specific prompt hack
 
@@ -183,14 +183,12 @@ case-aware agent 协议必须由一个模块定义，其他层只能消费该模
 4. 只按 canonical schema 校验
 5. 解析失败时返回明确的协议错误原因
 
-明确移除以下旧兼容逻辑：
+明确移除所有非 canonical 兼容逻辑：
 
-- `summary_judgement`
-- `rule_assessment`
-- `passed`
-- `tool_name`
+- 非 canonical 顶层字段别名
+- 非 canonical assessment 字段别名
 - numeric/string 混合 confidence 归一化
-- `final_answer.final_answer` 之类嵌套结构
+- 任意嵌套业务结果结构
 - 对任意 JSON 片段的扫描和拾取
 
 ### 6.4 Prompt 约束收紧

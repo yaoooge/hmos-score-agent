@@ -300,7 +300,7 @@ export interface CaseAwareAgentToolCallAction {
   action: "tool_call";
   tool: CaseToolName;
   args: Record<string, unknown>;
-  reason: string;
+  reason?: string;
 }
 
 export interface CaseAwareAgentFinalAnswer extends AgentAssistedRuleResult {

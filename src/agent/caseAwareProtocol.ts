@@ -52,14 +52,41 @@ export const caseAwareToolCallSchema = z
     action: z.literal("tool_call"),
     tool: caseToolNameSchema,
     args: z.record(z.string(), z.unknown()),
-    reason: z.string(),
+    reason: z.string().optional(),
   })
   .strict();
 
-export const caseAwarePlannerOutputSchema = z.union([
+export const caseAwarePlannerOutputSchema = z.discriminatedUnion("action", [
   caseAwareToolCallSchema,
   caseAwareFinalAnswerSchema,
 ]);
+
+function formatIssuePath(path: PropertyKey[]): string {
+  if (path.length === 0) {
+    return "<root>";
+  }
+
+  return path
+    .map((segment) => {
+      const segmentText = String(segment);
+      return typeof segment === "number"
+        ? `[${segment}]`
+        : /^[A-Za-z_][A-Za-z0-9_]*$/.test(segmentText)
+          ? segmentText
+          : JSON.stringify(segmentText);
+    })
+    .join(".")
+    .replace(/\.\[/g, "[");
+}
+
+function formatSchemaValidationError(error: z.ZodError): string {
+  const formattedIssues = error.issues.map((issue) => {
+    const path = formatIssuePath(issue.path);
+    return `${path}: ${issue.message}`;
+  });
+
+  return formattedIssues.join("; ") || z.prettifyError(error);
+}
 
 function findTopLevelJsonObjectEnd(rawText: string): number {
   let depth = 0;
@@ -131,7 +158,10 @@ export function parseCaseAwarePlannerOutputStrict(rawText: string): CaseAwareAge
 
   const result = caseAwarePlannerOutputSchema.safeParse(parsed);
   if (!result.success) {
-    throw new CaseAwareProtocolError("schema_validation", z.prettifyError(result.error));
+    throw new CaseAwareProtocolError(
+      "schema_validation",
+      formatSchemaValidationError(result.error),
+    );
   }
 
   return result.data;

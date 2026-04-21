@@ -59,7 +59,10 @@ function buildBudgetSnapshot(input: {
   };
 }
 
-function truncateToBytes(text: string, maxBytes: number): {
+function truncateToBytes(
+  text: string,
+  maxBytes: number,
+): {
   content: string;
   bytes: number;
   truncated: boolean;
@@ -140,7 +143,11 @@ export function createCaseToolExecutor(config: {
     });
   }
 
-  function failure(code: CaseToolErrorCode, message: string, pathsRead: string[] = []): CaseToolFailure {
+  function failure(
+    code: CaseToolErrorCode,
+    message: string,
+    pathsRead: string[] = [],
+  ): CaseToolFailure {
     return {
       ok: false,
       error: { code, message },
@@ -150,14 +157,14 @@ export function createCaseToolExecutor(config: {
     };
   }
 
-  function normalizeScopePath(relativePath: string): { relativePath: string; absolutePath: string } {
+  function normalizeScopePath(relativePath: string): {
+    relativePath: string;
+    absolutePath: string;
+  } {
     const absolutePath = path.resolve(normalizedCaseRoot, relativePath);
     const relativeToRoot = path.relative(normalizedCaseRoot, absolutePath);
 
-    if (
-      normalizedEffectivePatchPath &&
-      absolutePath === normalizedEffectivePatchPath
-    ) {
+    if (normalizedEffectivePatchPath && absolutePath === normalizedEffectivePatchPath) {
       return {
         relativePath: path.relative(normalizedCaseRoot, absolutePath),
         absolutePath,
@@ -167,7 +174,7 @@ export function createCaseToolExecutor(config: {
     if (
       relativeToRoot.startsWith("..") ||
       path.isAbsolute(relativeToRoot) ||
-      relativeToRoot.length === 0 && absolutePath !== normalizedCaseRoot
+      (relativeToRoot.length === 0 && absolutePath !== normalizedCaseRoot)
     ) {
       throw new Error("path_out_of_scope");
     }
@@ -176,6 +183,35 @@ export function createCaseToolExecutor(config: {
       relativePath: relativeToRoot.length > 0 ? relativeToRoot : ".",
       absolutePath,
     };
+  }
+
+  function effectivePatchScopePath(): { relativePath: string; absolutePath: string } | undefined {
+    if (!normalizedEffectivePatchPath) {
+      return undefined;
+    }
+
+    const relativeToRoot = path.relative(normalizedCaseRoot, normalizedEffectivePatchPath);
+    const relativePath =
+      relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)
+        ? "effective_patch_path"
+        : relativeToRoot;
+
+    return {
+      relativePath,
+      absolutePath: normalizedEffectivePatchPath,
+    };
+  }
+
+  function normalizePatchScopePath(requestedPath?: string): {
+    relativePath: string;
+    absolutePath: string;
+  } {
+    const configuredPatch = effectivePatchScopePath();
+    if (configuredPatch && (!requestedPath || requestedPath === "intermediate/effective.patch")) {
+      return configuredPatch;
+    }
+
+    return normalizeScopePath(requestedPath ?? "intermediate/effective.patch");
   }
 
   function trackFile(relativePath: string): void {
@@ -259,7 +295,7 @@ export function createCaseToolExecutor(config: {
             return failure("invalid_args", parsedArgs.error.message);
           }
 
-          const scopePath = normalizeScopePath(parsedArgs.data.path ?? "intermediate/effective.patch");
+          const scopePath = normalizePatchScopePath(parsedArgs.data.path);
           await ensureFileExists(scopePath.absolutePath);
           trackFile(scopePath.relativePath);
           const content = await fs.readFile(scopePath.absolutePath, "utf-8");
@@ -306,7 +342,11 @@ export function createCaseToolExecutor(config: {
           await ensureFileExists(scopePath.absolutePath);
           trackFile(scopePath.relativePath);
           const content = await fs.readFile(scopePath.absolutePath, "utf-8");
-          return finalizeSuccess({ path: scopePath.relativePath }, [scopePath.relativePath], content);
+          return finalizeSuccess(
+            { path: scopePath.relativePath },
+            [scopePath.relativePath],
+            content,
+          );
         }
         case "read_file_chunk": {
           const parsedArgs = readFileChunkArgsSchema.safeParse(parsedCall.data.args);
@@ -334,7 +374,9 @@ export function createCaseToolExecutor(config: {
         }
         case "grep_in_files": {
           const normalizedPatterns = Array.isArray(parsedCall.data.args.patterns)
-            ? parsedCall.data.args.patterns.filter((item): item is string => typeof item === "string" && item.length > 0)
+            ? parsedCall.data.args.patterns.filter(
+                (item): item is string => typeof item === "string" && item.length > 0,
+              )
             : [];
           const normalizedArgs = {
             pattern: parsedCall.data.args.pattern,
@@ -354,25 +396,35 @@ export function createCaseToolExecutor(config: {
           const patterns =
             typeof parsedArgs.data.pattern === "string" && parsedArgs.data.pattern.length > 0
               ? [parsedArgs.data.pattern]
-              : parsedArgs.data.patterns ?? [];
+              : (parsedArgs.data.patterns ?? []);
           if (patterns.length === 0) {
             return failure("invalid_args", "grep_in_files requires pattern or patterns");
           }
           const requestedFiles = Array.isArray(parsedCall.data.args.files)
             ? parsedCall.data.args.files.filter((item): item is string => typeof item === "string")
             : Array.isArray(parsedCall.data.args.paths)
-              ? parsedCall.data.args.paths.filter((item): item is string => typeof item === "string")
+              ? parsedCall.data.args.paths.filter(
+                  (item): item is string => typeof item === "string",
+                )
               : [];
           const candidateFiles =
             requestedFiles.length > 0
-              ? requestedFiles.map((item) => normalizeScopePath(path.join(scopePath.relativePath, item)).absolutePath)
-              : (await (async () => {
+              ? requestedFiles.map(
+                  (item) =>
+                    normalizeScopePath(path.join(scopePath.relativePath, item)).absolutePath,
+                )
+              : await (async () => {
                   const stat = await fs.stat(scopePath.absolutePath);
                   return stat.isDirectory()
                     ? listFilesRecursive(scopePath.absolutePath)
                     : [scopePath.absolutePath];
-                })());
-          const matches: Array<{ path: string; line: number; content: string; matched_pattern: string }> = [];
+                })();
+          const matches: Array<{
+            path: string;
+            line: number;
+            content: string;
+            matched_pattern: string;
+          }> = [];
           const trackedPaths: string[] = [];
 
           for (const filePath of candidateFiles) {
@@ -446,10 +498,7 @@ export function createCaseToolExecutor(config: {
           return failure("invalid_args", `unsupported tool: ${parsedCall.data.tool}`);
       }
     } catch (error) {
-      const code =
-        error instanceof Error
-          ? (error.message as CaseToolErrorCode)
-          : "invalid_args";
+      const code = error instanceof Error ? (error.message as CaseToolErrorCode) : "invalid_args";
       if (code === "path_out_of_scope") {
         return failure("path_out_of_scope", "path is outside case root");
       }

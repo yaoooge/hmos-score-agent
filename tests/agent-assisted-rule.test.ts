@@ -206,7 +206,11 @@ test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-
   );
   assert.equal(
     payload.initial_target_files[0],
-    "entry/src/main/ets/home/viewmodels/HomePageVM.ets",
+    "workspace/entry/src/main/ets/home/viewmodels/HomePageVM.ets",
+  );
+  assert.equal(
+    payload.assisted_rule_candidates[0]?.evidence_files[0],
+    "workspace/entry/src/main/ets/pages/Index.ets",
   );
   assert.equal(payload.tool_contract.allowed_tools.includes("read_file"), true);
   assert.equal(payload.tool_contract.allowed_tools.includes("read_patch"), true);
@@ -248,6 +252,10 @@ test("renderAgentBootstrapPrompt instructs the model to choose tool_call or fina
   assert.match(prompt, /read_file/);
   assert.match(prompt, /final_answer/);
   assert.match(prompt, /tool_call/);
+  assert.doesNotMatch(prompt, /dimension_summaries/);
+  assert.doesNotMatch(prompt, /"hard_gates"/);
+  assert.doesNotMatch(prompt, /scoring_method/);
+  assert.doesNotMatch(prompt, /score_cap/);
   assert.equal(payload.response_contract.output_language, "zh-CN");
   assert.equal(payload.response_contract.json_only, true);
   assert.deepEqual(payload.tool_contract.allowed_tools, [

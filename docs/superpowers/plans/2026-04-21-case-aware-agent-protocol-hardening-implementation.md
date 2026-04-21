@@ -154,16 +154,18 @@ test("parseCaseAwarePlannerOutputStrict rejects multiple JSON objects", () => {
   );
 });
 
-test("parseCaseAwarePlannerOutputStrict rejects old nested final_answer shapes", () => {
+test("parseCaseAwarePlannerOutputStrict rejects unrecognized final_answer fields", () => {
   assert.throws(
     () =>
       parseCaseAwarePlannerOutputStrict(
         JSON.stringify({
           action: "final_answer",
-          final_answer: {
-            summary_judgement: "通过",
-            rule_results: [{ rule_id: "HM-REQ-010-01", passed: true }],
+          summary: {
+            assistant_scope: "本次仅辅助候选规则判定",
+            overall_confidence: "medium",
           },
+          rule_assessments: [],
+          extra_payload: {},
         }),
       ),
     /protocol_error/,
@@ -556,7 +558,7 @@ In `src/agent/ruleAssistance.ts`, replace the section that appends `"合法 tool
 "tool_call 必须包含 action=tool_call、tool、args、reason。",
 "final_answer 必须包含 action=final_answer、summary、rule_assessments。",
 "summary 必须包含 assistant_scope 与 overall_confidence。",
-"每条 rule_assessment 必须包含 rule_id、decision、confidence、reason、evidence_used、needs_human_review。",
+"每条 assessment 必须包含 rule_id、decision、confidence、reason、evidence_used、needs_human_review。",
 "不要输出示例 JSON，不要输出 markdown，不要输出额外解释。",
 ```
 
@@ -635,14 +637,19 @@ test("case-aware runner returns protocol_error for invalid model output", async 
 Replace the old nested compatibility test with:
 
 ```ts
-test("case-aware runner rejects old nested final_answer payloads instead of normalizing them", async () => {
+test("case-aware runner rejects unrecognized final_answer fields", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",
     bootstrapPayload: sampleBootstrapPayload,
     completeJsonPrompt: async () =>
       JSON.stringify({
         action: "final_answer",
-        final_answer: {
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "high",
+        },
+        rule_assessments: [],
+        extra_payload: {
           confidence: "high",
           summary: "证据已足够",
           rule_results: [{ rule_id: "HM-REQ-010-03", result: "fail" }],
@@ -1366,5 +1373,5 @@ Expected: commit succeeds if there are remaining cleanup changes. If `git status
 - [ ] Spec goal 4 covered: final answer coverage validation requires every candidate rule and downstream report keeps per-rule conclusions.
 - [ ] Spec goal 5 covered: persistence writes `agent-runner-result.json`, `agent-turns.json`, and `agent-tool-trace.json`.
 - [ ] Non-goals respected: no `caseTools` rewrite, no scoring engine redesign, no rules YAML in reports, no provider-specific compatibility hacks.
-- [ ] Compatibility policy respected: no old field compatibility for `summary_judgement`, `rule_assessment`, `passed`, `tool_name`, or nested `final_answer`.
+- [ ] Compatibility policy respected: no non-canonical field aliases or nested business result structures.
 - [ ] Verification complete: targeted protocol tests, runner tests, merge/report tests, full test suite, build, lint, and format check.

@@ -8,6 +8,7 @@ import type {
 import { createCaseToolExecutor } from "./caseTools.js";
 import {
   renderCaseAwareBootstrapPrompt,
+  renderCaseAwareFinalAnswerRetryPrompt,
   renderCaseAwareFollowupPrompt,
 } from "./caseAwarePrompt.js";
 import {
@@ -16,6 +17,25 @@ import {
   validateCaseAwareFinalAnswerAgainstCandidates,
 } from "./caseAwareProtocol.js";
 import { getCaseAwareAgentNextStep } from "./caseAwareAgentGraph.js";
+
+function isFinalAnswerRetryCandidate(rawText: string): boolean {
+  const trimmed = rawText.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "action" in parsed &&
+      (parsed as { action?: unknown }).action === "final_answer"
+    );
+  } catch {
+    return false;
+  }
+}
 
 export async function runCaseAwareAgent(input: {
   caseRoot: string;
@@ -41,6 +61,7 @@ export async function runCaseAwareAgent(input: {
   let finalAnswer: CaseAwareAgentFinalAnswer | undefined;
   let outcome: CaseAwareRunnerResult["outcome"] | undefined;
   let failureReason: string | undefined;
+  let finalAnswerRepairRetryUsed = false;
 
   await input.logger?.info(
     `case-aware agent 判定开始 candidates=${input.bootstrapPayload.assisted_rule_candidates.length} caseId=${input.bootstrapPayload.case_context.case_id} hasPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)}`,
@@ -82,9 +103,62 @@ export async function runCaseAwareAgent(input: {
     } catch (error) {
       finalAnswerRawJson = rawText;
       failureReason = error instanceof Error ? error.message : String(error);
-      outcome = "protocol_error";
-      await input.logger?.warn(`case-aware 输出违反协议 turn=${turn} error=${failureReason}`);
-      break;
+      if (!finalAnswerRepairRetryUsed && isFinalAnswerRetryCandidate(rawText)) {
+        finalAnswerRepairRetryUsed = true;
+        turns.push({
+          turn,
+          action: "final_answer",
+          status: "error",
+          raw_output_text: rawText,
+        });
+        await input.logger?.warn(
+          `case-aware final_answer 结构违反协议，发起一次修复重试 turn=${turn} error=${failureReason}`,
+        );
+
+        const retryPrompt = renderCaseAwareFinalAnswerRetryPrompt({
+          bootstrapPayload: input.bootstrapPayload,
+          turn,
+          latestObservation,
+        });
+        try {
+          rawText = await input.completeJsonPrompt(retryPrompt);
+        } catch (retryError) {
+          outcome = "request_failed";
+          failureReason =
+            retryError instanceof Error ? retryError.message : String(retryError);
+          await input.logger?.error(
+            `case-aware final_answer 修复重试模型调用失败 turn=${turn} error=${failureReason}`,
+          );
+          break;
+        }
+
+        try {
+          decision = parseCaseAwarePlannerOutputStrict(rawText);
+        } catch (retryParseError) {
+          finalAnswerRawJson = rawText;
+          failureReason =
+            retryParseError instanceof Error ? retryParseError.message : String(retryParseError);
+          outcome = "protocol_error";
+          await input.logger?.warn(
+            `case-aware final_answer 修复重试仍违反协议 turn=${turn} error=${failureReason}`,
+          );
+          break;
+        }
+
+        if (decision.action !== "final_answer") {
+          finalAnswerRawJson = rawText;
+          failureReason = "protocol_error: final_answer repair retry must return final_answer";
+          outcome = "protocol_error";
+          await input.logger?.warn(
+            `case-aware final_answer 修复重试返回了非 final_answer action turn=${turn}`,
+          );
+          break;
+        }
+      } else {
+        outcome = "protocol_error";
+        await input.logger?.warn(`case-aware 输出违反协议 turn=${turn} error=${failureReason}`);
+        break;
+      }
     }
 
     const nextStep = getCaseAwareAgentNextStep({
@@ -173,7 +247,7 @@ export async function runCaseAwareAgent(input: {
       raw_output_text: rawText,
       tool: decision.tool,
       args: decision.args,
-      reason: decision.reason,
+      ...(decision.reason ? { reason: decision.reason } : {}),
     });
 
     latestObservation = JSON.stringify(

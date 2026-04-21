@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   AgentAssistedRuleResult,
   AgentRunStatus,
@@ -53,6 +54,78 @@ type MergeRuleAuditResultsOutput = {
   agentAssistedRuleResults: AgentAssistedRuleResult | null;
   mergedRuleAuditResults: RuleAuditResult[];
 };
+
+type AgentInteractionPayload = Pick<
+  AgentBootstrapPayload,
+  "case_context" | "task_understanding" | "assisted_rule_candidates" | "initial_target_files"
+>;
+
+function toPosixPath(filePath: string): string {
+  return filePath.replaceAll("\\", "/");
+}
+
+function isPathInside(parentPath: string, childPath: string): boolean {
+  const relativePath = path.relative(parentPath, childPath);
+  return (
+    relativePath.length === 0 || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function normalizeGeneratedProjectPathForTools(
+  filePath: string,
+  input: BuildAgentPromptPayloadInput,
+): string {
+  const normalizedFilePath = toPosixPath(filePath).replace(/^\.\//, "");
+  if (normalizedFilePath.startsWith("workspace/") || normalizedFilePath.startsWith("original/")) {
+    return normalizedFilePath;
+  }
+
+  if (path.isAbsolute(filePath)) {
+    if (isPathInside(input.caseRoot, filePath)) {
+      return toPosixPath(path.relative(input.caseRoot, filePath));
+    }
+    if (isPathInside(input.caseInput.generatedProjectPath, filePath)) {
+      return `workspace/${toPosixPath(path.relative(input.caseInput.generatedProjectPath, filePath))}`;
+    }
+    if (isPathInside(input.caseInput.originalProjectPath, filePath)) {
+      return `original/${toPosixPath(path.relative(input.caseInput.originalProjectPath, filePath))}`;
+    }
+    return normalizedFilePath;
+  }
+
+  return `workspace/${normalizedFilePath}`;
+}
+
+function normalizeAssistedRuleCandidatePaths(
+  candidate: AssistedRuleCandidate,
+  input: BuildAgentPromptPayloadInput,
+): AssistedRuleCandidate {
+  return {
+    ...candidate,
+    evidence_files: candidate.evidence_files.map((filePath) =>
+      normalizeGeneratedProjectPathForTools(filePath, input),
+    ),
+    static_precheck: candidate.static_precheck
+      ? {
+          ...candidate.static_precheck,
+          target_files: candidate.static_precheck.target_files.map((filePath) =>
+            normalizeGeneratedProjectPathForTools(filePath, input),
+          ),
+        }
+      : undefined,
+  };
+}
+
+export function buildAgentInteractionPayload(
+  payload: AgentBootstrapPayload,
+): AgentInteractionPayload {
+  return {
+    case_context: payload.case_context,
+    task_understanding: payload.task_understanding,
+    assisted_rule_candidates: payload.assisted_rule_candidates,
+    initial_target_files: payload.initial_target_files,
+  };
+}
 
 // selectAssistedRuleCandidates 根据当前快速版策略，优先把 should_rule 交给 Agent 辅助判定。
 export function selectAssistedRuleCandidates(
@@ -134,6 +207,13 @@ export function buildRubricSnapshot(rubric: LoadedRubric): LoadedRubricSnapshot 
 export function buildAgentBootstrapPayload(
   input: BuildAgentPromptPayloadInput,
 ): AgentBootstrapPayload {
+  const assistedRuleCandidates = input.assistedRuleCandidates.map((candidate) =>
+    normalizeAssistedRuleCandidatePaths(candidate, input),
+  );
+  const initialTargetFiles = input.initialTargetFiles.map((filePath) =>
+    normalizeGeneratedProjectPathForTools(filePath, input),
+  );
+
   return {
     case_context: {
       case_id: input.caseInput.caseId,
@@ -146,8 +226,8 @@ export function buildAgentBootstrapPayload(
     },
     task_understanding: input.constraintSummary,
     rubric_summary: input.rubricSnapshot,
-    assisted_rule_candidates: input.assistedRuleCandidates,
-    initial_target_files: input.initialTargetFiles,
+    assisted_rule_candidates: assistedRuleCandidates,
+    initial_target_files: initialTargetFiles,
     tool_contract: {
       allowed_tools: [
         "read_patch",
@@ -173,6 +253,7 @@ export function buildAgentBootstrapPayload(
 export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
   const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
   const exampleRuleId = candidateRuleIds[0] ?? "RULE-ID-EXAMPLE";
+  const interactionPayload = buildAgentInteractionPayload(payload);
   const toolCallExample = {
     action: "tool_call",
     tool: "read_patch",
@@ -202,9 +283,9 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
     "你可以在受限预算内调用 case 目录只读工具来补查上下文。",
     "你只能返回 tool_call 或 final_answer 两种 JSON action。",
     "一次只允许输出一个 JSON object，不要输出多个 JSON object，不要把多个 action 串在一起。",
-    "合法 tool_call 示例，后续所有 tool_call 必须严格遵守该形状：",
+    "合法 tool_call 示例，后续所有 tool_call 必须严格遵守该形状,不允许缺失字段：",
     JSON.stringify(toolCallExample, null, 2),
-    "合法 final_answer 示例，后续所有 final_answer 必须严格遵守该形状：",
+    "合法 final_answer 示例，后续所有 final_answer 必须严格遵守该形状,不允许缺失字段：",
     JSON.stringify(finalAnswerExample, null, 2),
     "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
     "final_answer 中的 confidence 只能是 high、medium、low。",
@@ -212,6 +293,7 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
     "如果证据不足，必须在对应 rule_assessments 中将 needs_human_review 置为 true。",
     "所有描述型文案必须使用中文。",
     "case 目录只读工具包括：read_patch、list_dir、read_file、read_file_chunk、grep_in_files、read_json。",
+    `工具预算：max_tool_calls=${payload.tool_contract.max_tool_calls}, max_total_bytes=${payload.tool_contract.max_total_bytes}, max_files=${payload.tool_contract.max_files}。`,
     "工具参数必须严格匹配以下结构，不允许自造字段名：",
     "read_patch: args 可为空，或仅允许 path 字段。",
     "list_dir: args = { path }，只允许 path 字段。",
@@ -219,7 +301,9 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
     "read_file_chunk: args = { path, startLine, lineCount }。",
     "grep_in_files: args = { pattern, path, limit }，其中 limit 必须在 1 到 100 之间。",
     "read_json: args = { path }，只允许 path 字段。",
-    "不要输出 markdown、代码块或任何额外解释。",
+    "禁止输出 markdown、代码块或任何额外解释。",
+    "输出字段仅限上方 canonical schema 中出现的字段。",
+    "顶层 final_answer 必须直接包含 action、summary、rule_assessments。",
     "请优先从 initial_target_files 和 effective_patch_path 开始收集证据，再决定是否继续读取其他文件。",
     "最终只对 assisted_rule_candidates 中的候选规则给出判断，不要改写本地静态规则结果。",
     `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；final_answer.rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
@@ -227,7 +311,7 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
       ? `本次必须覆盖的 rule_id: ${candidateRuleIds.join(", ")}。`
       : "当前没有 assisted_rule_candidates，只有在上游误调用时才可能看到本提示。",
     "",
-    JSON.stringify(payload, null, 2),
+    JSON.stringify(interactionPayload, null, 2),
   ].join("\n");
 }
 

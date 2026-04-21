@@ -7,6 +7,7 @@ import { runCaseAwareAgent } from "../src/agent/caseAwareAgentRunner.js";
 import { parseCaseAwarePlannerOutputStrict } from "../src/agent/caseAwareProtocol.js";
 import {
   renderCaseAwareBootstrapPrompt,
+  renderCaseAwareFinalAnswerRetryPrompt,
   renderCaseAwareFollowupPrompt,
 } from "../src/agent/caseAwarePrompt.js";
 import type { AgentBootstrapPayload } from "../src/types.js";
@@ -146,6 +147,63 @@ test("case-aware runner returns protocol_error for invalid model output", async 
   assert.equal(result.outcome, "protocol_error");
   assert.equal(result.final_answer, undefined);
   assert.match(result.failure_reason ?? "", /protocol_error/);
+});
+
+test("case-aware runner retries once when final_answer shape violates the protocol", async () => {
+  const prompts: string[] = [];
+  const outputs = [
+    JSON.stringify({
+      action: "final_answer",
+      summary: "证据已足够，需要输出最终判断。",
+      rule_assessments: [
+        {
+          rule_id: "HM-REQ-010-03",
+          decision: "pass",
+          reason: "已看到本地资讯更新逻辑。",
+        },
+      ],
+    }),
+    JSON.stringify({
+      action: "final_answer",
+      summary: {
+        assistant_scope: "本次仅辅助候选规则判定",
+        overall_confidence: "medium",
+      },
+      rule_assessments: [
+        {
+          rule_id: "HM-REQ-010-03",
+          decision: "pass",
+          confidence: "medium",
+          reason: "已看到本地资讯更新逻辑。",
+          evidence_used: ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
+          needs_human_review: false,
+        },
+      ],
+    }),
+  ];
+
+  const result = await runCaseAwareAgent({
+    caseRoot: "/tmp/case-root",
+    bootstrapPayload: sampleBootstrapPayload,
+    completeJsonPrompt: async (prompt) => {
+      prompts.push(prompt);
+      return outputs.shift() ?? "";
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1] ?? "", /这是一次 final_answer 协议修复重试/);
+  assert.match(prompts[1] ?? "", /"summary": \{/);
+  assert.match(prompts[1] ?? "", /"rule_assessments": \[/);
+  assert.match(prompts[1] ?? "", /HM-REQ-010-03/);
+  assert.doesNotMatch(prompts[1] ?? "", /证据已足够，需要输出最终判断/);
+  assert.equal(result.turns.length, 2);
+  assert.equal(result.turns[0]?.action, "final_answer");
+  assert.equal(result.turns[0]?.status, "error");
+  assert.equal(result.turns[1]?.action, "final_answer");
+  assert.equal(result.turns[1]?.status, "success");
+  assert.equal(result.final_answer?.summary.overall_confidence, "medium");
 });
 
 test("case-aware runner exposes canonical final answer text for downstream merge", async () => {
@@ -312,7 +370,6 @@ test("bootstrap prompt includes canonical tool_call and final_answer examples", 
   assert.match(prompt, /合法 final_answer 示例/);
   assert.match(prompt, /"action": "tool_call"/);
   assert.match(prompt, /"action": "final_answer"/);
-  assert.match(prompt, /禁止使用 tool_name/);
   assert.match(prompt, /rule_assessments 必须覆盖全部候选 rule_id/);
 });
 
@@ -329,20 +386,27 @@ test("strict parser is owned by caseAwareProtocol", () => {
   assert.equal(parsed.action, "tool_call");
 });
 
-test("strict parser rejects old compatibility shapes", () => {
+test("strict parser rejects unrecognized final_answer fields", () => {
   assert.throws(() =>
     parseCaseAwarePlannerOutputStrict(
       JSON.stringify({
         action: "final_answer",
-        final_answer: {
-          summary_judgement: "当前实现未满足本地资讯定位闭环要求。",
-          rule_assessment: [
-            {
-              rule_id: "HM-REQ-010-03",
-              assessment: "not_met",
-              confidence: "high",
-            },
-          ],
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "medium",
+        },
+        rule_assessments: [
+          {
+            rule_id: "HM-REQ-010-03",
+            decision: "uncertain",
+            confidence: "low",
+            reason: "证据不足。",
+            evidence_used: [],
+            needs_human_review: true,
+          },
+        ],
+        extra_payload: {
+          note: "not part of the canonical schema",
         },
       }),
     ),
@@ -357,29 +421,29 @@ test("strict parser rejects multiple concatenated actions", () => {
   );
 });
 
-test("case-aware runner rejects nested final_answer compatibility shapes", async () => {
+test("case-aware runner rejects unrecognized final_answer fields", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",
     bootstrapPayload: sampleBootstrapPayload,
     completeJsonPrompt: async () =>
       JSON.stringify({
         action: "final_answer",
-        final_answer: {
-          summary_judgement: "当前实现未满足本地资讯定位闭环要求。",
-          rule_assessment: [
-            {
-              rule_id: "HM-REQ-010-03",
-              assessment: "not_met",
-              confidence: "high",
-              evidence: [
-                {
-                  file: "workspace/entry/src/main/ets/home/HomePageVM.ets",
-                  detail: "未发现当前位置展示区。",
-                },
-              ],
-              reasoning: "首页缺少位置展示与刷新入口。",
-            },
-          ],
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "medium",
+        },
+        rule_assessments: [
+          {
+            rule_id: "HM-REQ-010-03",
+            decision: "uncertain",
+            confidence: "low",
+            reason: "证据不足。",
+            evidence_used: [],
+            needs_human_review: true,
+          },
+        ],
+        extra_payload: {
+          note: "not part of the canonical schema",
         },
       }),
   });
@@ -393,11 +457,30 @@ test("case-aware followup prompt requires the agent to keep using bootstrap cano
   const prompt = renderCaseAwareFollowupPrompt({
     bootstrapPayload: sampleBootstrapPayload,
     turn: 2,
-    latestObservation: "{\"tool\":\"read_patch\",\"ok\":true}",
+    latestObservation: '{"tool":"read_patch","ok":true}',
   });
 
   assert.match(prompt, /必须严格遵守首轮给出的合法 tool_call \/ final_answer 示例格式/);
   assert.match(prompt, /禁止输出多个顶层 JSON object/);
   assert.match(prompt, /canonical final_answer/);
   assert.match(prompt, /canonical tool_call/);
+});
+
+test("case-aware final_answer retry prompt provides only canonical required structure", () => {
+  const prompt = renderCaseAwareFinalAnswerRetryPrompt({
+    bootstrapPayload: sampleBootstrapPayload,
+    turn: 2,
+    latestObservation: '{"tool":"read_patch","ok":true}',
+  });
+
+  assert.match(prompt, /只能重新输出一个 final_answer JSON object/);
+  assert.match(prompt, /"action": "final_answer"/);
+  assert.match(prompt, /"assistant_scope"/);
+  assert.match(prompt, /"overall_confidence"/);
+  assert.match(prompt, /"decision": "uncertain"/);
+  assert.match(prompt, /"confidence": "low"/);
+  assert.match(prompt, /"evidence_used": \[\]/);
+  assert.match(prompt, /"needs_human_review": true/);
+  assert.match(prompt, /必须逐条覆盖这些 rule_id: HM-REQ-010-03/);
+  assert.doesNotMatch(prompt, /final_answer\.final_answer/);
 });
