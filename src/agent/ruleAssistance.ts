@@ -324,19 +324,72 @@ function formatAgentSummaryForFallback(
   return `Agent 总体判断：${summary.assistant_scope}（整体置信度：${summary.overall_confidence}）。`;
 }
 
+function formatStaticPrecheckForFallback(candidate: AssistedRuleCandidate): string | undefined {
+  const parts: string[] = [];
+
+  if (candidate.static_precheck?.summary) {
+    parts.push(`静态预判：${candidate.static_precheck.summary}`);
+  } else if (candidate.why_uncertain) {
+    parts.push(`静态预判：${candidate.why_uncertain}`);
+  }
+
+  if (candidate.local_preliminary_signal) {
+    parts.push(`本地预判信号：${candidate.local_preliminary_signal}。`);
+  }
+
+  const evidenceFiles = candidate.evidence_files.length
+    ? candidate.evidence_files
+    : (candidate.static_precheck?.target_files ?? []);
+  if (evidenceFiles.length > 0) {
+    parts.push(`相关证据文件：${evidenceFiles.slice(0, 5).join("、")}。`);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+function inferTrustedStaticResult(candidate: AssistedRuleCandidate): RuleAuditResult["result"] {
+  const staticPrecheck = candidate.static_precheck;
+  if (!staticPrecheck) {
+    return "待人工复核";
+  }
+
+  if (staticPrecheck.signal_status === "no_target_files") {
+    return "不满足";
+  }
+
+  if (staticPrecheck.signal_status === "all_matched") {
+    return "满足";
+  }
+
+  if (
+    staticPrecheck.signal_status === "none_matched" &&
+    (candidate.ast_signals?.length ?? 0) > 0
+  ) {
+    return "不满足";
+  }
+
+  return "待人工复核";
+}
+
 function makeFallbackResult(
   candidate: AssistedRuleCandidate,
   summary?: AgentAssistedRuleResult["summary"],
 ): RuleAuditResult {
   const summaryText = formatAgentSummaryForFallback(summary);
+  const staticPrecheckText = formatStaticPrecheckForFallback(candidate);
+  const result = inferTrustedStaticResult(candidate);
+  const staticScoringText =
+    result === "待人工复核" ? undefined : "静态预判结果已作为评分依据，仍建议人工复核确认。";
+  const fallbackText = summaryText
+    ? `${summaryText} 但缺少针对 ${candidate.rule_id} 的结构化判定，已回退为待人工复核。`
+    : `Agent 未能提供有效判定，候选规则 ${candidate.rule_id} 已回退为待人工复核。`;
+  const conclusionParts = [fallbackText, staticScoringText, staticPrecheckText].filter(Boolean);
   return {
     rule_id: candidate.rule_id,
     rule_summary: candidate.rule_summary ?? candidate.rule_name,
     rule_source: candidate.rule_source,
-    result: "待人工复核",
-    conclusion: summaryText
-      ? `${summaryText} 但缺少针对 ${candidate.rule_id} 的结构化判定，已回退为待人工复核。`
-      : `Agent 未能提供有效判定，候选规则 ${candidate.rule_id} 已回退为待人工复核。`,
+    result,
+    conclusion: conclusionParts.join(" "),
   };
 }
 

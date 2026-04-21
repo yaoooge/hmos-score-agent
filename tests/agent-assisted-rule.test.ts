@@ -417,6 +417,106 @@ test("mergeRuleAuditResults falls back to local review result when agent final a
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
 });
 
+test("mergeRuleAuditResults includes static precheck details in fallback conclusions", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "HM-REQ-010-02",
+        rule_summary: "必须按需申请定位权限并通过 Location Kit 获取设备当前位置",
+        rule_source: "must_rule",
+        why_uncertain: "静态预判在目标文件中命中了 0/1 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
+        local_preliminary_signal: "none_matched",
+        evidence_files: ["entry/src/main/ets/pages/Index.ets"],
+        evidence_snippets: ["requestPermissionsFromUser(['ohos.permission.LOCATION'])"],
+        rule_name: "必须按需申请定位权限并通过 Location Kit 获取设备当前位置",
+        priority: "P0",
+        static_precheck: {
+          target_matched: true,
+          target_files: ["entry/src/main/ets/pages/Index.ets"],
+          signal_status: "none_matched",
+          matched_tokens: [],
+          summary: "静态预判在目标文件中命中了 0/1 个 AST 信号。",
+        },
+        is_case_rule: true,
+      },
+    ],
+    agentFinalAnswer: undefined,
+  });
+
+  const conclusion = merged.mergedRuleAuditResults[0]?.conclusion ?? "";
+  assert.equal(merged.agentRunStatus, "invalid_output");
+  assert.match(conclusion, /Agent 未能提供有效判定/);
+  assert.match(conclusion, /静态预判在目标文件中命中了 0\/1 个 AST 信号/);
+  assert.match(conclusion, /本地预判信号：none_matched/);
+  assert.match(conclusion, /entry\/src\/main\/ets\/pages\/Index\.ets/);
+});
+
+test("mergeRuleAuditResults keeps trusted static result for scoring when final answer is absent", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "HM-REQ-010-02",
+        rule_summary: "必须按需申请定位权限并通过 Location Kit 获取设备当前位置",
+        rule_source: "must_rule",
+        why_uncertain: "静态预判在目标文件中命中了 0/1 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
+        local_preliminary_signal: "none_matched",
+        evidence_files: ["entry/src/main/ets/pages/Index.ets"],
+        evidence_snippets: ["requestPermissionsFromUser(['ohos.permission.LOCATION'])"],
+        rule_name: "必须按需申请定位权限并通过 Location Kit 获取设备当前位置",
+        priority: "P0",
+        ast_signals: [{ type: "call", name: "getCurrentLocation" }],
+        static_precheck: {
+          target_matched: true,
+          target_files: ["entry/src/main/ets/pages/Index.ets"],
+          signal_status: "none_matched",
+          matched_tokens: [],
+          summary: "静态预判在目标文件中命中了 0/1 个 AST 信号。",
+        },
+        is_case_rule: true,
+      },
+    ],
+    agentFinalAnswer: undefined,
+  });
+
+  assert.equal(merged.agentRunStatus, "invalid_output");
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "不满足");
+  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /静态预判结果已作为评分依据/);
+});
+
+test("mergeRuleAuditResults still falls back to review when static precheck is not decisive", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "HM-REQ-010-03",
+        rule_summary: "定位结果必须驱动首页城市标识或本地资讯内容更新",
+        rule_source: "should_rule",
+        why_uncertain: "静态预判在目标文件中命中了 0/0 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
+        local_preliminary_signal: "none_matched",
+        evidence_files: ["entry/src/main/ets/pages/Index.ets"],
+        evidence_snippets: ["HomePage()"],
+        rule_name: "定位结果必须驱动首页城市标识或本地资讯内容更新",
+        priority: "P1",
+        ast_signals: [],
+        static_precheck: {
+          target_matched: true,
+          target_files: ["entry/src/main/ets/pages/Index.ets"],
+          signal_status: "none_matched",
+          matched_tokens: [],
+          summary: "静态预判在目标文件中命中了 0/0 个 AST 信号。",
+        },
+        is_case_rule: true,
+      },
+    ],
+    agentFinalAnswer: undefined,
+  });
+
+  assert.equal(merged.agentRunStatus, "invalid_output");
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
+});
+
 test("mergeRuleAuditResults preserves agent summary when structured rule assessments are empty", () => {
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [],

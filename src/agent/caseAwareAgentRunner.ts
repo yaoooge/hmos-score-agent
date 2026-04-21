@@ -71,7 +71,6 @@ export async function runCaseAwareAgent(input: {
   let outcome: CaseAwareRunnerResult["outcome"] | undefined;
   let failureReason: string | undefined;
   let finalAnswerRepairRetryUsed = false;
-  let toolCallRepairRetryUsed = false;
 
   await input.logger?.info(
     `case-aware agent 判定开始 candidates=${input.bootstrapPayload.assisted_rule_candidates.length} caseId=${input.bootstrapPayload.case_context.case_id} hasPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)}`,
@@ -163,8 +162,7 @@ export async function runCaseAwareAgent(input: {
           );
           break;
         }
-      } else if (!toolCallRepairRetryUsed && isToolCallRetryCandidate(rawText)) {
-        toolCallRepairRetryUsed = true;
+      } else if (isToolCallRetryCandidate(rawText)) {
         turns.push({
           turn,
           action: "tool_call",

@@ -290,6 +290,100 @@ test("case-aware runner retries once when tool_call shape violates the protocol"
   assert.equal(result.final_answer?.summary.overall_confidence, "medium");
 });
 
+test("case-aware runner retries invalid tool_call output once per planner turn", async (t) => {
+  const caseRoot = await fs.mkdtemp(path.join(os.tmpdir(), "case-aware-tool-call-turn-retry-"));
+  await fs.mkdir(path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "home"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(caseRoot, "intermediate"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "home", "HomePageVM.ets"),
+    "export class HomePageVM { updateLocalNews(): void {} }\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseRoot, "intermediate", "effective.patch"),
+    "diff --git a/entry/src/main/ets/home/HomePageVM.ets b/entry/src/main/ets/home/HomePageVM.ets\n",
+    "utf-8",
+  );
+  t.after(async () => fs.rm(caseRoot, { recursive: true, force: true }));
+
+  const prompts: string[] = [];
+  const outputs = [
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_file",
+      reason: "第一轮缺少 args，需要修复。",
+    }),
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_patch",
+      args: { path: "intermediate/effective.patch" },
+      reason: "先读取补丁。",
+    }),
+    JSON.stringify({
+      action: "tool_call",
+      tool: "list_files",
+      args: { path: "workspace/entry/src/main/ets", recursive: true },
+      reason: "第二轮使用了非法工具名，需要修复。",
+    }),
+    JSON.stringify({
+      action: "tool_call",
+      tool: "list_dir",
+      args: { path: "workspace/entry/src/main/ets/home" },
+      reason: "列出首页目录。",
+    }),
+    JSON.stringify({
+      action: "final_answer",
+      summary: {
+        assistant_scope: "本次仅辅助候选规则判定",
+        overall_confidence: "medium",
+      },
+      rule_assessments: [
+        {
+          rule_id: "HM-REQ-010-03",
+          decision: "pass",
+          confidence: "medium",
+          reason: "已看到本地资讯更新逻辑。",
+          evidence_used: ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
+          needs_human_review: false,
+        },
+      ],
+    }),
+  ];
+
+  const result = await runCaseAwareAgent({
+    caseRoot,
+    bootstrapPayload: {
+      ...sampleBootstrapPayload,
+      case_context: {
+        ...sampleBootstrapPayload.case_context,
+        case_root: caseRoot,
+        original_project_path: path.join(caseRoot, "original"),
+        generated_project_path: path.join(caseRoot, "workspace"),
+        effective_patch_path: path.join(caseRoot, "intermediate", "effective.patch"),
+      },
+    },
+    completeJsonPrompt: async (prompt) => {
+      prompts.push(prompt);
+      return outputs.shift() ?? "";
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(prompts.length, 5);
+  assert.match(prompts[1] ?? "", /这是一次 tool_call 协议修复重试/);
+  assert.match(prompts[3] ?? "", /这是一次 tool_call 协议修复重试/);
+  assert.equal(result.turns.length, 5);
+  assert.equal(result.turns[0]?.status, "error");
+  assert.equal(result.turns[1]?.status, "success");
+  assert.equal(result.turns[2]?.status, "error");
+  assert.equal(result.turns[3]?.status, "success");
+  assert.equal(result.turns[4]?.action, "final_answer");
+  assert.equal(result.tool_trace.length, 2);
+  assert.equal(result.final_answer?.summary.overall_confidence, "medium");
+});
+
 test("case-aware runner exposes canonical final answer text for downstream merge", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",
