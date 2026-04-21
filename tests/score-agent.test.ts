@@ -282,6 +282,91 @@ test("ruleMergeNode returns deterministic results directly when there are no ass
   assert.equal(result.agentAssistedRuleResults, undefined);
 });
 
+test("ruleMergeNode preserves structured agent judgments from raw output when provider fails after emitting them", async () => {
+  const result = await ruleMergeNode(
+    {
+      deterministicRuleResults: [
+        {
+          rule_id: "ARKTS-MUST-001",
+          rule_source: "must_rule",
+          result: "满足",
+          conclusion: "本地静态规则已确定。",
+        },
+      ],
+      assistedRuleCandidates: [
+        {
+          rule_id: "HM-REQ-010-01",
+          rule_source: "must_rule",
+          why_uncertain: "需要结合页面上下文判断",
+          local_preliminary_signal: "unknown",
+          evidence_files: ["features/home/src/main/ets/pages/HomePage.ets"],
+          evidence_snippets: ["Text('首页')"],
+          rule_name: "首页必须新增当前位置或本地频道展示区，并支持用户主动刷新定位结果",
+          is_case_rule: true,
+        },
+        {
+          rule_id: "HM-REQ-010-02",
+          rule_source: "must_rule",
+          why_uncertain: "需要确认是否真的接入定位能力",
+          local_preliminary_signal: "possible_violation",
+          evidence_files: ["features/home/src/main/ets/viewModels/HomePageVM.ets"],
+          evidence_snippets: ["refreshList()"],
+          rule_name: "必须按需申请定位权限并通过 Location Kit 获取设备当前位置",
+          is_case_rule: true,
+        },
+      ],
+      agentRunStatus: "failed",
+      agentRawOutputText: JSON.stringify({
+        action: "final_answer",
+        summary: {
+          assistant_scope: "provider 在 repair 轮失败前，已经产出了一版结构化分条判断",
+          overall_confidence: "medium",
+        },
+        rule_assessments: [
+          {
+            rule_id: "HM-REQ-010-01",
+            decision: "violation",
+            confidence: "high",
+            reason: "首页未发现当前位置展示区或手动刷新定位入口。",
+            evidence_used: ["features/home/src/main/ets/pages/HomePage.ets"],
+            needs_human_review: false,
+          },
+          {
+            rule_id: "HM-REQ-010-02",
+            decision: "uncertain",
+            confidence: "low",
+            reason: "仅看到刷新链路，未见 Location Kit 调用。",
+            evidence_used: ["features/home/src/main/ets/viewModels/HomePageVM.ets"],
+            needs_human_review: true,
+          },
+        ],
+      }),
+    } as never,
+    {},
+  );
+
+  assert.equal(result.agentRunStatus, "failed");
+  assert.equal(result.agentAssistedRuleResults?.rule_assessments.length, 2);
+  assert.equal(
+    result.mergedRuleAuditResults?.find((item) => item.rule_id === "HM-REQ-010-01")?.result,
+    "不满足",
+  );
+  assert.match(
+    result.mergedRuleAuditResults?.find((item) => item.rule_id === "HM-REQ-010-01")?.conclusion ??
+      "",
+    /当前位置展示区/,
+  );
+  assert.equal(
+    result.mergedRuleAuditResults?.find((item) => item.rule_id === "HM-REQ-010-02")?.result,
+    "待人工复核",
+  );
+  assert.match(
+    result.mergedRuleAuditResults?.find((item) => item.rule_id === "HM-REQ-010-02")?.conclusion ??
+      "",
+    /Location Kit 调用/,
+  );
+});
+
 test("scoring and report nodes fall back to deterministic results when merge output is absent", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const staticRuleAuditResults = [
@@ -1169,6 +1254,84 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
   assert.match(runLog, /case-aware agent 判定开始/);
   assert.match(runLog, /case-aware 工具执行/);
   assert.match(runLog, /case-aware 判定完成/);
+});
+
+test("runScoreWorkflow preserves partial agent traces when provider fails after earlier turns", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    caseId: "requirement_004",
+    promptText: "实现登录流程",
+    withPatch: false,
+    workspaceContent: "let x: number = 2;\n",
+    originalContent: "let x: number = 1;\n",
+    expectedConstraintsYaml: `constraints:
+  - id: HM-REQ-008-01
+    name: 必须使用 LoginWithHuaweiIDButton
+    description: 登录页必须使用 LoginWithHuaweiIDButton
+    priority: P0
+    rules:
+      - target: '**/pages/*.ets'
+        ast:
+          - type: call
+            name: LoginWithHuaweiIDButton
+        llm: 检查登录按钮
+`,
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+  let callCount = 0;
+  const agentClient = {
+    async completeJsonPrompt(): Promise<string> {
+      callCount += 1;
+      if (callCount === 1) {
+        return JSON.stringify({
+          action: "tool_call",
+          tool: "read_file",
+          args: { path: "workspace/entry/src/main/ets/Index.ets" },
+          reason: "需要确认是否存在登录按钮调用",
+        });
+      }
+      throw new Error("fetch failed");
+    },
+  };
+
+  const result = await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+    agentClient,
+  } as never);
+
+  const turns = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "agent-turns.json"), "utf-8"),
+  );
+  const toolTrace = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "agent-tool-trace.json"), "utf-8"),
+  );
+  const agentResult = JSON.parse(
+    await fs.readFile(
+      path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"),
+      "utf-8",
+    ),
+  );
+  const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
+
+  assert.equal(result.agentRunStatus, "failed");
+  assert.equal(Array.isArray(turns), true);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0]?.action, "tool_call");
+  assert.equal(Array.isArray(toolTrace), true);
+  assert.equal(toolTrace.length, 1);
+  assert.equal(agentResult.status, "failed");
+  assert.equal(agentResult.turn_count, 1);
+  assert.equal(agentResult.tool_call_count, 1);
+  assert.equal(agentResult.forced_finalize_reason, "agent_request_failed");
+  assert.match(runLog, /case-aware 工具执行/);
+  assert.match(runLog, /case-aware 模型调用失败/);
 });
 
 test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {

@@ -10,6 +10,7 @@ import {
   parseCaseAwarePlannerOutput,
   renderCaseAwareBootstrapPrompt,
   renderCaseAwareFollowupPrompt,
+  renderCaseAwareRepairPrompt,
 } from "./caseAwarePrompt.js";
 import { getCaseAwareAgentNextStep } from "./caseAwareAgentGraph.js";
 
@@ -32,6 +33,7 @@ export async function runCaseAwareAgent(input: {
 }> {
   const executor = createCaseToolExecutor({
     caseRoot: input.caseRoot,
+    effectivePatchPath: input.bootstrapPayload.case_context.effective_patch_path,
     maxToolCalls: input.bootstrapPayload.tool_contract.max_tool_calls,
     maxTotalBytes: input.bootstrapPayload.tool_contract.max_total_bytes,
     maxFiles: input.bootstrapPayload.tool_contract.max_files,
@@ -43,6 +45,7 @@ export async function runCaseAwareAgent(input: {
   let finalAnswer: CaseAwareAgentFinalAnswer | undefined;
   let status: AgentRunStatus | undefined;
   let forcedFinalizeReason: string | undefined;
+  let repairPrompt: string | undefined;
 
   await input.logger?.info(
     `case-aware agent 判定开始 candidates=${input.bootstrapPayload.assisted_rule_candidates.length} caseId=${input.bootstrapPayload.case_context.case_id} hasPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)}`,
@@ -51,22 +54,35 @@ export async function runCaseAwareAgent(input: {
     `case-aware bootstrap 完成 targetFiles=${input.bootstrapPayload.initial_target_files.length} initialPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)} toolBudget=${input.bootstrapPayload.tool_contract.max_tool_calls} byteBudget=${input.bootstrapPayload.tool_contract.max_total_bytes}`,
   );
 
-  for (let turn = 1; turn <= input.bootstrapPayload.tool_contract.max_tool_calls + 1; turn += 1) {
+  const maxTurns = input.bootstrapPayload.tool_contract.max_tool_calls + 1;
+
+  for (let turn = 1; turn <= maxTurns; turn += 1) {
     const budget = executor.getBudget();
     await input.logger?.info(
       `case-aware planner 开始 turn=${turn} remainingTools=${budget.remainingToolCalls} remainingBytes=${budget.remainingBytes}`,
     );
 
     const prompt =
-      turn === 1
+      repairPrompt ??
+      (turn === 1
         ? renderCaseAwareBootstrapPrompt(input.bootstrapPayload)
         : renderCaseAwareFollowupPrompt({
             bootstrapPayload: input.bootstrapPayload,
             turn,
             latestObservation,
-          });
+          }));
+    repairPrompt = undefined;
 
-    const rawText = await input.completeJsonPrompt(prompt);
+    let rawText: string;
+    try {
+      rawText = await input.completeJsonPrompt(prompt);
+    } catch (error) {
+      status = "failed";
+      forcedFinalizeReason = "agent_request_failed";
+      const message = error instanceof Error ? error.message : String(error);
+      await input.logger?.error(`case-aware 模型调用失败 turn=${turn} error=${message}`);
+      break;
+    }
 
     let decision;
     try {
@@ -87,8 +103,49 @@ export async function runCaseAwareAgent(input: {
     });
 
     if (decision.action === "final_answer") {
+      const missingRuleIds = findMissingCandidateRuleIds(
+        decision,
+        input.bootstrapPayload.assisted_rule_candidates,
+      );
+      if (missingRuleIds.length > 0) {
+        finalAnswerRawText = JSON.stringify(decision, null, 2);
+        turns.push({
+          turn,
+          action: "final_answer",
+          status: "error",
+          raw_output_text: rawText,
+        });
+        latestObservation = JSON.stringify(
+          {
+            validation_error: "incomplete_final_answer",
+            message:
+              "final_answer 必须补齐每一条候选规则的结论，不能只输出总体判断或部分 rule_assessments。",
+            missing_rule_ids: missingRuleIds,
+            received_rule_ids: decision.rule_assessments.map((item) => item.rule_id),
+          },
+          null,
+          2,
+        );
+        await input.logger?.warn(
+          `case-aware final_answer 不完整 turn=${turn} missingRules=${missingRuleIds.join(",")}`,
+        );
+        repairPrompt = renderCaseAwareRepairPrompt({
+          bootstrapPayload: input.bootstrapPayload,
+          turn: turn + 1,
+          missingRuleIds,
+          receivedRuleIds: decision.rule_assessments.map((item) => item.rule_id),
+          latestObservation,
+        });
+        if (turn >= maxTurns) {
+          status = "invalid_output";
+          forcedFinalizeReason = "incomplete_final_answer";
+          break;
+        }
+        continue;
+      }
+
       finalAnswer = decision;
-      finalAnswerRawText = rawText;
+      finalAnswerRawText = JSON.stringify(decision, null, 2);
       status = "success";
       turns.push({
         turn,
@@ -171,4 +228,20 @@ export async function runCaseAwareAgent(input: {
     finalAnswerRawText,
     forcedFinalizeReason,
   };
+}
+
+function findMissingCandidateRuleIds(
+  finalAnswer: CaseAwareAgentFinalAnswer,
+  candidates: AgentBootstrapPayload["assisted_rule_candidates"],
+): string[] {
+  const expectedRuleIds = new Set(candidates.map((candidate) => candidate.rule_id));
+  const receivedRuleIds = new Set(
+    finalAnswer.rule_assessments
+      .map((assessment) => assessment.rule_id)
+      .filter((ruleId) => expectedRuleIds.has(ruleId)),
+  );
+
+  return candidates
+    .map((candidate) => candidate.rule_id)
+    .filter((ruleId) => !receivedRuleIds.has(ruleId));
 }

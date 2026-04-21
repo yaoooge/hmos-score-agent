@@ -4,6 +4,8 @@ import yaml from "js-yaml";
 import type { DetectorKind, RegisteredRule, RegisteredRulePack } from "./ruleTypes.js";
 import { rulePackYamlMetadataByPackId } from "./rulePackYamlMetadata.js";
 
+export const defaultRulePackYamlOutputDirectory = "references/rules";
+
 export interface RulePackYamlRule {
   id: string;
   rule: string;

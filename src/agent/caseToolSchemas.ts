@@ -29,7 +29,8 @@ export const readFileChunkArgsSchema = z.object({
 });
 
 export const grepInFilesArgsSchema = z.object({
-  pattern: z.string().min(1),
+  pattern: z.string().min(1).optional(),
+  patterns: z.array(z.string().min(1)).min(1).optional(),
   path: z.string().min(1).default("."),
   limit: z.number().int().min(1).max(100).default(20),
 });

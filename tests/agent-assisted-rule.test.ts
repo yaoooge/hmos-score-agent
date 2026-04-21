@@ -372,6 +372,39 @@ test("mergeRuleAuditResults falls back to local review result when agent output 
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
 });
 
+test("mergeRuleAuditResults preserves agent summary when structured rule assessments are empty", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "HM-REQ-010-01",
+        rule_source: "must_rule",
+        why_uncertain: "需要结合上下文判断定位能力是否完成",
+        local_preliminary_signal: "unknown",
+        evidence_files: ["features/home/src/main/ets/pages/HomePage.ets"],
+        evidence_snippets: ["Text('本地')"],
+        rule_name: "首页必须新增当前位置或本地频道展示区",
+        is_case_rule: true,
+      },
+    ],
+    agentOutputText: JSON.stringify({
+      action: "final_answer",
+      summary: {
+        assistant_scope:
+          "未发现 Location Kit、geoLocationManager、getCurrentLocation 或定位权限接入，无法证明本地资讯定位闭环完成。",
+        overall_confidence: "high",
+      },
+      rule_assessments: [],
+    }),
+  });
+
+  assert.equal(merged.agentRunStatus, "success");
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
+  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /未发现 Location Kit/);
+  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /整体置信度：high/);
+  assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /缺少针对 HM-REQ-010-01 的结构化判定/);
+});
+
 test("mergeRuleAuditResults rejects outputs that add unexpected fields beyond the new schema", () => {
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [],

@@ -39,6 +39,8 @@ type CaseToolFailure = {
 
 type CaseToolResult = CaseToolSuccess | CaseToolFailure;
 
+const READ_PATCH_MAX_BYTES = 12 * 1024;
+
 function buildBudgetSnapshot(input: {
   maxToolCalls: number;
   maxTotalBytes: number;
@@ -111,6 +113,7 @@ async function listFilesRecursive(rootPath: string): Promise<string[]> {
 
 export function createCaseToolExecutor(config: {
   caseRoot: string;
+  effectivePatchPath?: string;
   maxToolCalls: number;
   maxTotalBytes: number;
   maxFiles: number;
@@ -119,6 +122,9 @@ export function createCaseToolExecutor(config: {
   getBudget(): CaseToolBudgetSnapshot;
 } {
   const normalizedCaseRoot = path.resolve(config.caseRoot);
+  const normalizedEffectivePatchPath = config.effectivePatchPath
+    ? path.resolve(config.effectivePatchPath)
+    : undefined;
   let usedToolCalls = 0;
   let usedBytes = 0;
   const readFiles = new Set<string>();
@@ -149,6 +155,16 @@ export function createCaseToolExecutor(config: {
     const relativeToRoot = path.relative(normalizedCaseRoot, absolutePath);
 
     if (
+      normalizedEffectivePatchPath &&
+      absolutePath === normalizedEffectivePatchPath
+    ) {
+      return {
+        relativePath: path.relative(normalizedCaseRoot, absolutePath),
+        absolutePath,
+      };
+    }
+
+    if (
       relativeToRoot.startsWith("..") ||
       path.isAbsolute(relativeToRoot) ||
       relativeToRoot.length === 0 && absolutePath !== normalizedCaseRoot
@@ -173,6 +189,7 @@ export function createCaseToolExecutor(config: {
     payload: Record<string, unknown>,
     pathsRead: string[],
     rawTextPayload: string | undefined,
+    maxBytesOverride?: number,
   ): CaseToolSuccess | CaseToolFailure {
     const remainingBytes = config.maxTotalBytes - usedBytes;
     if (remainingBytes <= 0) {
@@ -180,7 +197,10 @@ export function createCaseToolExecutor(config: {
     }
 
     const serialized = rawTextPayload ?? JSON.stringify(payload, null, 2);
-    const truncated = truncateToBytes(serialized, remainingBytes);
+    const truncated = truncateToBytes(
+      serialized,
+      Math.max(1, Math.min(remainingBytes, maxBytesOverride ?? remainingBytes)),
+    );
     usedBytes += truncated.bytes;
 
     if (rawTextPayload !== undefined) {
@@ -227,7 +247,14 @@ export function createCaseToolExecutor(config: {
     try {
       switch (parsedCall.data.tool) {
         case "read_patch": {
-          const parsedArgs = readPathArgsSchema.partial({ path: true }).safeParse(parsedCall.data.args);
+          const normalizedArgs = {
+            path:
+              (typeof parsedCall.data.args.path === "string" && parsedCall.data.args.path) ||
+              (typeof parsedCall.data.args.patch_path === "string" &&
+                parsedCall.data.args.patch_path) ||
+              undefined,
+          };
+          const parsedArgs = readPathArgsSchema.partial({ path: true }).safeParse(normalizedArgs);
           if (!parsedArgs.success) {
             return failure("invalid_args", parsedArgs.error.message);
           }
@@ -236,10 +263,21 @@ export function createCaseToolExecutor(config: {
           await ensureFileExists(scopePath.absolutePath);
           trackFile(scopePath.relativePath);
           const content = await fs.readFile(scopePath.absolutePath, "utf-8");
-          return finalizeSuccess({ path: scopePath.relativePath }, [scopePath.relativePath], content);
+          return finalizeSuccess(
+            { path: scopePath.relativePath },
+            [scopePath.relativePath],
+            content,
+            READ_PATCH_MAX_BYTES,
+          );
         }
         case "list_dir": {
-          const parsedArgs = listDirArgsSchema.safeParse(parsedCall.data.args);
+          const normalizedArgs = {
+            path:
+              (typeof parsedCall.data.args.path === "string" && parsedCall.data.args.path) ||
+              (typeof parsedCall.data.args.root === "string" && parsedCall.data.args.root) ||
+              ".",
+          };
+          const parsedArgs = listDirArgsSchema.safeParse(normalizedArgs);
           if (!parsedArgs.success) {
             return failure("invalid_args", parsedArgs.error.message);
           }
@@ -295,17 +333,46 @@ export function createCaseToolExecutor(config: {
           );
         }
         case "grep_in_files": {
-          const parsedArgs = grepInFilesArgsSchema.safeParse(parsedCall.data.args);
+          const normalizedPatterns = Array.isArray(parsedCall.data.args.patterns)
+            ? parsedCall.data.args.patterns.filter((item): item is string => typeof item === "string" && item.length > 0)
+            : [];
+          const normalizedArgs = {
+            pattern: parsedCall.data.args.pattern,
+            patterns: normalizedPatterns.length > 0 ? normalizedPatterns : undefined,
+            path:
+              (typeof parsedCall.data.args.path === "string" && parsedCall.data.args.path) ||
+              (typeof parsedCall.data.args.root === "string" && parsedCall.data.args.root) ||
+              ".",
+            limit: parsedCall.data.args.limit,
+          };
+          const parsedArgs = grepInFilesArgsSchema.safeParse(normalizedArgs);
           if (!parsedArgs.success) {
             return failure("invalid_args", parsedArgs.error.message);
           }
 
           const scopePath = normalizeScopePath(parsedArgs.data.path);
-          const stat = await fs.stat(scopePath.absolutePath);
-          const candidateFiles = stat.isDirectory()
-            ? await listFilesRecursive(scopePath.absolutePath)
-            : [scopePath.absolutePath];
-          const matches: Array<{ path: string; line: number; content: string }> = [];
+          const patterns =
+            typeof parsedArgs.data.pattern === "string" && parsedArgs.data.pattern.length > 0
+              ? [parsedArgs.data.pattern]
+              : parsedArgs.data.patterns ?? [];
+          if (patterns.length === 0) {
+            return failure("invalid_args", "grep_in_files requires pattern or patterns");
+          }
+          const requestedFiles = Array.isArray(parsedCall.data.args.files)
+            ? parsedCall.data.args.files.filter((item): item is string => typeof item === "string")
+            : Array.isArray(parsedCall.data.args.paths)
+              ? parsedCall.data.args.paths.filter((item): item is string => typeof item === "string")
+              : [];
+          const candidateFiles =
+            requestedFiles.length > 0
+              ? requestedFiles.map((item) => normalizeScopePath(path.join(scopePath.relativePath, item)).absolutePath)
+              : (await (async () => {
+                  const stat = await fs.stat(scopePath.absolutePath);
+                  return stat.isDirectory()
+                    ? listFilesRecursive(scopePath.absolutePath)
+                    : [scopePath.absolutePath];
+                })());
+          const matches: Array<{ path: string; line: number; content: string; matched_pattern: string }> = [];
           const trackedPaths: string[] = [];
 
           for (const filePath of candidateFiles) {
@@ -314,20 +381,23 @@ export function createCaseToolExecutor(config: {
             }
 
             const relativePath = path.relative(normalizedCaseRoot, filePath);
-            trackFile(relativePath);
             const content = await fs.readFile(filePath, "utf-8");
             const lines = content.split("\n");
             for (let index = 0; index < lines.length; index += 1) {
-              if (!lines[index]?.includes(parsedArgs.data.pattern)) {
+              const line = lines[index] ?? "";
+              const matchedPattern = patterns.find((pattern) => line.includes(pattern));
+              if (!matchedPattern) {
                 continue;
               }
               if (!trackedPaths.includes(relativePath)) {
+                trackFile(relativePath);
                 trackedPaths.push(relativePath);
               }
               matches.push({
                 path: relativePath,
                 line: index + 1,
-                content: lines[index] ?? "",
+                content: line,
+                matched_pattern: matchedPattern,
               });
               if (matches.length >= parsedArgs.data.limit) {
                 break;
@@ -338,7 +408,8 @@ export function createCaseToolExecutor(config: {
           return finalizeSuccess(
             {
               path: scopePath.relativePath,
-              pattern: parsedArgs.data.pattern,
+              pattern: patterns[0],
+              patterns,
               matches,
             },
             trackedPaths,

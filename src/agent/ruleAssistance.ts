@@ -195,20 +195,46 @@ export function buildAgentBootstrapPayload(
 
 // renderAgentBootstrapPrompt 生成 case-aware runner 的首轮 bootstrap prompt。
 export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
+  const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
   return [
     "你是评分工作流中的 case-aware 辅助判定模块。",
     "你可以在受限预算内调用 case 目录只读工具来补查上下文。",
     "你只能返回 tool_call 或 final_answer 两种 JSON action。",
+    "一次只允许输出一个 JSON object，不要输出多个 JSON object，不要把多个 action 串在一起。",
     "tool_call 时必须包含 tool、args、reason；final_answer 时必须包含 action、summary、rule_assessments。",
     "如果证据不足，必须在对应 rule_assessments 中将 needs_human_review 置为 true。",
     "所有描述型文案必须使用中文。",
     "禁止输出 markdown、代码块或任何额外解释。",
     "case 目录只读工具包括：read_patch、list_dir、read_file、read_file_chunk、grep_in_files、read_json。",
+    "工具参数必须严格匹配以下结构，不允许自造字段名：",
+    "read_patch: args 可为空，或仅允许 path 字段。",
+    "list_dir: args = { path }，只允许 path 字段。",
+    "read_file: args = { path }，只允许 path 字段。",
+    "read_file_chunk: args = { path, startLine, lineCount }。",
+    "grep_in_files: args = { pattern, path, limit }。",
+    "read_json: args = { path }，只允许 path 字段。",
     "请优先从 initial_target_files 和 effective_patch_path 开始收集证据，再决定是否继续读取其他文件。",
     "最终只对 assisted_rule_candidates 中的候选规则给出判断，不要改写本地静态规则结果。",
+    `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；final_answer.rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
+    candidateRuleIds.length > 0
+      ? `本次必须覆盖的 rule_id: ${candidateRuleIds.join(", ")}。`
+      : "当前没有 assisted_rule_candidates，只有在上游误调用时才可能看到本提示。",
     "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
     "final_answer 中的 confidence 只能是 high、medium、low。",
-    "请直接输出一个 JSON object。",
+    "请直接输出一个 JSON object，不要输出多个 JSON object。",
+    "合法 tool_call 示例：",
+    JSON.stringify(
+      {
+        action: "tool_call",
+        tool: "read_patch",
+        args: {
+          path: "intermediate/effective.patch",
+        },
+        reason: "先阅读补丁，确认改动文件范围。",
+      },
+      null,
+      2,
+    ),
     "合法 final_answer 示例：",
     JSON.stringify(
       {
@@ -236,13 +262,28 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
   ].join("\n");
 }
 
-function makeFallbackResult(candidate: AssistedRuleCandidate): RuleAuditResult {
+function formatAgentSummaryForFallback(
+  summary?: AgentAssistedRuleResult["summary"],
+): string | undefined {
+  if (!summary) {
+    return undefined;
+  }
+  return `Agent 总体判断：${summary.assistant_scope}（整体置信度：${summary.overall_confidence}）。`;
+}
+
+function makeFallbackResult(
+  candidate: AssistedRuleCandidate,
+  summary?: AgentAssistedRuleResult["summary"],
+): RuleAuditResult {
+  const summaryText = formatAgentSummaryForFallback(summary);
   return {
     rule_id: candidate.rule_id,
     rule_summary: candidate.rule_summary ?? candidate.rule_name,
     rule_source: candidate.rule_source,
     result: "待人工复核",
-    conclusion: `Agent 未能提供有效判定，候选规则 ${candidate.rule_id} 已回退为待人工复核。`,
+    conclusion: summaryText
+      ? `${summaryText} 但缺少针对 ${candidate.rule_id} 的结构化判定，已回退为待人工复核。`
+      : `Agent 未能提供有效判定，候选规则 ${candidate.rule_id} 已回退为待人工复核。`,
   };
 }
 
@@ -331,7 +372,7 @@ export function mergeRuleAuditResults(
     const assessment = assessmentByRuleId.get(candidate.rule_id);
     return assessment
       ? mapAssessmentToRuleAuditResult(candidate, assessment)
-      : makeFallbackResult(candidate);
+      : makeFallbackResult(candidate, agentAssistedRuleResults.summary);
   });
 
   return {

@@ -8,6 +8,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { getRegisteredRulePacks } from "../src/rules/engine/rulePackRegistry.js";
 import {
   buildRulePackYamlDocuments,
+  defaultRulePackYamlOutputDirectory,
   serializeRulePackYamlDocument,
   writeRulePackYamlFiles,
 } from "../src/rules/engine/rulePackYamlExporter.js";
@@ -103,4 +104,8 @@ test("package exposes a rule pack YAML export script", () => {
     packageJson.scripts["rulepack:export"],
     "node --import tsx src/tools/generateRulePackYaml.ts",
   );
+});
+
+test("default rule pack YAML export directory is references/rules", () => {
+  assert.equal(defaultRulePackYamlOutputDirectory, "references/rules");
 });
