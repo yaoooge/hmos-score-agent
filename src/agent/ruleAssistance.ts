@@ -169,7 +169,6 @@ export function buildAgentBootstrapPayload(
       effective_patch_path: input.effectivePatchPath,
     },
     task_understanding: input.constraintSummary,
-    rubric_summary: input.rubricSnapshot,
     assisted_rule_candidates: input.assistedRuleCandidates,
     initial_target_files: input.initialTargetFiles,
     tool_contract: {
@@ -213,6 +212,12 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
     "read_file_chunk: args = { path, startLine, lineCount }。",
     "grep_in_files: args = { pattern, path, limit }。",
     "read_json: args = { path }，只允许 path 字段。",
+    "输出结构约束：",
+    "tool_call 必须包含 action=tool_call、tool、args、reason。",
+    "final_answer 必须包含 action=final_answer、summary、rule_assessments。",
+    "summary 必须包含 assistant_scope 与 overall_confidence。",
+    "每条 rule_assessment 必须包含 rule_id、decision、confidence、reason、evidence_used、needs_human_review。",
+    "不要输出示例 JSON，不要输出 markdown，不要输出额外解释。",
     "请优先从 initial_target_files 和 effective_patch_path 开始收集证据，再决定是否继续读取其他文件。",
     "最终只对 assisted_rule_candidates 中的候选规则给出判断，不要改写本地静态规则结果。",
     `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；final_answer.rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
@@ -222,41 +227,6 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
     "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
     "final_answer 中的 confidence 只能是 high、medium、low。",
     "请直接输出一个 JSON object，不要输出多个 JSON object。",
-    "合法 tool_call 示例：",
-    JSON.stringify(
-      {
-        action: "tool_call",
-        tool: "read_patch",
-        args: {
-          path: "intermediate/effective.patch",
-        },
-        reason: "先阅读补丁，确认改动文件范围。",
-      },
-      null,
-      2,
-    ),
-    "合法 final_answer 示例：",
-    JSON.stringify(
-      {
-        action: "final_answer",
-        summary: {
-          assistant_scope: "本次仅辅助候选规则判定",
-          overall_confidence: "medium",
-        },
-        rule_assessments: [
-          {
-            rule_id: "ARKTS-SHOULD-001",
-            decision: "uncertain",
-            confidence: "low",
-            reason: "证据不足，需要人工复核。",
-            evidence_used: ["entry/src/main/ets/pages/Index.ets"],
-            needs_human_review: true,
-          },
-        ],
-      },
-      null,
-      2,
-    ),
     "",
     JSON.stringify(payload, null, 2),
   ].join("\n");

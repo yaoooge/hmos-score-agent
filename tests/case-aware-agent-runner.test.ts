@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCaseAwareAgent } from "../src/agent/caseAwareAgentRunner.js";
-import { parseCaseAwarePlannerOutput, renderCaseAwareBootstrapPrompt } from "../src/agent/caseAwarePrompt.js";
+import { parseCaseAwarePlannerOutputStrict } from "../src/agent/caseAwareProtocol.js";
+import { renderCaseAwareBootstrapPrompt } from "../src/agent/caseAwarePrompt.js";
 import type { AgentBootstrapPayload } from "../src/types.js";
 
 const sampleBootstrapPayload: AgentBootstrapPayload = {
@@ -159,7 +160,23 @@ test("case-aware runner exposes canonical final answer text for downstream merge
       ],
     },
     completeJsonPrompt: async () =>
-      '{"action":"final_answer","final_answer":{"confidence":"high","summary":"证据已足够","rule_results":[{"rule_id":"HM-REQ-010-01","result":"fail","evidence":"未发现定位入口"}]}}',
+      JSON.stringify({
+        action: "final_answer",
+        summary: {
+          assistant_scope: "证据已足够",
+          overall_confidence: "high",
+        },
+        rule_assessments: [
+          {
+            rule_id: "HM-REQ-010-01",
+            decision: "violation",
+            confidence: "high",
+            reason: "未发现定位入口",
+            evidence_used: ["workspace/entry/src/main/ets/home/HomePage.ets"],
+            needs_human_review: false,
+          },
+        ],
+      }),
   });
 
   const downstreamPayload = JSON.parse(result.finalAnswerRawText) as {
@@ -307,32 +324,6 @@ test("case-aware runner preserves partial turns and tool trace when model reques
   assert.equal(result.toolTrace[0]?.tool, "read_file");
 });
 
-test("parseCaseAwarePlannerOutput keeps the first valid JSON object when model concatenates multiple actions", () => {
-  const parsed = parseCaseAwarePlannerOutput(
-    '{"action":"tool_call","tool":"read_patch","args":{"patch_path":"intermediate/effective.patch"},"reason":"先读补丁"}{"action":"final_answer","summary":{"assistant_scope":"x","overall_confidence":"low"},"rule_assessments":[]}',
-  );
-
-  assert.equal(parsed.action, "tool_call");
-  assert.equal(parsed.tool, "read_patch");
-  assert.deepEqual(parsed.args, {
-    patch_path: "intermediate/effective.patch",
-  });
-});
-
-test("parseCaseAwarePlannerOutput skips malformed leading JSON objects and parses the next valid one", () => {
-  const parsed = parseCaseAwarePlannerOutput(
-    '{"action":"tool_call","tool_name":"grep_in_files","args":{"root":"workspace","files":["a.ets"]}" }{"action":"tool_call","tool_name":"grep_in_files","args":{"root":"workspace","files":["b.ets"],"patterns":["Location"]}}',
-  );
-
-  assert.equal(parsed.action, "tool_call");
-  assert.equal(parsed.tool, "grep_in_files");
-  assert.deepEqual(parsed.args, {
-    root: "workspace",
-    files: ["b.ets"],
-    patterns: ["Location"],
-  });
-});
-
 test("renderCaseAwareBootstrapPrompt documents exact tool arg schemas and single-action contract", () => {
   const prompt = renderCaseAwareBootstrapPrompt(sampleBootstrapPayload);
 
@@ -345,125 +336,59 @@ test("renderCaseAwareBootstrapPrompt documents exact tool arg schemas and single
   assert.match(prompt, /不要输出多个 JSON object/);
 });
 
-test("parseCaseAwarePlannerOutput accepts tool_call without explicit reason", () => {
-  const parsed = parseCaseAwarePlannerOutput(
-    '{"action":"tool_call","tool":"grep_in_files","args":{"root":"workspace","paths":["entry/src/main/ets/home/HomePageVM.ets"],"pattern":"refreshLocalNews"}}',
-  );
+test("bootstrap prompt avoids full executable JSON examples that can be parsed as actions", () => {
+  const prompt = renderCaseAwareBootstrapPrompt(sampleBootstrapPayload);
 
-  assert.equal(parsed.action, "tool_call");
-  assert.equal(parsed.tool, "grep_in_files");
-  assert.deepEqual(parsed.args, {
-    root: "workspace",
-    paths: ["entry/src/main/ets/home/HomePageVM.ets"],
-    pattern: "refreshLocalNews",
-  });
+  assert.doesNotMatch(prompt, /合法 tool_call 示例/);
+  assert.doesNotMatch(prompt, /合法 final_answer 示例/);
+  assert.doesNotMatch(prompt, /"action": "tool_call"/);
+  assert.doesNotMatch(prompt, /"action": "final_answer"/);
+  assert.match(prompt, /输出一个 JSON object/);
+  assert.match(prompt, /rule_assessments 必须逐条覆盖/);
 });
 
-test("parseCaseAwarePlannerOutput accepts tool_name alias from current model output", () => {
-  const parsed = parseCaseAwarePlannerOutput(
-    '{"action":"tool_call","tool_name":"grep_in_files","args":{"root":"workspace","patterns":["getCurrentLocation","Location"],"files":["entry/src/main/ets/home/HomePageVM.ets"]}}',
-  );
-
-  assert.equal(parsed.action, "tool_call");
-  assert.equal(parsed.tool, "grep_in_files");
-  assert.deepEqual(parsed.args, {
-    root: "workspace",
-    patterns: ["getCurrentLocation", "Location"],
-    files: ["entry/src/main/ets/home/HomePageVM.ets"],
-  });
-});
-
-test("parseCaseAwarePlannerOutput accepts nested final_answer payloads from current model output", () => {
-  const parsed = parseCaseAwarePlannerOutput(
-    '{"action":"final_answer","final_answer":{"summary":"证据已足够","requirement_judgement":{"fulfilled":false,"confidence":"high"},"case_rule_verdicts":[{"rule_id":"HM-REQ-010-01","passed":false,"confidence":"high","evidence":["未发现定位入口"]}]}}',
-  );
-
-  assert.equal(parsed.action, "final_answer");
-  assert.equal(parsed.summary.overall_confidence, "high");
-  assert.equal(parsed.rule_assessments[0]?.rule_id, "HM-REQ-010-01");
-  assert.equal(parsed.rule_assessments[0]?.decision, "violation");
-});
-
-test("parseCaseAwarePlannerOutput accepts nested rule_results final_answer payloads", () => {
-  const parsed = parseCaseAwarePlannerOutput(
-    '{"action":"final_answer","final_answer":{"confidence":"high","summary":"证据已足够","rule_results":[{"rule_id":"HM-REQ-010-02","result":"fail","evidence":"未发现 Location Kit 调用"}]}}',
-  );
-
-  assert.equal(parsed.action, "final_answer");
-  assert.equal(parsed.summary.overall_confidence, "high");
-  assert.equal(parsed.rule_assessments[0]?.rule_id, "HM-REQ-010-02");
-  assert.equal(parsed.rule_assessments[0]?.decision, "violation");
-  assert.equal(parsed.rule_assessments[0]?.reason, "未发现 Location Kit 调用");
-});
-
-test("parseCaseAwarePlannerOutput normalizes current model nested final_answer output", () => {
-  const parsed = parseCaseAwarePlannerOutput(
-    '{"action":"final_answer","final_answer":{"score":42,"confidence":"medium-high","summary":"本次生成结果对原工程进行了大范围重构和多模块扩展，但几乎没有真正实现需求核心的定位闭环。","case_rule_results":[{"rule_id":"HM-REQ-010-01","rule_name":"首页必须新增当前位置或本地频道展示区，并支持用户主动刷新定位结果","result":"fail","evidence":"未发现当前位置展示区或手动刷新定位入口。"},{"rule_id":"HM-REQ-010-02","rule_name":"必须按需申请定位权限并通过 Location Kit 获取设备当前位置","result":"fail","evidence":"未发现 Location Kit 调用。"}]}}',
-  );
-
-  assert.equal(parsed.action, "final_answer");
-  assert.equal(parsed.summary.overall_confidence, "medium");
-  assert.match(parsed.summary.assistant_scope, /定位闭环/);
-  assert.equal(parsed.rule_assessments[0]?.rule_id, "HM-REQ-010-01");
-  assert.equal(parsed.rule_assessments[0]?.decision, "violation");
-  assert.equal(parsed.rule_assessments[0]?.reason, "未发现当前位置展示区或手动刷新定位入口。");
-  assert.equal(parsed.rule_assessments[1]?.rule_id, "HM-REQ-010-02");
-  assert.equal(parsed.rule_assessments[1]?.decision, "violation");
-  assert.equal(parsed.rule_assessments[1]?.reason, "未发现 Location Kit 调用。");
-});
-
-test("parseCaseAwarePlannerOutput normalizes singular rule_assessment outputs with passed booleans and numeric confidence", () => {
-  const parsed = parseCaseAwarePlannerOutput(
+test("strict parser is owned by caseAwareProtocol", () => {
+  const parsed = parseCaseAwarePlannerOutputStrict(
     JSON.stringify({
-      action: "final_answer",
-      final_answer: {
-        summary_judgement: "首页本地资讯闭环未完成。",
-        rule_assessment: [
-          {
-            rule_id: "HM-REQ-010-01",
-            passed: false,
-            confidence: 0.92,
-            evidence: [
-              {
-                file: "workspace/features/home/src/main/ets/components/HomeContentView.ets",
-                detail: "未发现当前位置展示区或手动刷新定位入口。",
-              },
-            ],
-            reasoning: "首页仍然只有通用新闻流。",
-          },
-          {
-            rule_id: "HM-REQ-010-02",
-            passed: false,
-            confidence: 0.9,
-            evidence: [
-              {
-                file: "workspace/features/home/src/main/ets/viewModels/HomePageVM.ets",
-                detail: "未发现 Location Kit 调用。",
-              },
-            ],
-            reasoning: "未接入定位权限与位置获取链路。",
-          },
-        ],
-      },
+      action: "tool_call",
+      tool: "read_patch",
+      args: {},
+      reason: "先看补丁",
     }),
   );
 
-  assert.equal(parsed.action, "final_answer");
-  assert.match(parsed.summary.assistant_scope, /闭环未完成/);
-  assert.equal(parsed.summary.overall_confidence, "high");
-  assert.equal(parsed.rule_assessments.length, 2);
-  assert.equal(parsed.rule_assessments[0]?.rule_id, "HM-REQ-010-01");
-  assert.equal(parsed.rule_assessments[0]?.decision, "violation");
-  assert.equal(parsed.rule_assessments[0]?.reason, "首页仍然只有通用新闻流。");
-  assert.deepEqual(parsed.rule_assessments[0]?.evidence_used, [
-    "workspace/features/home/src/main/ets/components/HomeContentView.ets",
-  ]);
-  assert.equal(parsed.rule_assessments[1]?.rule_id, "HM-REQ-010-02");
-  assert.equal(parsed.rule_assessments[1]?.decision, "violation");
-  assert.equal(parsed.rule_assessments[1]?.reason, "未接入定位权限与位置获取链路。");
+  assert.equal(parsed.action, "tool_call");
 });
 
-test("case-aware runner accepts nested final_answer variants that use singular rule_assessment fields", async () => {
+test("strict parser rejects old compatibility shapes", () => {
+  assert.throws(() =>
+    parseCaseAwarePlannerOutputStrict(
+      JSON.stringify({
+        action: "final_answer",
+        final_answer: {
+          summary_judgement: "当前实现未满足本地资讯定位闭环要求。",
+          rule_assessment: [
+            {
+              rule_id: "HM-REQ-010-03",
+              assessment: "not_met",
+              confidence: "high",
+            },
+          ],
+        },
+      }),
+    ),
+  );
+});
+
+test("strict parser rejects multiple concatenated actions", () => {
+  assert.throws(() =>
+    parseCaseAwarePlannerOutputStrict(
+      '{"action":"tool_call","tool":"read_patch","args":{},"reason":"先读补丁"}{"action":"tool_call","tool":"read_file","args":{"path":"workspace/a.ets"},"reason":"再读文件"}',
+    ),
+  );
+});
+
+test("case-aware runner rejects nested final_answer compatibility shapes", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",
     bootstrapPayload: sampleBootstrapPayload,
@@ -490,8 +415,7 @@ test("case-aware runner accepts nested final_answer variants that use singular r
       }),
   });
 
-  assert.equal(result.status, "success");
-  assert.equal(result.finalAnswer?.rule_assessments.length, 1);
-  assert.equal(result.finalAnswer?.rule_assessments[0]?.rule_id, "HM-REQ-010-03");
-  assert.equal(result.finalAnswer?.rule_assessments[0]?.decision, "violation");
+  assert.equal(result.status, "invalid_output");
+  assert.equal(result.finalAnswer, undefined);
+  assert.equal(result.forcedFinalizeReason, "invalid_model_output");
 });

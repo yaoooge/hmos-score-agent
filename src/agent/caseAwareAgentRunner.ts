@@ -7,11 +7,11 @@ import type {
 } from "../types.js";
 import { createCaseToolExecutor } from "./caseTools.js";
 import {
-  parseCaseAwarePlannerOutput,
   renderCaseAwareBootstrapPrompt,
   renderCaseAwareFollowupPrompt,
   renderCaseAwareRepairPrompt,
 } from "./caseAwarePrompt.js";
+import { parseCaseAwarePlannerOutputStrict } from "./caseAwareProtocol.js";
 import { getCaseAwareAgentNextStep } from "./caseAwareAgentGraph.js";
 
 export async function runCaseAwareAgent(input: {
@@ -86,7 +86,7 @@ export async function runCaseAwareAgent(input: {
 
     let decision;
     try {
-      decision = parseCaseAwarePlannerOutput(rawText);
+      decision = parseCaseAwarePlannerOutputStrict(rawText);
     } catch {
       status = "invalid_output";
       finalAnswerRawText = rawText;
