@@ -1488,16 +1488,3 @@ test("runScoreWorkflow does not send unsupported should rules without direct evi
     false,
   );
 });
-
-test.todo(
-  "taskUnderstandingNode should load configurable extractors instead of fixed keyword heuristics",
-);
-test.todo(
-  "scoringOrchestrationNode should compute weighted dimension scores and apply hard gates from rubric.yaml",
-);
-test.todo(
-  "reportGenerationNode should validate result.json against the schema before persisting it",
-);
-test.todo(
-  "persistAndUploadNode should write enough evidence for retryable upload failures and failed workflows",
-);

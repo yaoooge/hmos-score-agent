@@ -7,6 +7,7 @@ import {
   parseConstraintSummary,
 } from "../agent/taskUnderstanding.js";
 import type { ArtifactStore } from "../io/artifactStore.js";
+import { filterPatchTextForIgnoredFiles, isIgnoredCaseFilePath } from "../io/ignoredFiles.js";
 import { generateCasePatch } from "../io/patchGenerator.js";
 import { loadCaseConstraintRules } from "../rules/caseConstraintLoader.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
@@ -107,11 +108,15 @@ async function collectProjectStructure(rootPath: string): Promise<ProjectStructu
       if (!entry.isFile()) {
         continue;
       }
+      const relativePath = normalizeRelativePath(path.relative(rootPath, absolutePath));
+      if (isIgnoredCaseFilePath(relativePath)) {
+        continue;
+      }
       if (files.length >= maxFiles) {
         omittedFileCount += 1;
         continue;
       }
-      files.push(normalizeRelativePath(path.relative(rootPath, absolutePath)));
+      files.push(relativePath);
     }
   }
 
@@ -244,7 +249,9 @@ async function readPatchSummary(patchPath?: string): Promise<PatchSummary> {
   if (!patchPath) {
     return summarizePatch("");
   }
-  const patchText = await fs.readFile(patchPath, "utf-8").catch(() => "");
+  const patchText = filterPatchTextForIgnoredFiles(
+    await fs.readFile(patchPath, "utf-8").catch(() => ""),
+  );
   return summarizePatch(patchText);
 }
 
@@ -290,7 +297,9 @@ async function ensureEffectivePatchPath(
   deps: TaskUnderstandingDeps,
 ): Promise<string | undefined> {
   if (state.caseInput.patchPath) {
-    const patchText = await fs.readFile(state.caseInput.patchPath, "utf-8").catch(() => "");
+    const patchText = filterPatchTextForIgnoredFiles(
+      await fs.readFile(state.caseInput.patchPath, "utf-8").catch(() => ""),
+    );
 
     if (patchText.trim().length > 0) {
       if (!deps.artifactStore || !state.caseDir) {

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { CaseToolBudgetSnapshot, CaseToolName } from "../types.js";
+import { filterPatchTextForIgnoredFiles, isIgnoredCaseFilePath } from "../io/ignoredFiles.js";
 import {
   caseToolCallSchema,
   grepInFilesArgsSchema,
@@ -107,6 +108,9 @@ async function listFilesRecursive(rootPath: string): Promise<string[]> {
       continue;
     }
     if (entry.isFile()) {
+      if (isIgnoredCaseFilePath(fullPath)) {
+        continue;
+      }
       files.push(fullPath);
     }
   }
@@ -221,6 +225,10 @@ export function createCaseToolExecutor(config: {
     readFiles.add(relativePath);
   }
 
+  function isIgnoredScopePath(relativePath: string): boolean {
+    return isIgnoredCaseFilePath(relativePath);
+  }
+
   function finalizeSuccess(
     payload: Record<string, unknown>,
     pathsRead: string[],
@@ -298,7 +306,9 @@ export function createCaseToolExecutor(config: {
           const scopePath = normalizePatchScopePath(parsedArgs.data.path);
           await ensureFileExists(scopePath.absolutePath);
           trackFile(scopePath.relativePath);
-          const content = await fs.readFile(scopePath.absolutePath, "utf-8");
+          const content = filterPatchTextForIgnoredFiles(
+            await fs.readFile(scopePath.absolutePath, "utf-8"),
+          );
           return finalizeSuccess(
             { path: scopePath.relativePath },
             [scopePath.relativePath],
@@ -323,10 +333,15 @@ export function createCaseToolExecutor(config: {
           return finalizeSuccess(
             {
               path: scopePath.relativePath,
-              entries: entries.map((entry) => ({
-                name: entry.name,
-                type: entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other",
-              })),
+              entries: entries
+                .filter(
+                  (entry) =>
+                    !isIgnoredScopePath(path.join(scopePath.relativePath, entry.name)),
+                )
+                .map((entry) => ({
+                  name: entry.name,
+                  type: entry.isDirectory() ? "dir" : entry.isFile() ? "file" : "other",
+                })),
             },
             [],
             undefined,
@@ -339,6 +354,9 @@ export function createCaseToolExecutor(config: {
           }
 
           const scopePath = normalizeScopePath(parsedArgs.data.path);
+          if (isIgnoredScopePath(scopePath.relativePath)) {
+            return failure("file_not_found", "file does not exist");
+          }
           await ensureFileExists(scopePath.absolutePath);
           trackFile(scopePath.relativePath);
           const content = await fs.readFile(scopePath.absolutePath, "utf-8");
@@ -355,6 +373,9 @@ export function createCaseToolExecutor(config: {
           }
 
           const scopePath = normalizeScopePath(parsedArgs.data.path);
+          if (isIgnoredScopePath(scopePath.relativePath)) {
+            return failure("file_not_found", "file does not exist");
+          }
           await ensureFileExists(scopePath.absolutePath);
           trackFile(scopePath.relativePath);
           const content = await fs.readFile(scopePath.absolutePath, "utf-8");
@@ -419,6 +440,9 @@ export function createCaseToolExecutor(config: {
                     ? listFilesRecursive(scopePath.absolutePath)
                     : [scopePath.absolutePath];
                 })();
+          const visibleCandidateFiles = candidateFiles.filter(
+            (filePath) => !isIgnoredScopePath(path.relative(normalizedCaseRoot, filePath)),
+          );
           const matches: Array<{
             path: string;
             line: number;
@@ -427,7 +451,7 @@ export function createCaseToolExecutor(config: {
           }> = [];
           const trackedPaths: string[] = [];
 
-          for (const filePath of candidateFiles) {
+          for (const filePath of visibleCandidateFiles) {
             if (matches.length >= parsedArgs.data.limit) {
               break;
             }
@@ -475,6 +499,9 @@ export function createCaseToolExecutor(config: {
           }
 
           const scopePath = normalizeScopePath(parsedArgs.data.path);
+          if (isIgnoredScopePath(scopePath.relativePath)) {
+            return failure("file_not_found", "file does not exist");
+          }
           await ensureFileExists(scopePath.absolutePath);
           trackFile(scopePath.relativePath);
           const content = await fs.readFile(scopePath.absolutePath, "utf-8");

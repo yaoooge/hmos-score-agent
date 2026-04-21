@@ -206,6 +206,90 @@ test("case-aware runner retries once when final_answer shape violates the protoc
   assert.equal(result.final_answer?.summary.overall_confidence, "medium");
 });
 
+test("case-aware runner retries once when tool_call shape violates the protocol", async (t) => {
+  const caseRoot = await fs.mkdtemp(path.join(os.tmpdir(), "case-aware-tool-call-retry-"));
+  await fs.mkdir(path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "home"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(caseRoot, "intermediate"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "home", "HomePageVM.ets"),
+    "export class HomePageVM { updateLocalNews(): void {} }\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseRoot, "intermediate", "effective.patch"),
+    "diff --git a/entry/src/main/ets/home/HomePageVM.ets b/entry/src/main/ets/home/HomePageVM.ets\n",
+    "utf-8",
+  );
+  t.after(async () => fs.rm(caseRoot, { recursive: true, force: true }));
+
+  const prompts: string[] = [];
+  const outputs = [
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_file",
+      reason: "需要确认是否更新本地资讯状态",
+    }),
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_file",
+      args: { path: "workspace/entry/src/main/ets/home/HomePageVM.ets" },
+      reason: "需要确认是否更新本地资讯状态",
+    }),
+    JSON.stringify({
+      action: "final_answer",
+      summary: {
+        assistant_scope: "本次仅辅助候选规则判定",
+        overall_confidence: "medium",
+      },
+      rule_assessments: [
+        {
+          rule_id: "HM-REQ-010-03",
+          decision: "pass",
+          confidence: "medium",
+          reason: "已看到本地资讯更新逻辑。",
+          evidence_used: ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
+          needs_human_review: false,
+        },
+      ],
+    }),
+  ];
+
+  const result = await runCaseAwareAgent({
+    caseRoot,
+    bootstrapPayload: {
+      ...sampleBootstrapPayload,
+      case_context: {
+        ...sampleBootstrapPayload.case_context,
+        case_root: caseRoot,
+        original_project_path: path.join(caseRoot, "original"),
+        generated_project_path: path.join(caseRoot, "workspace"),
+        effective_patch_path: path.join(caseRoot, "intermediate", "effective.patch"),
+      },
+    },
+    completeJsonPrompt: async (prompt) => {
+      prompts.push(prompt);
+      return outputs.shift() ?? "";
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(prompts.length, 3);
+  assert.match(prompts[1] ?? "", /这是一次 tool_call 协议修复重试/);
+  assert.match(prompts[1] ?? "", /只能重新输出一个 tool_call JSON object/);
+  assert.match(prompts[1] ?? "", /"action": "tool_call"/);
+  assert.match(prompts[1] ?? "", /"args": \{/);
+  assert.equal(result.turns.length, 3);
+  assert.equal(result.turns[0]?.action, "tool_call");
+  assert.equal(result.turns[0]?.status, "error");
+  assert.equal(result.turns[1]?.action, "tool_call");
+  assert.equal(result.turns[1]?.status, "success");
+  assert.equal(result.turns[2]?.action, "final_answer");
+  assert.equal(result.tool_trace.length, 1);
+  assert.equal(result.final_answer?.summary.overall_confidence, "medium");
+});
+
 test("case-aware runner exposes canonical final answer text for downstream merge", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",

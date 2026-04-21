@@ -84,6 +84,39 @@ test("read_patch returns effective patch content", async (t) => {
   assert.match(String(result.result?.content ?? ""), /diff --git/);
 });
 
+test("read_patch filters patch sections for files named BuildProfile.ets", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  await fs.writeFile(
+    path.join(caseRoot, "intermediate", "effective.patch"),
+    [
+      "diff --git a/entry/src/main/ets/BuildProfile.ets b/entry/src/main/ets/BuildProfile.ets",
+      "@@ -1 +1 @@",
+      "-let x: number = 1;",
+      "+let x: any = 1;",
+      "diff --git a/entry/src/main/ets/home/HomePageVM.ets b/entry/src/main/ets/home/HomePageVM.ets",
+      "@@ -1 +1 @@",
+      "-export class HomePageVM {}",
+      "+export class HomePageVM { refreshLocalNews(): void {} }",
+    ].join("\n"),
+    "utf-8",
+  );
+  const executor = createCaseToolExecutor({
+    caseRoot,
+    maxToolCalls: 6,
+    maxTotalBytes: 61440,
+    maxFiles: 20,
+  });
+
+  const result = await executor.execute({
+    tool: "read_patch",
+    args: {},
+  });
+
+  assert.equal(result.ok, true);
+  assert.doesNotMatch(String(result.result?.content ?? ""), /BuildProfile\.ets/);
+  assert.match(String(result.result?.content ?? ""), /HomePageVM\.ets/);
+});
+
 test("list_dir returns directory entries inside caseRoot", async (t) => {
   const caseRoot = await makeCaseRoot(t);
   const executor = createCaseToolExecutor({

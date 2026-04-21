@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isIgnoredCaseFilePath } from "./ignoredFiles.js";
 
 const BUILTIN_EXACT_NAMES = new Set([
   ".git",
@@ -128,6 +129,9 @@ export async function loadIgnoreFilter(
       const normalized = normalizeRelativePath(relativePath);
       const segments = normalized.split("/");
       if (segments.some((segment) => BUILTIN_EXACT_NAMES.has(segment))) {
+        return true;
+      }
+      if (kind === "file" && isIgnoredCaseFilePath(normalized)) {
         return true;
       }
       if (

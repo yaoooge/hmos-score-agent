@@ -298,6 +298,47 @@ test("collectEvidence ignores module-level ohosTest and test directories during 
   assert.equal(evidence.summary.workspaceFileCount, 1);
 });
 
+test("collectEvidence ignores files named BuildProfile.ets during scoring", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+    "entry/src/main/ets/BuildProfile.ets": "let x: any = 1;\nvar y = 2;\n",
+    "features/home/BuildProfile.ets": "let z: any = 1;\n",
+  });
+
+  await fs.mkdir(path.join(caseDir, "original", "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(caseDir, "original", "entry", "src", "main", "ets", "BuildProfile.ets"),
+    "let archived: any = 1;\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      "diff --git a/entry/src/main/ets/BuildProfile.ets b/entry/src/main/ets/BuildProfile.ets",
+      "@@ -1 +1 @@",
+      "-let archived: number = 1;",
+      "+let archived: any = 1;",
+      "diff --git a/entry/src/main/ets/pages/Index.ets b/entry/src/main/ets/pages/Index.ets",
+      "@@ -1 +1 @@",
+      "-let count: number = 0;",
+      "+let count: number = 1;",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const evidence = await collectEvidence(makeCaseInput(caseDir), { taskType: "continuation" });
+
+  assert.deepEqual(
+    evidence.workspaceFiles.map((item) => item.relativePath),
+    ["entry/src/main/ets/pages/Index.ets"],
+  );
+  assert.deepEqual(evidence.originalFiles, []);
+  assert.deepEqual(evidence.changedFiles, ["entry/src/main/ets/pages/Index.ets"]);
+  assert.doesNotMatch(evidence.patchText ?? "", /BuildProfile\.ets/);
+});
+
 test("runRuleEngine limits incremental rule evaluation to changed files when patch is available", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/ChangedPage.ets": "let count: number = 1;\n",

@@ -68,6 +68,34 @@ test("generateCasePatch excludes transient workspace artifacts from the diff", a
   assert.doesNotMatch(patchText, /build\/artifact\.txt/);
 });
 
+test("generateCasePatch ignores files named BuildProfile.ets", async (t) => {
+  const caseDir = await createCaseFixture(t);
+  const patchPath = path.join(caseDir, "diff", "changes.patch");
+
+  await fs.writeFile(
+    path.join(caseDir, "original", "src", "BuildProfile.ets"),
+    "export const arkOptions = { strict: true };\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "src", "BuildProfile.ets"),
+    "export const arkOptions = { strict: false };\n",
+    "utf-8",
+  );
+  await fs.mkdir(path.join(caseDir, "workspace", "nested"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "nested", "BuildProfile.ets"),
+    "export const generated = true;\n",
+    "utf-8",
+  );
+
+  await generateCasePatch(caseDir, patchPath);
+
+  const patchText = await fs.readFile(patchPath, "utf-8");
+  assert.doesNotMatch(patchText, /BuildProfile\.ets/);
+  assert.match(patchText, /restaurant-grid/);
+});
+
 test("generateCasePatch respects original and workspace root gitignore files", async (t) => {
   const caseDir = await createCaseFixture(t);
   const patchPath = path.join(caseDir, "diff", "changes.patch");

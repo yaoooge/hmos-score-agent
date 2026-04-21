@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { promisify } from "node:util";
 import { collectVisibleFiles } from "./gitignoreMatcher.js";
+import { filterPatchTextForIgnoredFiles } from "./ignoredFiles.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,6 +63,8 @@ export async function generateCasePatch(caseDir: string, outputPath: string): Pr
       throw new Error(`Failed to generate patch for ${resolvedCaseDir}: ${reason}`);
     }
   }
+
+  patchText = filterPatchTextForIgnoredFiles(patchText);
 
   try {
     await fs.writeFile(outputPath, patchText, "utf-8");

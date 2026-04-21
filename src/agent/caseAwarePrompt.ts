@@ -90,3 +90,35 @@ export function renderCaseAwareFinalAnswerRetryPrompt(input: {
     JSON.stringify(buildAgentInteractionPayload(input.bootstrapPayload), null, 2),
   ].join("\n");
 }
+
+export function renderCaseAwareToolCallRetryPrompt(input: {
+  bootstrapPayload: AgentBootstrapPayload;
+  turn: number;
+  latestObservation: string;
+}): string {
+  const toolCallTemplate = {
+    action: "tool_call",
+    tool: "read_patch",
+    args: {},
+    reason: "请用中文说明为什么需要调用这个工具。",
+  };
+
+  return [
+    "这是一次 tool_call 协议修复重试。",
+    "上一轮准备调用工具，但 tool_call 的 JSON 结构没有通过协议校验。",
+    "本轮只能重新输出一个 tool_call JSON object，禁止输出 final_answer，禁止输出 markdown、代码块或解释文字。",
+    "必须严格使用以下字段名、层级和类型；除这些字段外不要添加任何额外字段：",
+    JSON.stringify(toolCallTemplate, null, 2),
+    `tool 只能从这些 allowed_tools 中选择: ${input.bootstrapPayload.tool_contract.allowed_tools.join(", ")}。`,
+    "args 必须是 object；不同工具的 args 形状必须遵守首轮 prompt 中的工具参数说明。",
+    "reason 是可选字段；如果输出，必须是非空中文字符串。",
+    "如果要读取默认有效补丁，优先使用 read_patch 且 args 为 {}。",
+    `当前回合: ${input.turn}`,
+    input.latestObservation
+      ? ["最近一次工具观察结果：", input.latestObservation].join("\n")
+      : "最近一次工具观察结果：无。",
+    "",
+    "当前判定上下文如下：",
+    JSON.stringify(buildAgentInteractionPayload(input.bootstrapPayload), null, 2),
+  ].join("\n");
+}

@@ -10,6 +10,7 @@ import {
   renderCaseAwareBootstrapPrompt,
   renderCaseAwareFinalAnswerRetryPrompt,
   renderCaseAwareFollowupPrompt,
+  renderCaseAwareToolCallRetryPrompt,
 } from "./caseAwarePrompt.js";
 import {
   describeFinalAnswerValidationFailure,
@@ -19,6 +20,14 @@ import {
 import { getCaseAwareAgentNextStep } from "./caseAwareAgentGraph.js";
 
 function isFinalAnswerRetryCandidate(rawText: string): boolean {
+  return isActionRetryCandidate(rawText, "final_answer");
+}
+
+function isToolCallRetryCandidate(rawText: string): boolean {
+  return isActionRetryCandidate(rawText, "tool_call");
+}
+
+function isActionRetryCandidate(rawText: string, action: "final_answer" | "tool_call"): boolean {
   const trimmed = rawText.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
     return false;
@@ -30,7 +39,7 @@ function isFinalAnswerRetryCandidate(rawText: string): boolean {
       typeof parsed === "object" &&
       parsed !== null &&
       "action" in parsed &&
-      (parsed as { action?: unknown }).action === "final_answer"
+      (parsed as { action?: unknown }).action === action
     );
   } catch {
     return false;
@@ -62,6 +71,7 @@ export async function runCaseAwareAgent(input: {
   let outcome: CaseAwareRunnerResult["outcome"] | undefined;
   let failureReason: string | undefined;
   let finalAnswerRepairRetryUsed = false;
+  let toolCallRepairRetryUsed = false;
 
   await input.logger?.info(
     `case-aware agent 判定开始 candidates=${input.bootstrapPayload.assisted_rule_candidates.length} caseId=${input.bootstrapPayload.case_context.case_id} hasPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)}`,
@@ -124,8 +134,7 @@ export async function runCaseAwareAgent(input: {
           rawText = await input.completeJsonPrompt(retryPrompt);
         } catch (retryError) {
           outcome = "request_failed";
-          failureReason =
-            retryError instanceof Error ? retryError.message : String(retryError);
+          failureReason = retryError instanceof Error ? retryError.message : String(retryError);
           await input.logger?.error(
             `case-aware final_answer 修复重试模型调用失败 turn=${turn} error=${failureReason}`,
           );
@@ -151,6 +160,56 @@ export async function runCaseAwareAgent(input: {
           outcome = "protocol_error";
           await input.logger?.warn(
             `case-aware final_answer 修复重试返回了非 final_answer action turn=${turn}`,
+          );
+          break;
+        }
+      } else if (!toolCallRepairRetryUsed && isToolCallRetryCandidate(rawText)) {
+        toolCallRepairRetryUsed = true;
+        turns.push({
+          turn,
+          action: "tool_call",
+          status: "error",
+          raw_output_text: rawText,
+        });
+        await input.logger?.warn(
+          `case-aware tool_call 结构违反协议，发起一次修复重试 turn=${turn} error=${failureReason}`,
+        );
+
+        const retryPrompt = renderCaseAwareToolCallRetryPrompt({
+          bootstrapPayload: input.bootstrapPayload,
+          turn,
+          latestObservation,
+        });
+        try {
+          rawText = await input.completeJsonPrompt(retryPrompt);
+        } catch (retryError) {
+          outcome = "request_failed";
+          failureReason = retryError instanceof Error ? retryError.message : String(retryError);
+          await input.logger?.error(
+            `case-aware tool_call 修复重试模型调用失败 turn=${turn} error=${failureReason}`,
+          );
+          break;
+        }
+
+        try {
+          decision = parseCaseAwarePlannerOutputStrict(rawText);
+        } catch (retryParseError) {
+          finalAnswerRawJson = rawText;
+          failureReason =
+            retryParseError instanceof Error ? retryParseError.message : String(retryParseError);
+          outcome = "protocol_error";
+          await input.logger?.warn(
+            `case-aware tool_call 修复重试仍违反协议 turn=${turn} error=${failureReason}`,
+          );
+          break;
+        }
+
+        if (decision.action !== "tool_call") {
+          finalAnswerRawJson = rawText;
+          failureReason = "protocol_error: tool_call repair retry must return tool_call";
+          outcome = "protocol_error";
+          await input.logger?.warn(
+            `case-aware tool_call 修复重试返回了非 tool_call action turn=${turn}`,
           );
           break;
         }

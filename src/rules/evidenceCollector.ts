@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CaseInput, EvidenceSummary, TaskType } from "../types.js";
 import { collectVisibleFiles } from "../io/gitignoreMatcher.js";
+import { filterPatchTextForIgnoredFiles, isIgnoredCaseFilePath } from "../io/ignoredFiles.js";
 
 const RULE_EVALUATION_IGNORED_PATH_PREFIXES = ["entry/src/test", "entry/src/ohosTest"];
 const RULE_EVALUATION_IGNORED_PATH_PATTERN = /(?:^|\/)src\/(?:test|ohosTest)(?:\/|$)/;
@@ -36,6 +37,7 @@ function extractChangedFilesFromPatch(patchText: string | undefined): string[] {
       )
         .map((match) => match[1] ?? match[2] ?? "")
         .map((relativePath) => normalizeRelativePath(relativePath))
+        .filter((relativePath) => !isIgnoredCaseFilePath(relativePath))
         .filter(Boolean),
     ),
   );
@@ -63,7 +65,9 @@ export async function collectEvidence(
 
   let patchText: string | undefined;
   try {
-    patchText = caseInput.patchPath ? await fs.readFile(caseInput.patchPath, "utf-8") : undefined;
+    patchText = caseInput.patchPath
+      ? filterPatchTextForIgnoredFiles(await fs.readFile(caseInput.patchPath, "utf-8"))
+      : undefined;
   } catch {
     patchText = undefined;
   }
