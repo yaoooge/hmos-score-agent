@@ -429,7 +429,6 @@ bootstrap payload 包含：
 
 - `case_context`
 - `task_understanding`
-- `rubric_summary`
 - `assisted_rule_candidates`
 - `tool_contract`
 - `budget_contract`

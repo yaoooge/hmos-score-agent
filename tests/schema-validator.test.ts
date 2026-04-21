@@ -21,37 +21,6 @@ function makeValidResultJson(): Record<string, unknown> {
       hard_gate_triggered: false,
       summary: "ok",
     },
-    rubric_summary: {
-      task_type: "bug_fix",
-      evaluation_mode: "auto_precheck_with_human_review",
-      scenario:
-        "用户提供 Bug 修复 diff、修复前后代码、问题描述与修复结果，目标是评价修复是否命中问题且控制侵入范围。",
-      scoring_method: "discrete_band",
-      scoring_note: "二级指标按离散档位给分。",
-      common_risks: ["因顺手优化造成 diff 噪音和误修。"],
-      report_emphasis: ["是否命中问题点。"],
-      dimension_summaries: [
-        {
-          name: "改动精准度与最小侵入性",
-          weight: 25,
-          intent: "评价是否精准修复问题且控制改动范围",
-          item_summaries: [
-            {
-              name: "问题点命中程度",
-              weight: 10,
-              scoring_bands: [
-                {
-                  score: 10,
-                  criteria: "修改直接命中根因或完整故障链路。",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      hard_gates: [{ id: "G4", score_cap: 59 }],
-      review_rule_summary: ["关键分段分数需要人工复核"],
-    },
     dimension_results: [
       {
         dimension_name: "改动精准度与最小侵入性",

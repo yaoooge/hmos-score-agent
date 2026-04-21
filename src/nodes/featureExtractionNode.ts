@@ -10,7 +10,6 @@ export async function featureExtractionNode(
     return {
       featureExtraction: {
         basicFeatures: [
-          prompt.includes("路由") ? "提及路由" : "未直接提及路由",
           "状态管理类型待静态扫描增强",
         ],
         structuralFeatures: ["存在 original/workspace 双工程对照输入"],

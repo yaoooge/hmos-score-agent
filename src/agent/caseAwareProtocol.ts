@@ -8,7 +8,14 @@ import type {
 } from "../types.js";
 
 export class CaseAwareProtocolError extends Error {
-  constructor(message: string) {
+  constructor(
+    public readonly code:
+      | "not_single_json_object"
+      | "multiple_json_objects"
+      | "invalid_json"
+      | "schema_validation",
+    message: string,
+  ) {
     super(`protocol_error: ${message}`);
     this.name = "CaseAwareProtocolError";
   }
@@ -54,10 +61,64 @@ export const caseAwarePlannerOutputSchema = z.union([
   caseAwareFinalAnswerSchema,
 ]);
 
+function findTopLevelJsonObjectEnd(rawText: string): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < rawText.length; index += 1) {
+    const char = rawText[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return -1;
+}
+
 export function parseCaseAwarePlannerOutputStrict(rawText: string): CaseAwareAgentPlannerOutput {
   const trimmed = rawText.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-    throw new CaseAwareProtocolError("output must be one top-level JSON object without prose");
+    throw new CaseAwareProtocolError(
+      "not_single_json_object",
+      "output must be one top-level JSON object without prose",
+    );
+  }
+
+  const objectEndIndex = findTopLevelJsonObjectEnd(trimmed);
+  if (objectEndIndex >= 0 && objectEndIndex < trimmed.length - 1) {
+    throw new CaseAwareProtocolError(
+      "multiple_json_objects",
+      "received multiple top-level JSON objects in one response",
+    );
   }
 
   let parsed: unknown;
@@ -65,12 +126,12 @@ export function parseCaseAwarePlannerOutputStrict(rawText: string): CaseAwareAge
     parsed = JSON.parse(trimmed);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new CaseAwareProtocolError(`invalid JSON: ${message}`);
+    throw new CaseAwareProtocolError("invalid_json", `invalid JSON: ${message}`);
   }
 
   const result = caseAwarePlannerOutputSchema.safeParse(parsed);
   if (!result.success) {
-    throw new CaseAwareProtocolError(z.prettifyError(result.error));
+    throw new CaseAwareProtocolError("schema_validation", z.prettifyError(result.error));
   }
 
   return result.data;

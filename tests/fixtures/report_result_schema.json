@@ -34,96 +34,6 @@
       ],
       "additionalProperties": false
     },
-    "rubric_summary": {
-      "type": "object",
-      "properties": {
-        "task_type": {
-          "type": "string",
-          "enum": ["full_generation", "continuation", "bug_fix"]
-        },
-        "evaluation_mode": {
-          "type": "string",
-          "enum": ["auto_precheck", "auto_precheck_with_human_review"]
-        },
-        "scenario": { "type": "string" },
-        "scoring_method": { "type": "string" },
-        "scoring_note": { "type": "string" },
-        "common_risks": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "report_emphasis": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "dimension_summaries": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": { "type": "string" },
-              "weight": { "type": "number" },
-              "intent": { "type": "string" },
-              "item_summaries": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": { "type": "string" },
-                    "weight": { "type": "number" },
-                    "scoring_bands": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "score": { "type": "number" },
-                          "criteria": { "type": "string" }
-                        },
-                        "required": ["score", "criteria"],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": ["name", "weight", "scoring_bands"],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "required": ["name", "weight", "intent", "item_summaries"],
-            "additionalProperties": false
-          }
-        },
-        "hard_gates": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "score_cap": { "type": "number" }
-            },
-            "required": ["id", "score_cap"],
-            "additionalProperties": false
-          }
-        },
-        "review_rule_summary": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      },
-      "required": [
-        "task_type",
-        "evaluation_mode",
-        "scenario",
-        "scoring_method",
-        "scoring_note",
-        "common_risks",
-        "report_emphasis",
-        "dimension_summaries",
-        "hard_gates",
-        "review_rule_summary"
-      ],
-      "additionalProperties": false
-    },
     "overall_conclusion": {
       "type": "object",
       "properties": {
@@ -344,7 +254,6 @@
   },
   "required": [
     "basic_info",
-    "rubric_summary",
     "overall_conclusion",
     "dimension_results",
     "rule_violations",

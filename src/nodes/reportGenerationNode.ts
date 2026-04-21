@@ -126,7 +126,6 @@ export async function reportGenerationNode(
         target_scope: state.caseInput.generatedProjectPath,
         task_type_basis: state.constraintSummary.classificationHints.join("; "),
       },
-      rubric_summary: state.rubricSnapshot,
       overall_conclusion: state.scoreComputation.overallConclusion,
       dimension_results: buildDimensionResults(state),
       rule_violations: state.ruleViolations,
