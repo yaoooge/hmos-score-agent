@@ -249,11 +249,10 @@ export function buildAgentBootstrapPayload(
   };
 }
 
-// renderAgentBootstrapPrompt 生成 case-aware runner 的首轮 bootstrap prompt。
-export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
+// renderAgentSystemPrompt 生成跨轮次稳定生效的 case-aware 协议约束。
+export function renderAgentSystemPrompt(payload: AgentBootstrapPayload): string {
   const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
   const exampleRuleId = candidateRuleIds[0] ?? "RULE-ID-EXAMPLE";
-  const interactionPayload = buildAgentInteractionPayload(payload);
   const toolCallExample = {
     action: "tool_call",
     tool: "read_patch",
@@ -306,11 +305,22 @@ export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): stri
     "顶层 final_answer 必须直接包含 action、summary、rule_assessments。",
     "请优先从 initial_target_files 和 effective_patch_path 开始收集证据，再决定是否继续读取其他文件。",
     "最终只对 assisted_rule_candidates 中的候选规则给出判断，不要改写本地静态规则结果。",
+  ].join("\n");
+}
+
+// renderAgentBootstrapPrompt 生成 case-aware runner 的首轮 user prompt。
+export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
+  const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
+  const interactionPayload = buildAgentInteractionPayload(payload);
+
+  return [
+    "请基于 system prompt 中的 case-aware 辅助判定协议完成本次候选规则判定。",
     `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；final_answer.rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
     candidateRuleIds.length > 0
       ? `本次必须覆盖的 rule_id: ${candidateRuleIds.join(", ")}。`
       : "当前没有 assisted_rule_candidates，只有在上游误调用时才可能看到本提示。",
     "",
+    "当前判定上下文如下：",
     JSON.stringify(interactionPayload, null, 2),
   ].join("\n");
 }
@@ -361,10 +371,7 @@ function inferTrustedStaticResult(candidate: AssistedRuleCandidate): RuleAuditRe
     return "满足";
   }
 
-  if (
-    staticPrecheck.signal_status === "none_matched" &&
-    (candidate.ast_signals?.length ?? 0) > 0
-  ) {
+  if (staticPrecheck.signal_status === "none_matched" && (candidate.ast_signals?.length ?? 0) > 0) {
     return "不满足";
   }
 

@@ -10,6 +10,8 @@ import {
   renderCaseAwareBootstrapPrompt,
   renderCaseAwareFinalAnswerRetryPrompt,
   renderCaseAwareFollowupPrompt,
+  renderCaseAwareSingleActionRetryPrompt,
+  renderCaseAwareSystemPrompt,
   renderCaseAwareToolCallRetryPrompt,
 } from "./caseAwarePrompt.js";
 import {
@@ -49,7 +51,10 @@ function isActionRetryCandidate(rawText: string, action: "final_answer" | "tool_
 export async function runCaseAwareAgent(input: {
   caseRoot: string;
   bootstrapPayload: AgentBootstrapPayload;
-  completeJsonPrompt: (prompt: string) => Promise<string>;
+  completeJsonPrompt: (
+    prompt: string,
+    options?: { systemPrompt?: string; requestTag?: string },
+  ) => Promise<string>;
   logger?: {
     info(message: string): Promise<void>;
     warn(message: string): Promise<void>;
@@ -71,6 +76,8 @@ export async function runCaseAwareAgent(input: {
   let outcome: CaseAwareRunnerResult["outcome"] | undefined;
   let failureReason: string | undefined;
   let finalAnswerRepairRetryUsed = false;
+  let topLevelRepairRetryUsed = false;
+  const systemPrompt = renderCaseAwareSystemPrompt(input.bootstrapPayload);
 
   await input.logger?.info(
     `case-aware agent 判定开始 candidates=${input.bootstrapPayload.assisted_rule_candidates.length} caseId=${input.bootstrapPayload.case_context.case_id} hasPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)}`,
@@ -98,7 +105,10 @@ export async function runCaseAwareAgent(input: {
 
     let rawText: string;
     try {
-      rawText = await input.completeJsonPrompt(prompt);
+      rawText = await input.completeJsonPrompt(prompt, {
+        systemPrompt,
+        requestTag: `rule_case_aware_turn_${turn}`,
+      });
     } catch (error) {
       outcome = "request_failed";
       failureReason = error instanceof Error ? error.message : String(error);
@@ -130,7 +140,10 @@ export async function runCaseAwareAgent(input: {
           latestObservation,
         });
         try {
-          rawText = await input.completeJsonPrompt(retryPrompt);
+          rawText = await input.completeJsonPrompt(retryPrompt, {
+            systemPrompt,
+            requestTag: `rule_case_aware_turn_${turn}_single_action_retry`,
+          });
         } catch (retryError) {
           outcome = "request_failed";
           failureReason = retryError instanceof Error ? retryError.message : String(retryError);
@@ -179,7 +192,10 @@ export async function runCaseAwareAgent(input: {
           latestObservation,
         });
         try {
-          rawText = await input.completeJsonPrompt(retryPrompt);
+          rawText = await input.completeJsonPrompt(retryPrompt, {
+            systemPrompt,
+            requestTag: `rule_case_aware_turn_${turn}_tool_retry`,
+          });
         } catch (retryError) {
           outcome = "request_failed";
           failureReason = retryError instanceof Error ? retryError.message : String(retryError);
@@ -212,9 +228,50 @@ export async function runCaseAwareAgent(input: {
           break;
         }
       } else {
-        outcome = "protocol_error";
-        await input.logger?.warn(`case-aware 输出违反协议 turn=${turn} error=${failureReason}`);
-        break;
+        if (topLevelRepairRetryUsed) {
+          outcome = "protocol_error";
+          await input.logger?.warn(`case-aware 输出违反协议 turn=${turn} error=${failureReason}`);
+          break;
+        }
+
+        topLevelRepairRetryUsed = true;
+        await input.logger?.warn(
+          `case-aware 顶层 action 违反协议，发起一次修复重试 turn=${turn} error=${failureReason}`,
+        );
+
+        const retryPrompt = renderCaseAwareSingleActionRetryPrompt({
+          bootstrapPayload: input.bootstrapPayload,
+          turn,
+          latestObservation,
+          failureReason,
+          rawOutputText: rawText,
+        });
+        try {
+          rawText = await input.completeJsonPrompt(retryPrompt, {
+            systemPrompt,
+            requestTag: `rule_case_aware_turn_${turn}_final_answer_retry`,
+          });
+        } catch (retryError) {
+          outcome = "request_failed";
+          failureReason = retryError instanceof Error ? retryError.message : String(retryError);
+          await input.logger?.error(
+            `case-aware 顶层 action 修复重试模型调用失败 turn=${turn} error=${failureReason}`,
+          );
+          break;
+        }
+
+        try {
+          decision = parseCaseAwarePlannerOutputStrict(rawText);
+        } catch (retryParseError) {
+          finalAnswerRawJson = rawText;
+          failureReason =
+            retryParseError instanceof Error ? retryParseError.message : String(retryParseError);
+          outcome = "protocol_error";
+          await input.logger?.warn(
+            `case-aware 顶层 action 修复重试仍违反协议 turn=${turn} error=${failureReason}`,
+          );
+          break;
+        }
       }
     }
 

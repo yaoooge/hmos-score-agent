@@ -27,7 +27,46 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
         score: 22,
         max_score: 25,
         comment: "整体较好",
-        item_results: [],
+        agent_evaluation_summary: {
+          base_score: 22,
+          logic: "维度级理由：命中主要问题点，改动范围可控。",
+          key_evidence: [
+            "workspace/entry/src/main/ets/pages/Index.ets",
+            "workspace/features/home/src/main/ets/pages/Home.ets",
+          ],
+          confidence: "medium",
+        },
+        item_results: [
+          {
+            item_name: "问题点命中程度",
+            item_weight: 10,
+            score: 8,
+            matched_band: {
+              score: 8,
+              criteria: "命中主要问题点。",
+            },
+            confidence: "medium",
+            review_required: false,
+            agent_evaluation: {
+              base_score: 8,
+              matched_band_score: 8,
+              matched_criteria: "8分：命中主要问题点。",
+              logic: "item 级理由：问题链路与改动位置一致。",
+              evidence_used: [
+                "workspace/entry/src/main/ets/pages/Index.ets",
+                "workspace/features/home/src/main/ets/pages/Home.ets",
+              ],
+              confidence: "medium",
+            },
+            score_fusion: {
+              base_score: 8,
+              rule_delta: 0,
+              final_score: 8,
+              fusion_logic: "未命中规则修正。",
+            },
+            rule_impacts: [],
+          },
+        ],
       },
       {
         dimension_name: "工程规范与质量",
@@ -35,6 +74,12 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
         score: 18,
         max_score: 20,
         comment: "存在少量复核点",
+        agent_evaluation_summary: {
+          base_score: 18,
+          logic: "维度级理由：整体工程规范较好。",
+          key_evidence: ["workspace/commons/commonLib/src/main/ets/utils/PermissionUtil.ets"],
+          confidence: "medium",
+        },
         item_results: [],
       },
     ],
@@ -87,11 +132,25 @@ test("renderHtmlReport renders summary, full dimension list, filters, and no raw
   assert.match(html, /工程规范与质量/);
   assert.match(html, /规则审计结果/);
   assert.match(html, /禁止使用 any 类型。/);
+  assert.match(html, /维度级理由：命中主要问题点，改动范围可控。/);
+  assert.match(html, /item 级理由：问题链路与改动位置一致。/);
+  assert.match(html, /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets/);
   assert.doesNotMatch(html, /建议动作：优先复核低置信度指标/);
   assert.match(html, /data-filter="不满足"/);
   assert.match(html, /data-filter="待人工复核"/);
   assert.doesNotMatch(html, /<pre>\s*\{/);
   assert.doesNotMatch(html, /<div class="eyebrow">建议动作<\/div>/);
+});
+
+test("buildHtmlReportViewModel reads rationale and evidence from nested agent evaluation fields", () => {
+  const viewModel = buildHtmlReportViewModel(makeResultJson());
+  const firstDimension = viewModel.dimensions[0];
+  const firstItem = firstDimension?.items[0];
+
+  assert.equal(firstDimension?.summaryLogic, "维度级理由：命中主要问题点，改动范围可控。");
+  assert.match(firstDimension?.summaryEvidence ?? "", /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets/);
+  assert.equal(firstItem?.rationale, "item 级理由：问题链路与改动位置一致。");
+  assert.match(firstItem?.evidence ?? "", /workspace\/features\/home\/src\/main\/ets\/pages\/Home\.ets/);
 });
 
 test("buildHtmlReportViewModel provides explicit empty states", () => {

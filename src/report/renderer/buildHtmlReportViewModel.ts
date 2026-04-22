@@ -21,6 +21,8 @@ export interface HtmlReportViewModel {
     scoreText: string;
     progressPercent: number;
     comment: string;
+    summaryLogic: string;
+    summaryEvidence: string;
     items: Array<{
       name: string;
       weight: number;
@@ -123,6 +125,17 @@ function formatRiskItem(item: unknown): string {
   return title || description || "未命名风险项";
 }
 
+function formatEvidence(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim() || "暂无证据。";
+  }
+  if (Array.isArray(value)) {
+    const items = value.map((item) => String(item).trim()).filter(Boolean);
+    return items.length > 0 ? items.join("\n") : "暂无证据。";
+  }
+  return "暂无证据。";
+}
+
 export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): HtmlReportViewModel {
   const basicInfo = asRecord(resultJson.basic_info);
   const overallConclusion = asRecord(resultJson.overall_conclusion);
@@ -209,8 +222,13 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         scoreText: `${score} / ${maxScore}`,
         progressPercent: maxScore > 0 ? Math.min(100, Math.round((score / maxScore) * 100)) : 0,
         comment: String(current.comment ?? "暂无评语。"),
+        summaryLogic: String(
+          asRecord(current.agent_evaluation_summary).logic ?? "暂无理由。",
+        ),
+        summaryEvidence: formatEvidence(asRecord(current.agent_evaluation_summary).key_evidence),
         items: itemResults.map((item) => {
           const currentItem = asRecord(item);
+          const agentEvaluation = asRecord(currentItem.agent_evaluation);
           return {
             name: String(currentItem.item_name ?? ""),
             weight: Number(currentItem.item_weight ?? 0),
@@ -218,8 +236,10 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
             matchedBandText: formatMatchedBand(currentItem.matched_band),
             confidence: String(currentItem.confidence ?? "low"),
             reviewRequired: Boolean(currentItem.review_required),
-            rationale: String(currentItem.rationale ?? "暂无理由。"),
-            evidence: String(currentItem.evidence ?? "暂无证据。"),
+            rationale: String(
+              currentItem.rationale ?? agentEvaluation.logic ?? "暂无理由。",
+            ),
+            evidence: formatEvidence(currentItem.evidence ?? agentEvaluation.evidence_used),
           };
         }),
       };

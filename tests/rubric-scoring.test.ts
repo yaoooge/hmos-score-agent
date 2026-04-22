@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildRubricScoringPayload,
   parseRubricScoringResultStrict,
+  renderCompactRubricScoringPrompt,
   renderRubricScoringPrompt,
 } from "../src/agent/rubricScoring.js";
 import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
@@ -153,4 +154,68 @@ test("renderRubricScoringPrompt forbids rule-id judgement and requires item scor
   assert.match(prompt, /逐项输出 rubric item 的评分/);
   assert.match(prompt, /不要判断规则 ID/);
   assert.match(prompt, /item_scores/);
+});
+
+test("renderRubricScoringPrompt includes yaml-shaped schema example without allowing yaml output", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricScoringPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "修复页面 bug",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/diff/changes.patch",
+    taskType: "bug_fix",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+  });
+
+  const prompt = renderRubricScoringPrompt(payload);
+
+  assert.match(prompt, /YAML 结构示例/);
+  assert.match(prompt, /仅用于说明字段结构/);
+  assert.match(prompt, /不要输出 YAML/);
+  assert.match(prompt, /summary:/);
+  assert.match(prompt, /overall_assessment:/);
+  assert.match(prompt, /item_scores:/);
+  assert.match(prompt, /dimension_name:/);
+  assert.match(prompt, /item_name:/);
+  assert.match(prompt, /matched_band_score:/);
+  assert.match(prompt, /evidence_used:/);
+  assert.match(prompt, /hard_gate_candidates:/);
+  assert.match(prompt, /gate_id:/);
+  assert.match(prompt, /risks:/);
+  assert.match(prompt, /description:/);
+});
+
+test("renderCompactRubricScoringPrompt enforces concise output contract", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricScoringPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "修复页面 bug",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/diff/changes.patch",
+    taskType: "bug_fix",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+  });
+
+  const prompt = renderCompactRubricScoringPrompt(payload);
+
+  assert.match(prompt, /compact/);
+  assert.match(prompt, /输出尽量短/);
+  assert.match(prompt, /rationale 限制为一句中文短句/);
+  assert.match(prompt, /evidence_used 最多保留 2 条/);
+  assert.match(prompt, /strengths 和 main_issues 各最多 3 条/);
+  assert.match(prompt, /不要输出 YAML/);
 });

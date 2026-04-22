@@ -9,6 +9,8 @@ import {
   renderCaseAwareBootstrapPrompt,
   renderCaseAwareFinalAnswerRetryPrompt,
   renderCaseAwareFollowupPrompt,
+  renderCaseAwareSingleActionRetryPrompt,
+  renderCaseAwareSystemPrompt,
 } from "../src/agent/caseAwarePrompt.js";
 import type { AgentBootstrapPayload } from "../src/types.js";
 
@@ -147,6 +149,118 @@ test("case-aware runner returns protocol_error for invalid model output", async 
   assert.equal(result.outcome, "protocol_error");
   assert.equal(result.final_answer, undefined);
   assert.match(result.failure_reason ?? "", /protocol_error/);
+});
+
+test("case-aware runner sends canonical protocol instructions through system prompt", async () => {
+  const calls: Array<{ prompt: string; systemPrompt?: string }> = [];
+  const result = await runCaseAwareAgent({
+    caseRoot: "/tmp/case-root",
+    bootstrapPayload: sampleBootstrapPayload,
+    completeJsonPrompt: async (prompt, options) => {
+      calls.push({ prompt, systemPrompt: options?.systemPrompt });
+      return JSON.stringify({
+        action: "final_answer",
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "medium",
+        },
+        rule_assessments: [
+          {
+            rule_id: "HM-REQ-010-03",
+            decision: "uncertain",
+            confidence: "low",
+            reason: "当前证据不足。",
+            evidence_used: [],
+            needs_human_review: true,
+          },
+        ],
+      });
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]?.systemPrompt ?? "", /你是评分工作流中的 case-aware 辅助判定模块/);
+  assert.match(
+    calls[0]?.systemPrompt ?? "",
+    /你只能返回 tool_call 或 final_answer 两种 JSON action/,
+  );
+  assert.match(calls[0]?.systemPrompt ?? "", /一次只允许输出一个 JSON object/);
+  assert.match(
+    calls[0]?.systemPrompt ?? "",
+    /工具预算：max_tool_calls=6, max_total_bytes=61440, max_files=20/,
+  );
+  assert.match(calls[0]?.prompt ?? "", /当前判定上下文如下/);
+  assert.match(calls[0]?.prompt ?? "", /本次必须覆盖的 rule_id: HM-REQ-010-03/);
+  assert.doesNotMatch(
+    calls[0]?.prompt ?? "",
+    /你只能返回 tool_call 或 final_answer 两种 JSON action/,
+  );
+  assert.doesNotMatch(calls[0]?.prompt ?? "", /合法 tool_call 示例/);
+});
+
+test("case-aware runner retries once when output contains multiple top-level actions", async () => {
+  const prompts: string[] = [];
+  const outputs = [
+    [
+      JSON.stringify({
+        action: "tool_call",
+        tool: "read_patch",
+        args: {},
+        reason: "先读补丁。",
+      }),
+      JSON.stringify({
+        action: "final_answer",
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "low",
+        },
+        rule_assessments: [
+          {
+            rule_id: "HM-REQ-010-03",
+            decision: "uncertain",
+            confidence: "low",
+            reason: "证据不足，需要人工复核。",
+            evidence_used: [],
+            needs_human_review: true,
+          },
+        ],
+      }),
+    ].join(""),
+    JSON.stringify({
+      action: "final_answer",
+      summary: {
+        assistant_scope: "本次仅辅助候选规则判定",
+        overall_confidence: "low",
+      },
+      rule_assessments: [
+        {
+          rule_id: "HM-REQ-010-03",
+          decision: "uncertain",
+          confidence: "low",
+          reason: "证据不足，需要人工复核。",
+          evidence_used: [],
+          needs_human_review: true,
+        },
+      ],
+    }),
+  ];
+
+  const result = await runCaseAwareAgent({
+    caseRoot: "/tmp/case-root",
+    bootstrapPayload: sampleBootstrapPayload,
+    completeJsonPrompt: async (prompt) => {
+      prompts.push(prompt);
+      return outputs.shift() ?? "";
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1] ?? "", /这是一次顶层 action 协议修复重试/);
+  assert.match(prompts[1] ?? "", /只能选择 tool_call 或 final_answer 其中一个/);
+  assert.match(prompts[1] ?? "", /一次只能输出一个 JSON object/);
+  assert.equal(result.final_answer?.action, "final_answer");
 });
 
 test("case-aware runner retries once when final_answer shape violates the protocol", async () => {
@@ -529,11 +643,11 @@ test("case-aware runner preserves partial turns and tool trace when model reques
   assert.equal(result.tool_trace[0]?.tool, "read_file");
 });
 
-test("renderCaseAwareBootstrapPrompt documents exact tool arg schemas and single-action contract", () => {
-  const prompt = renderCaseAwareBootstrapPrompt(sampleBootstrapPayload);
+test("renderCaseAwareSystemPrompt documents exact tool arg schemas and single-action contract", () => {
+  const prompt = renderCaseAwareSystemPrompt(sampleBootstrapPayload);
 
   assert.match(prompt, /一次只允许输出一个 JSON object/);
-  assert.match(prompt, /必须逐条覆盖 assisted_rule_candidates/);
+  assert.match(prompt, /final_answer\.rule_assessments 必须覆盖全部候选 rule_id/);
   assert.match(prompt, /read_patch: args 可为空，或仅允许 path/);
   assert.match(prompt, /list_dir: args = \{ path \}/);
   assert.match(prompt, /read_file_chunk: args = \{ path, startLine, lineCount \}/);
@@ -541,8 +655,8 @@ test("renderCaseAwareBootstrapPrompt documents exact tool arg schemas and single
   assert.match(prompt, /不要输出多个 JSON object/);
 });
 
-test("bootstrap prompt includes canonical tool_call and final_answer examples", () => {
-  const prompt = renderCaseAwareBootstrapPrompt(sampleBootstrapPayload);
+test("system prompt includes canonical tool_call and final_answer examples", () => {
+  const prompt = renderCaseAwareSystemPrompt(sampleBootstrapPayload);
 
   assert.match(prompt, /合法 tool_call 示例/);
   assert.match(prompt, /合法 final_answer 示例/);
@@ -642,6 +756,41 @@ test("case-aware followup prompt requires the agent to keep using bootstrap cano
   assert.match(prompt, /禁止输出多个顶层 JSON object/);
   assert.match(prompt, /canonical final_answer/);
   assert.match(prompt, /canonical tool_call/);
+});
+
+test("case-aware system prompt contains canonical protocol and tool contract", () => {
+  const prompt = renderCaseAwareSystemPrompt(sampleBootstrapPayload);
+
+  assert.match(prompt, /你是评分工作流中的 case-aware 辅助判定模块/);
+  assert.match(prompt, /一次只允许输出一个 JSON object/);
+  assert.match(prompt, /合法 tool_call 示例/);
+  assert.match(prompt, /"action": "tool_call"/);
+  assert.match(prompt, /合法 final_answer 示例/);
+  assert.match(prompt, /"action": "final_answer"/);
+  assert.match(
+    prompt,
+    /final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain/,
+  );
+  assert.match(prompt, /工具预算：max_tool_calls=6, max_total_bytes=61440, max_files=20/);
+  assert.match(prompt, /grep_in_files: args = \{ pattern, path, limit \}/);
+  assert.match(prompt, /最终只对 assisted_rule_candidates 中的候选规则给出判断/);
+});
+
+test("case-aware single-action retry prompt requires choosing exactly one action", () => {
+  const prompt = renderCaseAwareSingleActionRetryPrompt({
+    bootstrapPayload: sampleBootstrapPayload,
+    turn: 1,
+    latestObservation: "",
+    failureReason: "protocol_error: received multiple top-level JSON objects in one response",
+    rawOutputText: '{"action":"tool_call"}{"action":"final_answer"}',
+  });
+
+  assert.match(prompt, /这是一次顶层 action 协议修复重试/);
+  assert.match(prompt, /只能选择 tool_call 或 final_answer 其中一个/);
+  assert.match(prompt, /一次只能输出一个 JSON object/);
+  assert.match(prompt, /禁止把 tool_call 和 final_answer 串在一起/);
+  assert.match(prompt, /如果证据不足以 final_answer，请输出 tool_call/);
+  assert.match(prompt, /如果证据已经足够，请输出 final_answer/);
 });
 
 test("case-aware final_answer retry prompt provides only canonical required structure", () => {

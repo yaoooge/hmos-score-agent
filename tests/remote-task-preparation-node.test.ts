@@ -187,11 +187,100 @@ test("remoteTaskPreparationNode accepts zip archives for original and workspace 
   assert.ok(result.sourceCasePath);
   const casePath = result.sourceCasePath;
   assert.equal(
-    await fs.readFile(path.join(casePath, "original", "entry/src/main/ets/pages/Index.ets"), "utf-8"),
+    await fs.readFile(
+      path.join(casePath, "original", "entry/src/main/ets/pages/Index.ets"),
+      "utf-8",
+    ),
     "let originalValue: number = 1;\n",
   );
   assert.equal(
-    await fs.readFile(path.join(casePath, "workspace", "entry/src/main/ets/pages/Index.ets"), "utf-8"),
+    await fs.readFile(
+      path.join(casePath, "workspace", "entry/src/main/ets/pages/Index.ets"),
+      "utf-8",
+    ),
+    "let workspaceValue: number = 2;\n",
+  );
+});
+
+test("remoteTaskPreparationNode normalizes backslash zip entry paths", async (t) => {
+  const originalUrl = "https://remote.example.com/original-windows.zip";
+  const workspaceUrl = "https://remote.example.com/workspace-windows.zip";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+  const originalArchive = await createZipArchive(t, [
+    {
+      path: "entry\\src\\main\\ets\\pages\\Index.ets",
+      content: "let originalValue: number = 1;\n",
+    },
+  ]);
+  const workspaceArchive = await createZipArchive(t, [
+    {
+      path: "entry\\src\\main\\ets\\pages\\Index.ets",
+      content: "let workspaceValue: number = 2;\n",
+    },
+  ]);
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === originalUrl) {
+      return new Response(originalArchive, {
+        status: 200,
+        headers: { "Content-Type": "application/zip" },
+      });
+    }
+
+    if (url === workspaceUrl) {
+      return new Response(workspaceArchive, {
+        status: 200,
+        headers: { "Content-Type": "application/zip" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  const result = await remoteTaskPreparationNode({
+    caseDir: tempCaseDir,
+    remoteTask: {
+      taskId: 7,
+      testCase: {
+        id: 11,
+        name: "remote-case-windows-zip",
+        type: "requirement",
+        description: "新增本地资讯",
+        input: "实现本地资讯",
+        expectedOutput: "本地资讯展示成功",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+      },
+      token: "remote-token",
+      callback: "https://remote.example.com/callback",
+    },
+  } as never);
+
+  assert.equal(result.caseInput?.caseId, "remote-task-7");
+  assert.ok(result.sourceCasePath);
+  assert.equal(
+    await fs.readFile(
+      path.join(result.sourceCasePath, "original", "entry/src/main/ets/pages/Index.ets"),
+      "utf-8",
+    ),
+    "let originalValue: number = 1;\n",
+  );
+  assert.equal(
+    await fs.readFile(
+      path.join(result.sourceCasePath, "workspace", "entry/src/main/ets/pages/Index.ets"),
+      "utf-8",
+    ),
     "let workspaceValue: number = 2;\n",
   );
 });

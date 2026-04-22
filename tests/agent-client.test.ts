@@ -42,6 +42,56 @@ test("ChatModelClient sends one request with response_format and returns the fir
   }
 });
 
+test("ChatModelClient sends optional system prompt before user prompt", async () => {
+  const calls: Array<{ body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const bodyText = typeof init?.body === "string" ? init.body : "";
+    const body = JSON.parse(bodyText) as Record<string, unknown>;
+    calls.push({ body });
+
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: '{"ok":true}',
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const client = new ChatModelClient({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test",
+      model: "gpt-5.4",
+    });
+
+    await client.completeJsonPrompt("本次 case 上下文", {
+      systemPrompt: "你只能返回 tool_call 或 final_answer 两种 JSON action。",
+    });
+
+    const messages = calls[0]?.body.messages;
+    assert.deepEqual(messages, [
+      {
+        role: "system",
+        content: "你只能返回 tool_call 或 final_answer 两种 JSON action。",
+      },
+      {
+        role: "user",
+        content: "本次 case 上下文",
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ChatModelClient retries once without response_format when provider rejects structured output parameters", async () => {
   const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
   const originalFetch = globalThis.fetch;
@@ -229,6 +279,42 @@ test("ChatModelClient includes HTTP status and body when a 200 response contains
         assert.ok(error instanceof Error);
         assert.match(error.message, /HTTP 200/);
         assert.match(error.message, /not-json/);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ChatModelClient includes fetch cause details and prompt stats on network failure", async () => {
+  const originalFetch = globalThis.fetch;
+  const socketCause = Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" });
+
+  globalThis.fetch = (async () => {
+    throw new TypeError("fetch failed", { cause: socketCause });
+  }) as typeof fetch;
+
+  try {
+    const client = new ChatModelClient({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test",
+      model: "gpt-5.4",
+    });
+
+    await assert.rejects(
+      () =>
+        client.completeJsonPrompt("请仅输出 JSON", {
+          requestTag: "rubric_scoring",
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /Agent 网络请求失败/);
+        assert.match(error.message, /request=rubric_scoring/);
+        assert.match(error.message, /promptChars=/);
+        assert.match(error.message, /promptBytes=/);
+        assert.match(error.message, /causeCode=UND_ERR_SOCKET/);
+        assert.match(error.message, /causeMessage=other side closed/);
         return true;
       },
     );

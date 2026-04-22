@@ -2,7 +2,10 @@ import { renderTaskUnderstandingPrompt } from "./taskUnderstanding.js";
 import type { TaskUnderstandingAgentInput } from "../types.js";
 
 export interface AgentClient {
-  completeJsonPrompt(prompt: string): Promise<string>;
+  completeJsonPrompt(
+    prompt: string,
+    options?: { systemPrompt?: string; requestTag?: string },
+  ): Promise<string>;
   understandTask(input: TaskUnderstandingAgentInput): Promise<string>;
 }
 
@@ -22,45 +25,120 @@ export class ChatModelClient implements AgentClient {
   constructor(private readonly options: ChatModelClientOptions) {}
 
   async understandTask(input: TaskUnderstandingAgentInput): Promise<string> {
-    return this.completeJsonPrompt(renderTaskUnderstandingPrompt(input));
+    return this.completeJsonPrompt(renderTaskUnderstandingPrompt(input), {
+      requestTag: "task_understanding",
+    });
   }
 
-  async completeJsonPrompt(prompt: string): Promise<string> {
+  async completeJsonPrompt(
+    prompt: string,
+    options: { systemPrompt?: string; requestTag?: string } = {},
+  ): Promise<string> {
+    const requestTag = options.requestTag ?? "json_completion";
+    const promptChars = prompt.length;
+    const promptBytes = Buffer.byteLength(prompt, "utf8");
+    const messages = [
+      ...(options.systemPrompt
+        ? [
+            {
+              role: "system",
+              content: options.systemPrompt,
+            },
+          ]
+        : []),
+      {
+        role: "user",
+        content: prompt,
+      },
+    ];
     const requestBody = {
       model: this.options.model,
       temperature: 0,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+      messages,
       response_format: { type: "json_object" },
     };
 
-    let response = await this.requestCompletion(requestBody);
+    let response = await this.requestCompletion(requestBody, {
+      requestTag,
+      promptChars,
+      promptBytes,
+    });
     if (this.shouldRetryWithoutStructuredOutput(response)) {
       const { response_format: _ignored, ...fallbackBody } = requestBody;
-      response = await this.requestCompletion(fallbackBody);
+      response = await this.requestCompletion(fallbackBody, {
+        requestTag: `${requestTag}:fallback_without_response_format`,
+        promptChars,
+        promptBytes,
+      });
     }
 
     return this.extractMessageContent(response);
   }
 
-  private async requestCompletion(body: Record<string, unknown>): Promise<CompletionResponse> {
-    const response = await fetch(`${this.options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.options.apiKey}`,
+  private async requestCompletion(
+    body: Record<string, unknown>,
+    metadata: { requestTag: string; promptChars: number; promptBytes: number },
+  ): Promise<CompletionResponse> {
+    const startedAt = Date.now();
+    try {
+      const response = await fetch(`${this.options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.options.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        bodyText: await response.text(),
+      };
+    } catch (error) {
+      throw this.buildNetworkError(error, {
+        ...metadata,
+        elapsedMs: Date.now() - startedAt,
+      });
+    }
+  }
+
+  private buildNetworkError(
+    error: unknown,
+    metadata: { requestTag: string; promptChars: number; promptBytes: number; elapsedMs: number },
+  ): Error {
+    const message = error instanceof Error ? error.message : String(error);
+    const cause =
+      error instanceof Error && "cause" in error
+        ? (error as Error & { cause?: unknown }).cause
+        : undefined;
+    const causeCode =
+      typeof cause === "object" && cause !== null && "code" in cause
+        ? String((cause as { code?: unknown }).code)
+        : "";
+    const causeMessage =
+      cause instanceof Error
+        ? cause.message
+        : typeof cause === "object" && cause !== null && "message" in cause
+          ? String((cause as { message?: unknown }).message)
+          : "";
+
+    return new Error(
+      [
+        "Agent 网络请求失败",
+        `request=${metadata.requestTag}`,
+        `elapsedMs=${metadata.elapsedMs}`,
+        `promptChars=${metadata.promptChars}`,
+        `promptBytes=${metadata.promptBytes}`,
+        `error=${message}`,
+        causeCode ? `causeCode=${causeCode}` : "",
+        causeMessage ? `causeMessage=${causeMessage}` : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      {
+        cause: error instanceof Error ? error : undefined,
       },
-      body: JSON.stringify(body),
-    });
-    return {
-      ok: response.ok,
-      status: response.status,
-      bodyText: await response.text(),
-    };
+    );
   }
 
   private shouldRetryWithoutStructuredOutput(response: CompletionResponse): boolean {

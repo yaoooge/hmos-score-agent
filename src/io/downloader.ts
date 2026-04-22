@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
+import { pipeline } from "node:stream/promises";
+import * as yauzl from "yauzl";
 import { RemoteEvaluationTask, RemoteTaskFileManifest } from "../types.js";
-
-const execFileAsync = promisify(execFile);
 
 export async function downloadToFile(url: string, outputPath: string): Promise<string> {
   const res = await fetch(url);
@@ -75,26 +73,53 @@ function isZipPayload(url: string, contentType: string | null, bytes: Uint8Array
   return loweredType.includes("zip") || lowerUrl.endsWith(".zip") || hasZipMagic;
 }
 
-function validateZipEntries(url: string, entries: string[]): string[] {
-  const fileEntries = entries.filter((entry) => entry.length > 0 && !entry.endsWith("/"));
-  if (fileEntries.length === 0) {
-    throw new Error(`Remote archive from ${url} does not contain any files`);
+function normalizeZipEntryPath(url: string, entry: string): string {
+  const normalized = path.posix.normalize(entry.replace(/\\/g, "/"));
+  if (
+    normalized.length === 0 ||
+    normalized === "." ||
+    path.posix.isAbsolute(normalized) ||
+    normalized === ".." ||
+    normalized.startsWith("../")
+  ) {
+    throw new Error(`Remote archive from ${url} contains an unsafe entry: ${entry}`);
   }
+  return normalized;
+}
 
-  for (const entry of fileEntries) {
-    const normalized = path.posix.normalize(entry.replace(/\\/g, "/"));
-    if (
-      normalized.length === 0 ||
-      normalized === "." ||
-      path.posix.isAbsolute(normalized) ||
-      normalized === ".." ||
-      normalized.startsWith("../")
-    ) {
-      throw new Error(`Remote archive from ${url} contains an unsafe entry: ${entry}`);
-    }
-  }
+function openZipFromBuffer(bytes: Uint8Array): Promise<yauzl.ZipFile> {
+  return new Promise((resolve, reject) => {
+    yauzl.fromBuffer(
+      Buffer.from(bytes),
+      { lazyEntries: true, strictFileNames: false },
+      (error, zipfile) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        if (!zipfile) {
+          reject(new Error("Failed to open remote archive: zipfile is unavailable"));
+          return;
+        }
+        resolve(zipfile);
+      },
+    );
+  });
+}
 
-  return fileEntries;
+function openZipEntryStream(
+  zipfile: yauzl.ZipFile,
+  entry: yauzl.Entry,
+): Promise<NodeJS.ReadableStream> {
+  return new Promise((resolve, reject) => {
+    zipfile.openReadStream(entry, (error, stream) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stream);
+    });
+  });
 }
 
 async function extractZipToDirectory(
@@ -102,31 +127,59 @@ async function extractZipToDirectory(
   outputDir: string,
   archiveBytes: Uint8Array,
 ): Promise<string[]> {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-remote-archive-"));
-  const archivePath = path.join(tempDir, "bundle.zip");
+  const zipfile = await openZipFromBuffer(archiveBytes);
+  const writtenFiles: string[] = [];
 
-  try {
-    await fs.writeFile(archivePath, archiveBytes);
-    const listing = await execFileAsync("unzip", ["-Z1", archivePath]);
-    const entries = validateZipEntries(
-      url,
-      listing.stdout
-        .split(/\r?\n/)
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0),
-    );
+  await fs.mkdir(outputDir, { recursive: true });
 
-    await fs.mkdir(outputDir, { recursive: true });
-    await execFileAsync("unzip", ["-qq", archivePath, "-d", outputDir]);
-    return entries.map((entry) => path.join(outputDir, ...entry.split("/")));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-      throw new Error(`Failed to extract remote archive from ${url}: unzip command is unavailable`);
-    }
-    throw error;
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const fail = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      zipfile.close();
+      reject(error);
+    };
+
+    zipfile.on("error", fail);
+    zipfile.on("end", () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      zipfile.close();
+      if (writtenFiles.length === 0) {
+        reject(new Error(`Remote archive from ${url} does not contain any files`));
+        return;
+      }
+      resolve(writtenFiles);
+    });
+
+    zipfile.on("entry", (entry: yauzl.Entry) => {
+      void (async () => {
+        const entryPath = normalizeZipEntryPath(url, entry.fileName);
+        const isDirectory = entry.fileName.replace(/\\/g, "/").endsWith("/");
+        const targetPath = path.join(outputDir, ...entryPath.split("/"));
+
+        if (isDirectory) {
+          await fs.mkdir(targetPath, { recursive: true });
+          zipfile.readEntry();
+          return;
+        }
+
+        const stream = await openZipEntryStream(zipfile, entry);
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await pipeline(stream, createWriteStream(targetPath));
+        writtenFiles.push(targetPath);
+        zipfile.readEntry();
+      })().catch(fail);
+    });
+
+    zipfile.readEntry();
+  });
 }
 
 export async function downloadManifestToDirectory(

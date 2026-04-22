@@ -374,6 +374,11 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                 </div>
                 <div class="progress-track"><div class="progress-bar" style="width:${dimension.progressPercent}%"></div></div>
                 <p>${escapeHtml(dimension.comment)}</p>
+                <div class="detail-card">
+                  <strong>维度评价逻辑</strong>
+                  <p>${escapeHtml(dimension.summaryLogic)}</p>
+                  <p class="muted" style="white-space: pre-line;">${escapeHtml(dimension.summaryEvidence)}</p>
+                </div>
                 <div class="dimension-items">
                   ${
                     dimension.items.length > 0
@@ -390,7 +395,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                               </div>
                               <p>${escapeHtml(item.matchedBandText)}</p>
                               <p>${escapeHtml(item.rationale)}</p>
-                              <p class="muted">${escapeHtml(item.evidence)}</p>
+                              <p class="muted" style="white-space: pre-line;">${escapeHtml(item.evidence)}</p>
                             </div>`,
                           )
                           .join("")

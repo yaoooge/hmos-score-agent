@@ -1,5 +1,13 @@
 import type { AgentBootstrapPayload } from "../types.js";
-import { buildAgentInteractionPayload, renderAgentBootstrapPrompt } from "./ruleAssistance.js";
+import {
+  buildAgentInteractionPayload,
+  renderAgentBootstrapPrompt,
+  renderAgentSystemPrompt,
+} from "./ruleAssistance.js";
+
+export function renderCaseAwareSystemPrompt(payload: AgentBootstrapPayload): string {
+  return renderAgentSystemPrompt(payload);
+}
 
 export function renderCaseAwareBootstrapPrompt(payload: AgentBootstrapPayload): string {
   return renderAgentBootstrapPrompt(payload);
@@ -114,6 +122,46 @@ export function renderCaseAwareToolCallRetryPrompt(input: {
     "reason 是可选字段；如果输出，必须是非空中文字符串。",
     "如果要读取默认有效补丁，优先使用 read_patch 且 args 为 {}。",
     `当前回合: ${input.turn}`,
+    input.latestObservation
+      ? ["最近一次工具观察结果：", input.latestObservation].join("\n")
+      : "最近一次工具观察结果：无。",
+    "",
+    "当前判定上下文如下：",
+    JSON.stringify(buildAgentInteractionPayload(input.bootstrapPayload), null, 2),
+  ].join("\n");
+}
+
+export function renderCaseAwareSingleActionRetryPrompt(input: {
+  bootstrapPayload: AgentBootstrapPayload;
+  turn: number;
+  latestObservation: string;
+  failureReason: string;
+  rawOutputText: string;
+}): string {
+  const requiredRuleIds = input.bootstrapPayload.assisted_rule_candidates.map(
+    (candidate) => candidate.rule_id,
+  );
+  const rawOutputPreview =
+    input.rawOutputText.length > 2000
+      ? `${input.rawOutputText.slice(0, 2000)}...`
+      : input.rawOutputText;
+
+  return [
+    "这是一次顶层 action 协议修复重试。",
+    "上一轮输出没有通过顶层 JSON 协议校验，常见原因是同时输出了多个 JSON object，或把 tool_call 和 final_answer 串在一起。",
+    "本轮只能选择 tool_call 或 final_answer 其中一个 action。",
+    "一次只能输出一个 JSON object，禁止输出多个顶层 JSON object。",
+    "禁止把 tool_call 和 final_answer 串在一起，禁止输出 markdown、代码块或解释文字。",
+    "如果证据不足以 final_answer，请输出 tool_call。",
+    "如果证据已经足够，请输出 final_answer。",
+    "输出字段必须继续严格遵守 system prompt 中的 canonical schema。",
+    requiredRuleIds.length > 0
+      ? `如果选择 final_answer，必须逐条覆盖这些 rule_id: ${requiredRuleIds.join(", ")}。`
+      : "如果选择 final_answer，rule_assessments 必须保持合法数组。",
+    `当前回合: ${input.turn}`,
+    `上一轮失败原因: ${input.failureReason}`,
+    "上一轮原始输出摘录：",
+    rawOutputPreview,
     input.latestObservation
       ? ["最近一次工具观察结果：", input.latestObservation].join("\n")
       : "最近一次工具观察结果：无。",

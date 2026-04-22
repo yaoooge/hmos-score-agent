@@ -5,6 +5,7 @@ import {
   buildRubricSnapshot,
   mergeRuleAuditResults,
   renderAgentBootstrapPrompt,
+  renderAgentSystemPrompt,
   selectAssistedRuleCandidates,
 } from "../src/agent/ruleAssistance.js";
 import type {
@@ -217,7 +218,7 @@ test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-
   assert.deepEqual(payload.response_contract.action_enum, ["tool_call", "final_answer"]);
 });
 
-test("renderAgentBootstrapPrompt instructs the model to choose tool_call or final_answer only", () => {
+test("renderAgentSystemPrompt instructs the model to choose tool_call or final_answer only", () => {
   const payload = buildAgentBootstrapPayload({
     caseInput: {
       caseId: "case-1",
@@ -244,7 +245,7 @@ test("renderAgentBootstrapPrompt instructs the model to choose tool_call or fina
     initialTargetFiles: ["entry/src/main/ets/home/viewmodels/HomePageVM.ets"],
   });
 
-  const prompt = renderAgentBootstrapPrompt(payload);
+  const prompt = renderAgentSystemPrompt(payload);
   assert.match(prompt, /你只能返回 tool_call 或 final_answer/);
   assert.match(prompt, /case 目录只读工具/);
   assert.match(prompt, /禁止输出 markdown/);
@@ -266,6 +267,11 @@ test("renderAgentBootstrapPrompt instructs the model to choose tool_call or fina
     "grep_in_files",
     "read_json",
   ]);
+
+  const bootstrapPrompt = renderAgentBootstrapPrompt(payload);
+  assert.match(bootstrapPrompt, /当前判定上下文如下/);
+  assert.match(bootstrapPrompt, /本次必须覆盖的 rule_id: ARKTS-SHOULD-001/);
+  assert.doesNotMatch(bootstrapPrompt, /你只能返回 tool_call 或 final_answer/);
 });
 
 test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates", () => {
@@ -425,7 +431,8 @@ test("mergeRuleAuditResults includes static precheck details in fallback conclus
         rule_id: "HM-REQ-010-02",
         rule_summary: "必须按需申请定位权限并通过 Location Kit 获取设备当前位置",
         rule_source: "must_rule",
-        why_uncertain: "静态预判在目标文件中命中了 0/1 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
+        why_uncertain:
+          "静态预判在目标文件中命中了 0/1 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
         local_preliminary_signal: "none_matched",
         evidence_files: ["entry/src/main/ets/pages/Index.ets"],
         evidence_snippets: ["requestPermissionsFromUser(['ohos.permission.LOCATION'])"],
@@ -460,7 +467,8 @@ test("mergeRuleAuditResults keeps trusted static result for scoring when final a
         rule_id: "HM-REQ-010-02",
         rule_summary: "必须按需申请定位权限并通过 Location Kit 获取设备当前位置",
         rule_source: "must_rule",
-        why_uncertain: "静态预判在目标文件中命中了 0/1 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
+        why_uncertain:
+          "静态预判在目标文件中命中了 0/1 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
         local_preliminary_signal: "none_matched",
         evidence_files: ["entry/src/main/ets/pages/Index.ets"],
         evidence_snippets: ["requestPermissionsFromUser(['ohos.permission.LOCATION'])"],
@@ -493,7 +501,8 @@ test("mergeRuleAuditResults still falls back to review when static precheck is n
         rule_id: "HM-REQ-010-03",
         rule_summary: "定位结果必须驱动首页城市标识或本地资讯内容更新",
         rule_source: "should_rule",
-        why_uncertain: "静态预判在目标文件中命中了 0/0 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
+        why_uncertain:
+          "静态预判在目标文件中命中了 0/0 个 AST 信号。 仅作为辅助证据，不作为最终结论。",
         local_preliminary_signal: "none_matched",
         evidence_files: ["entry/src/main/ets/pages/Index.ets"],
         evidence_snippets: ["HomePage()"],

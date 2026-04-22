@@ -42,7 +42,8 @@ export async function ruleAssessmentAgentNode(
     const runnerResult = await runCaseAwareAgent({
       caseRoot: state.sourceCasePath ?? path.dirname(state.caseInput.originalProjectPath),
       bootstrapPayload: state.ruleAgentBootstrapPayload,
-      completeJsonPrompt: (prompt) => deps.agentClient!.completeJsonPrompt(prompt),
+      completeJsonPrompt: (prompt, options) =>
+        deps.agentClient!.completeJsonPrompt(prompt, options),
       logger: deps.logger,
     });
     const ruleAgentRunStatus = runnerResult.final_answer ? "success" : "invalid_output";

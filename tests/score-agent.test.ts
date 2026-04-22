@@ -239,6 +239,214 @@ test("rubricScoringAgentNode skips when agent client is missing", async () => {
   assert.equal(skipped.rubricAgentRunStatus, "skipped");
 });
 
+test("rubricScoringAgentNode retries once when rubric output violates schema", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const itemScores = rubricSnapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: `根据 ${item.name} 的评分档位，当前证据满足该档要求。`,
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "medium",
+      review_required: false,
+    })),
+  );
+  const prompts: string[] = [];
+  const warnings: string[] = [];
+  const agentClient = {
+    async completeJsonPrompt(prompt: string): Promise<string> {
+      prompts.push(prompt);
+      if (prompts.length === 1) {
+        return JSON.stringify({
+          summary: "错误结构",
+          item_scores: [{ name: "问题点命中程度", score: 10 }],
+          hard_gate_candidates: [],
+          risks: [],
+          strengths: [],
+          main_issues: [],
+        });
+      }
+      return JSON.stringify({
+        summary: {
+          overall_assessment: "修复重试后输出符合 rubric schema。",
+          overall_confidence: "medium",
+        },
+        item_scores: itemScores,
+        hard_gate_candidates: [],
+        risks: [],
+        strengths: ["结构清晰"],
+        main_issues: [],
+      });
+    },
+  };
+
+  const result = await rubricScoringAgentNode(
+    {
+      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
+      rubricSnapshot,
+    } as never,
+    {
+      agentClient,
+      logger: {
+        async info() {},
+        async warn(message: string) {
+          warnings.push(message);
+        },
+        async error() {},
+      },
+    },
+  );
+
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /rubric 评分协议修复重试/);
+  assert.match(prompts[1], /上一轮输出不符合 schema/);
+  assert.match(prompts[1], /只能重新输出一个 JSON object/);
+  assert.match(prompts[1], /summary\.overall_assessment/);
+  assert.equal(result.rubricAgentRunStatus, "success");
+  assert.equal(result.rubricScoringResult?.item_scores.length, itemScores.length);
+  assert.match(warnings.join("\n"), /rubric agent 输出违反协议，发起一次修复重试/);
+});
+
+test("rubricScoringAgentNode returns invalid_output after one failed retry", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const prompts: string[] = [];
+  const agentClient = {
+    async completeJsonPrompt(prompt: string): Promise<string> {
+      prompts.push(prompt);
+      return JSON.stringify({
+        summary: "仍然是错误结构",
+        item_scores: [],
+        hard_gate_candidates: [],
+        risks: [],
+        strengths: [],
+        main_issues: [],
+      });
+    },
+  };
+
+  const result = await rubricScoringAgentNode(
+    {
+      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
+      rubricSnapshot,
+    } as never,
+    {
+      agentClient,
+      logger: {
+        async info() {},
+        async warn() {},
+        async error() {},
+      },
+    },
+  );
+
+  assert.equal(prompts.length, 2);
+  assert.equal(result.rubricAgentRunStatus, "invalid_output");
+  assert.equal(result.rubricScoringResult, undefined);
+});
+
+test("rubricScoringAgentNode retries with compact prompt after network-style fetch failure", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const itemScores = rubricSnapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "证据支持该档评分。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "medium",
+      review_required: false,
+    })),
+  );
+  const prompts: string[] = [];
+  const warnings: string[] = [];
+  const agentClient = {
+    async completeJsonPrompt(prompt: string): Promise<string> {
+      prompts.push(prompt);
+      if (prompts.length === 1) {
+        throw new Error(
+          "Agent 网络请求失败 request=rubric_scoring elapsedMs=61000 promptChars=100 promptBytes=120 causeCode=UND_ERR_SOCKET causeMessage=other side closed",
+        );
+      }
+      return JSON.stringify({
+        summary: {
+          overall_assessment: "compact 重试后完成评分。",
+          overall_confidence: "medium",
+        },
+        item_scores: itemScores,
+        hard_gate_candidates: [],
+        risks: [],
+        strengths: ["结构清晰"],
+        main_issues: [],
+      });
+    },
+  };
+
+  const result = await rubricScoringAgentNode(
+    {
+      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
+      rubricScoringPayload: {
+        case_context: {
+          case_id: "case-1",
+          case_root: "/case",
+          task_type: "bug_fix",
+          original_prompt_summary: "修复页面 bug",
+          original_project_path: "/case/original",
+          generated_project_path: "/case/workspace",
+          effective_patch_path: "/case/diff/changes.patch",
+        },
+        task_understanding: {
+          explicitConstraints: ["修复页面 bug"],
+          contextualConstraints: ["保持工程结构"],
+          implicitConstraints: ["有 patch"],
+          classificationHints: ["bug_fix"],
+        },
+        rubric_summary: rubricSnapshot,
+        response_contract: {
+          output_language: "zh-CN",
+          json_only: true,
+          required_top_level_fields: [
+            "summary",
+            "item_scores",
+            "hard_gate_candidates",
+            "risks",
+            "strengths",
+            "main_issues",
+          ],
+        },
+      },
+      rubricSnapshot,
+    } as never,
+    {
+      agentClient,
+      logger: {
+        async info() {},
+        async warn(message: string) {
+          warnings.push(message);
+        },
+        async error() {},
+      },
+    },
+  );
+
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1], /compact/);
+  assert.match(prompts[1], /输出尽量短/);
+  assert.equal(result.rubricAgentRunStatus, "success");
+  assert.equal(result.rubricScoringResult?.item_scores.length, itemScores.length);
+  assert.match(warnings.join("\n"), /切换 compact prompt 重试/);
+});
+
 test("ruleAuditNode emits one ledger item per rule and preserves source ordering", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rootDir = await makeTempDir(t);
@@ -1320,7 +1528,8 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
 
   assert.equal(invoked, true);
   assert.equal(result.ruleAgentRunStatus, "not_enabled");
-  assert.match(ruleAgentPromptText, /你只能返回 tool_call 或 final_answer/);
+  assert.match(ruleAgentPromptText, /当前判定上下文如下/);
+  assert.doesNotMatch(ruleAgentPromptText, /你只能返回 tool_call 或 final_answer/);
   assert.equal(Array.isArray(agentPromptPayload.assisted_rule_candidates), true);
   assert.equal(agentPromptPayload.assisted_rule_candidates.length, 0);
   assert.equal(Array.isArray(agentPromptPayload.tool_contract.allowed_tools), true);

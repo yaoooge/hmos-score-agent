@@ -17,6 +17,12 @@ type BuildRubricScoringPayloadInput = {
   rubricSnapshot: LoadedRubricSnapshot;
 };
 
+type RenderRubricScoringRetryPromptInput = {
+  originalPrompt: string;
+  invalidOutput: string;
+  errorMessage: string;
+};
+
 const confidenceSchema = z.enum(["high", "medium", "low"]);
 
 const rubricScoringResultSchema = z
@@ -78,13 +84,16 @@ function buildExpectedItemMap(
 ): Map<string, { weight: number; scores: Set<number> }> {
   return new Map(
     rubricSnapshot.dimension_summaries.flatMap((dimension) =>
-      dimension.item_summaries.map((item) => [
-        makeItemKey(dimension.name, item.name),
-        {
-          weight: item.weight,
-          scores: new Set(item.scoring_bands.map((band) => band.score)),
-        },
-      ] as const),
+      dimension.item_summaries.map(
+        (item) =>
+          [
+            makeItemKey(dimension.name, item.name),
+            {
+              weight: item.weight,
+              scores: new Set(item.scoring_bands.map((band) => band.score)),
+            },
+          ] as const,
+      ),
     ),
   );
 }
@@ -125,12 +134,109 @@ export function renderRubricScoringPrompt(payload: RubricScoringPayload): string
     "请基于 task_understanding、case_context 和 rubric_summary，逐项输出 rubric item 的评分。",
     "不要判断规则 ID，不要输出 rule_id 级结论；规则判断由独立 rules 分支处理。",
     "必须只输出一个 JSON object，禁止 markdown、代码块或额外解释。",
+    ...renderRubricScoringBrevityRules({ compact: false }),
+    "下面的 YAML 结构示例仅用于说明字段结构，不要输出 YAML；实际最终输出仍必须是 JSON object。",
+    "",
+    renderRubricScoringYamlShapeExample(),
+    "",
     "顶层字段必须包含 summary、item_scores、hard_gate_candidates、risks、strengths、main_issues。",
     "item_scores 必须覆盖 rubric_summary.dimension_summaries 中的每个 item，且不得遗漏、重复或新增未知 item。",
     "每个 item 的 score 与 matched_band_score 必须使用该 item scoring_bands 中声明过的 score。",
     "所有说明性文案必须使用中文。",
     "",
     JSON.stringify(payload, null, 2),
+  ].join("\n");
+}
+
+export function renderCompactRubricScoringPrompt(payload: RubricScoringPayload): string {
+  return [
+    "这是 rubric 评分的 compact 重试 prompt。",
+    "上一轮 rubric 评分请求疑似因长耗时或连接被关闭而失败；请在保持字段完整的前提下，用最短可判定文本重新输出。",
+    "你仍然只能输出一个 JSON object，禁止 markdown、代码块、YAML 或额外解释。",
+    ...renderRubricScoringBrevityRules({ compact: true }),
+    "",
+    "YAML 结构示例仅用于说明字段结构，不要输出 YAML：",
+    renderRubricScoringYamlShapeExample(),
+    "",
+    JSON.stringify(payload),
+  ].join("\n");
+}
+
+export function renderRubricScoringRetryPrompt(input: RenderRubricScoringRetryPromptInput): string {
+  return [
+    "这是一次 rubric 评分协议修复重试。",
+    "上一轮输出不符合 schema，请基于原始 rubric 评分上下文重新输出。",
+    "本轮只能重新输出一个 JSON object，禁止 markdown、代码块、YAML 或任何额外解释。",
+    "不要沿用上一轮的错误字段名；必须使用 canonical 字段，例如 summary.overall_assessment、dimension_name、item_name、max_score、matched_band_score、gate_id、risks[].description。",
+    "item_scores 必须覆盖原始 prompt 中 rubric_summary.dimension_summaries 的每个 item，且不得遗漏、重复或新增未知 item。",
+    "score 与 matched_band_score 必须相等，并且只能使用该 item scoring_bands 中声明过的 score；max_score 必须等于该 item weight。",
+    "所有说明性文案必须使用中文。",
+    ...renderRubricScoringBrevityRules({ compact: true }),
+    "",
+    "YAML 结构示例仅用于说明字段结构，不要输出 YAML：",
+    renderRubricScoringYamlShapeExample(),
+    "",
+    "上一轮解析失败原因：",
+    input.errorMessage,
+    "",
+    "上一轮原始输出：",
+    input.invalidOutput,
+    "",
+    "原始 rubric 评分 prompt：",
+    input.originalPrompt,
+  ].join("\n");
+}
+
+function renderRubricScoringBrevityRules(input: { compact: boolean }): string[] {
+  return input.compact
+    ? [
+        "输出尽量短，但字段必须完整。",
+        "summary.overall_assessment 限制为一句中文短句，避免展开分析。",
+        "item_scores[*].rationale 限制为一句中文短句。",
+        "item_scores[*].evidence_used 最多保留 2 条最关键证据路径。",
+        "risks 最多 3 条；每条 description 和 evidence 都使用短句。",
+        "strengths 和 main_issues 各最多 3 条。",
+      ]
+    : [
+        "请保持输出克制，避免长段解释。",
+        "summary.overall_assessment 尽量控制在一句中文短句内。",
+        "item_scores[*].rationale 优先使用一句中文短句。",
+        "item_scores[*].evidence_used 只保留最关键证据，最多 2 条。",
+        "risks、strengths、main_issues 都应控制在高信号、短文本。",
+      ];
+}
+
+function renderRubricScoringYamlShapeExample(): string {
+  return [
+    "YAML 结构示例:",
+    "summary:",
+    "  overall_assessment: 中文总体评价",
+    "  overall_confidence: high | medium | low",
+    "item_scores:",
+    "  - dimension_name: rubric 维度名称",
+    "    item_name: rubric item 名称",
+    "    score: 10",
+    "    max_score: 10",
+    "    matched_band_score: 10",
+    "    rationale: 中文评分理由",
+    "    evidence_used:",
+    "      - workspace/entry/src/main/ets/pages/Index.ets",
+    "    confidence: high | medium | low",
+    "    review_required: false",
+    "hard_gate_candidates:",
+    "  - gate_id: G1",
+    "    triggered: false",
+    "    reason: 中文说明",
+    "    confidence: medium",
+    "risks:",
+    "  - level: medium",
+    "    title: 风险标题",
+    "    description: 风险描述",
+    "    evidence: 证据位置或说明",
+    "strengths:",
+    "  - 中文优势",
+    "main_issues:",
+    "  - 中文主要问题",
   ].join("\n");
 }
 
@@ -171,7 +277,9 @@ export function parseRubricScoringResultStrict(
     }
   }
 
-  const missingItemKeys = Array.from(expectedItemMap.keys()).filter((key) => !seenItemKeys.has(key));
+  const missingItemKeys = Array.from(expectedItemMap.keys()).filter(
+    (key) => !seenItemKeys.has(key),
+  );
   if (missingItemKeys.length > 0) {
     throw new Error(`missing rubric scoring items: ${missingItemKeys.join(", ")}`);
   }
