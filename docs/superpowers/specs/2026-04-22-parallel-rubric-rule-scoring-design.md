@@ -12,7 +12,7 @@
 - 保留确定性规则评测和 agent 辅助规则评判，作为辅助证据与修正项。
 - 并联运行 rubric 评分 agent 和规则评判 agent，降低整体评分耗时。
 - 从关键路径移除 `featureExtractionNode`，因为它当前不影响评分。
-- 当任一 agent 失败或输出非法时，仍保持稳定 fallback。
+- 当任一 agent 失败或输出非法时，仍保持稳定降级；该降级只服务运行可靠性，不作为旧版本兼容策略。
 - 扩展 `report_result_schema.json`，让维度评分同时呈现 rubric agent 评价逻辑和 rules 违规影响。
 
 ## 非目标
@@ -127,7 +127,7 @@ max(rule_agent_time, rubric_agent_time) + deterministic_time + fusion_time
 
 ### `ruleAgentPromptBuilderNode`
 
-重命名或替换当前 `agentPromptBuilderNode`。
+替换当前 `agentPromptBuilderNode`。
 
 职责：
 
@@ -139,13 +139,13 @@ max(rule_agent_time, rubric_agent_time) + deterministic_time + fusion_time
 
 ### `ruleAssessmentAgentNode`
 
-重命名或保留当前 `agentAssistedRuleNode`。
+替换当前 `agentAssistedRuleNode`。
 
 职责：
 
 - 继续判定不确定规则候选。
 - 返回 `agentAssistedRuleResults`、`agentTurns` 和 `agentToolTrace`。
-- 保留无候选规则或未配置 agent client 时的 fallback 行为。
+- 保留无候选规则或未配置 agent client 时的运行降级行为。
 
 ### `ruleMergeNode`
 
@@ -155,7 +155,7 @@ max(rule_agent_time, rubric_agent_time) + deterministic_time + fusion_time
 
 - 合并确定性规则结果和规则 agent 结果。
 - 产出 `mergedRuleAuditResults`。
-- 对 skipped、failed、invalid output 等状态保持现有 fallback。
+- 对 skipped、failed、invalid output 等状态保持运行降级。
 
 ### `scoreFusionOrchestrationNode`
 
@@ -190,7 +190,7 @@ ruleAgentPromptText: Annotation<string>();
 ruleAgentRunStatus: Annotation<AgentRunStatus>();
 ```
 
-如果优先降低改造风险，也可以在迁移阶段保留现有泛化命名作为别名。
+不保留现有泛化 agent state 名称作为别名。首版直接使用 rubric agent 与 rule agent 的明确命名，避免状态语义混淆。
 
 从必需评分路径移除 feature extraction 状态：
 
@@ -198,7 +198,7 @@ ruleAgentRunStatus: Annotation<AgentRunStatus>();
 featureExtraction: Annotation<FeatureExtraction>();
 ```
 
-如果测试或兼容代码仍临时引用，可以短期保留 type，但它不应再成为评分函数或 workflow edge 的必需依赖。
+不保留 `FeatureExtraction` 作为 workflow state 或 scoring input。相关测试需要同步删除或改写。
 
 ## Rubric Agent 输出
 
@@ -249,7 +249,7 @@ interface RubricScoringResult {
 - rubric agent 为什么给出当前分数。
 - rules 违规如何影响该维度或子项。
 
-现有 schema 中 `dimension_results.item_results` 只有 `rationale` 和 `evidence` 两个扁平字段，不足以区分 agent 评分依据、规则违规证据和分数融合逻辑。改造后应保留旧字段用于兼容阅读，同时新增结构化字段。
+现有 schema 中 `dimension_results.item_results` 只有 `rationale` 和 `evidence` 两个扁平字段，不足以区分 agent 评分依据、规则违规证据和分数融合逻辑。首版直接切换为结构化字段，不做旧字段兼容。
 
 ### Dimension 级新增字段
 
@@ -321,15 +321,15 @@ score_fusion: {
 - `score_fusion.final_score` 必须等于最终输出的 `score`。
 - `score_fusion.fusion_logic` 用中文说明“为什么从基础分变成最终分”。
 
-### Schema 兼容策略
+### Schema 切换策略
 
 本次扩展应把新增字段设为 required。理由是改造目标就是让每个维度评分都可解释，如果这些字段可选，报告仍可能退化成旧的不可区分结构。
 
-旧字段保留：
+旧字段处理：
 
-- `comment` 保留，用于维度级简短结论。
-- `rationale` 保留，内容可由 `agent_evaluation.logic` 和 `score_fusion.fusion_logic` 组合生成。
-- `evidence` 保留，内容可由 `agent_evaluation.evidence_used` 和主要 `rule_impacts.evidence` 汇总生成。
+- `comment` 保留，用于维度级简短结论，它不是兼容字段，而是维度 summary。
+- `rationale` 从 `item_results[]` 中移除，由 `agent_evaluation.logic` 和 `score_fusion.fusion_logic` 取代。
+- `evidence` 从 `item_results[]` 中移除，由 `agent_evaluation.evidence_used` 和 `rule_impacts[].evidence` 取代。
 
 ### Report Generation 要求
 
@@ -393,8 +393,8 @@ final score = rubric base score + rule modifiers
 
 当 rubric scoring 失败：
 
-- fallback 到当前确定性 scoring engine。
-- 添加 human review item，说明当前分数是 fallback precheck。
+- 降级为规则预检评分路径。
+- 添加 human review item，说明当前分数是 agent 失败后的规则预检结果。
 - 视情况标记低置信度。
 
 ### 规则修正
@@ -451,7 +451,7 @@ inputClassification -> ruleAudit
 同时移除或更新：
 
 - `src/workflow/scoreWorkflow.ts` 中的 import、node 注册和 edge。
-- `src/workflow/state.ts` 中必需的 `featureExtraction` annotation，除非存在短期兼容需求。
+- `src/workflow/state.ts` 中的 `featureExtraction` annotation。
 - `src/scoring/scoringEngine.ts` 中的 `featureExtraction` 输入字段。
 - `src/nodes/persistAndUploadNode.ts` 中写入 `intermediate/feature-extraction.json` 的逻辑。
 - `src/workflow/observability` 中 feature extraction 的 node label、node id 和 summary。
@@ -492,11 +492,11 @@ inputClassification -> ruleAudit
 - score fusion 能应用 `must_rule` 和 `forbidden_pattern` modifiers。
 - score fusion 能应用 hard gate caps。
 - `report_result_schema.json` 要求每个 dimension result 包含 agent 评价摘要和规则违规摘要。
-- `report_result_schema.json` 要求每个 item result 包含 `agent_evaluation`、`rule_impacts` 和 `score_fusion`。
+- `report_result_schema.json` 要求每个 item result 包含 `agent_evaluation`、`rule_impacts` 和 `score_fusion`，且不再接受旧的 `rationale/evidence` item 字段。
 - `reportGenerationNode` 能把 score fusion 明细映射成扩展后的 `dimension_results`。
-- rubric agent 失败时 fallback 到当前确定性评分。
+- rubric agent 失败时降级到规则预检评分。
 - rule agent 失败时仍能产出基于 rubric 的分数，并加入 review items。
-- 两个 agent 都失败时返回当前 fallback score，并标记低置信度复核项。
+- 两个 agent 都失败时返回规则预检评分，并标记低置信度复核项。
 
 新增集成测试：
 
@@ -504,11 +504,11 @@ inputClassification -> ruleAudit
 - 存在 assisted rule candidates 时，rubric 分支和规则分支都贡献最终输出。
 - 远程任务流程仍能生成 `result.json` 和 `report.html`。
 
-## 迁移计划
+## 首版实施计划
 
 1. 引入 rubric scoring 类型和校验逻辑。
 2. 新增 rubric scoring prompt builder 和 agent node。
-3. 将规则 prompt 命名从泛化 agent prompt 中拆分出来。
+3. 用 `ruleAgentPromptBuilderNode` 和 `ruleAssessmentAgentNode` 替换现有泛化 agent 节点命名。
 4. 实现以 rubric scores 为基础分的 score fusion。
 5. 将 workflow 改造成 rubric 与规则双分支并联。
 6. 从 workflow edges 和 scoring inputs 中移除 `featureExtractionNode`。
@@ -522,8 +522,9 @@ inputClassification -> ruleAudit
 ## 实现默认决策
 
 - 不保留 `feature-extraction.json` 兼容产物。被移除的节点不应继续写入 placeholder data。
-- 迁移阶段可以保留现有泛化 agent state 名称作为别名，但新增输出必须使用明确的 rubric agent 和 rule agent 产物名。
+- 不保留现有泛化 agent state 名称作为迁移别名，首版直接使用明确的 rubric agent 和 rule agent state。
 - 首版必须扩展 `report_result_schema.json`。维度评分和子项评分必须结构化展示 agent 评价逻辑、rules 违规情况和最终分数融合过程。
+- 不保留 `item_results[].rationale` 和 `item_results[].evidence` 作为兼容字段；新报告只使用 `agent_evaluation`、`rule_impacts` 和 `score_fusion` 表达子项评分逻辑。
 
 ## 建议
 
