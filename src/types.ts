@@ -279,6 +279,61 @@ export interface AgentBootstrapPayload {
   };
 }
 
+export interface RubricScoringPayload {
+  case_context: {
+    case_id: string;
+    case_root: string;
+    task_type: TaskType;
+    original_prompt_summary: string;
+    original_project_path: string;
+    generated_project_path: string;
+    effective_patch_path?: string;
+  };
+  task_understanding: ConstraintSummary;
+  rubric_summary: LoadedRubricSnapshot;
+  response_contract: {
+    output_language: "zh-CN";
+    json_only: true;
+    required_top_level_fields: [
+      "summary",
+      "item_scores",
+      "hard_gate_candidates",
+      "risks",
+      "strengths",
+      "main_issues",
+    ];
+  };
+}
+
+export interface RubricScoringItemScore {
+  dimension_name: string;
+  item_name: string;
+  score: number;
+  max_score: number;
+  matched_band_score: number;
+  rationale: string;
+  evidence_used: string[];
+  confidence: ConfidenceLevel;
+  review_required: boolean;
+}
+
+export interface RubricScoringResult {
+  summary: {
+    overall_assessment: string;
+    overall_confidence: ConfidenceLevel;
+  };
+  item_scores: RubricScoringItemScore[];
+  hard_gate_candidates: Array<{
+    gate_id: "G1" | "G2" | "G3" | "G4";
+    triggered: boolean;
+    reason: string;
+    confidence: ConfidenceLevel;
+  }>;
+  risks: RiskItem[];
+  strengths: string[];
+  main_issues: string[];
+}
+
 export interface AgentRuleAssessment {
   rule_id: string;
   decision: "violation" | "pass" | "not_applicable" | "uncertain";
