@@ -6,3 +6,5 @@ dist/
 .worktrees/
 .swift-cache/
 .superpowers/
+package-lock.json
+
