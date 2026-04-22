@@ -418,6 +418,40 @@ export interface CaseAwareFinalAnswerValidation {
   unexpected_rule_ids: string[];
 }
 
+export type RuleImpactSeverity = "review_only" | "light" | "medium" | "heavy" | "gating";
+
+export interface RuleImpactDetail {
+  rule_id: string;
+  rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
+  result: "不满足" | "待人工复核";
+  severity: RuleImpactSeverity;
+  score_delta: number;
+  reason: string;
+  evidence: string;
+  agent_assisted: boolean;
+  needs_human_review: boolean;
+}
+
+export interface ScoreFusionDetail {
+  dimension_name: string;
+  item_name: string;
+  agent_evaluation: {
+    base_score: number;
+    matched_band_score: number;
+    matched_criteria: string;
+    logic: string;
+    evidence_used: string[];
+    confidence: ConfidenceLevel;
+  };
+  rule_impacts: RuleImpactDetail[];
+  score_fusion: {
+    base_score: number;
+    rule_delta: number;
+    final_score: number;
+    fusion_logic: string;
+  };
+}
+
 export type RuleEvidenceIndex = Record<
   string,
   {
@@ -437,6 +471,7 @@ export interface ScoreComputation {
   };
   dimensionScores: DimensionScore[];
   submetricDetails: SubmetricDetail[];
+  scoreFusionDetails: ScoreFusionDetail[];
   risks: RiskItem[];
   humanReviewItems: HumanReviewItem[];
   strengths: string[];
