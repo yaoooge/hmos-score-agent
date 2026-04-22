@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
     "dev:cli": "tsx src/cli.ts",
     "dev:api": "tsx src/index.ts",
     "launch:score": "node --import tsx src/tools/runInteractiveScore.ts",
