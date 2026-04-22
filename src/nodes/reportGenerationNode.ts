@@ -2,18 +2,94 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { validateReportResult } from "../report/schemaValidator.js";
 import { getRegisteredRulePacks, listRegisteredRules } from "../rules/engine/rulePackRegistry.js";
-import type { RuleAuditResult } from "../types.js";
+import type { ConfidenceLevel, RuleAuditResult, ScoreFusionDetail } from "../types.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
+
+function roundScore(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function makeMetricKey(dimensionName: string, metricName: string): string {
+  return `${dimensionName}::${metricName}`;
+}
+
+function combineConfidence(details: ScoreFusionDetail[]): ConfidenceLevel {
+  if (details.length === 0 || details.some((detail) => detail.agent_evaluation.confidence === "low")) {
+    return "low";
+  }
+  if (details.some((detail) => detail.agent_evaluation.confidence === "medium")) {
+    return "medium";
+  }
+  return "high";
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+}
+
+function buildAgentEvaluationSummary(details: ScoreFusionDetail[]): Record<string, unknown> {
+  const baseScore = roundScore(
+    details.reduce((sum, detail) => sum + detail.agent_evaluation.base_score, 0),
+  );
+  const logic = uniqueStrings(details.map((detail) => detail.agent_evaluation.logic));
+  const keyEvidence = uniqueStrings(
+    details.flatMap((detail) => detail.agent_evaluation.evidence_used),
+  );
+
+  return {
+    base_score: baseScore,
+    logic:
+      logic.length > 0
+        ? logic.join(" ")
+        : "缺少 rubric agent 评价明细，需人工复核该维度评分依据。",
+    key_evidence: keyEvidence,
+    confidence: combineConfidence(details),
+  };
+}
+
+function buildRuleViolationSummary(details: ScoreFusionDetail[]): Record<string, unknown> {
+  const violatedRuleIds = new Set(
+    details.flatMap((detail) =>
+      detail.rule_impacts
+        .filter((impact) => impact.result === "不满足")
+        .map((impact) => impact.rule_id),
+    ),
+  );
+  const affectedItemCount = details.filter((detail) => detail.rule_impacts.length > 0).length;
+  const totalRuleDelta = roundScore(
+    details.reduce((sum, detail) => sum + detail.score_fusion.rule_delta, 0),
+  );
+
+  return {
+    violated_rule_count: violatedRuleIds.size,
+    affected_item_count: affectedItemCount,
+    total_rule_delta: totalRuleDelta,
+    summary:
+      violatedRuleIds.size === 0
+        ? "该维度未发现规则违规对评分项产生扣分影响。"
+        : `该维度共有 ${violatedRuleIds.size} 条违规规则影响 ${affectedItemCount} 个评分项，累计规则修正 ${totalRuleDelta} 分。`,
+  };
+}
 
 function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unknown>> {
   const rubricSummary = state.rubricSnapshot;
   const dimensionScores = state.scoreComputation.dimensionScores;
   const submetricDetails = state.scoreComputation.submetricDetails;
+  const scoreFusionDetails = state.scoreComputation.scoreFusionDetails;
+  const scoreFusionDetailMap = new Map(
+    scoreFusionDetails.map((detail) => [
+      makeMetricKey(detail.dimension_name, detail.item_name),
+      detail,
+    ]),
+  );
 
   return (rubricSummary?.dimension_summaries ?? []).map((dimensionSummary) => {
     const dimensionScore = dimensionScores.find(
       (item) => item.dimension_name === dimensionSummary.name,
+    );
+    const dimensionFusionDetails = scoreFusionDetails.filter(
+      (detail) => detail.dimension_name === dimensionSummary.name,
     );
 
     return {
@@ -22,23 +98,51 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
       score: dimensionScore?.score ?? 0,
       max_score: dimensionScore?.max_score ?? dimensionSummary.weight,
       comment: dimensionScore?.comment ?? "",
+      agent_evaluation_summary: buildAgentEvaluationSummary(dimensionFusionDetails),
+      rule_violation_summary: buildRuleViolationSummary(dimensionFusionDetails),
       item_results: dimensionSummary.item_summaries.map((itemSummary) => {
         const detail = submetricDetails.find(
           (item) =>
             item.dimension_name === dimensionSummary.name && item.metric_name === itemSummary.name,
         );
+        const fusionDetail = scoreFusionDetailMap.get(
+          makeMetricKey(dimensionSummary.name, itemSummary.name),
+        );
+        const itemScore = fusionDetail?.score_fusion.final_score ?? detail?.score ?? 0;
         const matchedBand =
-          itemSummary.scoring_bands.find((band) => band.score === detail?.score) ?? null;
+          itemSummary.scoring_bands.find((band) => band.score === itemScore) ??
+          itemSummary.scoring_bands.find(
+            (band) => band.score === fusionDetail?.agent_evaluation.matched_band_score,
+          ) ??
+          null;
 
         return {
           item_name: itemSummary.name,
           item_weight: itemSummary.weight,
-          score: detail?.score ?? 0,
+          score: itemScore,
           matched_band: matchedBand,
-          confidence: detail?.confidence ?? "low",
-          review_required: detail?.review_required ?? true,
-          rationale: detail?.rationale ?? "缺少对应评分明细。",
-          evidence: detail?.evidence ?? "缺少对应证据。",
+          confidence: fusionDetail?.agent_evaluation.confidence ?? detail?.confidence ?? "low",
+          review_required:
+            detail?.review_required ??
+            fusionDetail?.rule_impacts.some((impact) => impact.needs_human_review) ??
+            true,
+          agent_evaluation:
+            fusionDetail?.agent_evaluation ?? {
+              base_score: 0,
+              matched_band_score: 0,
+              matched_criteria: "",
+              logic: "缺少 rubric agent 对该评分项的评价逻辑。",
+              evidence_used: [],
+              confidence: "low",
+            },
+          rule_impacts: fusionDetail?.rule_impacts ?? [],
+          score_fusion:
+            fusionDetail?.score_fusion ?? {
+              base_score: 0,
+              rule_delta: 0,
+              final_score: detail?.score ?? 0,
+              fusion_logic: "缺少评分融合明细，需人工复核该评分项。",
+            },
         };
       }),
     };

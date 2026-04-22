@@ -781,6 +781,146 @@ test("reportGenerationNode assigns matched bands for computed submetric scores",
   }
 });
 
+test("reportGenerationNode emits agent evaluation and rule impact details for each scored item", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const reportResult = await reportGenerationNode(
+    {
+      taskType: "bug_fix",
+      caseInput: {
+        caseId: "case-1",
+        promptText: "请修复餐厅列表页中的 bug",
+        originalProjectPath: "/tmp/original",
+        generatedProjectPath: "/tmp/workspace",
+      },
+      constraintSummary: {
+        explicitConstraints: [],
+        contextualConstraints: [],
+        implicitConstraints: [],
+        classificationHints: ["bug_fix"],
+      },
+      rubricSnapshot: {
+        task_type: "bug_fix",
+        evaluation_mode: "auto_precheck_with_human_review",
+        scenario: "修复餐厅列表问题",
+        scoring_method: "discrete_band",
+        scoring_note: "二级指标按离散档位给分。",
+        common_risks: [],
+        report_emphasis: [],
+        dimension_summaries: [
+          {
+            name: "改动精准度与最小侵入性",
+            weight: 25,
+            intent: "评价是否精准修复问题且控制改动范围",
+            item_summaries: [
+              {
+                name: "问题点命中程度",
+                weight: 10,
+                scoring_bands: [
+                  { score: 10, criteria: "直接命中根因。" },
+                  { score: 8, criteria: "基本命中问题点。" },
+                ],
+              },
+            ],
+          },
+        ],
+        hard_gates: [],
+        review_rule_summary: [],
+      },
+      deterministicRuleResults: [
+        {
+          rule_id: "ARKTS-SHOULD-001",
+          rule_source: "should_rule",
+          result: "不满足",
+          conclusion: "状态组织存在轻微风险。",
+        },
+      ],
+      scoreComputation: {
+        totalScore: 8,
+        hardGateTriggered: false,
+        hardGateReason: "",
+        overallConclusion: {
+          total_score: 8,
+          hard_gate_triggered: false,
+          summary: "已完成评分。",
+        },
+        dimensionScores: [
+          {
+            dimension_name: "改动精准度与最小侵入性",
+            score: 8,
+            max_score: 25,
+            comment: "包含规则修正项。",
+          },
+        ],
+        submetricDetails: [
+          {
+            dimension_name: "改动精准度与最小侵入性",
+            metric_name: "问题点命中程度",
+            score: 8,
+            confidence: "medium",
+            review_required: false,
+            rationale: "rubric 基础分 10，规则修正 -2，最终 8。",
+            evidence: "workspace/entry/src/main/ets/pages/Index.ets",
+          },
+        ],
+        scoreFusionDetails: [
+          {
+            dimension_name: "改动精准度与最小侵入性",
+            item_name: "问题点命中程度",
+            agent_evaluation: {
+              base_score: 10,
+              matched_band_score: 10,
+              matched_criteria: "直接命中根因。",
+              logic: "rubric agent 认为修复直接命中根因。",
+              evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+              confidence: "medium",
+            },
+            rule_impacts: [
+              {
+                rule_id: "ARKTS-SHOULD-001",
+                rule_source: "should_rule",
+                result: "不满足",
+                severity: "light",
+                score_delta: -2,
+                reason: "状态组织存在轻微风险。",
+                evidence: "状态组织存在轻微风险。",
+                agent_assisted: false,
+                needs_human_review: false,
+              },
+            ],
+            score_fusion: {
+              base_score: 10,
+              rule_delta: -2,
+              final_score: 8,
+              fusion_logic: "rubric 基础分 10，规则修正 -2，最终 8。",
+            },
+          },
+        ],
+        risks: [],
+        humanReviewItems: [],
+        strengths: [],
+        mainIssues: [],
+        finalRecommendation: [],
+      },
+      ruleViolations: [],
+    } as never,
+    { referenceRoot },
+  );
+
+  const dimensionResults = reportResult.resultJson?.dimension_results as Array<
+    Record<string, unknown>
+  >;
+  const firstDimension = dimensionResults[0];
+  assert.ok(firstDimension.agent_evaluation_summary);
+  assert.ok(firstDimension.rule_violation_summary);
+
+  const firstItem = (firstDimension.item_results as Array<Record<string, unknown>>)[0];
+  assert.ok(firstItem.agent_evaluation);
+  assert.ok(firstItem.rule_impacts);
+  assert.ok(firstItem.score_fusion);
+  assert.equal("rationale" in firstItem, false);
+  assert.equal("evidence" in firstItem, false);
+});
+
 test("artifactPostProcessNode generates layered html report from resultJson", async () => {
   const postProcessResult = await artifactPostProcessNode({
     resultJson: {
