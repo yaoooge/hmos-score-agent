@@ -12,23 +12,28 @@ export async function persistAndUploadNode(
   try {
     await deps.artifactStore.writeText(
       state.caseDir,
-      "inputs/agent-prompt.txt",
-      state.agentPromptText ?? "",
+      "inputs/rubric-scoring-prompt.txt",
+      state.rubricScoringPromptText ?? "",
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
-      "inputs/agent-bootstrap-payload.json",
-      state.agentBootstrapPayload ?? {},
+      "inputs/rubric-scoring-payload.json",
+      state.rubricScoringPayload ?? {},
+    );
+    await deps.artifactStore.writeText(
+      state.caseDir,
+      "inputs/rule-agent-prompt.txt",
+      state.ruleAgentPromptText ?? "",
+    );
+    await deps.artifactStore.writeJson(
+      state.caseDir,
+      "inputs/rule-agent-bootstrap-payload.json",
+      state.ruleAgentBootstrapPayload ?? {},
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
       "intermediate/constraint-summary.json",
       state.constraintSummary,
-    );
-    await deps.artifactStore.writeJson(
-      state.caseDir,
-      "intermediate/feature-extraction.json",
-      state.featureExtraction,
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
@@ -47,31 +52,49 @@ export async function persistAndUploadNode(
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
-      "intermediate/agent-runner-result.json",
-      state.agentRunnerResult ?? {
-        outcome:
-          state.agentRunStatus === "skipped" || state.agentRunStatus === "not_enabled"
-            ? state.agentRunStatus
-            : "protocol_error",
-        turns: state.agentTurns ?? [],
-        tool_trace: state.agentToolTrace ?? [],
+      "intermediate/rubric-agent-result.json",
+      {
+        status: state.rubricAgentRunStatus ?? "skipped",
+        raw_text: state.rubricAgentRawText ?? "",
+        parsed_result: state.rubricScoringResult ?? null,
       },
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
-      "intermediate/agent-turns.json",
-      state.agentTurns ?? [],
+      "intermediate/rule-agent-result.json",
+      state.ruleAgentRunnerResult ?? {
+        outcome:
+          state.ruleAgentRunStatus === "skipped" || state.ruleAgentRunStatus === "not_enabled"
+            ? state.ruleAgentRunStatus
+            : "protocol_error",
+        turns: state.ruleAgentTurns ?? [],
+        tool_trace: state.ruleAgentToolTrace ?? [],
+      },
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
-      "intermediate/agent-tool-trace.json",
-      state.agentToolTrace ?? [],
+      "intermediate/rule-agent-turns.json",
+      state.ruleAgentTurns ?? [],
+    );
+    await deps.artifactStore.writeJson(
+      state.caseDir,
+      "intermediate/rule-agent-tool-trace.json",
+      state.ruleAgentToolTrace ?? [],
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
       "intermediate/rule-audit-merged.json",
       state.mergedRuleAuditResults ?? state.deterministicRuleResults ?? [],
     );
+    await deps.artifactStore.writeJson(
+      state.caseDir,
+      "intermediate/score-fusion.json",
+      state.scoreComputation?.scoreFusionDetails ?? [],
+    );
+    await deps.artifactStore.writeJson(state.caseDir, "intermediate/report-schema-version.json", {
+      schema_version: "v1",
+      result_schema: "report_result_schema.json",
+    });
     await deps.artifactStore.writeJson(state.caseDir, "outputs/result.json", state.resultJson);
     await deps.artifactStore.writeText(state.caseDir, "outputs/report.html", state.htmlReport);
 

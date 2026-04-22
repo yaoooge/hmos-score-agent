@@ -104,13 +104,6 @@ export interface TaskUnderstandingAgentInput {
   patchSummary: PatchSummary;
 }
 
-export interface FeatureExtraction {
-  basicFeatures: string[];
-  structuralFeatures: string[];
-  semanticFeatures: string[];
-  changeFeatures: string[];
-}
-
 export interface RuleAuditResult {
   rule_id: string;
   rule_summary?: string;

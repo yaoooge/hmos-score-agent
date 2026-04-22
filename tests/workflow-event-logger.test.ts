@@ -12,12 +12,12 @@ test("WorkflowEventLogger writes Chinese workflow event lines", async () => {
   await logger.log({
     level: "error",
     type: "node_failed",
-    nodeId: "agentAssistedRuleNode",
-    label: "Agent 辅助判定",
+    nodeId: "ruleAssessmentAgentNode",
+    label: "规则 Agent 判定",
     errorMessage: "Agent 调用失败",
   });
 
   assert.deepEqual(lines, [
-    "ERROR 节点失败 node=agentAssistedRuleNode label=Agent 辅助判定 error=Agent 调用失败",
+    "ERROR 节点失败 node=ruleAssessmentAgentNode label=规则 Agent 判定 error=Agent 调用失败",
   ]);
 });

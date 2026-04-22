@@ -11,14 +11,15 @@ export async function ruleMergeNode(
   emitNodeStarted("ruleMergeNode");
   try {
     if ((state.assistedRuleCandidates?.length ?? 0) === 0) {
-      await deps.logger?.info("agent 辅助判定合并完成 source=deterministic-only");
+      await deps.logger?.info("rule agent 判定合并完成 source=deterministic-only");
       return {
         mergedRuleAuditResults: state.deterministicRuleResults ?? [],
-        agentAssistedRuleResults: undefined,
+        ruleAgentAssessmentResult: undefined,
       };
     }
 
-    if (state.agentRunStatus === "skipped" || state.agentRunStatus === "not_enabled") {
+    const ruleAgentRunStatus = state.ruleAgentRunStatus;
+    if (ruleAgentRunStatus === "skipped" || ruleAgentRunStatus === "not_enabled") {
       const mergedRuleAuditResults = [
         ...(state.deterministicRuleResults ?? []),
         ...(state.assistedRuleCandidates ?? []).map((candidate) => ({
@@ -29,14 +30,14 @@ export async function ruleMergeNode(
           conclusion: `Agent 不可用，候选规则 ${candidate.rule_id} 已回退为待人工复核。`,
         })),
       ];
-      await deps.logger?.info(`agent 辅助判定合并完成 status=${state.agentRunStatus}`);
+      await deps.logger?.info(`rule agent 判定合并完成 status=${ruleAgentRunStatus}`);
       return {
         mergedRuleAuditResults,
-        agentAssistedRuleResults: undefined,
+        ruleAgentAssessmentResult: undefined,
       };
     }
 
-    const finalAnswer = state.agentRunnerResult?.final_answer;
+    const finalAnswer = state.ruleAgentRunnerResult?.final_answer;
     const merged = mergeRuleAuditResults({
       deterministicRuleResults: state.deterministicRuleResults ?? [],
       assistedRuleCandidates: state.assistedRuleCandidates ?? [],
@@ -44,14 +45,14 @@ export async function ruleMergeNode(
     });
     const effectiveAgentRunStatus = finalAnswer
       ? "success"
-      : state.agentRunStatus === "failed"
-        ? state.agentRunStatus
-        : merged.agentRunStatus;
-    await deps.logger?.info(`agent 辅助判定合并完成 status=${effectiveAgentRunStatus}`);
+      : ruleAgentRunStatus === "failed"
+        ? ruleAgentRunStatus
+        : merged.ruleAgentRunStatus;
+    await deps.logger?.info(`rule agent 判定合并完成 status=${effectiveAgentRunStatus}`);
 
     return {
-      agentRunStatus: effectiveAgentRunStatus,
-      agentAssistedRuleResults: merged.agentAssistedRuleResults ?? undefined,
+      ruleAgentRunStatus: effectiveAgentRunStatus,
+      ruleAgentAssessmentResult: merged.ruleAgentAssessmentResult ?? undefined,
       mergedRuleAuditResults: merged.mergedRuleAuditResults,
     };
   } catch (error) {

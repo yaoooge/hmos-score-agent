@@ -3,7 +3,6 @@ import {
   ConstraintSummary,
   DimensionScore,
   EvidenceSummary,
-  FeatureExtraction,
   HumanReviewItem,
   RiskItem,
   RuleAuditResult,
@@ -22,7 +21,6 @@ type ComputeScoreInput = {
   ruleAuditResults: RuleAuditResult[];
   ruleViolations: RuleViolation[];
   constraintSummary: ConstraintSummary;
-  featureExtraction: FeatureExtraction;
   evidenceSummary: EvidenceSummary;
   caseRuleDefinitions?: CaseRuleDefinition[];
 };

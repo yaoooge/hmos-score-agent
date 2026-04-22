@@ -6,6 +6,9 @@ import { summarizeNodeUpdate } from "../src/workflow/observability/nodeSummaries
 test("getNodeLabel returns Chinese labels for workflow nodes", () => {
   assert.equal(getNodeLabel("remoteTaskPreparationNode"), "远端任务预处理");
   assert.equal(getNodeLabel("taskUnderstandingNode"), "任务理解");
+  assert.equal(getNodeLabel("rubricScoringAgentNode"), "Rubric Agent 评分");
+  assert.equal(getNodeLabel("ruleAssessmentAgentNode"), "规则 Agent 判定");
+  assert.equal(getNodeLabel("scoreFusionOrchestrationNode"), "评分融合");
   assert.equal(getNodeLabel("artifactPostProcessNode"), "产物后处理");
   assert.equal(getNodeLabel("persistAndUploadNode"), "结果落盘");
 });
@@ -41,26 +44,14 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
-    summarizeNodeUpdate("agentAssistedRuleNode", {
-      agentRunStatus: "success",
-      agentRunnerResult: {
+    summarizeNodeUpdate("ruleAssessmentAgentNode", {
+      ruleAgentRunStatus: "success",
+      ruleAgentRunnerResult: {
         outcome: "success",
         final_answer_raw_text: '{"ok":true}',
       },
     }),
     "status=success outputLength=11",
-  );
-
-  assert.equal(
-    summarizeNodeUpdate("featureExtractionNode", {
-      featureExtraction: {
-        basicFeatures: ["A", "B"],
-        structuralFeatures: ["C"],
-        semanticFeatures: ["D"],
-        changeFeatures: ["E", "F", "G"],
-      },
-    }),
-    "basic=2 structural=1 semantic=1 change=3",
   );
 
   assert.equal(
@@ -94,10 +85,27 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
-    summarizeNodeUpdate("agentPromptBuilderNode", {
+    summarizeNodeUpdate("rubricScoringPromptBuilderNode", {
+      rubricScoringPromptText: "逐项输出 rubric item",
+    }),
+    "promptLength=16",
+  );
+
+  assert.equal(
+    summarizeNodeUpdate("rubricScoringAgentNode", {
+      rubricAgentRunStatus: "success",
+      rubricScoringResult: {
+        item_scores: [{ item_name: "A" }, { item_name: "B" }],
+      },
+    }),
+    "status=success items=2",
+  );
+
+  assert.equal(
+    summarizeNodeUpdate("ruleAgentPromptBuilderNode", {
       deterministicRuleResults: [{ rule_id: "R1" }],
       assistedRuleCandidates: [{ rule_id: "R2" }, { rule_id: "R3" }],
-      agentPromptText: "请输出 JSON",
+      ruleAgentPromptText: "请输出 JSON",
     }),
     "deterministic=1 candidates=2 promptLength=8",
   );
@@ -113,7 +121,7 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
-    summarizeNodeUpdate("scoringOrchestrationNode", {
+    summarizeNodeUpdate("scoreFusionOrchestrationNode", {
       scoreComputation: {
         totalScore: 78,
         hardGateTriggered: false,

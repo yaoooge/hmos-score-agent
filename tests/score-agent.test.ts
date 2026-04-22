@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import Ajv2020 from "ajv/dist/2020.js";
 import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
 import { ArtifactStore } from "../src/io/artifactStore.js";
@@ -17,7 +18,7 @@ import { ruleAgentPromptBuilderNode } from "../src/nodes/ruleAgentPromptBuilderN
 import { ruleAssessmentAgentNode } from "../src/nodes/ruleAssessmentAgentNode.js";
 import { ruleAuditNode } from "../src/nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
-import { scoringOrchestrationNode } from "../src/nodes/scoringOrchestrationNode.js";
+import { scoreFusionOrchestrationNode } from "../src/nodes/scoreFusionOrchestrationNode.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import { runScoreWorkflow } from "../src/workflow/scoreWorkflow.js";
 import type { CaseInput } from "../src/types.js";
@@ -325,7 +326,7 @@ test("ruleMergeNode returns deterministic results directly when there are no ass
   );
 
   assert.deepEqual(result.mergedRuleAuditResults, deterministicRuleResults);
-  assert.equal(result.agentAssistedRuleResults, undefined);
+  assert.equal(result.ruleAgentAssessmentResult, undefined);
 });
 
 test("ruleMergeNode preserves structured agent judgments from canonical runner result", async () => {
@@ -361,8 +362,8 @@ test("ruleMergeNode preserves structured agent judgments from canonical runner r
           is_case_rule: true,
         },
       ],
-      agentRunStatus: "success",
-      agentRunnerResult: {
+      ruleAgentRunStatus: "success",
+      ruleAgentRunnerResult: {
         outcome: "success",
         final_answer: {
           action: "final_answer",
@@ -396,8 +397,8 @@ test("ruleMergeNode preserves structured agent judgments from canonical runner r
     {},
   );
 
-  assert.equal(result.agentRunStatus, "success");
-  assert.equal(result.agentAssistedRuleResults?.rule_assessments.length, 2);
+  assert.equal(result.ruleAgentRunStatus, "success");
+  assert.equal(result.ruleAgentAssessmentResult?.rule_assessments.length, 2);
   assert.equal(
     result.mergedRuleAuditResults?.find((item) => item.rule_id === "HM-REQ-010-01")?.result,
     "不满足",
@@ -437,7 +438,7 @@ test("scoring and report nodes fall back to deterministic results when merge out
     },
   ];
 
-  const scoringResult = await scoringOrchestrationNode({
+  const scoringResult = await scoreFusionOrchestrationNode({
     taskType: "bug_fix",
     staticRuleAuditResults,
     deterministicRuleResults,
@@ -448,12 +449,6 @@ test("scoring and report nodes fall back to deterministic results when merge out
       implicitConstraints: [],
       classificationHints: ["bug_fix"],
     },
-    featureExtraction: {
-      basicFeatures: [],
-      structuralFeatures: [],
-      semanticFeatures: [],
-      changeFeatures: [],
-    },
     evidenceSummary: {
       workspaceFileCount: 1,
       originalFileCount: 1,
@@ -463,7 +458,12 @@ test("scoring and report nodes fall back to deterministic results when merge out
     },
   } as never);
 
-  assert.equal(scoringResult.scoreComputation?.mainIssues[0]?.includes("ARKTS-MUST-005"), true);
+  assert.equal(
+    scoringResult.scoreComputation?.scoreFusionDetails.some((detail) =>
+      detail.rule_impacts.some((impact) => impact.rule_id === "ARKTS-MUST-005"),
+    ),
+    true,
+  );
 
   const reportResult = await reportGenerationNode(
     {
@@ -524,7 +524,7 @@ test("scoring and report nodes fall back to deterministic results when merge out
 
 test("reportGenerationNode includes case_rule_results in resultJson", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
-  const scoringResult = await scoringOrchestrationNode({
+  const scoringResult = await scoreFusionOrchestrationNode({
     taskType: "full_generation",
     deterministicRuleResults: [
       {
@@ -540,12 +540,6 @@ test("reportGenerationNode includes case_rule_results in resultJson", async (t) 
       contextualConstraints: [],
       implicitConstraints: [],
       classificationHints: ["full_generation"],
-    },
-    featureExtraction: {
-      basicFeatures: [],
-      structuralFeatures: [],
-      semanticFeatures: [],
-      changeFeatures: [],
     },
     evidenceSummary: {
       workspaceFileCount: 1,
@@ -675,7 +669,7 @@ test("reportGenerationNode includes case_rule_results in resultJson", async (t) 
 
 test("reportGenerationNode only returns schema-valid resultJson without html report", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
-  const scoringResult = await scoringOrchestrationNode({
+  const scoringResult = await scoreFusionOrchestrationNode({
     taskType: "bug_fix",
     staticRuleAuditResults: [],
     deterministicRuleResults: [],
@@ -685,12 +679,6 @@ test("reportGenerationNode only returns schema-valid resultJson without html rep
       contextualConstraints: [],
       implicitConstraints: [],
       classificationHints: ["bug_fix"],
-    },
-    featureExtraction: {
-      basicFeatures: [],
-      structuralFeatures: [],
-      semanticFeatures: [],
-      changeFeatures: [],
     },
     evidenceSummary: {
       workspaceFileCount: 1,
@@ -764,7 +752,7 @@ test("reportGenerationNode assigns matched bands for computed submetric scores",
       conclusion: "matched any",
     },
   ];
-  const scoringResult = await scoringOrchestrationNode({
+  const scoringResult = await scoreFusionOrchestrationNode({
     taskType: "bug_fix",
     deterministicRuleResults,
     ruleViolations: [],
@@ -773,12 +761,6 @@ test("reportGenerationNode assigns matched bands for computed submetric scores",
       contextualConstraints: [],
       implicitConstraints: [],
       classificationHints: ["bug_fix"],
-    },
-    featureExtraction: {
-      basicFeatures: [],
-      structuralFeatures: [],
-      semanticFeatures: [],
-      changeFeatures: [],
     },
     evidenceSummary: {
       workspaceFileCount: 1,
@@ -1039,24 +1021,21 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
         originalProjectPath: "/tmp/original",
         generatedProjectPath: "/tmp/workspace",
       },
-      agentPromptText: "",
-      agentBootstrapPayload: {},
+      rubricScoringPromptText: "",
+      rubricScoringPayload: {},
+      ruleAgentPromptText: "",
+      ruleAgentBootstrapPayload: {},
       constraintSummary: {
         explicitConstraints: [],
         contextualConstraints: [],
         implicitConstraints: [],
         classificationHints: ["bug_fix"],
       },
-      featureExtraction: {
-        basicFeatures: [],
-        structuralFeatures: [],
-        semanticFeatures: [],
-        changeFeatures: [],
-      },
       rubricSnapshot: {},
       deterministicRuleResults,
       assistedRuleCandidates: [],
-      agentRunStatus: "not_enabled",
+      rubricAgentRunStatus: "not_enabled",
+      ruleAgentRunStatus: "not_enabled",
       resultJson: { ok: true },
       htmlReport: "<html></html>",
     } as never,
@@ -1073,7 +1052,10 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
   assert.deepEqual(storedRuleAudit, deterministicRuleResults);
   assert.deepEqual(storedMergedAudit, deterministicRuleResults);
   await assert.rejects(fs.readFile(path.join(caseDir, "inputs", "original-prompt.txt"), "utf-8"));
-  assert.equal(await fs.readFile(path.join(caseDir, "inputs", "agent-prompt.txt"), "utf-8"), "");
+  assert.equal(
+    await fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"),
+    "",
+  );
 });
 
 test("runScoreWorkflow writes artifacts and produces schema-valid result json", async (t) => {
@@ -1282,8 +1264,8 @@ test("runScoreWorkflow skips agent assistance when unsupported rules have no dir
     agentClient,
   } as never);
 
-  assert.equal(invoked, false);
-  assert.equal(result.agentRunStatus, "not_enabled");
+  assert.equal(invoked, true);
+  assert.equal(result.ruleAgentRunStatus, "not_enabled");
   assert.equal(Array.isArray(result.mergedRuleAuditResults), true);
   assert.equal(
     (result.mergedRuleAuditResults as Array<{ rule_id: string; result: string }>).some(
@@ -1291,7 +1273,7 @@ test("runScoreWorkflow skips agent assistance when unsupported rules have no dir
     ),
     true,
   );
-  assert.equal(result.agentAssistedRuleResults, undefined);
+  assert.equal(result.ruleAgentAssessmentResult, undefined);
 });
 
 test("runScoreWorkflow persists skipped agent artifacts when unsupported rules have no direct evidence", async (t) => {
@@ -1322,23 +1304,23 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
     agentClient,
   } as never);
 
-  const agentPromptText = await fs.readFile(
-    path.join(caseDir, "inputs", "agent-prompt.txt"),
+  const ruleAgentPromptText = await fs.readFile(
+    path.join(caseDir, "inputs", "rule-agent-prompt.txt"),
     "utf-8",
   );
   const agentPromptPayload = JSON.parse(
-    await fs.readFile(path.join(caseDir, "inputs", "agent-bootstrap-payload.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"), "utf-8"),
   );
   const mergedAudit = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
   );
   const agentResult = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-runner-result.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
   );
 
-  assert.equal(invoked, false);
-  assert.equal(result.agentRunStatus, "not_enabled");
-  assert.match(agentPromptText, /你只能返回 tool_call 或 final_answer/);
+  assert.equal(invoked, true);
+  assert.equal(result.ruleAgentRunStatus, "not_enabled");
+  assert.match(ruleAgentPromptText, /你只能返回 tool_call 或 final_answer/);
   assert.equal(Array.isArray(agentPromptPayload.assisted_rule_candidates), true);
   assert.equal(agentPromptPayload.assisted_rule_candidates.length, 0);
   assert.equal(Array.isArray(agentPromptPayload.tool_contract.allowed_tools), true);
@@ -1347,6 +1329,74 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
   await assert.rejects(
     fs.readFile(path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"), "utf-8"),
   );
+});
+
+test("runScoreWorkflow invokes rubric scoring and rule assessment agents concurrently", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-1");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    caseId: "requirement_004",
+    promptText: "实现登录流程",
+    withPatch: false,
+    workspaceContent: "let x: number = 2;\n",
+    originalContent: "let x: number = 1;\n",
+    expectedConstraintsYaml: `constraints:
+  - id: HM-REQ-008-01
+    name: 必须使用 LoginWithHuaweiIDButton
+    description: 登录页必须使用 LoginWithHuaweiIDButton
+    priority: P0
+    rules:
+      - target: '**/pages/*.ets'
+        ast:
+          - type: call
+            name: LoginWithHuaweiIDButton
+        llm: 检查登录按钮
+`,
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+  let activeCalls = 0;
+  let maxActiveCalls = 0;
+  const agentClient = {
+    async completeJsonPrompt(prompt: string): Promise<string> {
+      activeCalls += 1;
+      maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+      await delay(40);
+      activeCalls -= 1;
+      if (prompt.includes("rubric 主评分 agent")) {
+        return "{}";
+      }
+      return JSON.stringify({
+        action: "final_answer",
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "medium",
+        },
+        rule_assessments: [
+          {
+            rule_id: "HM-REQ-008-01",
+            decision: "violation",
+            confidence: "medium",
+            reason: "未发现 LoginWithHuaweiIDButton 调用。",
+            evidence_used: [],
+            needs_human_review: false,
+          },
+        ],
+      });
+    },
+  };
+
+  await runScoreWorkflow({
+    caseInput: { ...caseInput, caseId: "case-1" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+    agentClient,
+  } as never);
+
+  assert.equal(maxActiveCalls, 2);
 });
 
 test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycle logs", async (t) => {
@@ -1401,7 +1451,10 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
     }),
   ];
   const agentClient = {
-    async completeJsonPrompt(): Promise<string> {
+    async completeJsonPrompt(prompt: string): Promise<string> {
+      if (prompt.includes("rubric 主评分 agent")) {
+        return "{}";
+      }
       return outputs.shift() ?? "";
     },
   };
@@ -1415,21 +1468,21 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
   } as never);
 
   const bootstrapPayload = JSON.parse(
-    await fs.readFile(path.join(caseDir, "inputs", "agent-bootstrap-payload.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"), "utf-8"),
   );
   const turns = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-turns.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
   );
   const toolTrace = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-tool-trace.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
   );
   const agentResult = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-runner-result.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
   );
   const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
-  assert.equal(result.agentRunStatus, "success");
-  assert.equal(result.agentRunnerMode, "case_aware");
+  assert.equal(result.ruleAgentRunStatus, "success");
+  assert.equal(result.ruleAgentRunnerMode, "case_aware");
   assert.equal(bootstrapPayload.tool_contract.allowed_tools.includes("read_file"), true);
   assert.equal(Array.isArray(turns), true);
   assert.equal(turns.length, 2);
@@ -1471,7 +1524,10 @@ test("runScoreWorkflow preserves partial agent traces when provider fails after 
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
   let callCount = 0;
   const agentClient = {
-    async completeJsonPrompt(): Promise<string> {
+    async completeJsonPrompt(prompt: string): Promise<string> {
+      if (prompt.includes("rubric 主评分 agent")) {
+        return "{}";
+      }
       callCount += 1;
       if (callCount === 1) {
         return JSON.stringify({
@@ -1494,17 +1550,17 @@ test("runScoreWorkflow preserves partial agent traces when provider fails after 
   } as never);
 
   const turns = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-turns.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
   );
   const toolTrace = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-tool-trace.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
   );
   const agentResult = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "agent-runner-result.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
   );
   const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
-  assert.equal(result.agentRunStatus, "invalid_output");
+  assert.equal(result.ruleAgentRunStatus, "invalid_output");
   assert.equal(Array.isArray(turns), true);
   assert.equal(turns.length, 1);
   assert.equal(turns[0]?.action, "tool_call");
@@ -1542,15 +1598,19 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
 
   assert.match(logText, /节点开始 node=taskUnderstandingNode label=任务理解/);
   assert.match(logText, /节点开始 node=ruleAuditNode label=规则审计/);
+  assert.match(logText, /节点开始 node=rubricScoringAgentNode label=Rubric Agent 评分/);
+  assert.match(logText, /节点开始 node=ruleAssessmentAgentNode label=规则 Agent 判定/);
+  assert.match(logText, /节点开始 node=scoreFusionOrchestrationNode label=评分融合/);
   assert.match(logText, /节点开始 node=artifactPostProcessNode label=产物后处理/);
   assert.match(logText, /节点开始 node=persistAndUploadNode label=结果落盘/);
+  assert.doesNotMatch(logText, /featureExtractionNode/);
   assert.match(
     logText,
     /节点完成 node=inputClassificationNode label=任务分类 summary=taskType=bug_fix/,
   );
   assert.match(
     logText,
-    /节点完成 node=scoringOrchestrationNode label=评分编排 summary=totalScore=/,
+    /节点完成 node=scoreFusionOrchestrationNode label=评分融合 summary=totalScore=/,
   );
   assert.match(
     logText,
@@ -1580,8 +1640,8 @@ test("runScoreWorkflow writes warning logs when agent assistance is skipped", as
 
   const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
-  assert.match(logText, /\[WARN\] agent 辅助判定跳过 reason=无候选规则/);
-  assert.doesNotMatch(logText, /\[INFO\] agent 辅助判定跳过 reason=无候选规则/);
+  assert.match(logText, /\[WARN\] rule agent 判定跳过 reason=无候选规则/);
+  assert.doesNotMatch(logText, /\[INFO\] rule agent 判定跳过 reason=无候选规则/);
 });
 
 test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async (t) => {
@@ -1637,7 +1697,7 @@ test("runScoreWorkflow keeps unsupported rules without direct evidence out of ag
   });
 
   const agentPromptPayload = JSON.parse(
-    await fs.readFile(path.join(caseDir, "inputs", "agent-bootstrap-payload.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"), "utf-8"),
   );
 
   assert.deepEqual(agentPromptPayload.assisted_rule_candidates, []);

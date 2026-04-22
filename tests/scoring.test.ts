@@ -5,7 +5,6 @@ import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import { computeScoreBreakdown } from "../src/scoring/scoringEngine.js";
 import type {
   ConstraintSummary,
-  FeatureExtraction,
   RuleAuditResult,
   CaseRuleDefinition,
 } from "../src/types.js";
@@ -18,13 +17,6 @@ const constraintSummary: ConstraintSummary = {
   contextualConstraints: ["keep module structure"],
   implicitConstraints: ["patch present"],
   classificationHints: ["bug_fix"],
-};
-
-const featureExtraction: FeatureExtraction = {
-  basicFeatures: ["state management"],
-  structuralFeatures: ["entry module"],
-  semanticFeatures: ["restaurant domain"],
-  changeFeatures: ["patch available"],
 };
 
 test("loadRubricForTaskType reads the latest structured rubric config from repo-local yaml", async () => {
@@ -76,7 +68,6 @@ test("computeScoreBreakdown applies penalties and hard-gate caps", async () => {
     ruleAuditResults,
     ruleViolations: [],
     constraintSummary,
-    featureExtraction,
     evidenceSummary: {
       workspaceFileCount: 4,
       originalFileCount: 3,
@@ -114,7 +105,6 @@ test("computeScoreBreakdown snaps penalized submetric scores to declared discret
     ruleAuditResults,
     ruleViolations: [],
     constraintSummary,
-    featureExtraction,
     evidenceSummary: {
       workspaceFileCount: 4,
       originalFileCount: 3,
@@ -159,7 +149,6 @@ test("computeScoreBreakdown maps array type style rules only to type-related rub
     ],
     ruleViolations: [],
     constraintSummary,
-    featureExtraction,
     evidenceSummary: {
       workspaceFileCount: 4,
       originalFileCount: 3,
@@ -221,7 +210,6 @@ test("computeScoreBreakdown triggers hard gate when case P0 rule fails", async (
     ],
     ruleViolations: [],
     constraintSummary,
-    featureExtraction,
     evidenceSummary: {
       workspaceFileCount: 4,
       originalFileCount: 3,

@@ -204,10 +204,25 @@ test("runSingleCase omits prompt snapshots and writes updated case-info metadata
     assert.equal(caseInfo.source_case_path, fixture.casePath);
     assert.equal(caseInfo.patch_path.endsWith("changes.patch"), true);
     assert.equal("original_prompt_file" in caseInfo, false);
-    assert.equal(caseInfo.agent_prompt_file, "inputs/agent-prompt.txt");
+    assert.equal("agent_prompt_file" in caseInfo, false);
+    assert.equal(caseInfo.rubric_scoring_prompt_file, "inputs/rubric-scoring-prompt.txt");
+    assert.equal(caseInfo.rubric_scoring_payload_file, "inputs/rubric-scoring-payload.json");
+    assert.equal(caseInfo.rule_agent_prompt_file, "inputs/rule-agent-prompt.txt");
+    assert.equal(
+      caseInfo.rule_agent_bootstrap_payload_file,
+      "inputs/rule-agent-bootstrap-payload.json",
+    );
     assert.equal(typeof caseInfo.agent_assistance_enabled, "boolean");
     assert.equal(typeof caseInfo.agent_model, "string");
-    assert.match(caseInfo.agent_run_status, /not_enabled|success|failed|invalid_output|skipped/);
+    assert.equal("agent_run_status" in caseInfo, false);
+    assert.match(
+      caseInfo.rubric_agent_run_status,
+      /not_enabled|success|failed|invalid_output|skipped/,
+    );
+    assert.match(
+      caseInfo.rule_agent_run_status,
+      /not_enabled|success|failed|invalid_output|skipped/,
+    );
   } finally {
     if (fixture.originalLocalCaseRoot === undefined) {
       delete process.env.LOCAL_CASE_ROOT;
