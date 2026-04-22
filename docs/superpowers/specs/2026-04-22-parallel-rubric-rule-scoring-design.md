@@ -13,12 +13,12 @@
 - 并联运行 rubric 评分 agent 和规则评判 agent，降低整体评分耗时。
 - 从关键路径移除 `featureExtractionNode`，因为它当前不影响评分。
 - 当任一 agent 失败或输出非法时，仍保持稳定 fallback。
-- 在首版改造中保持输出结果兼容现有 report schema，除非后续明确扩展 schema。
+- 扩展 `report_result_schema.json`，让维度评分同时呈现 rubric agent 评价逻辑和 rules 违规影响。
 
 ## 非目标
 
 - 本次不增加构建检查或编译验证。
-- 本次不重设计完整 report schema。
+- 本次不重设计完整 report schema，但需要对 `dimension_results` 做定向扩展。
 - 不让规则集独立生成第二套总分。
 - 不继续把占位的特征提取节点作为评分必需依赖。
 
@@ -242,6 +242,137 @@ interface RubricScoringResult {
 - 未知 dimension 或未知 item 视为非法输出。
 - 证据不足时应设置 `confidence = low` 且 `review_required = true`。
 
+## Report Schema 扩展
+
+需要扩展 `references/scoring/report_result_schema.json`，让评分报告在维度和子项层面同时表达两类信息：
+
+- rubric agent 为什么给出当前分数。
+- rules 违规如何影响该维度或子项。
+
+现有 schema 中 `dimension_results.item_results` 只有 `rationale` 和 `evidence` 两个扁平字段，不足以区分 agent 评分依据、规则违规证据和分数融合逻辑。改造后应保留旧字段用于兼容阅读，同时新增结构化字段。
+
+### Dimension 级新增字段
+
+在 `dimension_results[]` 对象中新增：
+
+```ts
+agent_evaluation_summary: {
+  base_score: number;
+  logic: string;
+  key_evidence: string[];
+  confidence: ConfidenceLevel;
+};
+rule_violation_summary: {
+  violated_rule_count: number;
+  affected_item_count: number;
+  total_rule_delta: number;
+  summary: string;
+};
+```
+
+字段含义：
+
+- `agent_evaluation_summary.base_score` 是该维度在规则修正前的 rubric agent 基础分。
+- `agent_evaluation_summary.logic` 说明 agent 对该维度的总体判断逻辑。
+- `agent_evaluation_summary.key_evidence` 列出支撑该维度判断的关键文件、patch 或代码片段摘要。
+- `rule_violation_summary.violated_rule_count` 是影响该维度的违规规则数量。
+- `rule_violation_summary.affected_item_count` 是被规则修正影响的子项数量。
+- `rule_violation_summary.total_rule_delta` 是规则层对该维度造成的总分修正，通常为 0 或负数。
+- `rule_violation_summary.summary` 用中文概括规则违规对该维度的影响。
+
+### Item 级新增字段
+
+在 `dimension_results[].item_results[]` 对象中新增：
+
+```ts
+agent_evaluation: {
+  base_score: number;
+  matched_band_score: number;
+  matched_criteria: string;
+  logic: string;
+  evidence_used: string[];
+  confidence: ConfidenceLevel;
+};
+rule_impacts: Array<{
+  rule_id: string;
+  rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
+  result: "不满足" | "待人工复核";
+  severity: "review_only" | "light" | "medium" | "heavy" | "gating";
+  score_delta: number;
+  reason: string;
+  evidence: string;
+  agent_assisted: boolean;
+  needs_human_review: boolean;
+}>;
+score_fusion: {
+  base_score: number;
+  rule_delta: number;
+  final_score: number;
+  fusion_logic: string;
+};
+```
+
+字段含义：
+
+- `agent_evaluation` 记录 rubric agent 对该 item 的基础判断，不混入规则扣分。
+- `rule_impacts` 只记录影响该 item 的规则结果，不重复塞入全量 `rule_audit_results`。
+- `score_fusion.base_score` 必须等于 `agent_evaluation.base_score`。
+- `score_fusion.rule_delta` 是该 item 所有 `rule_impacts.score_delta` 的合计。
+- `score_fusion.final_score` 必须等于最终输出的 `score`。
+- `score_fusion.fusion_logic` 用中文说明“为什么从基础分变成最终分”。
+
+### Schema 兼容策略
+
+本次扩展应把新增字段设为 required。理由是改造目标就是让每个维度评分都可解释，如果这些字段可选，报告仍可能退化成旧的不可区分结构。
+
+旧字段保留：
+
+- `comment` 保留，用于维度级简短结论。
+- `rationale` 保留，内容可由 `agent_evaluation.logic` 和 `score_fusion.fusion_logic` 组合生成。
+- `evidence` 保留，内容可由 `agent_evaluation.evidence_used` 和主要 `rule_impacts.evidence` 汇总生成。
+
+### Report Generation 要求
+
+`reportGenerationNode` 需要从 `scoreComputation.submetricDetails` 或新的 fusion detail 中生成上述字段。
+
+建议在 `ScoreComputation` 中增加结构化明细，避免 report 层反推：
+
+```ts
+interface RuleImpactDetail {
+  rule_id: string;
+  rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
+  result: "不满足" | "待人工复核";
+  severity: "review_only" | "light" | "medium" | "heavy" | "gating";
+  score_delta: number;
+  reason: string;
+  evidence: string;
+  agent_assisted: boolean;
+  needs_human_review: boolean;
+}
+
+interface ScoreFusionDetail {
+  dimension_name: string;
+  item_name: string;
+  agent_evaluation: {
+    base_score: number;
+    matched_band_score: number;
+    matched_criteria: string;
+    logic: string;
+    evidence_used: string[];
+    confidence: ConfidenceLevel;
+  };
+  rule_impacts: RuleImpactDetail[];
+  score_fusion: {
+    base_score: number;
+    rule_delta: number;
+    final_score: number;
+    fusion_logic: string;
+  };
+}
+```
+
+`dimension_results` 中的新增 dimension 级字段应由同一维度下的 `ScoreFusionDetail[]` 聚合得到。
+
 ## 分数融合规则
 
 融合原则：
@@ -345,8 +476,9 @@ inputClassification -> ruleAudit
 - `intermediate/rule-agent-tool-trace.json`
 - `intermediate/rule-audit-merged.json`
 - `intermediate/score-fusion.json`
+- `intermediate/report-schema-version.json`
 
-旧的 `inputs/agent-prompt.txt` 可以在迁移阶段作为别名保留，但新产物命名必须区分 rubric agent 和 rule agent。
+旧的 `inputs/agent-prompt.txt` 不保留，新产物命名必须区分 rubric agent 和 rule agent。
 
 ## 测试策略
 
@@ -359,6 +491,9 @@ inputClassification -> ruleAudit
 - score fusion 使用 rubric agent scores 作为基础分。
 - score fusion 能应用 `must_rule` 和 `forbidden_pattern` modifiers。
 - score fusion 能应用 hard gate caps。
+- `report_result_schema.json` 要求每个 dimension result 包含 agent 评价摘要和规则违规摘要。
+- `report_result_schema.json` 要求每个 item result 包含 `agent_evaluation`、`rule_impacts` 和 `score_fusion`。
+- `reportGenerationNode` 能把 score fusion 明细映射成扩展后的 `dimension_results`。
 - rubric agent 失败时 fallback 到当前确定性评分。
 - rule agent 失败时仍能产出基于 rubric 的分数，并加入 review items。
 - 两个 agent 都失败时返回当前 fallback score，并标记低置信度复核项。
@@ -377,16 +512,18 @@ inputClassification -> ruleAudit
 4. 实现以 rubric scores 为基础分的 score fusion。
 5. 将 workflow 改造成 rubric 与规则双分支并联。
 6. 从 workflow edges 和 scoring inputs 中移除 `featureExtractionNode`。
-7. 更新持久化产物名称。
-8. 更新文档和测试。
-9. 运行 build 和评分相关测试。
-10. 用代表性本地 case 对比改造前后的耗时与分数分布。
+7. 扩展 `report_result_schema.json`，在维度和子项评分中加入 agent 评价逻辑、rules 违规影响和 score fusion 明细。
+8. 更新 `reportGenerationNode`，生成扩展后的 `dimension_results`。
+9. 更新持久化产物名称。
+10. 更新文档和测试。
+11. 运行 build 和评分相关测试。
+12. 用代表性本地 case 对比改造前后的耗时与分数分布。
 
 ## 实现默认决策
 
 - 不保留 `feature-extraction.json` 兼容产物。被移除的节点不应继续写入 placeholder data。
 - 迁移阶段可以保留现有泛化 agent state 名称作为别名，但新增输出必须使用明确的 rubric agent 和 rule agent 产物名。
-- 首版不扩展 `report_result_schema.json`。如需展示 agent 状态和融合说明，先放入现有 report metadata 或 human review items。
+- 首版必须扩展 `report_result_schema.json`。维度评分和子项评分必须结构化展示 agent 评价逻辑、rules 违规情况和最终分数融合过程。
 
 ## 建议
 
