@@ -11,6 +11,10 @@ import { inputClassificationNode } from "../src/nodes/inputClassificationNode.js
 import { artifactPostProcessNode } from "../src/nodes/artifactPostProcessNode.js";
 import { persistAndUploadNode } from "../src/nodes/persistAndUploadNode.js";
 import { reportGenerationNode } from "../src/nodes/reportGenerationNode.js";
+import { rubricScoringAgentNode } from "../src/nodes/rubricScoringAgentNode.js";
+import { rubricScoringPromptBuilderNode } from "../src/nodes/rubricScoringPromptBuilderNode.js";
+import { ruleAgentPromptBuilderNode } from "../src/nodes/ruleAgentPromptBuilderNode.js";
+import { ruleAssessmentAgentNode } from "../src/nodes/ruleAssessmentAgentNode.js";
 import { ruleAuditNode } from "../src/nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
 import { scoringOrchestrationNode } from "../src/nodes/scoringOrchestrationNode.js";
@@ -187,6 +191,51 @@ test("inputClassificationNode prioritizes bug_fix over patch-based continuation"
   assert.equal(bugResult.taskType, "bug_fix");
   assert.equal(continuationResult.taskType, "continuation");
   assert.equal(fullGenerationResult.taskType, "full_generation");
+});
+
+test("explicit rubric and rule agent nodes are exported", () => {
+  assert.equal(typeof rubricScoringPromptBuilderNode, "function");
+  assert.equal(typeof rubricScoringAgentNode, "function");
+  assert.equal(typeof ruleAgentPromptBuilderNode, "function");
+  assert.equal(typeof ruleAssessmentAgentNode, "function");
+});
+
+test("rubricScoringPromptBuilderNode builds rubric item scoring prompt", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const result = await rubricScoringPromptBuilderNode(
+    {
+      caseInput: makeState({
+        promptText: "请修复餐厅列表页中的 bug",
+        patchPath: "/tmp/changes.patch",
+      }).caseInput,
+      sourceCasePath: "/tmp/case-1",
+      effectivePatchPath: "/tmp/changes.patch",
+      taskType: "bug_fix",
+      constraintSummary: {
+        explicitConstraints: ["修复餐厅列表页 bug"],
+        contextualConstraints: ["保持 ArkTS 工程结构"],
+        implicitConstraints: ["存在 patch"],
+        classificationHints: ["bug_fix"],
+      },
+      rubricSnapshot: buildRubricSnapshot(rubric),
+    } as never,
+    { logger: undefined },
+  );
+
+  assert.ok(result.rubricScoringPromptText?.includes("逐项输出 rubric item"));
+  assert.equal(result.rubricScoringPayload?.case_context.task_type, "bug_fix");
+});
+
+test("rubricScoringAgentNode skips when agent client is missing", async () => {
+  const skipped = await rubricScoringAgentNode(
+    {
+      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
+    } as never,
+    { logger: undefined },
+  );
+
+  assert.equal(skipped.rubricAgentRunStatus, "skipped");
 });
 
 test("ruleAuditNode emits one ledger item per rule and preserves source ordering", async (t) => {
