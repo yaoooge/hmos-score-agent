@@ -35,7 +35,10 @@ async function runCaseInput(input: {
     generated_project_path: caseInput.generatedProjectPath,
     patch_path: caseInput.patchPath ?? null,
     started_at: new Date().toISOString(),
-    agent_prompt_file: "inputs/agent-prompt.txt",
+    rubric_scoring_prompt_file: "inputs/rubric-scoring-prompt.txt",
+    rubric_scoring_payload_file: "inputs/rubric-scoring-payload.json",
+    rule_agent_prompt_file: "inputs/rule-agent-prompt.txt",
+    rule_agent_bootstrap_payload_file: "inputs/rule-agent-bootstrap-payload.json",
     agent_assistance_enabled: Boolean(config.modelProviderBaseUrl && config.modelProviderApiKey),
     agent_model: config.modelProviderModel ?? "gpt-5.4",
   };
@@ -45,7 +48,8 @@ async function runCaseInput(input: {
   await logger.info(`任务类型判定完成 taskType=${taskType}`);
   await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
     ...caseInfoBase,
-    agent_run_status: "not_enabled",
+    rubric_agent_run_status: "not_enabled",
+    rule_agent_run_status: "not_enabled",
   });
   await logger.info("输入元数据写入完成");
 
@@ -60,8 +64,12 @@ async function runCaseInput(input: {
     });
     await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
       ...caseInfoBase,
-      agent_run_status:
-        typeof result.agentRunStatus === "string" ? result.agentRunStatus : "not_enabled",
+      rubric_agent_run_status:
+        typeof result.rubricAgentRunStatus === "string"
+          ? result.rubricAgentRunStatus
+          : "not_enabled",
+      rule_agent_run_status:
+        typeof result.ruleAgentRunStatus === "string" ? result.ruleAgentRunStatus : "not_enabled",
     });
     await logger.info("工作流执行完成");
     await logger.info("结果已落盘");
@@ -147,7 +155,10 @@ export async function runRemoteEvaluationTask(
     generated_project_path: null,
     patch_path: null,
     started_at: new Date().toISOString(),
-    agent_prompt_file: "inputs/agent-prompt.txt",
+    rubric_scoring_prompt_file: "inputs/rubric-scoring-prompt.txt",
+    rubric_scoring_payload_file: "inputs/rubric-scoring-payload.json",
+    rule_agent_prompt_file: "inputs/rule-agent-prompt.txt",
+    rule_agent_bootstrap_payload_file: "inputs/rule-agent-bootstrap-payload.json",
     agent_assistance_enabled: Boolean(config.modelProviderBaseUrl && config.modelProviderApiKey),
     agent_model: config.modelProviderModel ?? "gpt-5.4",
     input_mode: "remote_task",
@@ -160,7 +171,8 @@ export async function runRemoteEvaluationTask(
     await logger.info(`启动远端评分流程 taskId=${remoteTask.taskId}`);
     await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
       ...caseInfoBase,
-      agent_run_status: "not_enabled",
+      rubric_agent_run_status: "not_enabled",
+      rule_agent_run_status: "not_enabled",
     });
     await logger.info("输入元数据写入完成");
     await logger.info("工作流开始执行");
@@ -186,9 +198,13 @@ export async function runRemoteEvaluationTask(
       original_project_path: caseInput?.originalProjectPath ?? null,
       generated_project_path: caseInput?.generatedProjectPath ?? null,
       patch_path: caseInput?.patchPath ?? null,
-      agent_run_status:
-        typeof workflowResult.agentRunStatus === "string"
-          ? workflowResult.agentRunStatus
+      rubric_agent_run_status:
+        typeof workflowResult.rubricAgentRunStatus === "string"
+          ? workflowResult.rubricAgentRunStatus
+          : "not_enabled",
+      rule_agent_run_status:
+        typeof workflowResult.ruleAgentRunStatus === "string"
+          ? workflowResult.ruleAgentRunStatus
           : "not_enabled",
     });
     await logger.info("工作流执行完成");

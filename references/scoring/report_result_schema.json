@@ -54,6 +54,39 @@
           "score": { "type": "number" },
           "max_score": { "type": "number" },
           "comment": { "type": "string" },
+          "agent_evaluation_summary": {
+            "type": "object",
+            "properties": {
+              "base_score": { "type": "number" },
+              "logic": { "type": "string" },
+              "key_evidence": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "confidence": {
+                "type": "string",
+                "enum": ["high", "medium", "low"]
+              }
+            },
+            "required": ["base_score", "logic", "key_evidence", "confidence"],
+            "additionalProperties": false
+          },
+          "rule_violation_summary": {
+            "type": "object",
+            "properties": {
+              "violated_rule_count": { "type": "number" },
+              "affected_item_count": { "type": "number" },
+              "total_rule_delta": { "type": "number" },
+              "summary": { "type": "string" }
+            },
+            "required": [
+              "violated_rule_count",
+              "affected_item_count",
+              "total_rule_delta",
+              "summary"
+            ],
+            "additionalProperties": false
+          },
           "item_results": {
             "type": "array",
             "items": {
@@ -81,8 +114,81 @@
                   "enum": ["high", "medium", "low"]
                 },
                 "review_required": { "type": "boolean" },
-                "rationale": { "type": "string" },
-                "evidence": { "type": "string" }
+                "agent_evaluation": {
+                  "type": "object",
+                  "properties": {
+                    "base_score": { "type": "number" },
+                    "matched_band_score": { "type": "number" },
+                    "matched_criteria": { "type": "string" },
+                    "logic": { "type": "string" },
+                    "evidence_used": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "confidence": {
+                      "type": "string",
+                      "enum": ["high", "medium", "low"]
+                    }
+                  },
+                  "required": [
+                    "base_score",
+                    "matched_band_score",
+                    "matched_criteria",
+                    "logic",
+                    "evidence_used",
+                    "confidence"
+                  ],
+                  "additionalProperties": false
+                },
+                "rule_impacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rule_id": { "type": "string" },
+                      "rule_source": {
+                        "type": "string",
+                        "enum": ["must_rule", "should_rule", "forbidden_pattern"]
+                      },
+                      "result": {
+                        "type": "string",
+                        "enum": ["不满足", "待人工复核"]
+                      },
+                      "severity": {
+                        "type": "string",
+                        "enum": ["review_only", "light", "medium", "heavy", "gating"]
+                      },
+                      "score_delta": { "type": "number" },
+                      "reason": { "type": "string" },
+                      "evidence": { "type": "string" },
+                      "agent_assisted": { "type": "boolean" },
+                      "needs_human_review": { "type": "boolean" }
+                    },
+                    "required": [
+                      "rule_id",
+                      "rule_source",
+                      "result",
+                      "severity",
+                      "score_delta",
+                      "reason",
+                      "evidence",
+                      "agent_assisted",
+                      "needs_human_review"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "score_fusion": {
+                  "type": "object",
+                  "properties": {
+                    "base_score": { "type": "number" },
+                    "rule_delta": { "type": "number" },
+                    "final_score": { "type": "number" },
+                    "fusion_logic": { "type": "string" }
+                  },
+                  "required": ["base_score", "rule_delta", "final_score", "fusion_logic"],
+                  "additionalProperties": false
+                }
               },
               "required": [
                 "item_name",
@@ -91,8 +197,9 @@
                 "matched_band",
                 "confidence",
                 "review_required",
-                "rationale",
-                "evidence"
+                "agent_evaluation",
+                "rule_impacts",
+                "score_fusion"
               ],
               "additionalProperties": false
             }
@@ -104,6 +211,8 @@
           "score",
           "max_score",
           "comment",
+          "agent_evaluation_summary",
+          "rule_violation_summary",
           "item_results"
         ],
         "additionalProperties": false

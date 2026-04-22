@@ -3,18 +3,19 @@ import { AgentClient, createDefaultAgentClient } from "../agent/agentClient.js";
 import { getConfig } from "../config.js";
 import { ArtifactStore } from "../io/artifactStore.js";
 import { CaseLogger } from "../io/caseLogger.js";
-import { agentAssistedRuleNode } from "../nodes/agentAssistedRuleNode.js";
-import { agentPromptBuilderNode } from "../nodes/agentPromptBuilderNode.js";
 import { artifactPostProcessNode } from "../nodes/artifactPostProcessNode.js";
 import { inputClassificationNode } from "../nodes/inputClassificationNode.js";
-import { featureExtractionNode } from "../nodes/featureExtractionNode.js";
 import { persistAndUploadNode } from "../nodes/persistAndUploadNode.js";
 import { reportGenerationNode } from "../nodes/reportGenerationNode.js";
 import { remoteTaskPreparationNode } from "../nodes/remoteTaskPreparationNode.js";
 import { rubricPreparationNode } from "../nodes/rubricPreparationNode.js";
+import { rubricScoringAgentNode } from "../nodes/rubricScoringAgentNode.js";
+import { rubricScoringPromptBuilderNode } from "../nodes/rubricScoringPromptBuilderNode.js";
+import { ruleAgentPromptBuilderNode } from "../nodes/ruleAgentPromptBuilderNode.js";
+import { ruleAssessmentAgentNode } from "../nodes/ruleAssessmentAgentNode.js";
 import { ruleAuditNode } from "../nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../nodes/ruleMergeNode.js";
-import { scoringOrchestrationNode } from "../nodes/scoringOrchestrationNode.js";
+import { scoreFusionOrchestrationNode } from "../nodes/scoreFusionOrchestrationNode.js";
 import { taskUnderstandingNode } from "../nodes/taskUnderstandingNode.js";
 import { CaseInput, RemoteEvaluationTask } from "../types.js";
 import { ScoreState } from "./state.js";
@@ -58,15 +59,22 @@ export async function runScoreWorkflow(
       ),
     )
     .addNode("inputClassificationNode", (s) => inputClassificationNode(s))
-    .addNode("featureExtractionNode", (s) => featureExtractionNode(s))
     .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
     .addNode("rubricPreparationNode", (s) =>
       rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
     )
-    .addNode("agentPromptBuilderNode", (s) => agentPromptBuilderNode(s, { logger }))
-    .addNode("agentAssistedRuleNode", (s) => agentAssistedRuleNode(s, { agentClient, logger }))
+    .addNode("rubricScoringPromptBuilderNode", (s) =>
+      rubricScoringPromptBuilderNode(s, { logger }),
+    )
+    .addNode("rubricScoringAgentNode", (s) =>
+      rubricScoringAgentNode(s, { agentClient, logger }),
+    )
+    .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
+    .addNode("ruleAssessmentAgentNode", (s) =>
+      ruleAssessmentAgentNode(s, { agentClient, logger }),
+    )
     .addNode("ruleMergeNode", (s) => ruleMergeNode(s, { logger }))
-    .addNode("scoringOrchestrationNode", (s) => scoringOrchestrationNode(s))
+    .addNode("scoreFusionOrchestrationNode", (s) => scoreFusionOrchestrationNode(s))
     .addNode("reportGenerationNode", (s) =>
       reportGenerationNode(s, { referenceRoot: input.referenceRoot }),
     )
@@ -79,14 +87,15 @@ export async function runScoreWorkflow(
     .addEdge(START, "remoteTaskPreparationNode")
     .addEdge("remoteTaskPreparationNode", "taskUnderstandingNode")
     .addEdge("taskUnderstandingNode", "inputClassificationNode")
-    .addEdge("inputClassificationNode", "featureExtractionNode")
-    .addEdge("featureExtractionNode", "ruleAuditNode")
+    .addEdge("inputClassificationNode", "ruleAuditNode")
     .addEdge("ruleAuditNode", "rubricPreparationNode")
-    .addEdge("rubricPreparationNode", "agentPromptBuilderNode")
-    .addEdge("agentPromptBuilderNode", "agentAssistedRuleNode")
-    .addEdge("agentAssistedRuleNode", "ruleMergeNode")
-    .addEdge("ruleMergeNode", "scoringOrchestrationNode")
-    .addEdge("scoringOrchestrationNode", "reportGenerationNode")
+    .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
+    .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
+    .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")
+    .addEdge("ruleAgentPromptBuilderNode", "ruleAssessmentAgentNode")
+    .addEdge("ruleAssessmentAgentNode", "ruleMergeNode")
+    .addEdge(["rubricScoringAgentNode", "ruleMergeNode"], "scoreFusionOrchestrationNode")
+    .addEdge("scoreFusionOrchestrationNode", "reportGenerationNode")
     .addEdge("reportGenerationNode", "artifactPostProcessNode")
     .addEdge("artifactPostProcessNode", "persistAndUploadNode")
     .addEdge("persistAndUploadNode", END)

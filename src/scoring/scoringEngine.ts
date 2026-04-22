@@ -3,12 +3,13 @@ import {
   ConstraintSummary,
   DimensionScore,
   EvidenceSummary,
-  FeatureExtraction,
   HumanReviewItem,
   RiskItem,
   RuleAuditResult,
+  RuleImpactDetail,
   RuleViolation,
   ScoreComputation,
+  ScoreFusionDetail,
   SubmetricDetail,
   TaskType,
 } from "../types.js";
@@ -20,7 +21,6 @@ type ComputeScoreInput = {
   ruleAuditResults: RuleAuditResult[];
   ruleViolations: RuleViolation[];
   constraintSummary: ConstraintSummary;
-  featureExtraction: FeatureExtraction;
   evidenceSummary: EvidenceSummary;
   caseRuleDefinitions?: CaseRuleDefinition[];
 };
@@ -43,6 +43,12 @@ function roundScore(value: number): number {
 
 function makeMetricKey(dimensionName: string, metricName: string): string {
   return `${dimensionName}::${metricName}`;
+}
+
+function formatScoringBands(
+  scoringBands: Array<{ score: number; criteria: string }>,
+): string {
+  return scoringBands.map((band) => `${band.score}分：${band.criteria}`).join(" / ");
 }
 
 function getInitialMetricScore(item: LoadedRubric["dimensions"][number]["items"][number]): number {
@@ -289,6 +295,16 @@ function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
   return triggered;
 }
 
+function getRuleImpactSeverity(rule: RuleAuditResult): RuleImpactDetail["severity"] {
+  if (rule.rule_source === "forbidden_pattern") {
+    return "heavy";
+  }
+  if (rule.rule_source === "must_rule") {
+    return "medium";
+  }
+  return "light";
+}
+
 function shouldForceReview(
   score: number,
   scoreBands: Array<{ min: number; max: number }>,
@@ -314,9 +330,39 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
       evidence: "当前未命中扣分证据。",
     })),
   );
+  const scoreFusionDetails: ScoreFusionDetail[] = input.rubric.dimensions.flatMap((dimension) =>
+    dimension.items.map((item) => {
+      const baseScore = getInitialMetricScore(item);
+      return {
+        dimension_name: dimension.name,
+        item_name: item.name,
+        agent_evaluation: {
+          base_score: baseScore,
+          matched_band_score: baseScore,
+          matched_criteria: formatScoringBands(item.scoringBands),
+          logic: "按 rubric 基线满分初始化；规则评判仅作为后续修正信号。",
+          evidence_used: [],
+          confidence: "high" as const,
+        },
+        rule_impacts: [],
+        score_fusion: {
+          base_score: baseScore,
+          rule_delta: 0,
+          final_score: baseScore,
+          fusion_logic: "未命中影响该评分项的规则，最终分等于 rubric 基础分。",
+        },
+      };
+    }),
+  );
 
   const detailMap = new Map(
     details.map((detail) => [makeMetricKey(detail.dimension_name, detail.metric_name), detail]),
+  );
+  const scoreFusionDetailMap = new Map(
+    scoreFusionDetails.map((detail) => [
+      makeMetricKey(detail.dimension_name, detail.item_name),
+      detail,
+    ]),
   );
   const risks: RiskItem[] = [];
   const humanReviewItems: HumanReviewItem[] = [];
@@ -353,6 +399,23 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
       // rationale/evidence 直接回指触发的规则，便于 report 层透明展示。
       current.rationale = `${rule.rule_id} 触发了 ${rule.rule_source} 扣分。`;
       current.evidence = rule.conclusion;
+
+      const fusionDetail = scoreFusionDetailMap.get(
+        makeMetricKey(detail.dimension_name, detail.metric_name),
+      );
+      if (fusionDetail) {
+        fusionDetail.rule_impacts.push({
+          rule_id: rule.rule_id,
+          rule_source: rule.rule_source,
+          result: "不满足",
+          severity: getRuleImpactSeverity(rule),
+          score_delta: -roundScore(maxScore * penalty.ratio),
+          reason: rule.conclusion,
+          evidence: rule.conclusion,
+          agent_assisted: rule.rule_source === "should_rule",
+          needs_human_review: penalty.reviewRequired,
+        });
+      }
     }
 
     risks.push({
@@ -366,6 +429,24 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
   for (const detail of details) {
     const rubricItem = rubricItemMap.get(makeMetricKey(detail.dimension_name, detail.metric_name));
     detail.score = snapScoreToDeclaredBand(detail.score, rubricItem?.scoringBands ?? []);
+
+    const fusionDetail = scoreFusionDetailMap.get(
+      makeMetricKey(detail.dimension_name, detail.metric_name),
+    );
+    if (fusionDetail) {
+      const baseScore = fusionDetail.agent_evaluation.base_score;
+      const ruleDelta = roundScore(detail.score - baseScore);
+      fusionDetail.agent_evaluation.confidence = detail.confidence;
+      fusionDetail.score_fusion = {
+        base_score: baseScore,
+        rule_delta: ruleDelta,
+        final_score: detail.score,
+        fusion_logic:
+          ruleDelta === 0
+            ? "未命中影响该评分项的规则，最终分等于 rubric 基础分。"
+            : `rubric 基础分 ${baseScore}，规则修正 ${ruleDelta}，最终 ${detail.score}。`,
+      };
+    }
   }
 
   const dimensionScores: DimensionScore[] = input.rubric.dimensions.map((dimension) => {
@@ -439,6 +520,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     },
     dimensionScores,
     submetricDetails: details,
+    scoreFusionDetails,
     risks,
     humanReviewItems,
     strengths: input.ruleAuditResults.every((rule) => rule.result !== "不满足")

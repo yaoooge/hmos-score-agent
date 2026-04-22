@@ -22,17 +22,6 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
     }
     case "inputClassificationNode":
       return `taskType=${String(update.taskType ?? "")}`;
-    case "featureExtractionNode": {
-      const featureExtraction = update.featureExtraction as
-        | {
-            basicFeatures?: unknown[];
-            structuralFeatures?: unknown[];
-            semanticFeatures?: unknown[];
-            changeFeatures?: unknown[];
-          }
-        | undefined;
-      return `basic=${lengthOf(featureExtraction?.basicFeatures)} structural=${lengthOf(featureExtraction?.structuralFeatures)} semantic=${lengthOf(featureExtraction?.semanticFeatures)} change=${lengthOf(featureExtraction?.changeFeatures)}`;
-    }
     case "ruleAuditNode": {
       const staticRuleAuditResults =
         (update.staticRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];
@@ -53,24 +42,30 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
         | undefined;
       return `dimensions=${lengthOf(rubricSnapshot?.dimension_summaries)} hardGates=${lengthOf(rubricSnapshot?.hard_gates)} reviewRules=${lengthOf(rubricSnapshot?.review_rule_summary)}`;
     }
-    case "agentPromptBuilderNode":
-      return `deterministic=${lengthOf(update.deterministicRuleResults)} candidates=${lengthOf(update.assistedRuleCandidates)} promptLength=${String(String(update.agentPromptText ?? "").length)}`;
-    case "agentAssistedRuleNode": {
-      const runnerResult = update.agentRunnerResult as
+    case "rubricScoringPromptBuilderNode":
+      return `promptLength=${String(String(update.rubricScoringPromptText ?? "").length)}`;
+    case "rubricScoringAgentNode": {
+      const result = update.rubricScoringResult as { item_scores?: unknown[] } | undefined;
+      return `status=${String(update.rubricAgentRunStatus ?? "")} items=${lengthOf(result?.item_scores)}`;
+    }
+    case "ruleAgentPromptBuilderNode":
+      return `deterministic=${lengthOf(update.deterministicRuleResults)} candidates=${lengthOf(update.assistedRuleCandidates)} promptLength=${String(String(update.ruleAgentPromptText ?? "").length)}`;
+    case "ruleAssessmentAgentNode": {
+      const runnerResult = update.ruleAgentRunnerResult as
         | {
             outcome?: string;
             final_answer_raw_text?: string;
           }
         | undefined;
       const outputLength = String(runnerResult?.final_answer_raw_text ?? "").length;
-      return `status=${String(update.agentRunStatus ?? runnerResult?.outcome ?? "")} outputLength=${String(outputLength)}`;
+      return `status=${String(update.ruleAgentRunStatus ?? runnerResult?.outcome ?? "")} outputLength=${String(outputLength)}`;
     }
     case "ruleMergeNode": {
       const mergedRuleAuditResults =
         (update.mergedRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];
       return `merged=${mergedRuleAuditResults.length} reviewRequired=${mergedRuleAuditResults.filter((item) => item.result === "待人工复核").length}`;
     }
-    case "scoringOrchestrationNode": {
+    case "scoreFusionOrchestrationNode": {
       const score = update.scoreComputation as
         | {
             totalScore?: number;

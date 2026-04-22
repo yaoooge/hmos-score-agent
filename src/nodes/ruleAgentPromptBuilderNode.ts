@@ -3,13 +3,13 @@ import { buildAgentBootstrapPayload, renderAgentBootstrapPrompt } from "../agent
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
-export async function agentPromptBuilderNode(
+export async function ruleAgentPromptBuilderNode(
   state: ScoreGraphState,
   deps: {
     logger?: { info(message: string): Promise<void> };
   },
 ): Promise<Partial<ScoreGraphState>> {
-  emitNodeStarted("agentPromptBuilderNode");
+  emitNodeStarted("ruleAgentPromptBuilderNode");
   try {
     const deterministicRuleResults = state.deterministicRuleResults ?? [];
     const assistedRuleCandidates = state.assistedRuleCandidates ?? [];
@@ -29,17 +29,17 @@ export async function agentPromptBuilderNode(
     });
     const prompt = renderAgentBootstrapPrompt(payload);
     await deps.logger?.info(
-      `agent bootstrap 组装完成 candidates=${assistedRuleCandidates.length} deterministic=${deterministicRuleResults.length} targetFiles=${initialTargetFiles.length}`,
+      `rule agent prompt 组装完成 candidates=${assistedRuleCandidates.length} deterministic=${deterministicRuleResults.length} targetFiles=${initialTargetFiles.length}`,
     );
 
     return {
       deterministicRuleResults,
       assistedRuleCandidates,
-      agentBootstrapPayload: payload,
-      agentPromptText: prompt,
+      ruleAgentBootstrapPayload: payload,
+      ruleAgentPromptText: prompt,
     };
   } catch (error) {
-    emitNodeFailed("agentPromptBuilderNode", error);
+    emitNodeFailed("ruleAgentPromptBuilderNode", error);
     throw error;
   }
 }

@@ -28,6 +28,18 @@ function makeValidResultJson(): Record<string, unknown> {
         score: 18,
         max_score: 25,
         comment: "包含需要人工复核的扣分项。",
+        agent_evaluation_summary: {
+          base_score: 20,
+          logic: "rubric agent 认为问题点基本命中，但闭环证据不足。",
+          key_evidence: ["workspace/entry/src/main/ets/pages/Index.ets"],
+          confidence: "medium",
+        },
+        rule_violation_summary: {
+          violated_rule_count: 1,
+          affected_item_count: 1,
+          total_rule_delta: -2,
+          summary: "一个 should_rule 影响该维度得分。",
+        },
         item_results: [
           {
             item_name: "问题点命中程度",
@@ -39,8 +51,33 @@ function makeValidResultJson(): Record<string, unknown> {
             },
             confidence: "medium",
             review_required: true,
-            rationale: "存在部分证据但闭环不完整。",
-            evidence: "patch 命中目标函数。",
+            agent_evaluation: {
+              base_score: 10,
+              matched_band_score: 10,
+              matched_criteria: "直接命中根因，修复路径闭环。",
+              logic: "patch 命中目标函数，但闭环证据不足。",
+              evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+              confidence: "medium",
+            },
+            rule_impacts: [
+              {
+                rule_id: "ARKTS-SHOULD-001",
+                rule_source: "should_rule",
+                result: "不满足",
+                severity: "light",
+                score_delta: -2,
+                reason: "状态组织存在轻微风险。",
+                evidence: "patch 命中目标函数。",
+                agent_assisted: false,
+                needs_human_review: false,
+              },
+            ],
+            score_fusion: {
+              base_score: 10,
+              rule_delta: -2,
+              final_score: 8,
+              fusion_logic: "rubric 基础分 10，规则轻扣 2 分，最终 8 分。",
+            },
           },
         ],
       },
@@ -118,4 +155,44 @@ test("validateReportResult rejects invalid output with a useful error", () => {
     () => validateReportResult({ basic_info: {} }, schemaPath),
     /schema validation failed/i,
   );
+});
+
+test("validateReportResult rejects legacy item rationale and evidence fields", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.dimension_results = [
+    {
+      dimension_name: "代码正确性与静态质量",
+      dimension_intent: "语法与静态质量",
+      score: 8,
+      max_score: 10,
+      comment: "存在规则扣分。",
+      agent_evaluation_summary: {
+        base_score: 10,
+        logic: "rubric agent 给出高分。",
+        key_evidence: ["workspace/entry/src/main/ets/pages/Index.ets"],
+        confidence: "medium",
+      },
+      rule_violation_summary: {
+        violated_rule_count: 1,
+        affected_item_count: 1,
+        total_rule_delta: -2,
+        summary: "一个规则影响该维度。",
+      },
+      item_results: [
+        {
+          item_name: "ArkTS/ArkUI语法与类型安全",
+          item_weight: 10,
+          score: 8,
+          matched_band: { score: 8, criteria: "基本满足。" },
+          confidence: "medium",
+          review_required: false,
+          rationale: "旧字段",
+          evidence: "旧字段",
+        },
+      ],
+    },
+  ];
+
+  assert.throws(() => validateReportResult(valid, schemaPath), /schema validation failed/i);
 });

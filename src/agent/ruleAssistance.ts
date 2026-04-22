@@ -50,8 +50,8 @@ type MergeRuleAuditResultsInput = {
 };
 
 type MergeRuleAuditResultsOutput = {
-  agentRunStatus: AgentRunStatus;
-  agentAssistedRuleResults: AgentAssistedRuleResult | null;
+  ruleAgentRunStatus: AgentRunStatus;
+  ruleAgentAssessmentResult: AgentAssistedRuleResult | null;
   mergedRuleAuditResults: RuleAuditResult[];
 };
 
@@ -415,8 +415,8 @@ export function mergeRuleAuditResults(
   const agentResult = input.agentFinalAnswer;
   if (!agentResult) {
     return {
-      agentRunStatus: "invalid_output",
-      agentAssistedRuleResults: null,
+      ruleAgentRunStatus: "invalid_output",
+      ruleAgentAssessmentResult: null,
       mergedRuleAuditResults: [
         ...input.deterministicRuleResults,
         ...input.assistedRuleCandidates.map((candidate) => makeFallbackResult(candidate)),
@@ -452,8 +452,8 @@ export function mergeRuleAuditResults(
   });
 
   return {
-    agentRunStatus: "success",
-    agentAssistedRuleResults: {
+    ruleAgentRunStatus: "success",
+    ruleAgentAssessmentResult: {
       summary: agentResult.summary,
       rule_assessments: agentResult.rule_assessments,
     },

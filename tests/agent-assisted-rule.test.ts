@@ -167,7 +167,7 @@ test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () =>
     ),
   });
 
-  assert.equal(merged.agentRunStatus, "success");
+  assert.equal(merged.ruleAgentRunStatus, "success");
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "不涉及");
   assert.equal(merged.mergedRuleAuditResults[0]?.conclusion, "未看到相关实现证据，当前不涉及。");
 });
@@ -385,7 +385,7 @@ test("mergeRuleAuditResults keeps deterministic results authoritative and maps u
     ]),
   });
 
-  assert.equal(merged.agentRunStatus, "success");
+  assert.equal(merged.ruleAgentRunStatus, "success");
   assert.equal(
     merged.mergedRuleAuditResults.find((item) => item.rule_id === "ARKTS-MUST-001")?.result,
     "满足",
@@ -412,7 +412,7 @@ test("mergeRuleAuditResults falls back to local review result when agent final a
     agentFinalAnswer: undefined,
   });
 
-  assert.equal(merged.agentRunStatus, "invalid_output");
+  assert.equal(merged.ruleAgentRunStatus, "invalid_output");
   assert.equal(merged.mergedRuleAuditResults[0]?.rule_id, "ARKTS-SHOULD-001");
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
 });
@@ -445,7 +445,7 @@ test("mergeRuleAuditResults includes static precheck details in fallback conclus
   });
 
   const conclusion = merged.mergedRuleAuditResults[0]?.conclusion ?? "";
-  assert.equal(merged.agentRunStatus, "invalid_output");
+  assert.equal(merged.ruleAgentRunStatus, "invalid_output");
   assert.match(conclusion, /Agent 未能提供有效判定/);
   assert.match(conclusion, /静态预判在目标文件中命中了 0\/1 个 AST 信号/);
   assert.match(conclusion, /本地预判信号：none_matched/);
@@ -480,7 +480,7 @@ test("mergeRuleAuditResults keeps trusted static result for scoring when final a
     agentFinalAnswer: undefined,
   });
 
-  assert.equal(merged.agentRunStatus, "invalid_output");
+  assert.equal(merged.ruleAgentRunStatus, "invalid_output");
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "不满足");
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /静态预判结果已作为评分依据/);
 });
@@ -513,7 +513,7 @@ test("mergeRuleAuditResults still falls back to review when static precheck is n
     agentFinalAnswer: undefined,
   });
 
-  assert.equal(merged.agentRunStatus, "invalid_output");
+  assert.equal(merged.ruleAgentRunStatus, "invalid_output");
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
 });
 
@@ -539,7 +539,7 @@ test("mergeRuleAuditResults preserves agent summary when structured rule assessm
     }),
   });
 
-  assert.equal(merged.agentRunStatus, "success");
+  assert.equal(merged.ruleAgentRunStatus, "success");
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /未发现 Location Kit/);
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /整体置信度：high/);
@@ -576,7 +576,7 @@ test("mergeRuleAuditResults preserves per-rule agent judgement details", () => {
   });
 
   assert.equal(
-    merged.agentAssistedRuleResults?.rule_assessments[0]?.reason,
+    merged.ruleAgentAssessmentResult?.rule_assessments[0]?.reason,
     "未发现 Location Kit 调用。",
   );
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "不满足");
@@ -608,8 +608,8 @@ test("mergeRuleAuditResults falls back when canonical final answer omits a candi
     ]),
   });
 
-  assert.equal(merged.agentRunStatus, "success");
-  assert.equal(merged.agentAssistedRuleResults?.rule_assessments.length, 1);
+  assert.equal(merged.ruleAgentRunStatus, "success");
+  assert.equal(merged.ruleAgentAssessmentResult?.rule_assessments.length, 1);
   assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /未提供规则 ARKTS-SHOULD-001/);
 });
