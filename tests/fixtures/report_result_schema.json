@@ -125,6 +125,30 @@
                       "type": "array",
                       "items": { "type": "string" }
                     },
+                    "deduction_trace": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code_locations": {
+                              "type": "array",
+                              "items": { "type": "string" }
+                            },
+                            "impact_scope": { "type": "string" },
+                            "rubric_comparison": { "type": "string" },
+                            "deduction_reason": { "type": "string" }
+                          },
+                          "required": [
+                            "code_locations",
+                            "impact_scope",
+                            "rubric_comparison",
+                            "deduction_reason"
+                          ],
+                          "additionalProperties": false
+                        },
+                        { "type": "null" }
+                      ]
+                    },
                     "confidence": {
                       "type": "string",
                       "enum": ["high", "medium", "low"]
@@ -136,6 +160,7 @@
                     "matched_criteria",
                     "logic",
                     "evidence_used",
+                    "deduction_trace",
                     "confidence"
                   ],
                   "additionalProperties": false

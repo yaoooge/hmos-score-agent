@@ -57,6 +57,12 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
                 "workspace/features/home/src/main/ets/pages/Home.ets",
               ],
               confidence: "medium",
+              deduction_trace: {
+                code_locations: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+                impact_scope: "影响页面初始化稳定性",
+                rubric_comparison: "未命中高分档；命中当前档。",
+                deduction_reason: "存在空值未防御。",
+              },
             },
             score_fusion: {
               base_score: 8,
@@ -135,6 +141,11 @@ test("renderHtmlReport renders summary, full dimension list, filters, and no raw
   assert.match(html, /维度级理由：命中主要问题点，改动范围可控。/);
   assert.match(html, /item 级理由：问题链路与改动位置一致。/);
   assert.match(html, /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets/);
+  assert.match(html, /代码位置/);
+  assert.match(html, /影响范围/);
+  assert.match(html, /Rubric 对照/);
+  assert.match(html, /评分理由/);
+  assert.match(html, /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets:12/);
   assert.doesNotMatch(html, /建议动作：优先复核低置信度指标/);
   assert.match(html, /data-filter="不满足"/);
   assert.match(html, /data-filter="待人工复核"/);
@@ -151,6 +162,7 @@ test("buildHtmlReportViewModel reads rationale and evidence from nested agent ev
   assert.match(firstDimension?.summaryEvidence ?? "", /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets/);
   assert.equal(firstItem?.rationale, "item 级理由：问题链路与改动位置一致。");
   assert.match(firstItem?.evidence ?? "", /workspace\/features\/home\/src\/main\/ets\/pages\/Home\.ets/);
+  assert.equal(firstItem?.deductionTrace?.impactScope, "影响页面初始化稳定性");
 });
 
 test("buildHtmlReportViewModel provides explicit empty states", () => {

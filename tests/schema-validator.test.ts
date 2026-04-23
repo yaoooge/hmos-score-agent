@@ -58,6 +58,7 @@ function makeValidResultJson(): Record<string, unknown> {
               logic: "patch 命中目标函数，但闭环证据不足。",
               evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
               confidence: "medium",
+              deduction_trace: null,
             },
             rule_impacts: [
               {
@@ -145,6 +146,30 @@ test("validateReportResult accepts result with bound_rule_packs", () => {
       display_name: "用例 requirement_004 约束规则",
     },
   ];
+
+  assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
+});
+
+test("validateReportResult accepts deduction_trace for deducted items", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  const firstDimension = (valid.dimension_results as Array<Record<string, unknown>>)[0];
+  const firstItem = (firstDimension.item_results as Array<Record<string, unknown>>)[0];
+
+  firstItem.agent_evaluation = {
+    base_score: 8,
+    matched_band_score: 8,
+    matched_criteria: "8分：基本满足。",
+    logic: "存在明确负面证据。",
+    evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+    confidence: "medium",
+    deduction_trace: {
+      code_locations: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+      impact_scope: "影响页面初始化稳定性",
+      rubric_comparison: "未命中高分档；命中当前档。",
+      deduction_reason: "存在空值未防御。",
+    },
+  };
 
   assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
 });
