@@ -136,13 +136,15 @@
                             },
                             "impact_scope": { "type": "string" },
                             "rubric_comparison": { "type": "string" },
-                            "deduction_reason": { "type": "string" }
+                            "deduction_reason": { "type": "string" },
+                            "improvement_suggestion": { "type": "string" }
                           },
                           "required": [
                             "code_locations",
                             "impact_scope",
                             "rubric_comparison",
-                            "deduction_reason"
+                            "deduction_reason",
+                            "improvement_suggestion"
                           ],
                           "additionalProperties": false
                         },

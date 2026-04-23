@@ -57,7 +57,26 @@ export async function persistAndUploadNode(
         status: state.rubricAgentRunStatus ?? "skipped",
         raw_text: state.rubricAgentRawText ?? "",
         parsed_result: state.rubricScoringResult ?? null,
+        runner_result:
+          state.rubricAgentRunnerResult ?? {
+            outcome:
+              state.rubricAgentRunStatus === "skipped" || state.rubricAgentRunStatus === "not_enabled"
+                ? state.rubricAgentRunStatus
+                : "protocol_error",
+            turns: state.rubricAgentTurns ?? [],
+            tool_trace: state.rubricAgentToolTrace ?? [],
+          },
       },
+    );
+    await deps.artifactStore.writeJson(
+      state.caseDir,
+      "intermediate/rubric-agent-turns.json",
+      state.rubricAgentTurns ?? [],
+    );
+    await deps.artifactStore.writeJson(
+      state.caseDir,
+      "intermediate/rubric-agent-tool-trace.json",
+      state.rubricAgentToolTrace ?? [],
     );
     await deps.artifactStore.writeJson(
       state.caseDir,

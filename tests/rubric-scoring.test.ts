@@ -7,6 +7,10 @@ import {
   renderCompactRubricScoringPrompt,
   renderRubricScoringPrompt,
 } from "../src/agent/rubricScoring.js";
+import {
+  buildRubricCaseAwarePayload,
+  renderRubricCaseAwareBootstrapPrompt,
+} from "../src/agent/rubricCaseAwarePrompt.js";
 import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import type { ConstraintSummary } from "../src/types.js";
@@ -179,6 +183,64 @@ test("parseRubricScoringResultStrict rejects deducted items without deduction_tr
   );
 });
 
+test("parseRubricScoringResultStrict rejects deducted items without improvement suggestion", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const firstDimension = snapshot.dimension_summaries[0];
+  const firstItem = firstDimension.item_summaries[0];
+  const deductedBand = firstItem.scoring_bands[1];
+  assert.ok(deductedBand);
+
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? deductedBand.score
+          : item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? deductedBand.score
+          : item.scoring_bands[0].score,
+      rationale: "存在明确负面证据。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+      confidence: "medium" as const,
+      review_required: false,
+      deduction_trace:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? {
+              code_locations: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+              impact_scope: "影响页面初始化稳定性",
+              rubric_comparison:
+                "未命中更高档，因为存在空值风险；命中当前档，因为主体路径仍可运行",
+              deduction_reason: "发现空值未防御。",
+            }
+          : undefined,
+    })),
+  );
+
+  assert.throws(
+    () =>
+      parseRubricScoringResultStrict(
+        JSON.stringify({
+          summary: {
+            overall_assessment: "存在扣分项。",
+            overall_confidence: "medium",
+          },
+          item_scores: itemScores,
+          hard_gate_candidates: [],
+          risks: [],
+          strengths: [],
+          main_issues: [],
+        }),
+        snapshot,
+      ),
+    /improvement_suggestion/,
+  );
+});
+
 test("renderRubricScoringPrompt forbids rule-id judgement and requires item scores", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
@@ -291,4 +353,33 @@ test("renderRubricScoringPrompt requires full-score default and evidence-backed 
   assert.match(prompt, /默认先按每个 item 满分评估/);
   assert.match(prompt, /证据不足时必须保持满分/);
   assert.match(prompt, /扣分时必须返回 deduction_trace/);
+});
+
+test("renderRubricCaseAwareBootstrapPrompt includes tool protocol and keeps prompt lightweight", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricCaseAwarePayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "生成一个电商首页",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/intermediate/effective.patch",
+    taskType: "full_generation",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+    initialTargetFiles: ["workspace/entry/src/main/ets/pages/Index.ets"],
+  });
+
+  const prompt = renderRubricCaseAwareBootstrapPrompt(payload);
+
+  assert.match(prompt, /tool_call/);
+  assert.match(prompt, /final_answer/);
+  assert.match(prompt, /证据不足时必须保持满分/);
+  assert.match(prompt, /improvement_suggestion/);
+  assert.match(prompt, /initial_target_files/);
+  assert.doesNotMatch(prompt, /diff --git/);
 });

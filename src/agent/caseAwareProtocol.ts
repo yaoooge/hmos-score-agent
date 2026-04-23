@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { caseToolNameSchema } from "./caseToolSchemas.js";
+import { StrictJsonProtocolError, parseSingleJsonObjectStrict } from "./jsonProtocol.js";
 import type {
   AssistedRuleCandidate,
   CaseAwareAgentFinalAnswer,
@@ -7,7 +8,7 @@ import type {
   CaseAwareFinalAnswerValidation,
 } from "../types.js";
 
-export class CaseAwareProtocolError extends Error {
+export class CaseAwareProtocolError extends StrictJsonProtocolError {
   constructor(
     public readonly code:
       | "not_single_json_object"
@@ -16,7 +17,7 @@ export class CaseAwareProtocolError extends Error {
       | "schema_validation",
     message: string,
   ) {
-    super(`protocol_error: ${message}`);
+    super(code, message);
     this.name = "CaseAwareProtocolError";
   }
 }
@@ -61,110 +62,18 @@ export const caseAwarePlannerOutputSchema = z.discriminatedUnion("action", [
   caseAwareFinalAnswerSchema,
 ]);
 
-function formatIssuePath(path: PropertyKey[]): string {
-  if (path.length === 0) {
-    return "<root>";
-  }
-
-  return path
-    .map((segment) => {
-      const segmentText = String(segment);
-      return typeof segment === "number"
-        ? `[${segment}]`
-        : /^[A-Za-z_][A-Za-z0-9_]*$/.test(segmentText)
-          ? segmentText
-          : JSON.stringify(segmentText);
-    })
-    .join(".")
-    .replace(/\.\[/g, "[");
-}
-
-function formatSchemaValidationError(error: z.ZodError): string {
-  const formattedIssues = error.issues.map((issue) => {
-    const path = formatIssuePath(issue.path);
-    return `${path}: ${issue.message}`;
-  });
-
-  return formattedIssues.join("; ") || z.prettifyError(error);
-}
-
-function findTopLevelJsonObjectEnd(rawText: string): number {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = 0; index < rawText.length; index += 1) {
-    const char = rawText[index];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (char === '"') {
-      inString = !inString;
-      continue;
-    }
-
-    if (inString) {
-      continue;
-    }
-
-    if (char === "{") {
-      depth += 1;
-      continue;
-    }
-
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return index;
-      }
-    }
-  }
-
-  return -1;
-}
-
 export function parseCaseAwarePlannerOutputStrict(rawText: string): CaseAwareAgentPlannerOutput {
-  const trimmed = rawText.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-    throw new CaseAwareProtocolError(
-      "not_single_json_object",
-      "output must be one top-level JSON object without prose",
-    );
-  }
-
-  const objectEndIndex = findTopLevelJsonObjectEnd(trimmed);
-  if (objectEndIndex >= 0 && objectEndIndex < trimmed.length - 1) {
-    throw new CaseAwareProtocolError(
-      "multiple_json_objects",
-      "received multiple top-level JSON objects in one response",
-    );
-  }
-
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(trimmed);
+    return parseSingleJsonObjectStrict(rawText, caseAwarePlannerOutputSchema);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new CaseAwareProtocolError("invalid_json", `invalid JSON: ${message}`);
+    if (error instanceof StrictJsonProtocolError) {
+      throw new CaseAwareProtocolError(
+        error.code,
+        error.message.replace(/^protocol_error:\s*/, ""),
+      );
+    }
+    throw error;
   }
-
-  const result = caseAwarePlannerOutputSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new CaseAwareProtocolError(
-      "schema_validation",
-      formatSchemaValidationError(result.error),
-    );
-  }
-
-  return result.data;
 }
 
 export function validateCaseAwareFinalAnswerAgainstCandidates(

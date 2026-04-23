@@ -405,6 +405,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                                       <p><strong>影响范围：</strong>${escapeHtml(item.deductionTrace.impactScope)}</p>
                                       <p><strong>Rubric 对照：</strong>${escapeHtml(item.deductionTrace.rubricComparison)}</p>
                                       <p><strong>评分理由：</strong>${escapeHtml(item.deductionTrace.deductionReason)}</p>
+                                      <p><strong>改进建议：</strong>${escapeHtml(item.deductionTrace.improvementSuggestion)}</p>
                                     </div>`
                                   : ""
                               }

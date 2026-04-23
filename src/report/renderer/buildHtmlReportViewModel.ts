@@ -37,6 +37,7 @@ export interface HtmlReportViewModel {
         impactScope: string;
         rubricComparison: string;
         deductionReason: string;
+        improvementSuggestion: string;
       };
     }>;
   }>;
@@ -255,6 +256,7 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
                     impactScope: String(deductionTrace.impact_scope ?? ""),
                     rubricComparison: String(deductionTrace.rubric_comparison ?? ""),
                     deductionReason: String(deductionTrace.deduction_reason ?? ""),
+                    improvementSuggestion: String(deductionTrace.improvement_suggestion ?? ""),
                   },
           };
         }),

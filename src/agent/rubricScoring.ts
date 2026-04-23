@@ -30,6 +30,7 @@ const deductionTraceSchema = z
     impact_scope: z.string().min(1),
     rubric_comparison: z.string().min(1),
     deduction_reason: z.string().min(1),
+    improvement_suggestion: z.string().min(1),
   })
   .strict();
 
@@ -144,7 +145,7 @@ export function renderRubricScoringPrompt(payload: RubricScoringPayload): string
     "默认先按每个 item 满分评估，只有发现明确负面证据时才允许降档。",
     "证据不足时必须保持满分，不得保守扣分。",
     "扣分时必须返回 deduction_trace。",
-    "当 score < max_score 时，必须返回 deduction_trace，写明 code_locations、impact_scope、rubric_comparison、deduction_reason。",
+    "当 score < max_score 时，必须返回 deduction_trace，写明 code_locations、impact_scope、rubric_comparison、deduction_reason、improvement_suggestion。",
     "不要判断规则 ID，不要输出 rule_id 级结论；规则判断由独立 rules 分支处理。",
     "必须只输出一个 JSON object，禁止 markdown、代码块或额外解释。",
     ...renderRubricScoringBrevityRules({ compact: false }),
@@ -243,6 +244,7 @@ function renderRubricScoringYamlShapeExample(): string {
     "      impact_scope: 影响页面初始化逻辑",
     "      rubric_comparison: 未命中高分档，因为存在空指针风险；命中当前档，因为主体路径可运行但稳定性不足",
     "      deduction_reason: 发现明确稳定性问题，因此降到当前档",
+    "      improvement_suggestion: 在访问前增加空值校验并补充异常路径处理",
     "hard_gate_candidates:",
     "  - gate_id: G1",
     "    triggered: false",
@@ -308,6 +310,11 @@ export function parseRubricScoringResultStrict(
       ) {
         throw new Error(
           `deduction_trace.rubric_comparison must compare higher and current bands: ${key}`,
+        );
+      }
+      if (!item.deduction_trace.improvement_suggestion.trim()) {
+        throw new Error(
+          `deduction_trace.improvement_suggestion required for deducted rubric items: ${key}`,
         );
       }
     }

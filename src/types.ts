@@ -286,10 +286,18 @@ export interface RubricScoringPayload {
   };
   task_understanding: ConstraintSummary;
   rubric_summary: LoadedRubricSnapshot;
+  initial_target_files?: string[];
+  tool_contract?: {
+    allowed_tools: CaseToolName[];
+    max_tool_calls: number;
+    max_total_bytes: number;
+    max_files: number;
+  };
   response_contract: {
+    action_enum?: ["tool_call", "final_answer"];
     output_language: "zh-CN";
     json_only: true;
-    required_top_level_fields: [
+    required_top_level_fields?: [
       "summary",
       "item_scores",
       "hard_gate_candidates",
@@ -305,6 +313,7 @@ export interface RubricDeductionTrace {
   impact_scope: string;
   rubric_comparison: string;
   deduction_reason: string;
+  improvement_suggestion: string;
 }
 
 export interface RubricScoringItemScore {
@@ -408,6 +417,21 @@ export type CaseAwareRunnerOutcome =
 export interface CaseAwareRunnerResult {
   outcome: CaseAwareRunnerOutcome;
   final_answer?: CaseAwareAgentFinalAnswer;
+  final_answer_raw_text?: string;
+  failure_reason?: string;
+  turns: CaseAwareAgentTurn[];
+  tool_trace: CaseToolTraceItem[];
+}
+
+export type RubricCaseAwareRunnerOutcome =
+  | "success"
+  | "request_failed"
+  | "protocol_error"
+  | "tool_budget_exhausted";
+
+export interface RubricCaseAwareRunnerResult {
+  outcome: RubricCaseAwareRunnerOutcome;
+  final_answer?: RubricScoringResult;
   final_answer_raw_text?: string;
   failure_reason?: string;
   turns: CaseAwareAgentTurn[];

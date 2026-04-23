@@ -168,6 +168,7 @@ test("validateReportResult accepts deduction_trace for deducted items", () => {
       impact_scope: "影响页面初始化稳定性",
       rubric_comparison: "未命中高分档；命中当前档。",
       deduction_reason: "存在空值未防御。",
+      improvement_suggestion: "在访问前增加空值校验并补充异常路径处理。",
     },
   };
 

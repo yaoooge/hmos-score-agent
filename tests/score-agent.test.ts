@@ -103,6 +103,35 @@ function makeState(input: Partial<CaseInput> = {}): {
   };
 }
 
+function buildRubricCaseAwareFinalAnswer(
+  rubricSnapshot: ReturnType<typeof buildRubricSnapshot>,
+): Record<string, unknown> {
+  return {
+    action: "final_answer",
+    summary: {
+      overall_assessment: "未发现足够负面证据，按满分保留。",
+      overall_confidence: "medium",
+    },
+    item_scores: rubricSnapshot.dimension_summaries.flatMap((dimension) =>
+      dimension.item_summaries.map((item) => ({
+        dimension_name: dimension.name,
+        item_name: item.name,
+        score: item.scoring_bands[0].score,
+        max_score: item.weight,
+        matched_band_score: item.scoring_bands[0].score,
+        rationale: "未发现足够负面证据，按满分保留。",
+        evidence_used: [],
+        confidence: "medium",
+        review_required: false,
+      })),
+    ),
+    hard_gate_candidates: [],
+    risks: [],
+    strengths: ["结构清晰"],
+    main_issues: [],
+  };
+}
+
 test("loadCaseFromPath loads prompt and optional patch path", async (t) => {
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {
@@ -241,7 +270,7 @@ test("explicit rubric and rule agent nodes are exported", () => {
   assert.equal(typeof ruleAssessmentAgentNode, "function");
 });
 
-test("rubricScoringPromptBuilderNode builds rubric item scoring prompt", async (t) => {
+test("rubricScoringPromptBuilderNode builds case-aware rubric scoring prompt", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const result = await rubricScoringPromptBuilderNode(
@@ -259,13 +288,40 @@ test("rubricScoringPromptBuilderNode builds rubric item scoring prompt", async (
         implicitConstraints: ["存在 patch"],
         classificationHints: ["bug_fix"],
       },
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 1,
+        changedFileCount: 2,
+        changedFiles: [
+          "entry/src/main/ets/pages/Index.ets",
+          "entry/src/main/ets/components/Card.ets",
+        ],
+        hasPatch: true,
+      },
       rubricSnapshot: buildRubricSnapshot(rubric),
     } as never,
     { logger: undefined },
   );
 
-  assert.ok(result.rubricScoringPromptText?.includes("逐项输出 rubric item"));
+  assert.ok(result.rubricScoringPromptText?.includes("tool_call"));
+  assert.ok(result.rubricScoringPromptText?.includes("final_answer"));
   assert.equal(result.rubricScoringPayload?.case_context.task_type, "bug_fix");
+  assert.deepEqual(result.rubricScoringPayload?.initial_target_files, [
+    "workspace/entry/src/main/ets/pages/Index.ets",
+    "workspace/entry/src/main/ets/components/Card.ets",
+  ]);
+  assert.deepEqual(result.rubricScoringPayload?.response_contract.action_enum, [
+    "tool_call",
+    "final_answer",
+  ]);
+  assert.deepEqual(result.rubricScoringPayload?.tool_contract?.allowed_tools, [
+    "read_patch",
+    "list_dir",
+    "read_file",
+    "read_file_chunk",
+    "grep_in_files",
+    "read_json",
+  ]);
 });
 
 test("rubricScoringAgentNode skips when agent client is missing", async () => {
@@ -279,101 +335,82 @@ test("rubricScoringAgentNode skips when agent client is missing", async () => {
   assert.equal(skipped.rubricAgentRunStatus, "skipped");
 });
 
-test("rubricScoringAgentNode retries once when rubric output violates schema", async (t) => {
+test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const rubricSnapshot = buildRubricSnapshot(rubric);
-  const itemScores = rubricSnapshot.dimension_summaries.flatMap((dimension) =>
-    dimension.item_summaries.map((item) => ({
-      dimension_name: dimension.name,
-      item_name: item.name,
-      score: item.scoring_bands[0].score,
-      max_score: item.weight,
-      matched_band_score: item.scoring_bands[0].score,
-      rationale: `根据 ${item.name} 的评分档位，当前证据满足该档要求。`,
-      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
-      confidence: "medium",
-      review_required: false,
-    })),
+  const caseRoot = await makeTempDir(t);
+  await fs.mkdir(path.join(caseRoot, "workspace", "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "Index.ets"),
+    "let count: number = 1;\n",
+    "utf-8",
   );
-  const prompts: string[] = [];
-  const warnings: string[] = [];
+  const calls: Array<{ prompt: string; requestTag?: string }> = [];
   const agentClient = {
-    async completeJsonPrompt(prompt: string): Promise<string> {
-      prompts.push(prompt);
-      if (prompts.length === 1) {
+    async completeJsonPrompt(
+      prompt: string,
+      options?: { requestTag?: string },
+    ): Promise<string> {
+      calls.push({ prompt, requestTag: options?.requestTag });
+      if (calls.length === 1) {
         return JSON.stringify({
-          summary: "错误结构",
-          item_scores: [{ name: "问题点命中程度", score: 10 }],
-          hard_gate_candidates: [],
-          risks: [],
-          strengths: [],
-          main_issues: [],
+          action: "tool_call",
+          tool: "read_file",
+          args: { path: "workspace/entry/src/main/ets/Index.ets" },
+          reason: "读取变更文件确认是否有负面证据。",
         });
       }
-      return JSON.stringify({
-        summary: {
-          overall_assessment: "修复重试后输出符合 rubric schema。",
-          overall_confidence: "medium",
-        },
-        item_scores: itemScores,
-        hard_gate_candidates: [],
-        risks: [],
-        strengths: ["结构清晰"],
-        main_issues: [],
-      });
+      return JSON.stringify(buildRubricCaseAwareFinalAnswer(rubricSnapshot));
     },
   };
 
   const result = await rubricScoringAgentNode(
     {
-      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
-      rubricSnapshot,
-    } as never,
-    {
-      agentClient,
-      logger: {
-        async info() {},
-        async warn(message: string) {
-          warnings.push(message);
+      caseInput: makeState({
+        originalProjectPath: path.join(caseRoot, "original"),
+        generatedProjectPath: path.join(caseRoot, "workspace"),
+      }).caseInput,
+      sourceCasePath: caseRoot,
+      rubricScoringPromptText: "rubric case-aware prompt",
+      rubricScoringPayload: {
+        case_context: {
+          case_id: "case-1",
+          case_root: caseRoot,
+          task_type: "bug_fix",
+          original_prompt_summary: "修复页面 bug",
+          original_project_path: path.join(caseRoot, "original"),
+          generated_project_path: path.join(caseRoot, "workspace"),
         },
-        async error() {},
+        task_understanding: {
+          explicitConstraints: ["修复页面 bug"],
+          contextualConstraints: ["保持工程结构"],
+          implicitConstraints: [],
+          classificationHints: ["bug_fix"],
+        },
+        rubric_summary: rubricSnapshot,
+        initial_target_files: ["workspace/entry/src/main/ets/Index.ets"],
+        tool_contract: {
+          allowed_tools: [
+            "read_patch",
+            "list_dir",
+            "read_file",
+            "read_file_chunk",
+            "grep_in_files",
+            "read_json",
+          ],
+          max_tool_calls: 4,
+          max_total_bytes: 40960,
+          max_files: 12,
+        },
+        response_contract: {
+          action_enum: ["tool_call", "final_answer"],
+          output_language: "zh-CN",
+          json_only: true,
+        },
       },
-    },
-  );
-
-  assert.equal(prompts.length, 2);
-  assert.match(prompts[1], /rubric 评分协议修复重试/);
-  assert.match(prompts[1], /上一轮输出不符合 schema/);
-  assert.match(prompts[1], /只能重新输出一个 JSON object/);
-  assert.match(prompts[1], /summary\.overall_assessment/);
-  assert.equal(result.rubricAgentRunStatus, "success");
-  assert.equal(result.rubricScoringResult?.item_scores.length, itemScores.length);
-  assert.match(warnings.join("\n"), /rubric agent 输出违反协议，发起一次修复重试/);
-});
-
-test("rubricScoringAgentNode returns invalid_output after one failed retry", async (t) => {
-  const referenceRoot = await createReferenceRoot(t);
-  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
-  const rubricSnapshot = buildRubricSnapshot(rubric);
-  const prompts: string[] = [];
-  const agentClient = {
-    async completeJsonPrompt(prompt: string): Promise<string> {
-      prompts.push(prompt);
-      return JSON.stringify({
-        summary: "仍然是错误结构",
-        item_scores: [],
-        hard_gate_candidates: [],
-        risks: [],
-        strengths: [],
-        main_issues: [],
-      });
-    },
-  };
-
-  const result = await rubricScoringAgentNode(
-    {
-      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
       rubricSnapshot,
     } as never,
     {
@@ -386,49 +423,102 @@ test("rubricScoringAgentNode returns invalid_output after one failed retry", asy
     },
   );
 
-  assert.equal(prompts.length, 2);
-  assert.equal(result.rubricAgentRunStatus, "invalid_output");
-  assert.equal(result.rubricScoringResult, undefined);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(
+    calls.map((call) => call.requestTag),
+    ["rubric_case_aware_turn_1", "rubric_case_aware_turn_2"],
+  );
+  assert.equal(result.rubricAgentRunStatus, "success");
+  assert.equal(result.rubricAgentRunnerMode, "case_aware");
+  assert.equal(result.rubricScoringResult?.item_scores.length, rubricSnapshot.dimension_summaries.flatMap((dimension) => dimension.item_summaries).length);
+  assert.equal(result.rubricAgentTurns?.length, 2);
+  assert.equal(result.rubricAgentToolTrace?.length, 1);
+  assert.equal(result.rubricAgentRunnerResult?.outcome, "success");
 });
 
-test("rubricScoringAgentNode retries with compact prompt after network-style fetch failure", async (t) => {
+test("rubricScoringAgentNode returns invalid_output when case-aware final answer is incomplete", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const rubricSnapshot = buildRubricSnapshot(rubric);
-  const itemScores = rubricSnapshot.dimension_summaries.flatMap((dimension) =>
-    dimension.item_summaries.map((item) => ({
-      dimension_name: dimension.name,
-      item_name: item.name,
-      score: item.scoring_bands[0].score,
-      max_score: item.weight,
-      matched_band_score: item.scoring_bands[0].score,
-      rationale: "证据支持该档评分。",
-      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
-      confidence: "medium",
-      review_required: false,
-    })),
-  );
-  const prompts: string[] = [];
-  const warnings: string[] = [];
+  const caseRoot = await makeTempDir(t);
+  const finalAnswer = buildRubricCaseAwareFinalAnswer(rubricSnapshot) as {
+    item_scores: unknown[];
+  };
+  finalAnswer.item_scores = finalAnswer.item_scores.slice(1);
   const agentClient = {
-    async completeJsonPrompt(prompt: string): Promise<string> {
-      prompts.push(prompt);
-      if (prompts.length === 1) {
-        throw new Error(
-          "Agent 网络请求失败 request=rubric_scoring elapsedMs=61000 promptChars=100 promptBytes=120 causeCode=UND_ERR_SOCKET causeMessage=other side closed",
-        );
-      }
-      return JSON.stringify({
-        summary: {
-          overall_assessment: "compact 重试后完成评分。",
-          overall_confidence: "medium",
+    async completeJsonPrompt(): Promise<string> {
+      return JSON.stringify(finalAnswer);
+    },
+  };
+
+  const result = await rubricScoringAgentNode(
+    {
+      caseInput: makeState({
+        originalProjectPath: path.join(caseRoot, "original"),
+        generatedProjectPath: path.join(caseRoot, "workspace"),
+      }).caseInput,
+      sourceCasePath: caseRoot,
+      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
+      rubricScoringPayload: {
+        case_context: {
+          case_id: "case-1",
+          case_root: caseRoot,
+          task_type: "bug_fix",
+          original_prompt_summary: "修复页面 bug",
+          original_project_path: path.join(caseRoot, "original"),
+          generated_project_path: path.join(caseRoot, "workspace"),
         },
-        item_scores: itemScores,
-        hard_gate_candidates: [],
-        risks: [],
-        strengths: ["结构清晰"],
-        main_issues: [],
-      });
+        task_understanding: {
+          explicitConstraints: ["修复页面 bug"],
+          contextualConstraints: ["保持工程结构"],
+          implicitConstraints: [],
+          classificationHints: ["bug_fix"],
+        },
+        rubric_summary: rubricSnapshot,
+        initial_target_files: [],
+        tool_contract: {
+          allowed_tools: [
+            "read_patch",
+            "list_dir",
+            "read_file",
+            "read_file_chunk",
+            "grep_in_files",
+            "read_json",
+          ],
+          max_tool_calls: 4,
+          max_total_bytes: 40960,
+          max_files: 12,
+        },
+        response_contract: {
+          action_enum: ["tool_call", "final_answer"],
+          output_language: "zh-CN",
+          json_only: true,
+        },
+      },
+      rubricSnapshot,
+    } as never,
+    {
+      agentClient,
+      logger: {
+        async info() {},
+        async warn() {},
+        async error() {},
+      },
+    },
+  );
+
+  assert.equal(result.rubricAgentRunStatus, "invalid_output");
+  assert.equal(result.rubricScoringResult, undefined);
+  assert.equal(result.rubricAgentRunnerResult?.outcome, "protocol_error");
+});
+
+test("rubricScoringAgentNode returns failed when case-aware runner throws", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const agentClient = {
+    async completeJsonPrompt(): Promise<string> {
+      throw new Error("fetch failed");
     },
   };
 
@@ -452,17 +542,24 @@ test("rubricScoringAgentNode retries with compact prompt after network-style fet
           classificationHints: ["bug_fix"],
         },
         rubric_summary: rubricSnapshot,
+        initial_target_files: [],
+        tool_contract: {
+          allowed_tools: [
+            "read_patch",
+            "list_dir",
+            "read_file",
+            "read_file_chunk",
+            "grep_in_files",
+            "read_json",
+          ],
+          max_tool_calls: 4,
+          max_total_bytes: 40960,
+          max_files: 12,
+        },
         response_contract: {
+          action_enum: ["tool_call", "final_answer"],
           output_language: "zh-CN",
           json_only: true,
-          required_top_level_fields: [
-            "summary",
-            "item_scores",
-            "hard_gate_candidates",
-            "risks",
-            "strengths",
-            "main_issues",
-          ],
         },
       },
       rubricSnapshot,
@@ -471,20 +568,15 @@ test("rubricScoringAgentNode retries with compact prompt after network-style fet
       agentClient,
       logger: {
         async info() {},
-        async warn(message: string) {
-          warnings.push(message);
-        },
+        async warn() {},
         async error() {},
       },
     },
   );
 
-  assert.equal(prompts.length, 2);
-  assert.match(prompts[1], /compact/);
-  assert.match(prompts[1], /输出尽量短/);
-  assert.equal(result.rubricAgentRunStatus, "success");
-  assert.equal(result.rubricScoringResult?.item_scores.length, itemScores.length);
-  assert.match(warnings.join("\n"), /切换 compact prompt 重试/);
+  assert.equal(result.rubricAgentRunStatus, "failed");
+  assert.equal(result.rubricScoringResult, undefined);
+  assert.equal(result.rubricAgentRunnerResult?.outcome, "request_failed");
 });
 
 test("ruleAuditNode emits one ledger item per rule and preserves source ordering", async (t) => {
@@ -1234,6 +1326,7 @@ test("reportGenerationNode writes deduction_trace for deducted rubric items only
                 impact_scope: "影响页面初始化稳定性",
                 rubric_comparison: "未命中高分档；命中当前档。",
                 deduction_reason: "存在空值未防御。",
+                improvement_suggestion: "在访问前增加空值校验并补充异常路径处理。",
               }
             : null,
       },
@@ -1405,6 +1498,67 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
       deterministicRuleResults,
       assistedRuleCandidates: [],
       rubricAgentRunStatus: "not_enabled",
+      rubricAgentRunnerResult: {
+        outcome: "tool_budget_exhausted",
+        turns: [
+          {
+            turn: 1,
+            action: "tool_call",
+            status: "success",
+            raw_output_text: '{"action":"tool_call","tool":"read_patch","args":{}}',
+            tool: "read_patch",
+            args: {},
+          },
+        ],
+        tool_trace: [
+          {
+            turn: 1,
+            tool: "read_patch",
+            args: {},
+            ok: true,
+            paths_read: ["diff/changes.patch"],
+            bytes_returned: 10,
+            truncated: false,
+            budget_after_call: {
+              usedToolCalls: 1,
+              usedBytes: 10,
+              readFileCount: 1,
+              remainingToolCalls: 3,
+              remainingBytes: 40950,
+              remainingFileSlots: 11,
+            },
+          },
+        ],
+      },
+      rubricAgentTurns: [
+        {
+          turn: 1,
+          action: "tool_call",
+          status: "success",
+          raw_output_text: '{"action":"tool_call","tool":"read_patch","args":{}}',
+          tool: "read_patch",
+          args: {},
+        },
+      ],
+      rubricAgentToolTrace: [
+        {
+          turn: 1,
+          tool: "read_patch",
+          args: {},
+          ok: true,
+          paths_read: ["diff/changes.patch"],
+          bytes_returned: 10,
+          truncated: false,
+          budget_after_call: {
+            usedToolCalls: 1,
+            usedBytes: 10,
+            readFileCount: 1,
+            remainingToolCalls: 3,
+            remainingBytes: 40950,
+            remainingFileSlots: 11,
+          },
+        },
+      ],
       ruleAgentRunStatus: "not_enabled",
       resultJson: { ok: true },
       htmlReport: "<html></html>",
@@ -1418,9 +1572,21 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
   const storedMergedAudit = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
   );
+  const storedRubricAgentResult = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-result.json"), "utf-8"),
+  );
+  const storedRubricAgentTurns = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-turns.json"), "utf-8"),
+  );
+  const storedRubricAgentToolTrace = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-tool-trace.json"), "utf-8"),
+  );
 
   assert.deepEqual(storedRuleAudit, deterministicRuleResults);
   assert.deepEqual(storedMergedAudit, deterministicRuleResults);
+  assert.equal(storedRubricAgentResult.runner_result.outcome, "tool_budget_exhausted");
+  assert.equal(storedRubricAgentTurns.length, 1);
+  assert.equal(storedRubricAgentToolTrace.length, 1);
   await assert.rejects(fs.readFile(path.join(caseDir, "inputs", "original-prompt.txt"), "utf-8"));
   assert.equal(
     await fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"),
@@ -1731,12 +1897,15 @@ test("runScoreWorkflow invokes rubric scoring and rule assessment agents concurr
   let activeCalls = 0;
   let maxActiveCalls = 0;
   const agentClient = {
-    async completeJsonPrompt(prompt: string): Promise<string> {
+    async completeJsonPrompt(
+      _prompt: string,
+      options?: { requestTag?: string },
+    ): Promise<string> {
       activeCalls += 1;
       maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
       await delay(40);
       activeCalls -= 1;
-      if (prompt.includes("rubric 主评分 agent")) {
+      if (options?.requestTag?.startsWith("rubric_case_aware")) {
         return "{}";
       }
       return JSON.stringify({
@@ -1822,9 +1991,12 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
     }),
   ];
   const agentClient = {
-    async completeJsonPrompt(prompt: string): Promise<string> {
-      if (prompt.includes("rubric 主评分 agent")) {
-        return "{}";
+    async completeJsonPrompt(
+      _prompt: string,
+      options?: { requestTag?: string },
+    ): Promise<string> {
+      if (options?.requestTag?.startsWith("rubric_case_aware")) {
+        throw new Error("rubric mock skipped");
       }
       return outputs.shift() ?? "";
     },
@@ -1895,9 +2067,12 @@ test("runScoreWorkflow preserves partial agent traces when provider fails after 
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
   let callCount = 0;
   const agentClient = {
-    async completeJsonPrompt(prompt: string): Promise<string> {
-      if (prompt.includes("rubric 主评分 agent")) {
-        return "{}";
+    async completeJsonPrompt(
+      _prompt: string,
+      options?: { requestTag?: string },
+    ): Promise<string> {
+      if (options?.requestTag?.startsWith("rubric_case_aware")) {
+        throw new Error("rubric mock skipped");
       }
       callCount += 1;
       if (callCount === 1) {
