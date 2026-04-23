@@ -217,6 +217,40 @@ function buildCriteriaByMetric(rubricSnapshot: LoadedRubricSnapshot): Map<string
   );
 }
 
+function buildScoringBandsByMetric(
+  rubricSnapshot: LoadedRubricSnapshot,
+): Map<string, Array<{ score: number }>> {
+  return new Map(
+    rubricSnapshot.dimension_summaries.flatMap((dimension) =>
+      dimension.item_summaries.map((item) => [
+        makeMetricKey(dimension.name, item.name),
+        item.scoring_bands.map((band) => ({ score: band.score })),
+      ]),
+    ),
+  );
+}
+
+function snapScoreToDeclaredBand(
+  score: number,
+  scoringBands: Array<{ score: number }>,
+): number {
+  if (scoringBands.length === 0) {
+    return roundScore(score);
+  }
+
+  return scoringBands.reduce((bestScore, band) => {
+    const bestDistance = Math.abs(bestScore - score);
+    const currentDistance = Math.abs(band.score - score);
+    if (currentDistance < bestDistance) {
+      return band.score;
+    }
+    if (currentDistance === bestDistance) {
+      return Math.min(bestScore, band.score);
+    }
+    return bestScore;
+  }, scoringBands[0].score);
+}
+
 function buildFallbackRubricItems(rubric: LoadedRubric): RubricScoringItemScore[] {
   return rubric.dimensions.flatMap((dimension) =>
     dimension.items.map((item) => {
@@ -285,6 +319,7 @@ function selectTriggeredGateIds(input: FuseRubricScoreWithRulesInput): Array<"G1
 
 export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): ScoreComputation {
   const criteriaByMetric = buildCriteriaByMetric(input.rubricSnapshot);
+  const scoringBandsByMetric = buildScoringBandsByMetric(input.rubricSnapshot);
   const baseItems = selectBaseItems(input);
   const detailsByKey = new Map<string, ScoreFusionDetail>();
 
@@ -356,10 +391,13 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
   }
 
   const scoreFusionDetails = Array.from(detailsByKey.values()).map((detail) => {
+    const metricKey = makeMetricKey(detail.dimension_name, detail.item_name);
+    const scoringBands = scoringBandsByMetric.get(metricKey) ?? [];
     const ruleDelta = roundScore(
       detail.rule_impacts.reduce((sum, impact) => sum + impact.score_delta, 0),
     );
-    const finalScore = roundScore(Math.max(0, detail.agent_evaluation.base_score + ruleDelta));
+    const rawFinalScore = roundScore(Math.max(0, detail.agent_evaluation.base_score + ruleDelta));
+    const finalScore = snapScoreToDeclaredBand(rawFinalScore, scoringBands);
     return {
       ...detail,
       score_fusion: {
@@ -369,7 +407,9 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         fusion_logic:
           ruleDelta === 0
             ? "未命中影响该评分项的规则，最终分等于 rubric agent 基础分。"
-            : `rubric agent 基础分 ${detail.agent_evaluation.base_score}，规则修正 ${ruleDelta}，最终 ${finalScore}。`,
+            : rawFinalScore === finalScore
+              ? `rubric agent 基础分 ${detail.agent_evaluation.base_score}，规则修正 ${ruleDelta}，最终 ${finalScore}。`
+              : `rubric agent 基础分 ${detail.agent_evaluation.base_score}，规则修正 ${ruleDelta}，原始结果 ${rawFinalScore}，按 rubric 档位收敛为 ${finalScore}。`,
       },
     };
   });

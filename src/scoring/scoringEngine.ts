@@ -343,6 +343,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
           logic: "按 rubric 基线满分初始化；规则评判仅作为后续修正信号。",
           evidence_used: [],
           confidence: "high" as const,
+          deduction_trace: null,
         },
         rule_impacts: [],
         score_fusion: {
