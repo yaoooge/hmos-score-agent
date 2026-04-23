@@ -21,6 +21,7 @@ import { CaseInput, RemoteEvaluationTask } from "../types.js";
 import { ScoreState } from "./state.js";
 import { WorkflowEventLogger } from "./observability/workflowEventLogger.js";
 import { interpretStreamChunk } from "./observability/workflowStreamInterpreter.js";
+import type { ScoreGraphState } from "./state.js";
 
 type LocalWorkflowInput = {
   caseInput: CaseInput;
@@ -39,82 +40,156 @@ type RemoteWorkflowInput = {
   agentClient?: AgentClient;
 };
 
-export async function runScoreWorkflow(
-  input: LocalWorkflowInput | RemoteWorkflowInput,
-): Promise<Record<string, unknown>> {
+type PreparedWorkflowInput = {
+  preparedState: Pick<
+    ScoreGraphState,
+    | "caseInput"
+    | "sourceCasePath"
+    | "remoteTaskRootDir"
+    | "inputMode"
+    | "originalFileCount"
+    | "workspaceFileCount"
+    | "hasPatch"
+    | "caseDir"
+    | "effectivePatchPath"
+    | "caseRuleDefinitions"
+    | "constraintSummary"
+    | "taskType"
+  >;
+  caseDir: string;
+  referenceRoot: string;
+  artifactStore: ArtifactStore;
+  agentClient?: AgentClient;
+};
+
+type WorkflowCommonInput = {
+  caseDir: string;
+  referenceRoot: string;
+  artifactStore: ArtifactStore;
+  agentClient?: AgentClient;
+};
+
+type CompiledScoreGraph = {
+  stream(
+    initialState: Record<string, unknown>,
+    config: { streamMode: string[] },
+  ): Promise<AsyncIterable<[string, unknown]>>;
+};
+
+function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPreparedState: boolean) {
   const config = getConfig();
   const logger = new CaseLogger(input.artifactStore, input.caseDir);
-  const workflowLogger = new WorkflowEventLogger(logger);
-  // 显式传入 agentClient 时优先使用调用方配置，便于测试和离线运行稳定控参。
   const agentClient = Object.prototype.hasOwnProperty.call(input, "agentClient")
     ? input.agentClient
     : createDefaultAgentClient(config);
-  const graph = new StateGraph(ScoreState)
-    .addNode("remoteTaskPreparationNode", (s) => remoteTaskPreparationNode(s))
-    .addNode("taskUnderstandingNode", (s, nodeConfig) =>
-      taskUnderstandingNode(
-        s,
-        { agentClient, artifactStore: input.artifactStore, logger },
-        nodeConfig,
-      ),
-    )
-    .addNode("inputClassificationNode", (s) => inputClassificationNode(s))
-    .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
-    .addNode("rubricPreparationNode", (s) =>
-      rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
-    )
-    .addNode("rubricScoringPromptBuilderNode", (s) =>
-      rubricScoringPromptBuilderNode(s, { logger }),
-    )
-    .addNode("rubricScoringAgentNode", (s) =>
-      rubricScoringAgentNode(s, { agentClient, logger }),
-    )
-    .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
-    .addNode("ruleAssessmentAgentNode", (s) =>
-      ruleAssessmentAgentNode(s, { agentClient, logger }),
-    )
-    .addNode("ruleMergeNode", (s) => ruleMergeNode(s, { logger }))
-    .addNode("scoreFusionOrchestrationNode", (s) => scoreFusionOrchestrationNode(s))
-    .addNode("reportGenerationNode", (s) =>
-      reportGenerationNode(s, { referenceRoot: input.referenceRoot }),
-    )
-    .addNode("artifactPostProcessNode", (s) => artifactPostProcessNode(s))
-    .addNode("persistAndUploadNode", (s) =>
-      persistAndUploadNode(s, {
-        artifactStore: input.artifactStore,
-      }),
-    )
-    .addEdge(START, "remoteTaskPreparationNode")
-    .addEdge("remoteTaskPreparationNode", "taskUnderstandingNode")
-    .addEdge("taskUnderstandingNode", "inputClassificationNode")
-    .addEdge("inputClassificationNode", "ruleAuditNode")
-    .addEdge("ruleAuditNode", "rubricPreparationNode")
-    .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
-    .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
-    .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")
-    .addEdge("ruleAgentPromptBuilderNode", "ruleAssessmentAgentNode")
-    .addEdge("ruleAssessmentAgentNode", "ruleMergeNode")
-    .addEdge(["rubricScoringAgentNode", "ruleMergeNode"], "scoreFusionOrchestrationNode")
-    .addEdge("scoreFusionOrchestrationNode", "reportGenerationNode")
-    .addEdge("reportGenerationNode", "artifactPostProcessNode")
-    .addEdge("artifactPostProcessNode", "persistAndUploadNode")
-    .addEdge("persistAndUploadNode", END)
-    .compile();
 
-  const initialState = (() => {
-    if ("remoteTask" in input) {
-      return {
-        remoteTask: input.remoteTask,
-        caseDir: input.caseDir,
-      };
-    }
-
+  if (resumeFromPreparedState) {
     return {
-      caseInput: input.caseInput,
-      sourceCasePath: input.sourceCasePath,
-      caseDir: input.caseDir,
+      logger,
+      graph: new StateGraph(ScoreState)
+        .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
+        .addNode("rubricPreparationNode", (s) =>
+          rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
+        )
+        .addNode("rubricScoringPromptBuilderNode", (s) =>
+          rubricScoringPromptBuilderNode(s, { logger }),
+        )
+        .addNode("rubricScoringAgentNode", (s) =>
+          rubricScoringAgentNode(s, { agentClient, logger }),
+        )
+        .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
+        .addNode("ruleAssessmentAgentNode", (s) =>
+          ruleAssessmentAgentNode(s, { agentClient, logger }),
+        )
+        .addNode("ruleMergeNode", (s) => ruleMergeNode(s, { logger }))
+        .addNode("scoreFusionOrchestrationNode", (s) => scoreFusionOrchestrationNode(s))
+        .addNode("reportGenerationNode", (s) =>
+          reportGenerationNode(s, { referenceRoot: input.referenceRoot }),
+        )
+        .addNode("artifactPostProcessNode", (s) => artifactPostProcessNode(s))
+        .addNode("persistAndUploadNode", (s) =>
+          persistAndUploadNode(s, {
+            artifactStore: input.artifactStore,
+          }),
+        )
+        .addEdge(START, "ruleAuditNode")
+        .addEdge("ruleAuditNode", "rubricPreparationNode")
+        .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
+        .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
+        .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")
+        .addEdge("ruleAgentPromptBuilderNode", "ruleAssessmentAgentNode")
+        .addEdge("ruleAssessmentAgentNode", "ruleMergeNode")
+        .addEdge(["rubricScoringAgentNode", "ruleMergeNode"], "scoreFusionOrchestrationNode")
+        .addEdge("scoreFusionOrchestrationNode", "reportGenerationNode")
+        .addEdge("reportGenerationNode", "artifactPostProcessNode")
+        .addEdge("artifactPostProcessNode", "persistAndUploadNode")
+        .addEdge("persistAndUploadNode", END)
+        .compile(),
     };
-  })();
+  }
+
+  return {
+    logger,
+    graph: new StateGraph(ScoreState)
+      .addNode("remoteTaskPreparationNode", (s) => remoteTaskPreparationNode(s))
+      .addNode("taskUnderstandingNode", (s, nodeConfig) =>
+        taskUnderstandingNode(
+          s,
+          { agentClient, artifactStore: input.artifactStore, logger },
+          nodeConfig,
+        ),
+      )
+      .addNode("inputClassificationNode", (s) => inputClassificationNode(s))
+      .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
+      .addNode("rubricPreparationNode", (s) =>
+        rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
+      )
+      .addNode("rubricScoringPromptBuilderNode", (s) =>
+        rubricScoringPromptBuilderNode(s, { logger }),
+      )
+      .addNode("rubricScoringAgentNode", (s) =>
+        rubricScoringAgentNode(s, { agentClient, logger }),
+      )
+      .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
+      .addNode("ruleAssessmentAgentNode", (s) =>
+        ruleAssessmentAgentNode(s, { agentClient, logger }),
+      )
+      .addNode("ruleMergeNode", (s) => ruleMergeNode(s, { logger }))
+      .addNode("scoreFusionOrchestrationNode", (s) => scoreFusionOrchestrationNode(s))
+      .addNode("reportGenerationNode", (s) =>
+        reportGenerationNode(s, { referenceRoot: input.referenceRoot }),
+      )
+      .addNode("artifactPostProcessNode", (s) => artifactPostProcessNode(s))
+      .addNode("persistAndUploadNode", (s) =>
+        persistAndUploadNode(s, {
+          artifactStore: input.artifactStore,
+        }),
+      )
+      .addEdge(START, "remoteTaskPreparationNode")
+      .addEdge("remoteTaskPreparationNode", "taskUnderstandingNode")
+      .addEdge("taskUnderstandingNode", "inputClassificationNode")
+      .addEdge("inputClassificationNode", "ruleAuditNode")
+      .addEdge("ruleAuditNode", "rubricPreparationNode")
+      .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
+      .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
+      .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")
+      .addEdge("ruleAgentPromptBuilderNode", "ruleAssessmentAgentNode")
+      .addEdge("ruleAssessmentAgentNode", "ruleMergeNode")
+      .addEdge(["rubricScoringAgentNode", "ruleMergeNode"], "scoreFusionOrchestrationNode")
+      .addEdge("scoreFusionOrchestrationNode", "reportGenerationNode")
+      .addEdge("reportGenerationNode", "artifactPostProcessNode")
+      .addEdge("artifactPostProcessNode", "persistAndUploadNode")
+      .addEdge("persistAndUploadNode", END)
+      .compile(),
+  };
+}
+
+async function runCompiledScoreGraph(
+  logger: CaseLogger,
+  graph: CompiledScoreGraph,
+  initialState: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const workflowLogger = new WorkflowEventLogger(logger);
   const finalState: Record<string, unknown> = { ...initialState };
   try {
     const stream = await graph.stream(initialState, {
@@ -142,4 +217,36 @@ export async function runScoreWorkflow(
   }
 
   return finalState;
+}
+
+export async function runScoreWorkflow(
+  input: LocalWorkflowInput | RemoteWorkflowInput,
+): Promise<Record<string, unknown>> {
+  const { logger, graph } = createCompiledScoreGraph(input, false);
+  const initialState = (() => {
+    if ("remoteTask" in input) {
+      return {
+        remoteTask: input.remoteTask,
+        caseDir: input.caseDir,
+      };
+    }
+
+    return {
+      caseInput: input.caseInput,
+      sourceCasePath: input.sourceCasePath,
+      caseDir: input.caseDir,
+    };
+  })();
+
+  return runCompiledScoreGraph(logger, graph as never, initialState);
+}
+
+export async function runPreparedScoreWorkflow(
+  input: PreparedWorkflowInput,
+): Promise<Record<string, unknown>> {
+  const { logger, graph } = createCompiledScoreGraph(input, true);
+  return runCompiledScoreGraph(logger, graph as never, {
+    ...input.preparedState,
+    caseDir: input.caseDir,
+  });
 }

@@ -25,6 +25,7 @@ export async function remoteTaskPreparationNode(
   state: ScoreGraphState,
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("remoteTaskPreparationNode");
+  let rootDir: string | undefined;
   try {
     if (state.caseInput) {
       return {
@@ -39,7 +40,7 @@ export async function remoteTaskPreparationNode(
       throw new Error("Workflow requires either caseInput or remoteTask.");
     }
 
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-remote-task-"));
+    rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-remote-task-"));
     const casePath = path.join(rootDir, `remote-task-${state.remoteTask.taskId}`);
     await fs.mkdir(casePath, { recursive: true });
     await fs.writeFile(path.join(casePath, "input.txt"), buildRemotePrompt(state.remoteTask), "utf-8");
@@ -78,6 +79,9 @@ export async function remoteTaskPreparationNode(
       hasPatch,
     };
   } catch (error) {
+    if (rootDir && error instanceof Error) {
+      Object.assign(error, { remoteTaskRootDir: rootDir });
+    }
     emitNodeFailed("remoteTaskPreparationNode", error);
     throw error;
   }

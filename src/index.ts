@@ -1,12 +1,20 @@
 import { pathToFileURL } from "node:url";
 import express, { NextFunction, Request, Response } from "express";
 import { getConfig } from "./config.js";
-import { resolveDefaultCasePath, runRemoteEvaluationTask, runSingleCase } from "./service.js";
+import {
+  executeAcceptedRemoteEvaluationTask,
+  prepareRemoteEvaluationTask,
+  resolveDefaultCasePath,
+  runRemoteEvaluationTask,
+  runSingleCase,
+} from "./service.js";
 import type { RemoteEvaluationTask } from "./types.js";
 
 type AppDeps = {
   runSingleCase: typeof runSingleCase;
   runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
+  prepareRemoteEvaluationTask: typeof prepareRemoteEvaluationTask;
+  executeAcceptedRemoteEvaluationTask: typeof executeAcceptedRemoteEvaluationTask;
 };
 
 export function createRunHandler(deps: AppDeps) {
@@ -27,8 +35,16 @@ export function createRunHandler(deps: AppDeps) {
 export function createRunRemoteTaskHandler(deps: AppDeps) {
   return async (req: Request, res: Response) => {
     try {
-      const result = await deps.runRemoteEvaluationTask(req.body as RemoteEvaluationTask);
-      res.json({ success: true, ...result });
+      const acceptedTask = await deps.prepareRemoteEvaluationTask(req.body as RemoteEvaluationTask);
+      void deps.executeAcceptedRemoteEvaluationTask(acceptedTask).catch((error) => {
+        console.error("run-remote-task background execution failed", error);
+      });
+      res.json({
+        success: true,
+        taskId: acceptedTask.taskId,
+        caseDir: acceptedTask.caseDir,
+        message: acceptedTask.message,
+      });
     } catch (error) {
       res.status(500).json({
         success: false,
@@ -66,9 +82,13 @@ export function createCorsMiddleware() {
 export function createApp(deps: {
   runSingleCase: typeof runSingleCase;
   runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
+  prepareRemoteEvaluationTask: typeof prepareRemoteEvaluationTask;
+  executeAcceptedRemoteEvaluationTask: typeof executeAcceptedRemoteEvaluationTask;
 } = {
   runSingleCase,
   runRemoteEvaluationTask,
+  prepareRemoteEvaluationTask,
+  executeAcceptedRemoteEvaluationTask,
 }) {
   const app = express();
   app.use(createCorsMiddleware());

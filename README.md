@@ -168,6 +168,30 @@ curl -X POST http://localhost:3000/score/run-remote-task \
   }'
 ```
 
+调用成功后，接口会在完成以下同步阶段后立即返回：
+
+- 远端目录清单 / patch 下载
+- case 物化
+- 初始任务分析
+- 任务类型判定
+
+成功响应示例：
+
+```json
+{
+  "success": true,
+  "taskId": 4,
+  "caseDir": "/abs/path/.local-cases/full_generation_xxx",
+  "message": "任务接收成功，结果将通过 callback 返回"
+}
+```
+
+注意：
+
+- 该响应只表示任务已被本地服务接收，尚不表示最终评分完成。
+- 最终评分结果仍通过 `callback` 异步回传。
+- 如果预处理阶段失败，例如远端目录清单下载失败、patch 下载失败或初始任务分析失败，接口会直接返回 `500`。
+
 当前远程资源格式约定：
 
 - `testCase.fileUrl`：下载原始工程目录清单 JSON
@@ -186,7 +210,7 @@ curl -X POST http://localhost:3000/score/run-remote-task \
 }
 ```
 
-执行完成后，服务会向 `callback` 发起 `POST` 回传，header 使用 `token: <token>`，请求体格式如下：
+异步评分执行完成后，服务会向 `callback` 发起 `POST` 回传，header 使用 `token: <token>`，请求体格式如下：
 
 ```json
 {

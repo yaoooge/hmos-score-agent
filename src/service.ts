@@ -7,9 +7,20 @@ import { ArtifactStore } from "./io/artifactStore.js";
 import { loadCaseFromPath } from "./io/caseLoader.js";
 import { CaseLogger } from "./io/caseLogger.js";
 import { uploadTaskCallback } from "./io/uploader.js";
+import { inputClassificationNode } from "./nodes/inputClassificationNode.js";
+import { remoteTaskPreparationNode } from "./nodes/remoteTaskPreparationNode.js";
+import { taskUnderstandingNode } from "./nodes/taskUnderstandingNode.js";
 import { buildRunCaseId, inferTaskTypeFromCaseInput } from "./service/runCaseId.js";
-import { CaseInput, RemoteCallbackPayload, RemoteEvaluationTask } from "./types.js";
-import { runScoreWorkflow } from "./workflow/scoreWorkflow.js";
+import {
+  CaseInput,
+  CaseRuleDefinition,
+  ConstraintSummary,
+  RemoteCallbackPayload,
+  RemoteEvaluationTask,
+  TaskType,
+} from "./types.js";
+import { runPreparedScoreWorkflow, runScoreWorkflow } from "./workflow/scoreWorkflow.js";
+import type { ScoreGraphState } from "./workflow/state.js";
 
 async function runCaseInput(input: {
   caseInput: CaseInput;
@@ -121,33 +132,37 @@ function readWorkflowStateFromError(error: unknown): Record<string, unknown> | u
     : undefined;
 }
 
-export async function runSingleCase(
-  casePath: string,
-): Promise<{ caseDir: string }> {
-  const caseInput = await loadCaseFromPath(casePath);
-  const result = await runCaseInput({
-    caseInput,
-    sourceCasePath: casePath,
-  });
+type AcceptedRemoteWorkflowState = {
+  caseDir: string;
+  caseInput: CaseInput;
+  sourceCasePath: string;
+  remoteTaskRootDir: string;
+  effectivePatchPath: string;
+  caseRuleDefinitions: CaseRuleDefinition[];
+  constraintSummary: ConstraintSummary;
+  taskType: TaskType;
+  inputMode: string;
+  originalFileCount: number;
+  workspaceFileCount: number;
+  hasPatch: boolean;
+};
 
-  return {
-    caseDir: result.caseDir,
-  };
-}
+export type AcceptedRemoteEvaluationTask = {
+  taskId: number;
+  caseDir: string;
+  message: string;
+  remoteTask: RemoteEvaluationTask;
+  workflowState: AcceptedRemoteWorkflowState;
+};
 
-export async function runRemoteEvaluationTask(
+const REMOTE_TASK_ACCEPTED_MESSAGE = "任务接收成功，结果将通过 callback 返回";
+
+function buildRemoteCaseInfoBase(
   remoteTask: RemoteEvaluationTask,
-): Promise<{ caseDir: string; taskId: number; uploadMessage?: string }> {
-  const config = getConfig();
-  const artifactStore = new ArtifactStore(config.localCaseRoot);
-  const caseDir = await artifactStore.ensureCaseDir(
-    buildRunCaseId({
-      taskType: "full_generation",
-      uniqueId: randomUUID().replace(/-/g, "").slice(0, 8),
-    }),
-  );
-  const logger = new CaseLogger(artifactStore, caseDir);
-  const caseInfoBase = {
+  caseDir: string,
+  config: ReturnType<typeof getConfig>,
+) {
+  return {
     case_id: path.basename(caseDir),
     source_case_path: null,
     task_type: null,
@@ -165,76 +180,233 @@ export async function runRemoteEvaluationTask(
     remote_task_id: remoteTask.taskId,
     remote_test_case_id: remoteTask.testCase.id,
   };
-  let workflowResult: Record<string, unknown> | undefined;
+}
+
+function buildRemoteCaseInfoPayload(
+  caseInfoBase: ReturnType<typeof buildRemoteCaseInfoBase>,
+  state: Partial<AcceptedRemoteWorkflowState> | Record<string, unknown>,
+  statuses?: {
+    rubricAgentRunStatus?: string;
+    ruleAgentRunStatus?: string;
+  },
+) {
+  const caseInput =
+    typeof state.caseInput === "object" && state.caseInput !== null
+      ? (state.caseInput as CaseInput)
+      : undefined;
+  const sourceCasePath = typeof state.sourceCasePath === "string" ? state.sourceCasePath : null;
+  const taskType = typeof state.taskType === "string" ? state.taskType : null;
+
+  return {
+    ...caseInfoBase,
+    source_case_path: sourceCasePath,
+    task_type: taskType,
+    original_project_path: caseInput?.originalProjectPath ?? null,
+    generated_project_path: caseInput?.generatedProjectPath ?? null,
+    patch_path: caseInput?.patchPath ?? null,
+    rubric_agent_run_status: statuses?.rubricAgentRunStatus ?? "not_enabled",
+    rule_agent_run_status: statuses?.ruleAgentRunStatus ?? "not_enabled",
+  };
+}
+
+function readRemoteTaskRootDirFromError(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  const rootDir = (error as { remoteTaskRootDir?: unknown }).remoteTaskRootDir;
+  return typeof rootDir === "string" ? rootDir : undefined;
+}
+
+function toAcceptedRemoteWorkflowState(state: Partial<ScoreGraphState>): AcceptedRemoteWorkflowState {
+  if (!state.caseDir) {
+    throw new Error("Accepted remote task is missing caseDir.");
+  }
+  if (!state.caseInput) {
+    throw new Error("Accepted remote task is missing caseInput.");
+  }
+  if (!state.sourceCasePath) {
+    throw new Error("Accepted remote task is missing sourceCasePath.");
+  }
+  if (!state.remoteTaskRootDir) {
+    throw new Error("Accepted remote task is missing remoteTaskRootDir.");
+  }
+  if (!state.constraintSummary) {
+    throw new Error("Accepted remote task is missing constraintSummary.");
+  }
+  if (!state.effectivePatchPath) {
+    throw new Error("Accepted remote task is missing effectivePatchPath.");
+  }
+  if (!state.taskType) {
+    throw new Error("Accepted remote task is missing taskType.");
+  }
+  if (typeof state.originalFileCount !== "number") {
+    throw new Error("Accepted remote task is missing originalFileCount.");
+  }
+  if (typeof state.workspaceFileCount !== "number") {
+    throw new Error("Accepted remote task is missing workspaceFileCount.");
+  }
+  if (typeof state.hasPatch !== "boolean") {
+    throw new Error("Accepted remote task is missing hasPatch.");
+  }
+
+  return {
+    caseDir: state.caseDir,
+    caseInput: state.caseInput,
+    sourceCasePath: state.sourceCasePath,
+    remoteTaskRootDir: state.remoteTaskRootDir,
+    effectivePatchPath: state.effectivePatchPath,
+    caseRuleDefinitions: state.caseRuleDefinitions ?? [],
+    constraintSummary: state.constraintSummary,
+    taskType: state.taskType,
+    inputMode: state.inputMode ?? "remote",
+    originalFileCount: state.originalFileCount,
+    workspaceFileCount: state.workspaceFileCount,
+    hasPatch: state.hasPatch,
+  };
+}
+
+export async function runSingleCase(
+  casePath: string,
+): Promise<{ caseDir: string }> {
+  const caseInput = await loadCaseFromPath(casePath);
+  const result = await runCaseInput({
+    caseInput,
+    sourceCasePath: casePath,
+  });
+
+  return {
+    caseDir: result.caseDir,
+  };
+}
+
+export async function prepareRemoteEvaluationTask(
+  remoteTask: RemoteEvaluationTask,
+): Promise<AcceptedRemoteEvaluationTask> {
+  const config = getConfig();
+  const artifactStore = new ArtifactStore(config.localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir(
+    buildRunCaseId({
+      taskType: "full_generation",
+      uniqueId: randomUUID().replace(/-/g, "").slice(0, 8),
+    }),
+  );
+  const logger = new CaseLogger(artifactStore, caseDir);
+  const caseInfoBase = buildRemoteCaseInfoBase(remoteTask, caseDir, config);
+  const preparedState: Partial<ScoreGraphState> = {
+    remoteTask,
+    caseDir,
+  };
 
   try {
     await logger.info(`启动远端评分流程 taskId=${remoteTask.taskId}`);
-    await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
-      ...caseInfoBase,
-      rubric_agent_run_status: "not_enabled",
-      rule_agent_run_status: "not_enabled",
-    });
-    await logger.info("输入元数据写入完成");
-    await logger.info("工作流开始执行");
-
-    workflowResult = await runScoreWorkflow({
-      remoteTask,
+    await artifactStore.writeJson(
       caseDir,
+      "inputs/case-info.json",
+      buildRemoteCaseInfoPayload(caseInfoBase, preparedState),
+    );
+    await logger.info("输入元数据写入完成");
+    await logger.info("远端任务预处理开始");
+    Object.assign(
+      preparedState,
+      await remoteTaskPreparationNode(preparedState as ScoreGraphState),
+    );
+    await logger.info("远端任务预处理完成");
+    Object.assign(
+      preparedState,
+      await taskUnderstandingNode(preparedState as ScoreGraphState, { artifactStore, logger }),
+    );
+    await logger.info("初始任务分析完成");
+    Object.assign(
+      preparedState,
+      await inputClassificationNode(preparedState as ScoreGraphState),
+    );
+    await logger.info(`任务类型判定完成 taskType=${String(preparedState.taskType ?? "")}`);
+    await artifactStore.writeJson(
+      caseDir,
+      "inputs/case-info.json",
+      buildRemoteCaseInfoPayload(caseInfoBase, preparedState),
+    );
+    await logger.info("任务接收完成，已转入异步执行");
+
+    return {
+      taskId: remoteTask.taskId,
+      caseDir,
+      message: REMOTE_TASK_ACCEPTED_MESSAGE,
+      remoteTask,
+      workflowState: toAcceptedRemoteWorkflowState(preparedState),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    await logger.error(`预处理失败 error=${message}`);
+    const remoteTaskRootDir =
+      typeof preparedState.remoteTaskRootDir === "string"
+        ? preparedState.remoteTaskRootDir
+        : readRemoteTaskRootDirFromError(error);
+    if (remoteTaskRootDir) {
+      await fsp.rm(remoteTaskRootDir, { recursive: true, force: true });
+    }
+    throw error;
+  }
+}
+
+export async function executeAcceptedRemoteEvaluationTask(
+  acceptedTask: AcceptedRemoteEvaluationTask,
+): Promise<string> {
+  const config = getConfig();
+  const artifactStore = new ArtifactStore(config.localCaseRoot);
+  const logger = new CaseLogger(artifactStore, acceptedTask.caseDir);
+  const caseInfoBase = buildRemoteCaseInfoBase(acceptedTask.remoteTask, acceptedTask.caseDir, config);
+  let workflowResult: Record<string, unknown> = { ...acceptedTask.workflowState };
+
+  try {
+    await logger.info("异步评分执行开始");
+    workflowResult = await runPreparedScoreWorkflow({
+      preparedState: acceptedTask.workflowState,
+      caseDir: acceptedTask.caseDir,
       referenceRoot: config.referenceRoot,
       artifactStore,
     });
-
-    const caseInput =
-      typeof workflowResult.caseInput === "object" && workflowResult.caseInput !== null
-        ? (workflowResult.caseInput as CaseInput)
-        : undefined;
-    const sourceCasePath =
-      typeof workflowResult.sourceCasePath === "string" ? workflowResult.sourceCasePath : null;
-    const taskType = typeof workflowResult.taskType === "string" ? workflowResult.taskType : null;
-    await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
-      ...caseInfoBase,
-      source_case_path: sourceCasePath,
-      task_type: taskType,
-      original_project_path: caseInput?.originalProjectPath ?? null,
-      generated_project_path: caseInput?.generatedProjectPath ?? null,
-      patch_path: caseInput?.patchPath ?? null,
-      rubric_agent_run_status:
-        typeof workflowResult.rubricAgentRunStatus === "string"
-          ? workflowResult.rubricAgentRunStatus
-          : "not_enabled",
-      rule_agent_run_status:
-        typeof workflowResult.ruleAgentRunStatus === "string"
-          ? workflowResult.ruleAgentRunStatus
-          : "not_enabled",
-    });
+    await artifactStore.writeJson(
+      acceptedTask.caseDir,
+      "inputs/case-info.json",
+      buildRemoteCaseInfoPayload(caseInfoBase, workflowResult, {
+        rubricAgentRunStatus:
+          typeof workflowResult.rubricAgentRunStatus === "string"
+            ? workflowResult.rubricAgentRunStatus
+            : "not_enabled",
+        ruleAgentRunStatus:
+          typeof workflowResult.ruleAgentRunStatus === "string"
+            ? workflowResult.ruleAgentRunStatus
+            : "not_enabled",
+      }),
+    );
     await logger.info("工作流执行完成");
     await logger.info("结果已落盘");
 
-    const callbackPayload = buildRemoteCallbackPayload({
-      taskId: remoteTask.taskId,
-      status: "completed",
-      resultData:
-        typeof workflowResult.resultJson === "object" && workflowResult.resultJson !== null
-          ? (workflowResult.resultJson as Record<string, unknown>)
-          : {},
-    });
-    const upload = await uploadTaskCallback(remoteTask.callback, remoteTask.token, callbackPayload);
+    const upload = await uploadTaskCallback(
+      acceptedTask.remoteTask.callback,
+      acceptedTask.remoteTask.token,
+      buildRemoteCallbackPayload({
+        taskId: acceptedTask.taskId,
+        status: "completed",
+        resultData:
+          typeof workflowResult.resultJson === "object" && workflowResult.resultJson !== null
+            ? (workflowResult.resultJson as Record<string, unknown>)
+            : {},
+      }),
+    );
     await logger.info(`回调结果 message=${upload.message}`);
-
-    return {
-      caseDir,
-      taskId: remoteTask.taskId,
-      uploadMessage: upload.message,
-    };
+    return upload.message;
   } catch (error) {
-    workflowResult ??= readWorkflowStateFromError(error);
+    workflowResult = readWorkflowStateFromError(error) ?? workflowResult;
     const message = error instanceof Error ? error.message : String(error);
     await logger.error(`执行失败 error=${message}`);
     await uploadTaskCallback(
-      remoteTask.callback,
-      remoteTask.token,
+      acceptedTask.remoteTask.callback,
+      acceptedTask.remoteTask.token,
       buildRemoteCallbackPayload({
-        taskId: remoteTask.taskId,
+        taskId: acceptedTask.taskId,
         status: "failed",
         resultData: { error: message },
       }),
@@ -242,13 +414,24 @@ export async function runRemoteEvaluationTask(
     throw error;
   } finally {
     const remoteTaskRootDir =
-      typeof workflowResult?.remoteTaskRootDir === "string"
+      typeof workflowResult.remoteTaskRootDir === "string"
         ? workflowResult.remoteTaskRootDir
-        : undefined;
-    if (remoteTaskRootDir) {
-      await fsp.rm(remoteTaskRootDir, { recursive: true, force: true });
-    }
+        : acceptedTask.workflowState.remoteTaskRootDir;
+    await fsp.rm(remoteTaskRootDir, { recursive: true, force: true });
   }
+}
+
+export async function runRemoteEvaluationTask(
+  remoteTask: RemoteEvaluationTask,
+): Promise<{ caseDir: string; taskId: number; uploadMessage?: string }> {
+  const acceptedTask = await prepareRemoteEvaluationTask(remoteTask);
+  const uploadMessage = await executeAcceptedRemoteEvaluationTask(acceptedTask);
+
+  return {
+    caseDir: acceptedTask.caseDir,
+    taskId: acceptedTask.taskId,
+    uploadMessage,
+  };
 }
 
 export function resolveDefaultCasePath(): string {
