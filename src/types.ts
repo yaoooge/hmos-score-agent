@@ -45,6 +45,7 @@ export interface CaseInput {
   promptText: string;
   originalProjectPath: string;
   generatedProjectPath: string;
+  originalProjectProvided?: boolean;
   patchPath?: string;
   expectedConstraintsPath?: string;
 }
@@ -100,6 +101,7 @@ export interface TaskUnderstandingAgentInput {
   promptText: string;
   originalProjectPath: string;
   generatedProjectPath: string;
+  originalProjectProvided?: boolean;
   projectStructure: ProjectStructureSummary;
   patchSummary: PatchSummary;
 }

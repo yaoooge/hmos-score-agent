@@ -10,20 +10,18 @@ export class WorkflowEventLogger {
   constructor(private readonly logger: BaseLogger) {}
 
   async log(event: WorkflowLifecycleEvent): Promise<void> {
+    const nodePrefix = `[${event.label}${event.nodeId}]`;
+
     if (event.type === "node_started") {
-      await this.logger.info(`节点开始 node=${event.nodeId} label=${event.label}`);
+      await this.logger.info(`${nodePrefix} 节点开始`);
       return;
     }
 
     if (event.type === "node_completed") {
-      await this.logger.info(
-        `节点完成 node=${event.nodeId} label=${event.label} summary=${event.summary}`,
-      );
+      await this.logger.info(`${nodePrefix} 节点完成 summary=${event.summary}`);
       return;
     }
 
-    await this.logger.error(
-      `节点失败 node=${event.nodeId} label=${event.label} error=${event.errorMessage ?? "unknown"}`,
-    );
+    await this.logger.error(`${nodePrefix} 节点失败 error=${event.errorMessage ?? "unknown"}`);
   }
 }

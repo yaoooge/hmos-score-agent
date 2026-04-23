@@ -151,6 +151,34 @@ test("loadCaseFromPath exposes expectedConstraintsPath when YAML exists", async 
   assert.equal(caseInput.expectedConstraintsPath, path.join(caseDir, "expected_constraints.yaml"));
 });
 
+test("loadCaseFromPath creates an empty original directory when original input is absent", async (t) => {
+  const rootDir = await makeTempDir(t);
+  const caseDir = path.join(rootDir, "workspace-only-case");
+  const originalProjectPath = path.join(caseDir, "original");
+  const generatedProjectPath = path.join(caseDir, "workspace");
+
+  await fs.mkdir(path.join(generatedProjectPath, "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.writeFile(path.join(caseDir, "input.txt"), "实现商城首页", "utf-8");
+  await fs.writeFile(
+    path.join(generatedProjectPath, "entry", "src", "main", "ets", "Index.ets"),
+    "Text('workspace only')\n",
+    "utf-8",
+  );
+
+  const caseInput = await loadCaseFromPath(caseDir);
+  const reloadedCaseInput = await loadCaseFromPath(caseDir);
+  const originalStat = await fs.stat(originalProjectPath);
+  const originalEntries = await fs.readdir(originalProjectPath);
+
+  assert.equal(originalStat.isDirectory(), true);
+  assert.deepEqual(originalEntries, []);
+  assert.equal(caseInput.originalProjectProvided, false);
+  assert.equal(reloadedCaseInput.originalProjectProvided, false);
+  assert.equal(caseInput.originalProjectPath, originalProjectPath);
+});
+
 test("ArtifactStore creates case directories and persists json/text artifacts", async (t) => {
   const rootDir = await makeTempDir(t);
   const store = new ArtifactStore(rootDir);
@@ -192,6 +220,18 @@ test("inputClassificationNode prioritizes bug_fix over patch-based continuation"
   assert.equal(bugResult.taskType, "bug_fix");
   assert.equal(continuationResult.taskType, "continuation");
   assert.equal(fullGenerationResult.taskType, "full_generation");
+});
+
+test("inputClassificationNode keeps workspace-only cases as full_generation even after patch creation", async () => {
+  const result = await inputClassificationNode(
+    makeState({
+      promptText: "实现商城首页",
+      patchPath: "/tmp/generated.patch",
+      originalProjectProvided: false,
+    }) as never,
+  );
+
+  assert.equal(result.taskType, "full_generation");
 });
 
 test("explicit rubric and rule agent nodes are exported", () => {
@@ -1805,25 +1845,25 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
 
   const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
-  assert.match(logText, /节点开始 node=taskUnderstandingNode label=任务理解/);
-  assert.match(logText, /节点开始 node=ruleAuditNode label=规则审计/);
-  assert.match(logText, /节点开始 node=rubricScoringAgentNode label=Rubric Agent 评分/);
-  assert.match(logText, /节点开始 node=ruleAssessmentAgentNode label=规则 Agent 判定/);
-  assert.match(logText, /节点开始 node=scoreFusionOrchestrationNode label=评分融合/);
-  assert.match(logText, /节点开始 node=artifactPostProcessNode label=产物后处理/);
-  assert.match(logText, /节点开始 node=persistAndUploadNode label=结果落盘/);
+  assert.match(logText, /\[任务理解taskUnderstandingNode\] 节点开始/);
+  assert.match(logText, /\[规则审计ruleAuditNode\] 节点开始/);
+  assert.match(logText, /\[Rubric Agent 评分rubricScoringAgentNode\] 节点开始/);
+  assert.match(logText, /\[规则 Agent 判定ruleAssessmentAgentNode\] 节点开始/);
+  assert.match(logText, /\[评分融合scoreFusionOrchestrationNode\] 节点开始/);
+  assert.match(logText, /\[产物后处理artifactPostProcessNode\] 节点开始/);
+  assert.match(logText, /\[结果落盘persistAndUploadNode\] 节点开始/);
   assert.doesNotMatch(logText, /featureExtractionNode/);
   assert.match(
     logText,
-    /节点完成 node=inputClassificationNode label=任务分类 summary=taskType=bug_fix/,
+    /\[任务分类inputClassificationNode\] 节点完成 summary=taskType=bug_fix/,
   );
   assert.match(
     logText,
-    /节点完成 node=scoreFusionOrchestrationNode label=评分融合 summary=totalScore=/,
+    /\[评分融合scoreFusionOrchestrationNode\] 节点完成 summary=totalScore=/,
   );
   assert.match(
     logText,
-    /节点完成 node=artifactPostProcessNode label=产物后处理 summary=htmlLength=/,
+    /\[产物后处理artifactPostProcessNode\] 节点完成 summary=htmlLength=/,
   );
 });
 

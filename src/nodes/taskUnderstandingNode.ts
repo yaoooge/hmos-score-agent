@@ -67,6 +67,15 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function collectProjectStructure(rootPath: string): Promise<ProjectStructureSummary> {
   const files: string[] = [];
   const topLevelEntries: string[] = [];
@@ -320,6 +329,13 @@ async function ensureEffectivePatchPath(
     return state.caseInput.patchPath;
   }
 
+  if (!(await pathExists(state.caseInput.originalProjectPath))) {
+    await fs.mkdir(state.caseInput.originalProjectPath, { recursive: true });
+  }
+  if (!(await pathExists(state.caseInput.generatedProjectPath))) {
+    return state.caseInput.patchPath;
+  }
+
   const outputPath = path.join(
     state.caseDir,
     "intermediate",
@@ -364,7 +380,12 @@ export async function taskUnderstandingNode(
   emitNodeStarted("taskUnderstandingNode", config);
 
   try {
-    const projectStructure = await collectProjectStructure(state.caseInput.originalProjectPath);
+    const projectStructureRoot =
+      state.caseInput.originalProjectProvided === false ||
+      !(await pathExists(state.caseInput.originalProjectPath))
+        ? state.caseInput.generatedProjectPath
+        : state.caseInput.originalProjectPath;
+    const projectStructure = await collectProjectStructure(projectStructureRoot);
     const effectivePatchPath = await ensureEffectivePatchPath(state, deps);
     const patchSummary = await readPatchSummary(effectivePatchPath);
     const caseRuleDefinitions = await loadCaseConstraintRules(state.caseInput);
@@ -373,6 +394,7 @@ export async function taskUnderstandingNode(
       promptText: state.caseInput.promptText,
       originalProjectPath: state.caseInput.originalProjectPath,
       generatedProjectPath: state.caseInput.generatedProjectPath,
+      originalProjectProvided: state.caseInput.originalProjectProvided,
       projectStructure,
       patchSummary,
     };

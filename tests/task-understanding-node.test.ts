@@ -256,3 +256,44 @@ test("taskUnderstandingNode regenerates patch when provided patch file is empty"
   assert.match(effectivePatchText, /diff --git/);
   assert.match(effectivePatchText, /Index\.ets/);
 });
+
+test("taskUnderstandingNode creates a workspace-against-empty patch when original project is absent", async (t) => {
+  const rootDir = await makeTempDir(t);
+  const originalProjectPath = path.join(rootDir, "original");
+  const generatedProjectPath = path.join(rootDir, "workspace");
+  const artifactStore = new ArtifactStore(rootDir);
+  const caseDir = await artifactStore.ensureCaseDir("case-without-original");
+
+  await fs.mkdir(path.join(generatedProjectPath, "entry", "src", "main", "ets"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(generatedProjectPath, "entry", "src", "main", "ets", "Index.ets"),
+    "Text('new')\n",
+    "utf-8",
+  );
+
+  const result = await taskUnderstandingNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-without-original",
+        promptText: "实现一个商城模板首页",
+        originalProjectPath,
+        generatedProjectPath,
+        originalProjectProvided: false,
+      },
+    } as never,
+    { artifactStore },
+  );
+
+  assert.equal(result.caseInput?.originalProjectProvided, false);
+  assert.equal(typeof result.effectivePatchPath, "string");
+  assert.equal(result.caseInput?.patchPath, result.effectivePatchPath);
+  assert.deepEqual(result.caseRuleDefinitions, []);
+  const patchText = await fs.readFile(result.effectivePatchPath as string, "utf-8");
+  assert.match(patchText, /diff --git/);
+  assert.match(patchText, /new file mode/);
+  assert.match(patchText, /Index\.ets/);
+  assert.match(result.constraintSummary?.explicitConstraints[0] ?? "", /full_generation/);
+});

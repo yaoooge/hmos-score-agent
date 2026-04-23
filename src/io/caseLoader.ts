@@ -16,6 +16,18 @@ export async function loadCaseFromPath(casePath: string): Promise<CaseInput> {
   const generatedProjectPath = path.join(resolved, "workspace");
   const patchCandidate = path.join(resolved, "diff", "changes.patch");
   const expectedConstraintsCandidate = path.join(resolved, "expected_constraints.yaml");
+  let originalProjectProvided = true;
+
+  try {
+    await fs.access(originalProjectPath);
+    const originalEntries = await fs.readdir(originalProjectPath);
+    if (originalEntries.length === 0) {
+      originalProjectProvided = false;
+    }
+  } catch {
+    originalProjectProvided = false;
+    await fs.mkdir(originalProjectPath, { recursive: true });
+  }
 
   let patchPath: string | undefined;
   try {
@@ -38,6 +50,7 @@ export async function loadCaseFromPath(casePath: string): Promise<CaseInput> {
     promptText,
     originalProjectPath,
     generatedProjectPath,
+    originalProjectProvided,
     patchPath,
     expectedConstraintsPath,
   };

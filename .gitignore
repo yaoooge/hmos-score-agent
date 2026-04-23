@@ -7,4 +7,4 @@ dist/
 .swift-cache/
 .superpowers/
 package-lock.json
-
+cases/
