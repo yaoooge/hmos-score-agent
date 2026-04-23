@@ -298,6 +298,13 @@ export interface RubricScoringPayload {
   };
 }
 
+export interface RubricDeductionTrace {
+  code_locations: string[];
+  impact_scope: string;
+  rubric_comparison: string;
+  deduction_reason: string;
+}
+
 export interface RubricScoringItemScore {
   dimension_name: string;
   item_name: string;
@@ -308,6 +315,7 @@ export interface RubricScoringItemScore {
   evidence_used: string[];
   confidence: ConfidenceLevel;
   review_required: boolean;
+  deduction_trace?: RubricDeductionTrace;
 }
 
 export interface RubricScoringResult {
@@ -435,6 +443,7 @@ export interface ScoreFusionDetail {
     logic: string;
     evidence_used: string[];
     confidence: ConfidenceLevel;
+    deduction_trace: RubricDeductionTrace | null;
   };
   rule_impacts: RuleImpactDetail[];
   score_fusion: {

@@ -131,6 +131,54 @@ test("parseRubricScoringResultStrict rejects scores outside declared bands", asy
   );
 });
 
+test("parseRubricScoringResultStrict rejects deducted items without deduction_trace", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const firstDimension = snapshot.dimension_summaries[0];
+  const firstItem = firstDimension.item_summaries[0];
+  const deductedBand = firstItem.scoring_bands[1];
+  assert.ok(deductedBand);
+
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? deductedBand.score
+          : item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? deductedBand.score
+          : item.scoring_bands[0].score,
+      rationale: "存在负面证据。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "medium" as const,
+      review_required: false,
+    })),
+  );
+
+  assert.throws(
+    () =>
+      parseRubricScoringResultStrict(
+        JSON.stringify({
+          summary: {
+            overall_assessment: "存在扣分项。",
+            overall_confidence: "medium",
+          },
+          item_scores: itemScores,
+          hard_gate_candidates: [],
+          risks: [],
+          strengths: [],
+          main_issues: [],
+        }),
+        snapshot,
+      ),
+    /deduction_trace required for deducted rubric items/,
+  );
+});
+
 test("renderRubricScoringPrompt forbids rule-id judgement and requires item scores", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
@@ -218,4 +266,29 @@ test("renderCompactRubricScoringPrompt enforces concise output contract", async 
   assert.match(prompt, /evidence_used 最多保留 2 条/);
   assert.match(prompt, /strengths 和 main_issues 各最多 3 条/);
   assert.match(prompt, /不要输出 YAML/);
+});
+
+test("renderRubricScoringPrompt requires full-score default and evidence-backed deductions", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricScoringPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "修复页面 bug",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/diff/changes.patch",
+    taskType: "bug_fix",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+  });
+
+  const prompt = renderRubricScoringPrompt(payload);
+
+  assert.match(prompt, /默认先按每个 item 满分评估/);
+  assert.match(prompt, /证据不足时必须保持满分/);
+  assert.match(prompt, /扣分时必须返回 deduction_trace/);
 });
