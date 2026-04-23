@@ -227,10 +227,11 @@ function buildFallbackRubricItems(rubric: LoadedRubric): RubricScoringItemScore[
         score: bestBand?.score ?? item.weight,
         max_score: item.weight,
         matched_band_score: bestBand?.score ?? item.weight,
-        rationale: "rubric agent 未产出有效结果，使用规则预检基础分。",
+        rationale: "rubric agent 未产出可信扣分依据，暂按满分保留，待人工复核。",
         evidence_used: [],
         confidence: "low",
         review_required: true,
+        deduction_trace: undefined,
       };
     }),
   );
@@ -299,6 +300,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         logic: item.rationale,
         evidence_used: item.evidence_used,
         confidence: item.confidence,
+        deduction_trace: item.deduction_trace ?? null,
       },
       rule_impacts: [],
       score_fusion: {
@@ -416,11 +418,11 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
   const totalScore = scoreCap === undefined ? rawTotalScore : Math.min(rawTotalScore, scoreCap);
   const humanReviewItems =
     input.rubricAgentRunStatus === "success"
-      ? []
-      : [
+        ? []
+        : [
           {
             item: "Rubric Agent 降级",
-            current_assessment: "rubric agent 未产出有效评分，当前使用规则预检结果。",
+            current_assessment: "rubric agent 未产出可信扣分依据，当前按满分保留。",
             uncertainty_reason: `rubricAgentRunStatus=${input.rubricAgentRunStatus}`,
             suggested_focus: "人工复核 rubric 逐项评分是否合理。",
           },
