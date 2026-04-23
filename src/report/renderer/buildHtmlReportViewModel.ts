@@ -32,6 +32,12 @@ export interface HtmlReportViewModel {
       reviewRequired: boolean;
       rationale: string;
       evidence: string;
+      deductionTrace: null | {
+        codeLocations: string;
+        impactScope: string;
+        rubricComparison: string;
+        deductionReason: string;
+      };
     }>;
   }>;
   humanReview: {
@@ -229,6 +235,7 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         items: itemResults.map((item) => {
           const currentItem = asRecord(item);
           const agentEvaluation = asRecord(currentItem.agent_evaluation);
+          const deductionTrace = asRecord(agentEvaluation.deduction_trace);
           return {
             name: String(currentItem.item_name ?? ""),
             weight: Number(currentItem.item_weight ?? 0),
@@ -240,6 +247,15 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
               currentItem.rationale ?? agentEvaluation.logic ?? "暂无理由。",
             ),
             evidence: formatEvidence(currentItem.evidence ?? agentEvaluation.evidence_used),
+            deductionTrace:
+              Object.keys(deductionTrace).length === 0
+                ? null
+                : {
+                    codeLocations: formatEvidence(deductionTrace.code_locations),
+                    impactScope: String(deductionTrace.impact_scope ?? ""),
+                    rubricComparison: String(deductionTrace.rubric_comparison ?? ""),
+                    deductionReason: String(deductionTrace.deduction_reason ?? ""),
+                  },
           };
         }),
       };

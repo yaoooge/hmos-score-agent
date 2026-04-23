@@ -396,6 +396,18 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                               <p>${escapeHtml(item.matchedBandText)}</p>
                               <p>${escapeHtml(item.rationale)}</p>
                               <p class="muted" style="white-space: pre-line;">${escapeHtml(item.evidence)}</p>
+                              ${
+                                item.deductionTrace
+                                  ? `
+                                    <div class="detail-card">
+                                      <strong>扣分依据</strong>
+                                      <p><strong>代码位置：</strong>${escapeHtml(item.deductionTrace.codeLocations)}</p>
+                                      <p><strong>影响范围：</strong>${escapeHtml(item.deductionTrace.impactScope)}</p>
+                                      <p><strong>Rubric 对照：</strong>${escapeHtml(item.deductionTrace.rubricComparison)}</p>
+                                      <p><strong>评分理由：</strong>${escapeHtml(item.deductionTrace.deductionReason)}</p>
+                                    </div>`
+                                  : ""
+                              }
                             </div>`,
                           )
                           .join("")

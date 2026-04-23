@@ -125,3 +125,99 @@ test("fuseRubricScoreWithRules records rule impacts on affected rubric items", a
     arktsDetail.agent_evaluation.base_score + arktsDetail.score_fusion.rule_delta,
   );
 });
+
+test("fuseRubricScoreWithRules falls back to top rubric band when rubric output is invalid", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "bug_fix",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  for (const detail of result.scoreFusionDetails) {
+    const dimension = snapshot.dimension_summaries.find((item) => item.name === detail.dimension_name);
+    const metric = dimension?.item_summaries.find((item) => item.name === detail.item_name);
+    assert.equal(detail.agent_evaluation.base_score, metric?.scoring_bands[0].score);
+  }
+  assert.match(result.humanReviewItems[0]?.current_assessment ?? "", /当前按满分保留/);
+});
+
+test("fuseRubricScoreWithRules preserves deduction_trace from rubric scoring result", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const firstDimension = snapshot.dimension_summaries[0];
+  const firstItem = firstDimension.item_summaries[0];
+  const deductedBand = firstItem.scoring_bands[1];
+  assert.ok(deductedBand);
+
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? deductedBand.score
+          : item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? deductedBand.score
+          : item.scoring_bands[0].score,
+      rationale: "存在明确负面证据。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+      confidence: "medium" as const,
+      review_required: false,
+      deduction_trace:
+        dimension.name === firstDimension.name && item.name === firstItem.name
+          ? {
+              code_locations: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+              impact_scope: "影响页面初始化稳定性",
+              rubric_comparison: "未命中高分档；命中当前档。",
+              deduction_reason: "发现空值未防御。",
+            }
+          : undefined,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "bug_fix",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "存在单项扣分。", overall_confidence: "medium" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const detail = result.scoreFusionDetails.find(
+    (item) => item.dimension_name === firstDimension.name && item.item_name === firstItem.name,
+  );
+  assert.equal(detail?.agent_evaluation.deduction_trace?.impact_scope, "影响页面初始化稳定性");
+});

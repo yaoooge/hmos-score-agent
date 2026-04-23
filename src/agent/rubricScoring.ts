@@ -24,6 +24,14 @@ type RenderRubricScoringRetryPromptInput = {
 };
 
 const confidenceSchema = z.enum(["high", "medium", "low"]);
+const deductionTraceSchema = z
+  .object({
+    code_locations: z.array(z.string().min(1)).min(1),
+    impact_scope: z.string().min(1),
+    rubric_comparison: z.string().min(1),
+    deduction_reason: z.string().min(1),
+  })
+  .strict();
 
 const rubricScoringResultSchema = z
   .object({
@@ -46,6 +54,7 @@ const rubricScoringResultSchema = z
             evidence_used: z.array(z.string()),
             confidence: confidenceSchema,
             review_required: z.boolean(),
+            deduction_trace: deductionTraceSchema.optional(),
           })
           .strict(),
       )
@@ -132,6 +141,10 @@ export function renderRubricScoringPrompt(payload: RubricScoringPayload): string
   return [
     "你是评分工作流中的 rubric 主评分 agent。",
     "请基于 task_understanding、case_context 和 rubric_summary，逐项输出 rubric item 的评分。",
+    "默认先按每个 item 满分评估，只有发现明确负面证据时才允许降档。",
+    "证据不足时必须保持满分，不得保守扣分。",
+    "扣分时必须返回 deduction_trace。",
+    "当 score < max_score 时，必须返回 deduction_trace，写明 code_locations、impact_scope、rubric_comparison、deduction_reason。",
     "不要判断规则 ID，不要输出 rule_id 级结论；规则判断由独立 rules 分支处理。",
     "必须只输出一个 JSON object，禁止 markdown、代码块或额外解释。",
     ...renderRubricScoringBrevityRules({ compact: false }),
@@ -170,6 +183,7 @@ export function renderRubricScoringRetryPrompt(input: RenderRubricScoringRetryPr
     "不要沿用上一轮的错误字段名；必须使用 canonical 字段，例如 summary.overall_assessment、dimension_name、item_name、max_score、matched_band_score、gate_id、risks[].description。",
     "item_scores 必须覆盖原始 prompt 中 rubric_summary.dimension_summaries 的每个 item，且不得遗漏、重复或新增未知 item。",
     "score 与 matched_band_score 必须相等，并且只能使用该 item scoring_bands 中声明过的 score；max_score 必须等于该 item weight。",
+    "扣分项必须保留原有 band 结论，除非原 band 本身不合法；当 score < max_score 时，必须补齐 deduction_trace。",
     "所有说明性文案必须使用中文。",
     ...renderRubricScoringBrevityRules({ compact: true }),
     "",
@@ -223,6 +237,12 @@ function renderRubricScoringYamlShapeExample(): string {
     "      - workspace/entry/src/main/ets/pages/Index.ets",
     "    confidence: high | medium | low",
     "    review_required: false",
+    "    deduction_trace:",
+    "      code_locations:",
+    "        - workspace/entry/src/main/ets/pages/Index.ets:12",
+    "      impact_scope: 影响页面初始化逻辑",
+    "      rubric_comparison: 未命中高分档，因为存在空指针风险；命中当前档，因为主体路径可运行但稳定性不足",
+    "      deduction_reason: 发现明确稳定性问题，因此降到当前档",
     "hard_gate_candidates:",
     "  - gate_id: G1",
     "    triggered: false",
@@ -274,6 +294,22 @@ export function parseRubricScoringResultStrict(
     }
     if (!expected.scores.has(item.score) || item.matched_band_score !== item.score) {
       invalidBandItems.push(key);
+    }
+    if (item.score < item.max_score) {
+      if (!item.deduction_trace) {
+        throw new Error(`deduction_trace required for deducted rubric items: ${key}`);
+      }
+      if (item.deduction_trace.code_locations.length === 0) {
+        throw new Error(`deduction_trace.code_locations must be non-empty: ${key}`);
+      }
+      if (
+        !item.deduction_trace.rubric_comparison.includes("未命中") ||
+        !item.deduction_trace.rubric_comparison.includes("命中当前档")
+      ) {
+        throw new Error(
+          `deduction_trace.rubric_comparison must compare higher and current bands: ${key}`,
+        );
+      }
     }
   }
 

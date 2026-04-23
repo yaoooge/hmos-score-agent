@@ -133,6 +133,7 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
               matched_criteria: "",
               logic: "缺少 rubric agent 对该评分项的评价逻辑。",
               evidence_used: [],
+              deduction_trace: null,
               confidence: "low",
             },
           rule_impacts: fusionDetail?.rule_impacts ?? [],

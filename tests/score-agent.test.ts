@@ -1151,6 +1151,7 @@ test("reportGenerationNode emits agent evaluation and rule impact details for ea
               matched_criteria: "直接命中根因。",
               logic: "rubric agent 认为修复直接命中根因。",
               evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+              deduction_trace: null,
               confidence: "medium",
             },
             rule_impacts: [
@@ -1198,6 +1199,127 @@ test("reportGenerationNode emits agent evaluation and rule impact details for ea
   assert.ok(firstItem.score_fusion);
   assert.equal("rationale" in firstItem, false);
   assert.equal("evidence" in firstItem, false);
+});
+
+test("reportGenerationNode writes deduction_trace for deducted rubric items only", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const firstDimension = rubricSnapshot.dimension_summaries[0];
+  const firstItem = firstDimension.item_summaries[0];
+  const deductedBand = firstItem.scoring_bands[1];
+  assert.ok(deductedBand);
+
+  const scoreFusionDetails = rubricSnapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      agent_evaluation: {
+        base_score:
+          dimension.name === firstDimension.name && item.name === firstItem.name
+            ? deductedBand.score
+            : item.scoring_bands[0].score,
+        matched_band_score:
+          dimension.name === firstDimension.name && item.name === firstItem.name
+            ? deductedBand.score
+            : item.scoring_bands[0].score,
+        matched_criteria: "评分档位说明",
+        logic: "评分理由",
+        evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+        confidence: "medium" as const,
+        deduction_trace:
+          dimension.name === firstDimension.name && item.name === firstItem.name
+            ? {
+                code_locations: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
+                impact_scope: "影响页面初始化稳定性",
+                rubric_comparison: "未命中高分档；命中当前档。",
+                deduction_reason: "存在空值未防御。",
+              }
+            : null,
+      },
+      rule_impacts: [],
+      score_fusion: {
+        base_score: item.scoring_bands[0].score,
+        rule_delta: 0,
+        final_score:
+          dimension.name === firstDimension.name && item.name === firstItem.name
+            ? deductedBand.score
+            : item.scoring_bands[0].score,
+        fusion_logic: "无规则修正",
+      },
+    })),
+  );
+
+  const scoreComputation = {
+    totalScore: scoreFusionDetails.reduce((sum, detail) => sum + detail.score_fusion.final_score, 0),
+    hardGateTriggered: false,
+    hardGateReason: "",
+    overallConclusion: {
+      total_score: scoreFusionDetails.reduce((sum, detail) => sum + detail.score_fusion.final_score, 0),
+      hard_gate_triggered: false,
+      summary: "已完成评分。",
+    },
+    dimensionScores: rubricSnapshot.dimension_summaries.map((dimension) => ({
+      dimension_name: dimension.name,
+      score: scoreFusionDetails
+        .filter((detail) => detail.dimension_name === dimension.name)
+        .reduce((sum, detail) => sum + detail.score_fusion.final_score, 0),
+      max_score: dimension.weight,
+      comment: "测试数据",
+    })),
+    submetricDetails: scoreFusionDetails.map((detail) => ({
+      dimension_name: detail.dimension_name,
+      metric_name: detail.item_name,
+      score: detail.score_fusion.final_score,
+      confidence: detail.agent_evaluation.confidence,
+      review_required: false,
+      rationale: detail.score_fusion.fusion_logic,
+      evidence: detail.agent_evaluation.evidence_used.join(" "),
+    })),
+    scoreFusionDetails,
+    risks: [],
+    humanReviewItems: [],
+    strengths: [],
+    mainIssues: [],
+    finalRecommendation: [],
+  };
+
+  const result = await reportGenerationNode(
+    {
+      taskType: "bug_fix",
+      caseInput: {
+        caseId: "case-1",
+        promptText: "请修复餐厅列表页中的 bug",
+        originalProjectPath: "/tmp/original",
+        generatedProjectPath: "/tmp/workspace",
+      },
+      constraintSummary: {
+        explicitConstraints: [],
+        contextualConstraints: [],
+        implicitConstraints: [],
+        classificationHints: ["bug_fix"],
+      },
+      rubricSnapshot,
+      deterministicRuleResults: [],
+      scoreComputation,
+      ruleViolations: [],
+    } as never,
+    { referenceRoot },
+  );
+
+  const dimensionResults = result.resultJson?.dimension_results as Array<Record<string, unknown>>;
+  const deductedDimension = dimensionResults.find((dimension) => dimension.dimension_name === firstDimension.name);
+  const deductedItem = (deductedDimension?.item_results as Array<Record<string, unknown>>).find(
+    (item) => item.item_name === firstItem.name,
+  ) as Record<string, unknown>;
+  const deductedAgentEvaluation = deductedItem.agent_evaluation as Record<string, unknown>;
+  assert.notEqual(deductedAgentEvaluation.deduction_trace, null);
+
+  const untouchedItem = (deductedDimension?.item_results as Array<Record<string, unknown>>).find(
+    (item) => item.item_name !== firstItem.name,
+  ) as Record<string, unknown>;
+  const untouchedAgentEvaluation = untouchedItem.agent_evaluation as Record<string, unknown>;
+  assert.equal(untouchedAgentEvaluation.deduction_trace, null);
 });
 
 test("artifactPostProcessNode generates layered html report from resultJson", async () => {
