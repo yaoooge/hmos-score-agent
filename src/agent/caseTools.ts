@@ -8,6 +8,7 @@ import {
   listDirArgsSchema,
   readFileChunkArgsSchema,
   readPathArgsSchema,
+  readPathsArgsSchema,
 } from "./caseToolSchemas.js";
 
 type CaseToolErrorCode =
@@ -365,6 +366,91 @@ export function createCaseToolExecutor(config: {
             [scopePath.relativePath],
             content,
           );
+        }
+        case "read_files": {
+          const parsedArgs = readPathsArgsSchema.safeParse(parsedCall.data.args);
+          if (!parsedArgs.success) {
+            return failure("invalid_args", parsedArgs.error.message);
+          }
+
+          const normalizedScopePaths: Array<{
+            relativePath: string;
+            absolutePath: string;
+          }> = [];
+
+          for (const requestedPath of parsedArgs.data.paths) {
+            const scopePath = normalizeScopePath(requestedPath);
+            if (isIgnoredScopePath(scopePath.relativePath)) {
+              return failure("file_not_found", "file does not exist");
+            }
+            await ensureFileExists(scopePath.absolutePath);
+            normalizedScopePaths.push(scopePath);
+          }
+
+          const files: Array<{
+            path: string;
+            content: string;
+            truncated: boolean;
+          }> = [];
+          const pathsRead: string[] = [];
+          const omittedPaths: string[] = [];
+          let bytesReturned = 0;
+          let localUsedBytes = usedBytes;
+          const localReadFiles = new Set(readFiles);
+
+          for (let index = 0; index < normalizedScopePaths.length; index += 1) {
+            const scopePath = normalizedScopePaths[index];
+            if (!scopePath) {
+              continue;
+            }
+            const isNewFile = !localReadFiles.has(scopePath.relativePath);
+            if (isNewFile && localReadFiles.size >= config.maxFiles) {
+              omittedPaths.push(
+                ...normalizedScopePaths.slice(index).map((item) => item.relativePath),
+              );
+              break;
+            }
+            if (isNewFile) {
+              localReadFiles.add(scopePath.relativePath);
+            }
+
+            const remainingBytes = Math.max(0, config.maxTotalBytes - localUsedBytes);
+            const content = await fs.readFile(scopePath.absolutePath, "utf-8");
+            const truncated =
+              remainingBytes > 0
+                ? truncateToBytes(content, remainingBytes)
+                : { content: "", bytes: 0, truncated: true };
+
+            localUsedBytes += truncated.bytes;
+            bytesReturned += truncated.bytes;
+            pathsRead.push(scopePath.relativePath);
+            files.push({
+              path: scopePath.relativePath,
+              content: truncated.content,
+              truncated: truncated.truncated,
+            });
+          }
+
+          if (files.length === 0 && omittedPaths.length > 0) {
+            return failure("file_budget_exceeded", "file budget exceeded");
+          }
+
+          usedBytes = localUsedBytes;
+          for (const trackedPath of localReadFiles) {
+            readFiles.add(trackedPath);
+          }
+
+          return {
+            ok: true,
+            result: {
+              files,
+              truncated: files.some((file) => file.truncated) || omittedPaths.length > 0,
+              ...(omittedPaths.length > 0 ? { omitted_paths: omittedPaths } : {}),
+            },
+            budget: getBudget(),
+            pathsRead,
+            bytesReturned,
+          };
         }
         case "read_file_chunk": {
           const parsedArgs = readFileChunkArgsSchema.safeParse(parsedCall.data.args);

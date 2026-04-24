@@ -33,6 +33,9 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     },
   );
   await fs.mkdir(generatedProjectPath, { recursive: true });
+  await fs.mkdir(path.join(generatedProjectPath, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
   await fs.writeFile(
     path.join(originalProjectPath, "entry", "src", "main", "module.json5"),
     "{module:{name:'entry'}}",
@@ -53,6 +56,10 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
       "RestaurantListVM.ts",
     ),
     "export class RestaurantListVM {}\n",
+  );
+  await fs.writeFile(
+    path.join(generatedProjectPath, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "Text('workspace')\n",
   );
   await fs.writeFile(
     patchPath,
@@ -132,6 +139,12 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     "侵入程度: 中等",
     "改动类型: UI 接入与筛选逻辑",
   ]);
+  assert.equal(
+    result.workspaceProjectStructure?.representativeFiles.includes(
+      "entry/src/main/ets/pages/Index.ets",
+    ),
+    true,
+  );
 
   const persisted = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "constraint-summary.json"), "utf-8"),

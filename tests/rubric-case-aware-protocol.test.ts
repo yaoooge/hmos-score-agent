@@ -54,6 +54,25 @@ test("parseRubricCaseAwarePlannerOutputStrict accepts one tool_call object", () 
   assert.equal(parsed.tool, "read_patch");
 });
 
+test("parseRubricCaseAwarePlannerOutputStrict accepts read_files tool_call", () => {
+  const parsed = parseRubricCaseAwarePlannerOutputStrict(
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_files",
+      args: {
+        paths: [
+          "workspace/entry/src/main/ets/pages/Index.ets",
+          "workspace/entry/src/main/ets/components/Card.ets",
+        ],
+      },
+      reason: "需要并行查看多个评分证据文件。",
+    }),
+  );
+
+  assert.equal(parsed.action, "tool_call");
+  assert.equal(parsed.tool, "read_files");
+});
+
 test("validateRubricFinalAnswerAgainstSnapshot accepts complete full-score answer", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);

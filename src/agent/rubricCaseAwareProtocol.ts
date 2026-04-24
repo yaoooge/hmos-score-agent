@@ -1,6 +1,10 @@
 import { z } from "zod";
-import { caseToolNameSchema } from "./caseToolSchemas.js";
-import { StrictJsonProtocolError, parseSingleJsonObjectStrict } from "./jsonProtocol.js";
+import {
+  StrictJsonProtocolError,
+  findTopLevelJsonObjectEnd,
+  parseSingleJsonObjectStrict,
+} from "./jsonProtocol.js";
+import { sharedCaseAwareToolCallSchema } from "./sharedCaseAwareToolCallSchema.js";
 import type {
   LoadedRubricSnapshot,
   RubricScoringResult,
@@ -21,14 +25,7 @@ const deductionTraceSchema = z
   })
   .strict();
 
-export const rubricCaseAwareToolCallSchema = z
-  .object({
-    action: z.literal("tool_call"),
-    tool: caseToolNameSchema,
-    args: z.record(z.string(), z.unknown()),
-    reason: z.string().optional(),
-  })
-  .strict();
+export const rubricCaseAwareToolCallSchema = sharedCaseAwareToolCallSchema;
 
 export const rubricCaseAwareFinalAnswerSchema = z
   .object({
@@ -155,6 +152,45 @@ export function parseRubricCaseAwarePlannerOutputStrict(
     }
     throw error;
   }
+}
+
+function extractSingleJsonObjectLoose(rawText: string): string {
+  const trimmed = rawText.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidateText = fencedMatch?.[1]?.trim() ?? trimmed;
+  const objectStartIndex = candidateText.indexOf("{");
+
+  if (objectStartIndex < 0) {
+    throw new RubricCaseAwareProtocolError(
+      "not_single_json_object",
+      "output does not contain a JSON object",
+    );
+  }
+
+  const objectText = candidateText.slice(objectStartIndex);
+  const objectEndIndex = findTopLevelJsonObjectEnd(objectText);
+  if (objectEndIndex < 0) {
+    throw new RubricCaseAwareProtocolError(
+      "invalid_json",
+      "output contains an incomplete JSON object",
+    );
+  }
+
+  const trailingText = objectText.slice(objectEndIndex + 1).trim();
+  if (trailingText.includes("{")) {
+    throw new RubricCaseAwareProtocolError(
+      "multiple_json_objects",
+      "received multiple JSON objects in one response",
+    );
+  }
+
+  return objectText.slice(0, objectEndIndex + 1);
+}
+
+export function parseRubricCaseAwarePlannerOutputLenient(
+  rawText: string,
+): RubricCaseAwarePlannerOutput {
+  return parseRubricCaseAwarePlannerOutputStrict(extractSingleJsonObjectLoose(rawText));
 }
 
 export function validateRubricFinalAnswerAgainstSnapshot(

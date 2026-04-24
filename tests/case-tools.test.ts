@@ -66,6 +66,159 @@ test("read_file rejects path traversal", async (t) => {
   assert.equal(result.error?.code, "path_out_of_scope");
 });
 
+test("read_files returns multiple files in request order", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  const executor = createCaseToolExecutor({
+    caseRoot,
+    maxToolCalls: 6,
+    maxTotalBytes: 61440,
+    maxFiles: 20,
+  });
+
+  const result = await executor.execute({
+    tool: "read_files" as never,
+    args: {
+      paths: [
+        "workspace/entry/src/main/ets/home/HomePageVM.ets",
+        "workspace/config.json",
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    ((result.result?.files as Array<{ path: string }>) ?? []).map((file) => file.path),
+    [
+      "workspace/entry/src/main/ets/home/HomePageVM.ets",
+      "workspace/config.json",
+    ],
+  );
+  assert.match(
+    String((result.result?.files as Array<{ content: string }>)?.[0]?.content ?? ""),
+    /refreshLocalNews/,
+  );
+  assert.match(
+    String((result.result?.files as Array<{ content: string }>)?.[1]?.content ?? ""),
+    /local-news/,
+  );
+});
+
+test("read_files rejects path traversal when any requested file is out of scope", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  const executor = createCaseToolExecutor({
+    caseRoot,
+    maxToolCalls: 6,
+    maxTotalBytes: 61440,
+    maxFiles: 20,
+  });
+
+  const result = await executor.execute({
+    tool: "read_files" as never,
+    args: {
+      paths: [
+        "workspace/entry/src/main/ets/home/HomePageVM.ets",
+        "../outside.txt",
+      ],
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.code, "path_out_of_scope");
+});
+
+test("read_files spends file budget per unique requested file and omits overflow paths", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  const executor = createCaseToolExecutor({
+    caseRoot,
+    maxToolCalls: 6,
+    maxTotalBytes: 61440,
+    maxFiles: 1,
+  });
+
+  const result = await executor.execute({
+    tool: "read_files" as never,
+    args: {
+      paths: [
+        "workspace/entry/src/main/ets/home/HomePageVM.ets",
+        "workspace/config.json",
+      ],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    ((result.result?.files as Array<{ path: string }>) ?? []).map((file) => file.path),
+    ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
+  );
+  assert.equal(result.result?.truncated, true);
+  assert.deepEqual(
+    (result.result?.omitted_paths as string[] | undefined) ?? [],
+    ["workspace/config.json"],
+  );
+  assert.equal(result.budget.readFileCount, 1);
+});
+
+test("read_files returns the remaining files that fit file budget instead of failing mid-batch", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  await fs.writeFile(path.join(caseRoot, "workspace", "a.txt"), "a".repeat(16), "utf-8");
+  await fs.writeFile(path.join(caseRoot, "workspace", "b.txt"), "b".repeat(16), "utf-8");
+  await fs.writeFile(path.join(caseRoot, "workspace", "c.txt"), "c".repeat(16), "utf-8");
+  const executor = createCaseToolExecutor({
+    caseRoot,
+    maxToolCalls: 6,
+    maxTotalBytes: 61440,
+    maxFiles: 2,
+  });
+
+  const result = await executor.execute({
+    tool: "read_files" as never,
+    args: {
+      paths: ["workspace/a.txt", "workspace/b.txt", "workspace/c.txt"],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    ((result.result?.files as Array<{ path: string }>) ?? []).map((file) => file.path),
+    ["workspace/a.txt", "workspace/b.txt"],
+  );
+  assert.equal(result.result?.truncated, true);
+  assert.deepEqual(
+    (result.result?.omitted_paths as string[] | undefined) ?? [],
+    ["workspace/c.txt"],
+  );
+  assert.deepEqual(result.pathsRead, ["workspace/a.txt", "workspace/b.txt"]);
+  assert.equal(result.budget.readFileCount, 2);
+  assert.equal(result.budget.remainingFileSlots, 0);
+});
+
+test("read_files truncates later files to preserve shared byte budget", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  const largeFile = "x".repeat(2048);
+  await fs.writeFile(path.join(caseRoot, "workspace", "large-a.txt"), largeFile, "utf-8");
+  await fs.writeFile(path.join(caseRoot, "workspace", "large-b.txt"), largeFile, "utf-8");
+  const executor = createCaseToolExecutor({
+    caseRoot,
+    maxToolCalls: 6,
+    maxTotalBytes: 3000,
+    maxFiles: 20,
+  });
+
+  const result = await executor.execute({
+    tool: "read_files" as never,
+    args: {
+      paths: ["workspace/large-a.txt", "workspace/large-b.txt"],
+    },
+  });
+
+  assert.equal(result.ok, true);
+  const files = (result.result?.files as Array<{ truncated: boolean; content: string }>) ?? [];
+  assert.equal(files.length, 2);
+  assert.equal(files[0]?.truncated, false);
+  assert.equal(files[1]?.truncated, true);
+  assert.equal(files[1]?.content.length < largeFile.length, true);
+});
+
 test("read_patch returns effective patch content", async (t) => {
   const caseRoot = await makeCaseRoot(t);
   const executor = createCaseToolExecutor({

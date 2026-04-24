@@ -386,6 +386,9 @@ export async function taskUnderstandingNode(
         ? state.caseInput.generatedProjectPath
         : state.caseInput.originalProjectPath;
     const projectStructure = await collectProjectStructure(projectStructureRoot);
+    const workspaceProjectStructure = await collectProjectStructure(
+      state.caseInput.generatedProjectPath,
+    );
     const effectivePatchPath = await ensureEffectivePatchPath(state, deps);
     const patchSummary = await readPatchSummary(effectivePatchPath);
     const caseRuleDefinitions = await loadCaseConstraintRules(state.caseInput);
@@ -410,6 +413,7 @@ export async function taskUnderstandingNode(
       effectivePatchPath,
       caseRuleDefinitions,
       constraintSummary,
+      workspaceProjectStructure,
     };
   } catch (error) {
     emitNodeFailed("taskUnderstandingNode", error, config);

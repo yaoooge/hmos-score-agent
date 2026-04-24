@@ -5,9 +5,11 @@ import type {
   RubricScoringPayload,
   RubricScoringResult,
 } from "../types.js";
+import { createRubricAgentToolContract } from "./caseAwareToolContract.js";
 import { createCaseToolExecutor } from "./caseTools.js";
 import {
   describeRubricFinalAnswerValidationFailure,
+  parseRubricCaseAwarePlannerOutputLenient,
   parseRubricCaseAwarePlannerOutputStrict,
   type RubricCaseAwareFinalAnswer,
   validateRubricFinalAnswerAgainstSnapshot,
@@ -23,12 +25,28 @@ import {
 
 function isActionRetryCandidate(rawText: string, action: "final_answer" | "tool_call"): boolean {
   const trimmed = rawText.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+  let candidateJson = trimmed;
+
+  if (trimmed.startsWith("```")) {
+    const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    if (!fencedMatch?.[1]) {
+      return false;
+    }
+    candidateJson = fencedMatch[1].trim();
+  }
+
+  const firstBraceIndex = candidateJson.indexOf("{");
+  const lastBraceIndex = candidateJson.lastIndexOf("}");
+  if (firstBraceIndex >= 0 && lastBraceIndex > firstBraceIndex) {
+    candidateJson = candidateJson.slice(firstBraceIndex, lastBraceIndex + 1).trim();
+  }
+
+  if (!candidateJson.startsWith("{") || !candidateJson.endsWith("}")) {
     return false;
   }
 
   try {
-    const parsed = JSON.parse(trimmed) as unknown;
+    const parsed = JSON.parse(candidateJson) as unknown;
     return (
       typeof parsed === "object" &&
       parsed !== null &&
@@ -48,21 +66,7 @@ function stripFinalAnswerAction(finalAnswer: RubricCaseAwareFinalAnswer): Rubric
 function toolContract(
   payload: RubricScoringPayload,
 ): NonNullable<RubricScoringPayload["tool_contract"]> {
-  return (
-    payload.tool_contract ?? {
-      allowed_tools: [
-        "read_patch",
-        "list_dir",
-        "read_file",
-        "read_file_chunk",
-        "grep_in_files",
-        "read_json",
-      ],
-      max_tool_calls: 4,
-      max_total_bytes: 40960,
-      max_files: 12,
-    }
-  );
+  return payload.tool_contract ?? createRubricAgentToolContract();
 }
 
 export async function runRubricCaseAwareAgent(input: {
@@ -93,9 +97,6 @@ export async function runRubricCaseAwareAgent(input: {
   let finalAnswer: RubricScoringResult | undefined;
   let outcome: RubricCaseAwareRunnerResult["outcome"] | undefined;
   let failureReason: string | undefined;
-  let topLevelRepairRetryUsed = false;
-  let finalAnswerRepairRetryUsed = false;
-  let toolCallRepairRetryUsed = false;
   const systemPrompt = renderRubricCaseAwareSystemPrompt(input.bootstrapPayload);
 
   await input.logger?.info(
@@ -105,6 +106,9 @@ export async function runRubricCaseAwareAgent(input: {
   const maxTurns = contract.max_tool_calls + 1;
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
+    let topLevelRepairRetryUsed = false;
+    let finalAnswerRepairRetryUsed = false;
+    let toolCallRepairRetryUsed = false;
     const budget = executor.getBudget();
     await input.logger?.info(
       `rubric case-aware planner 开始 turn=${turn} remainingTools=${budget.remainingToolCalls} remainingBytes=${budget.remainingBytes}`,
@@ -140,6 +144,18 @@ export async function runRubricCaseAwareAgent(input: {
     } catch (error) {
       failureReason = error instanceof Error ? error.message : String(error);
       finalAnswerRawText = rawText;
+      try {
+        decision = parseRubricCaseAwarePlannerOutputLenient(rawText);
+        rawText = JSON.stringify(decision, null, 2);
+        await input.logger?.warn(
+          `rubric case-aware 输出包含额外包装，已本地提取合法 JSON turn=${turn}`,
+        );
+      } catch {
+        // Fall through to model-side protocol repair below.
+      }
+    }
+
+    if (!decision) {
       if (!finalAnswerRepairRetryUsed && isActionRetryCandidate(rawText, "final_answer")) {
         finalAnswerRepairRetryUsed = true;
         turns.push({
@@ -225,7 +241,7 @@ export async function runRubricCaseAwareAgent(input: {
               bootstrapPayload: input.bootstrapPayload,
               turn,
               latestObservation,
-              failureReason,
+              failureReason: failureReason ?? "protocol_error",
               rawOutputText: rawText,
             }),
             {
@@ -233,12 +249,103 @@ export async function runRubricCaseAwareAgent(input: {
               requestTag: `rubric_case_aware_turn_${turn}_single_action_retry`,
             },
           );
-          decision = parseRubricCaseAwarePlannerOutputStrict(rawText);
         } catch (retryError) {
           outcome = "protocol_error";
           failureReason = retryError instanceof Error ? retryError.message : String(retryError);
           finalAnswerRawText = rawText;
           break;
+        }
+
+        try {
+          decision = parseRubricCaseAwarePlannerOutputStrict(rawText);
+        } catch (retryParseError) {
+          failureReason =
+            retryParseError instanceof Error ? retryParseError.message : String(retryParseError);
+          finalAnswerRawText = rawText;
+          if (!finalAnswerRepairRetryUsed && isActionRetryCandidate(rawText, "final_answer")) {
+            finalAnswerRepairRetryUsed = true;
+            turns.push({
+              turn,
+              action: "final_answer",
+              status: "error",
+              raw_output_text: rawText,
+            });
+            await input.logger?.warn(
+              `rubric case-aware 顶层修复后 final_answer 仍违反协议，发起 final_answer 修复重试 turn=${turn} error=${failureReason}`,
+            );
+            try {
+              rawText = await input.completeJsonPrompt(
+                renderRubricCaseAwareFinalAnswerRetryPrompt({
+                  bootstrapPayload: input.bootstrapPayload,
+                  turn,
+                  latestObservation,
+                  failureReason,
+                }),
+                {
+                  systemPrompt,
+                  requestTag: `rubric_case_aware_turn_${turn}_final_answer_retry`,
+                },
+              );
+              decision = parseRubricCaseAwarePlannerOutputStrict(rawText);
+            } catch (finalAnswerRetryError) {
+              outcome = "protocol_error";
+              failureReason =
+                finalAnswerRetryError instanceof Error
+                  ? finalAnswerRetryError.message
+                  : String(finalAnswerRetryError);
+              finalAnswerRawText = rawText;
+              break;
+            }
+            if (decision.action !== "final_answer") {
+              outcome = "protocol_error";
+              failureReason = "protocol_error: final_answer repair retry must return final_answer";
+              finalAnswerRawText = rawText;
+              break;
+            }
+          } else if (!toolCallRepairRetryUsed && isActionRetryCandidate(rawText, "tool_call")) {
+            toolCallRepairRetryUsed = true;
+            turns.push({
+              turn,
+              action: "tool_call",
+              status: "error",
+              raw_output_text: rawText,
+            });
+            await input.logger?.warn(
+              `rubric case-aware 顶层修复后 tool_call 仍违反协议，发起 tool_call 修复重试 turn=${turn} error=${failureReason}`,
+            );
+            try {
+              rawText = await input.completeJsonPrompt(
+                renderRubricCaseAwareToolCallRetryPrompt({
+                  bootstrapPayload: input.bootstrapPayload,
+                  turn,
+                  latestObservation,
+                  failureReason,
+                }),
+                {
+                  systemPrompt,
+                  requestTag: `rubric_case_aware_turn_${turn}_tool_retry`,
+                },
+              );
+              decision = parseRubricCaseAwarePlannerOutputStrict(rawText);
+            } catch (toolCallRetryError) {
+              outcome = "protocol_error";
+              failureReason =
+                toolCallRetryError instanceof Error
+                  ? toolCallRetryError.message
+                  : String(toolCallRetryError);
+              finalAnswerRawText = rawText;
+              break;
+            }
+            if (decision.action !== "tool_call") {
+              outcome = "protocol_error";
+              failureReason = "protocol_error: tool_call repair retry must return tool_call";
+              finalAnswerRawText = rawText;
+              break;
+            }
+          } else {
+            outcome = "protocol_error";
+            break;
+          }
         }
       } else {
         outcome = "protocol_error";

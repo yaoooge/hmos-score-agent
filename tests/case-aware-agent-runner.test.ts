@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCaseAwareAgent } from "../src/agent/caseAwareAgentRunner.js";
+import { createRuleAgentToolContract } from "../src/agent/caseAwareToolContract.js";
 import { parseCaseAwarePlannerOutputStrict } from "../src/agent/caseAwareProtocol.js";
 import {
   renderCaseAwareBootstrapPrompt,
@@ -63,8 +64,8 @@ const sampleBootstrapPayload: AgentBootstrapPayload = {
       "read_json",
     ],
     max_tool_calls: 6,
-    max_total_bytes: 61440,
-    max_files: 20,
+    max_total_bytes: 122880,
+    max_files: 40,
   },
   response_contract: {
     action_enum: ["tool_call", "final_answer"],
@@ -139,6 +140,94 @@ test("case-aware runner performs a tool_call before emitting final_answer", asyn
   assert.equal(result.final_answer_raw_text, JSON.stringify(result.final_answer, null, 2));
 });
 
+test("case-aware runner executes read_files and records multiple paths in one tool trace entry", async (t) => {
+  const caseRoot = await fs.mkdtemp(path.join(os.tmpdir(), "case-aware-runner-read-files-"));
+  await fs.mkdir(path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "home"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(caseRoot, "intermediate"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "home", "HomePageVM.ets"),
+    "export class HomePageVM { updateLocalNews(): void {} }\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "home", "HomePage.ets"),
+    "Text(this.currentCity)\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseRoot, "intermediate", "effective.patch"),
+    "diff --git a/entry/src/main/ets/home/HomePageVM.ets b/entry/src/main/ets/home/HomePageVM.ets\n",
+    "utf-8",
+  );
+  t.after(async () => fs.rm(caseRoot, { recursive: true, force: true }));
+
+  const outputs = [
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_files",
+      args: {
+        paths: [
+          "workspace/entry/src/main/ets/home/HomePageVM.ets",
+          "workspace/entry/src/main/ets/home/HomePage.ets",
+        ],
+      },
+      reason: "需要同时确认刷新逻辑和城市展示证据。",
+    }),
+    JSON.stringify({
+      action: "final_answer",
+      summary: {
+        assistant_scope: "本次仅辅助候选规则判定",
+        overall_confidence: "medium",
+      },
+      rule_assessments: [
+        {
+          rule_id: "HM-REQ-010-03",
+          decision: "pass",
+          confidence: "medium",
+          reason: "批量读取后已看到相关实现证据。",
+          evidence_used: [
+            "workspace/entry/src/main/ets/home/HomePageVM.ets",
+            "workspace/entry/src/main/ets/home/HomePage.ets",
+          ],
+          needs_human_review: false,
+        },
+      ],
+    }),
+  ];
+
+  const result = await runCaseAwareAgent({
+    caseRoot,
+    bootstrapPayload: {
+      ...sampleBootstrapPayload,
+      case_context: {
+        ...sampleBootstrapPayload.case_context,
+        case_root: caseRoot,
+        original_project_path: path.join(caseRoot, "original"),
+        generated_project_path: path.join(caseRoot, "workspace"),
+        effective_patch_path: path.join(caseRoot, "intermediate", "effective.patch"),
+      },
+      tool_contract: createRuleAgentToolContract(),
+      initial_target_files: [
+        "workspace/entry/src/main/ets/home/HomePageVM.ets",
+        "workspace/entry/src/main/ets/home/HomePage.ets",
+      ],
+    },
+    completeJsonPrompt: async () => outputs.shift() ?? "",
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.turns.length, 2);
+  assert.equal(result.tool_trace.length, 1);
+  assert.equal(result.tool_trace[0]?.tool, "read_files");
+  assert.deepEqual(result.tool_trace[0]?.paths_read, [
+    "workspace/entry/src/main/ets/home/HomePageVM.ets",
+    "workspace/entry/src/main/ets/home/HomePage.ets",
+  ]);
+  assert.equal(result.final_answer?.action, "final_answer");
+});
+
 test("case-aware runner returns protocol_error for invalid model output", async () => {
   const result = await runCaseAwareAgent({
     caseRoot: "/tmp/case-root",
@@ -188,7 +277,7 @@ test("case-aware runner sends canonical protocol instructions through system pro
   assert.match(calls[0]?.systemPrompt ?? "", /一次只允许输出一个 JSON object/);
   assert.match(
     calls[0]?.systemPrompt ?? "",
-    /工具预算：max_tool_calls=6, max_total_bytes=61440, max_files=20/,
+    /工具预算：max_tool_calls=6, max_total_bytes=122880, max_files=40/,
   );
   assert.match(calls[0]?.prompt ?? "", /当前判定上下文如下/);
   assert.match(calls[0]?.prompt ?? "", /本次必须覆盖的 rule_id: HM-REQ-010-03/);
@@ -771,7 +860,7 @@ test("case-aware system prompt contains canonical protocol and tool contract", (
     prompt,
     /final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain/,
   );
-  assert.match(prompt, /工具预算：max_tool_calls=6, max_total_bytes=61440, max_files=20/);
+  assert.match(prompt, /工具预算：max_tool_calls=6, max_total_bytes=122880, max_files=40/);
   assert.match(prompt, /grep_in_files: args = \{ pattern, path, limit \}/);
   assert.match(prompt, /最终只对 assisted_rule_candidates 中的候选规则给出判断/);
 });

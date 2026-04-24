@@ -52,6 +52,25 @@ test("parseCaseAwarePlannerOutputStrict accepts tool_call without optional reaso
   assert.equal(parsed.reason, undefined);
 });
 
+test("parseCaseAwarePlannerOutputStrict accepts read_files tool_call", () => {
+  const parsed = parseCaseAwarePlannerOutputStrict(
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_files",
+      args: {
+        paths: [
+          "workspace/entry/src/main/ets/home/HomePage.ets",
+          "workspace/entry/src/main/ets/home/HomePageVM.ets",
+        ],
+      },
+      reason: "需要一次比对页面与 viewmodel 证据。",
+    }),
+  );
+
+  assert.equal(parsed.action, "tool_call");
+  assert.equal(parsed.tool, "read_files");
+});
+
 test("parseCaseAwarePlannerOutputStrict accepts one canonical final_answer object", () => {
   const parsed = parseCaseAwarePlannerOutputStrict(
     JSON.stringify({

@@ -11,6 +11,11 @@ import type {
   TaskType,
 } from "../types.js";
 import type { LoadedRubric } from "../scoring/rubricLoader.js";
+import {
+  createRuleAgentToolContract,
+  SHARED_CASE_TOOL_ARGUMENT_LINES,
+  SHARED_CASE_TOOL_CATALOG_LINE,
+} from "./caseAwareToolContract.js";
 
 type SelectAssistedRuleCandidatesInput = {
   evidenceByRuleId?: Record<
@@ -228,19 +233,7 @@ export function buildAgentBootstrapPayload(
     rubric_summary: input.rubricSnapshot,
     assisted_rule_candidates: assistedRuleCandidates,
     initial_target_files: initialTargetFiles,
-    tool_contract: {
-      allowed_tools: [
-        "read_patch",
-        "list_dir",
-        "read_file",
-        "read_file_chunk",
-        "grep_in_files",
-        "read_json",
-      ],
-      max_tool_calls: 6,
-      max_total_bytes: 61440,
-      max_files: 20,
-    },
+    tool_contract: createRuleAgentToolContract(),
     response_contract: {
       action_enum: ["tool_call", "final_answer"],
       output_language: "zh-CN",
@@ -291,15 +284,10 @@ export function renderAgentSystemPrompt(payload: AgentBootstrapPayload): string 
     "示例只展示结构，实际输出时必须替换为本次真实证据；final_answer.rule_assessments 必须覆盖全部候选 rule_id。",
     "如果证据不足，必须在对应 rule_assessments 中将 needs_human_review 置为 true。",
     "所有描述型文案必须使用中文。",
-    "case 目录只读工具包括：read_patch、list_dir、read_file、read_file_chunk、grep_in_files、read_json。",
+    SHARED_CASE_TOOL_CATALOG_LINE,
     `工具预算：max_tool_calls=${payload.tool_contract.max_tool_calls}, max_total_bytes=${payload.tool_contract.max_total_bytes}, max_files=${payload.tool_contract.max_files}。`,
     "工具参数必须严格匹配以下结构，不允许自造字段名：",
-    "read_patch: args 可为空，或仅允许 path 字段。",
-    "list_dir: args = { path }，只允许 path 字段。",
-    "read_file: args = { path }，只允许 path 字段。",
-    "read_file_chunk: args = { path, startLine, lineCount }。",
-    "grep_in_files: args = { pattern, path, limit }，其中 limit 必须在 1 到 100 之间。",
-    "read_json: args = { path }，只允许 path 字段。",
+    ...SHARED_CASE_TOOL_ARGUMENT_LINES,
     "禁止输出 markdown、代码块或任何额外解释。",
     "输出字段仅限上方 canonical schema 中出现的字段。",
     "顶层 final_answer 必须直接包含 action、summary、rule_assessments。",

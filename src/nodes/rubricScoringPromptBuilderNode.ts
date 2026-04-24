@@ -5,6 +5,7 @@ import {
 } from "../agent/rubricCaseAwarePrompt.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
+import type { ProjectStructureSummary } from "../types.js";
 
 function buildInitialTargetFiles(state: ScoreGraphState): string[] {
   const changedFiles = state.evidenceSummary?.changedFiles ?? [];
@@ -15,6 +16,30 @@ function buildInitialTargetFiles(state: ScoreGraphState): string[] {
     );
 
   return Array.from(new Set(normalized)).slice(0, 20);
+}
+
+function buildWorkspaceProjectStructureContext(state: ScoreGraphState): {
+  workspaceProjectStructure?: ProjectStructureSummary;
+  workspaceProjectStructureNote?: string;
+} {
+  const changedFiles = state.evidenceSummary?.changedFiles ?? [];
+  const changedFileCount = changedFiles.length;
+  const workspaceProjectStructure = state.workspaceProjectStructure;
+
+  if (!workspaceProjectStructure || changedFileCount <= 20) {
+    return {};
+  }
+
+  return {
+    workspaceProjectStructure: {
+      ...workspaceProjectStructure,
+      topLevelEntries: workspaceProjectStructure.topLevelEntries.slice(0, 20),
+      modulePaths: workspaceProjectStructure.modulePaths.slice(0, 20),
+      representativeFiles: workspaceProjectStructure.representativeFiles.slice(0, 30),
+      implementationHints: workspaceProjectStructure.implementationHints.slice(0, 10),
+    },
+    workspaceProjectStructureNote: `当前 changedFiles 共 ${changedFileCount} 个，已超过 initial_target_files 上限 20。请先优先检查 effective_patch_path 和 initial_target_files，再结合 workspace_project_structure 选择代表性目录或文件继续取证。`,
+  };
 }
 
 export async function rubricScoringPromptBuilderNode(
@@ -34,6 +59,7 @@ export async function rubricScoringPromptBuilderNode(
       constraintSummary: state.constraintSummary,
       rubricSnapshot: state.rubricSnapshot,
       initialTargetFiles: buildInitialTargetFiles(state),
+      ...buildWorkspaceProjectStructureContext(state),
     });
     const prompt = renderRubricCaseAwareBootstrapPrompt(payload);
     await deps.logger?.info(

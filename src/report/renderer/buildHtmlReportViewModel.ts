@@ -27,11 +27,17 @@ export interface HtmlReportViewModel {
       name: string;
       weight: number;
       score: number;
+      rubricScore: number;
+      ruleScoreText: string;
+      finalScore: number;
       matchedBandText: string;
       confidence: string;
       reviewRequired: boolean;
-      rationale: string;
-      evidence: string;
+      scoreCalculation: string;
+      rubricOpinion: string;
+      rubricEvidence: string;
+      ruleOpinion: string;
+      ruleEvidence: string;
       deductionTrace: null | {
         codeLocations: string;
         impactScope: string;
@@ -143,6 +149,69 @@ function formatEvidence(value: unknown): string {
   return "暂无证据。";
 }
 
+function formatConfidence(value: unknown): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "high") {
+    return "高";
+  }
+  if (normalized === "medium") {
+    return "中";
+  }
+  if (normalized === "low") {
+    return "低";
+  }
+  return normalized || "低";
+}
+
+function normalizeCalculationText(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "暂无计算过程说明。";
+  }
+  return text
+    .replaceAll("rubric agent 基础分", "细则评分基础分")
+    .replaceAll("rubric 基础分", "细则评分基础分")
+    .replaceAll("规则修正", "规则校验修正")
+    .replaceAll("按 rubric 档位收敛为", "按评分档位收敛为")
+    .replaceAll("最终分等于", "最终得分等于");
+}
+
+function formatRuleDelta(value: unknown): string {
+  const delta = Number(value ?? 0);
+  if (!Number.isFinite(delta) || delta === 0) {
+    return "0 分";
+  }
+  return `${delta > 0 ? "+" : ""}${delta} 分`;
+}
+
+function formatRuleOpinion(ruleImpacts: unknown[]): string {
+  if (ruleImpacts.length === 0) {
+    return "未发现足够的负面规则证据，保持细则评分结果。";
+  }
+  return ruleImpacts
+    .map((item) => {
+      const current = asRecord(item);
+      const ruleId = String(current.rule_id ?? "").trim();
+      const result = String(current.result ?? "").trim();
+      const reason = String(current.reason ?? "").trim() || "暂无规则意见。";
+      const scoreDelta = Number(current.score_delta ?? 0);
+      const deltaText =
+        scoreDelta === 0 ? "不调整分数" : `调整 ${scoreDelta > 0 ? "+" : ""}${scoreDelta} 分`;
+      return [ruleId, result, deltaText, reason].filter(Boolean).join(" | ");
+    })
+    .join("\n");
+}
+
+function formatRuleEvidence(ruleImpacts: unknown[]): string {
+  if (ruleImpacts.length === 0) {
+    return "未发现影响该评分项的规则证据。";
+  }
+  const evidences = ruleImpacts
+    .map((item) => String(asRecord(item).evidence ?? "").trim())
+    .filter(Boolean);
+  return evidences.length > 0 ? evidences.join("\n") : "暂无规则证据。";
+}
+
 export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): HtmlReportViewModel {
   const basicInfo = asRecord(resultJson.basic_info);
   const overallConclusion = asRecord(resultJson.overall_conclusion);
@@ -236,18 +305,24 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         items: itemResults.map((item) => {
           const currentItem = asRecord(item);
           const agentEvaluation = asRecord(currentItem.agent_evaluation);
+          const scoreFusion = asRecord(currentItem.score_fusion);
+          const ruleImpacts = Array.isArray(currentItem.rule_impacts) ? currentItem.rule_impacts : [];
           const deductionTrace = asRecord(agentEvaluation.deduction_trace);
           return {
             name: String(currentItem.item_name ?? ""),
             weight: Number(currentItem.item_weight ?? 0),
             score: Number(currentItem.score ?? 0),
+            rubricScore: Number(agentEvaluation.base_score ?? currentItem.score ?? 0),
+            ruleScoreText: formatRuleDelta(scoreFusion.rule_delta),
+            finalScore: Number(scoreFusion.final_score ?? currentItem.score ?? 0),
             matchedBandText: formatMatchedBand(currentItem.matched_band),
-            confidence: String(currentItem.confidence ?? "low"),
+            confidence: formatConfidence(currentItem.confidence ?? "low"),
             reviewRequired: Boolean(currentItem.review_required),
-            rationale: String(
-              currentItem.rationale ?? agentEvaluation.logic ?? "暂无理由。",
-            ),
-            evidence: formatEvidence(currentItem.evidence ?? agentEvaluation.evidence_used),
+            scoreCalculation: normalizeCalculationText(scoreFusion.fusion_logic),
+            rubricOpinion: String(agentEvaluation.logic ?? currentItem.rationale ?? "暂无评分意见。"),
+            rubricEvidence: formatEvidence(agentEvaluation.evidence_used ?? currentItem.evidence),
+            ruleOpinion: formatRuleOpinion(ruleImpacts),
+            ruleEvidence: formatRuleEvidence(ruleImpacts),
             deductionTrace:
               Object.keys(deductionTrace).length === 0
                 ? null

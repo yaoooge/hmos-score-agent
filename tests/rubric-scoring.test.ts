@@ -10,6 +10,9 @@ import {
 import {
   buildRubricCaseAwarePayload,
   renderRubricCaseAwareBootstrapPrompt,
+  renderRubricCaseAwareFollowupPrompt,
+  renderRubricCaseAwareSystemPrompt,
+  renderRubricCaseAwareToolCallRetryPrompt,
 } from "../src/agent/rubricCaseAwarePrompt.js";
 import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
@@ -381,5 +384,144 @@ test("renderRubricCaseAwareBootstrapPrompt includes tool protocol and keeps prom
   assert.match(prompt, /证据不足时必须保持满分/);
   assert.match(prompt, /improvement_suggestion/);
   assert.match(prompt, /initial_target_files/);
+  assert.match(prompt, /effective_patch_path/);
+  assert.match(prompt, /intermediate\/effective\.patch/);
+  assert.doesNotMatch(prompt, /"tool_contract"/);
+  assert.doesNotMatch(prompt, /"response_contract"/);
   assert.doesNotMatch(prompt, /diff --git/);
+});
+
+test("renderRubricCaseAwareBootstrapPrompt includes workspace directory summary when provided", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricCaseAwarePayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "生成一个电商首页",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/intermediate/effective.patch",
+    taskType: "full_generation",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+    initialTargetFiles: ["workspace/entry/src/main/ets/pages/Index.ets"],
+    workspaceProjectStructure: {
+      rootPath: "/case/workspace",
+      topLevelEntries: ["AppScope", "entry"],
+      modulePaths: ["entry"],
+      representativeFiles: ["entry/src/main/ets/pages/Index.ets"],
+      implementationHints: ["HarmonyOS 模块: entry"],
+      omittedFileCount: 12,
+    },
+    workspaceProjectStructureNote:
+      "当前 changedFiles 共 35 个，已超过 initial_target_files 上限 20。",
+  });
+
+  const prompt = renderRubricCaseAwareBootstrapPrompt(payload);
+
+  assert.match(prompt, /workspace_project_structure/);
+  assert.match(prompt, /workspace_project_structure_note/);
+  assert.match(prompt, /AppScope/);
+  assert.match(prompt, /当前 changedFiles 共 35 个/);
+});
+
+test("renderRubricCaseAwareSystemPrompt includes canonical single-action examples", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricCaseAwarePayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "生成一个电商首页",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/intermediate/effective.patch",
+    taskType: "full_generation",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+    initialTargetFiles: ["workspace/entry/src/main/ets/pages/Index.ets"],
+  });
+
+  const prompt = renderRubricCaseAwareSystemPrompt(payload);
+
+  assert.match(prompt, /合法 tool_call 示例/);
+  assert.match(prompt, /"action": "tool_call"/);
+  assert.match(prompt, /"tool": "read_patch"/);
+  assert.match(prompt, /read_files/);
+  assert.match(prompt, /合法 final_answer 示例/);
+  assert.match(prompt, /"action": "final_answer"/);
+  assert.match(prompt, /禁止输出 tools 数组/);
+  assert.match(prompt, /一次只允许调用一个工具/);
+});
+
+test("renderRubricCaseAwareFollowupPrompt keeps only compact interaction context", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricCaseAwarePayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "生成一个电商首页",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/intermediate/effective.patch",
+    taskType: "full_generation",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+    initialTargetFiles: ["workspace/entry/src/main/ets/pages/Index.ets"],
+  });
+
+  const prompt = renderRubricCaseAwareFollowupPrompt({
+    bootstrapPayload: payload,
+    turn: 2,
+    latestObservation: '{"ok":true}',
+  });
+
+  assert.match(prompt, /当前评分上下文如下/);
+  assert.match(prompt, /initial_target_files/);
+  assert.match(prompt, /rubric_items/);
+  assert.doesNotMatch(prompt, /"tool_contract"/);
+  assert.doesNotMatch(prompt, /"response_contract"/);
+  assert.doesNotMatch(prompt, /"scenario"/);
+  assert.doesNotMatch(prompt, /"common_risks"/);
+});
+
+test("renderRubricCaseAwareToolCallRetryPrompt stays minimal for repair requests", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const payload = buildRubricCaseAwarePayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "生成一个电商首页",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/workspace",
+      patchPath: "/case/diff/changes.patch",
+    },
+    caseRoot: "/case",
+    effectivePatchPath: "/case/intermediate/effective.patch",
+    taskType: "full_generation",
+    constraintSummary,
+    rubricSnapshot: snapshot,
+    initialTargetFiles: ["workspace/entry/src/main/ets/pages/Index.ets"],
+  });
+
+  const prompt = renderRubricCaseAwareToolCallRetryPrompt({
+    bootstrapPayload: payload,
+    turn: 2,
+    latestObservation: '{"ok":true}',
+    failureReason: "protocol_error",
+  });
+
+  assert.match(prompt, /只能重新输出一个 tool_call JSON object/);
+  assert.match(prompt, /initial_target_files/);
+  assert.doesNotMatch(prompt, /rubric_items/);
+  assert.doesNotMatch(prompt, /"scenario"/);
+  assert.doesNotMatch(prompt, /"common_risks"/);
 });

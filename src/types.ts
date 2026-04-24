@@ -202,6 +202,7 @@ export type CaseToolName =
   | "read_patch"
   | "list_dir"
   | "read_file"
+  | "read_files"
   | "read_file_chunk"
   | "grep_in_files"
   | "read_json";
@@ -287,6 +288,8 @@ export interface RubricScoringPayload {
   task_understanding: ConstraintSummary;
   rubric_summary: LoadedRubricSnapshot;
   initial_target_files?: string[];
+  workspace_project_structure?: ProjectStructureSummary;
+  workspace_project_structure_note?: string;
   tool_contract?: {
     allowed_tools: CaseToolName[];
     max_tool_calls: number;

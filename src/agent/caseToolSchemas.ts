@@ -4,6 +4,7 @@ export const caseToolNameSchema = z.enum([
   "read_patch",
   "list_dir",
   "read_file",
+  "read_files",
   "read_file_chunk",
   "grep_in_files",
   "read_json",
@@ -16,6 +17,10 @@ export const caseToolCallSchema = z.object({
 
 export const readPathArgsSchema = z.object({
   path: z.string().min(1),
+});
+
+export const readPathsArgsSchema = z.object({
+  paths: z.array(z.string().min(1)).min(1).max(20),
 });
 
 export const listDirArgsSchema = z.object({

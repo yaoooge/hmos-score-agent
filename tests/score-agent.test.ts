@@ -318,10 +318,61 @@ test("rubricScoringPromptBuilderNode builds case-aware rubric scoring prompt", a
     "read_patch",
     "list_dir",
     "read_file",
+    "read_files",
     "read_file_chunk",
     "grep_in_files",
     "read_json",
   ]);
+});
+
+test("rubricScoringPromptBuilderNode adds workspace directory summary when changed files exceed initial target limit", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const changedFiles = Array.from({ length: 21 }, (_, index) => `entry/src/main/ets/pages/Page${index}.ets`);
+
+  const result = await rubricScoringPromptBuilderNode(
+    {
+      caseInput: makeState({
+        promptText: "请修复页面问题",
+        patchPath: "/tmp/changes.patch",
+      }).caseInput,
+      sourceCasePath: "/tmp/case-1",
+      effectivePatchPath: "/tmp/case-1/intermediate/effective.patch",
+      taskType: "bug_fix",
+      constraintSummary: {
+        explicitConstraints: ["修复页面问题"],
+        contextualConstraints: ["保持 ArkTS 工程结构"],
+        implicitConstraints: ["存在 patch"],
+        classificationHints: ["bug_fix"],
+      },
+      evidenceSummary: {
+        workspaceFileCount: 21,
+        originalFileCount: 21,
+        changedFileCount: 21,
+        changedFiles,
+        hasPatch: true,
+      },
+      workspaceProjectStructure: {
+        rootPath: "/tmp/case-1/workspace",
+        topLevelEntries: ["AppScope", "entry"],
+        modulePaths: ["entry"],
+        representativeFiles: ["entry/src/main/ets/pages/Index.ets"],
+        implementationHints: ["HarmonyOS 模块: entry"],
+        omittedFileCount: 5,
+      },
+      rubricSnapshot: buildRubricSnapshot(rubric),
+    } as never,
+    { logger: undefined },
+  );
+
+  assert.equal(result.rubricScoringPayload?.initial_target_files?.length, 20);
+  assert.equal(result.rubricScoringPayload?.workspace_project_structure?.modulePaths[0], "entry");
+  assert.match(
+    result.rubricScoringPayload?.workspace_project_structure_note ?? "",
+    /changedFiles 共 21 个，已超过 initial_target_files 上限 20/,
+  );
+  assert.match(result.rubricScoringPromptText ?? "", /workspace_project_structure/);
+  assert.match(result.rubricScoringPromptText ?? "", /effective_patch_path/);
 });
 
 test("rubricScoringAgentNode skips when agent client is missing", async () => {
@@ -402,8 +453,8 @@ test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", 
             "read_json",
           ],
           max_tool_calls: 4,
-          max_total_bytes: 40960,
-          max_files: 12,
+          max_total_bytes: 81920,
+          max_files: 24,
         },
         response_contract: {
           action_enum: ["tool_call", "final_answer"],
@@ -486,8 +537,8 @@ test("rubricScoringAgentNode returns invalid_output when case-aware final answer
             "read_json",
           ],
           max_tool_calls: 4,
-          max_total_bytes: 40960,
-          max_files: 12,
+          max_total_bytes: 81920,
+          max_files: 24,
         },
         response_contract: {
           action_enum: ["tool_call", "final_answer"],
@@ -553,8 +604,8 @@ test("rubricScoringAgentNode returns failed when case-aware runner throws", asyn
             "read_json",
           ],
           max_tool_calls: 4,
-          max_total_bytes: 40960,
-          max_files: 12,
+          max_total_bytes: 81920,
+          max_files: 24,
         },
         response_contract: {
           action_enum: ["tool_call", "final_answer"],
@@ -1575,18 +1626,18 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
   const storedRubricAgentResult = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-result.json"), "utf-8"),
   );
-  const storedRubricAgentTurns = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-turns.json"), "utf-8"),
-  );
-  const storedRubricAgentToolTrace = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-tool-trace.json"), "utf-8"),
-  );
 
   assert.deepEqual(storedRuleAudit, deterministicRuleResults);
   assert.deepEqual(storedMergedAudit, deterministicRuleResults);
   assert.equal(storedRubricAgentResult.runner_result.outcome, "tool_budget_exhausted");
-  assert.equal(storedRubricAgentTurns.length, 1);
-  assert.equal(storedRubricAgentToolTrace.length, 1);
+  assert.equal(storedRubricAgentResult.runner_result.turns.length, 1);
+  assert.equal(storedRubricAgentResult.runner_result.tool_trace.length, 1);
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-turns.json"), "utf-8"),
+  );
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-tool-trace.json"), "utf-8"),
+  );
   await assert.rejects(fs.readFile(path.join(caseDir, "inputs", "original-prompt.txt"), "utf-8"));
   assert.equal(
     await fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"),
@@ -2013,12 +2064,6 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
   const bootstrapPayload = JSON.parse(
     await fs.readFile(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"), "utf-8"),
   );
-  const turns = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
-  );
-  const toolTrace = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
-  );
   const agentResult = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
   );
@@ -2027,13 +2072,15 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
   assert.equal(result.ruleAgentRunStatus, "success");
   assert.equal(result.ruleAgentRunnerMode, "case_aware");
   assert.equal(bootstrapPayload.tool_contract.allowed_tools.includes("read_file"), true);
-  assert.equal(Array.isArray(turns), true);
-  assert.equal(turns.length, 2);
-  assert.equal(Array.isArray(toolTrace), true);
-  assert.equal(toolTrace.length, 1);
   assert.equal(agentResult.outcome, "success");
   assert.equal(agentResult.turns.length, 2);
   assert.equal(agentResult.tool_trace.length, 1);
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
+  );
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
+  );
   assert.match(runLog, /case-aware agent 判定开始/);
   assert.match(runLog, /case-aware 工具执行/);
   assert.match(runLog, /case-aware 判定完成/);
@@ -2095,26 +2142,22 @@ test("runScoreWorkflow preserves partial agent traces when provider fails after 
     agentClient,
   } as never);
 
-  const turns = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
-  );
-  const toolTrace = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
-  );
   const agentResult = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
   );
   const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
   assert.equal(result.ruleAgentRunStatus, "invalid_output");
-  assert.equal(Array.isArray(turns), true);
-  assert.equal(turns.length, 1);
-  assert.equal(turns[0]?.action, "tool_call");
-  assert.equal(Array.isArray(toolTrace), true);
-  assert.equal(toolTrace.length, 1);
   assert.equal(agentResult.outcome, "request_failed");
   assert.equal(agentResult.turns.length, 1);
+  assert.equal(agentResult.turns[0]?.action, "tool_call");
   assert.equal(agentResult.tool_trace.length, 1);
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
+  );
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
+  );
   assert.match(agentResult.failure_reason, /fetch failed/);
   assert.match(runLog, /case-aware 工具执行/);
   assert.match(runLog, /case-aware 模型调用失败/);

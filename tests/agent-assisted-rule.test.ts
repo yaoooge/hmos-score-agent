@@ -214,6 +214,7 @@ test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-
     "workspace/entry/src/main/ets/pages/Index.ets",
   );
   assert.equal(payload.tool_contract.allowed_tools.includes("read_file"), true);
+  assert.equal(payload.tool_contract.allowed_tools.includes("read_files"), true);
   assert.equal(payload.tool_contract.allowed_tools.includes("read_patch"), true);
   assert.deepEqual(payload.response_contract.action_enum, ["tool_call", "final_answer"]);
 });
@@ -251,6 +252,7 @@ test("renderAgentSystemPrompt instructs the model to choose tool_call or final_a
   assert.match(prompt, /禁止输出 markdown/);
   assert.match(prompt, /read_patch/);
   assert.match(prompt, /read_file/);
+  assert.match(prompt, /read_files/);
   assert.match(prompt, /final_answer/);
   assert.match(prompt, /tool_call/);
   assert.doesNotMatch(prompt, /dimension_summaries/);
@@ -263,6 +265,7 @@ test("renderAgentSystemPrompt instructs the model to choose tool_call or final_a
     "read_patch",
     "list_dir",
     "read_file",
+    "read_files",
     "read_file_chunk",
     "grep_in_files",
     "read_json",

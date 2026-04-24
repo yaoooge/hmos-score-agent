@@ -65,18 +65,8 @@ export async function persistAndUploadNode(
                 : "protocol_error",
             turns: state.rubricAgentTurns ?? [],
             tool_trace: state.rubricAgentToolTrace ?? [],
-          },
+        },
       },
-    );
-    await deps.artifactStore.writeJson(
-      state.caseDir,
-      "intermediate/rubric-agent-turns.json",
-      state.rubricAgentTurns ?? [],
-    );
-    await deps.artifactStore.writeJson(
-      state.caseDir,
-      "intermediate/rubric-agent-tool-trace.json",
-      state.rubricAgentToolTrace ?? [],
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
@@ -89,16 +79,6 @@ export async function persistAndUploadNode(
         turns: state.ruleAgentTurns ?? [],
         tool_trace: state.ruleAgentToolTrace ?? [],
       },
-    );
-    await deps.artifactStore.writeJson(
-      state.caseDir,
-      "intermediate/rule-agent-turns.json",
-      state.ruleAgentTurns ?? [],
-    );
-    await deps.artifactStore.writeJson(
-      state.caseDir,
-      "intermediate/rule-agent-tool-trace.json",
-      state.ruleAgentToolTrace ?? [],
     );
     await deps.artifactStore.writeJson(
       state.caseDir,

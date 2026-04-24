@@ -205,6 +205,44 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
         border: 1px solid #e5ebf2;
       }
       .detail-card strong { display: block; margin-bottom: 8px; }
+      .score-split-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin: 12px 0;
+      }
+      .score-pill {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: #fff;
+        border: 1px solid var(--border);
+      }
+      .score-pill-label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .score-pill-value {
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .opinion-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .opinion-block {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: #fff;
+        border: 1px solid var(--border);
+      }
+      .opinion-block p {
+        margin: 0;
+        white-space: pre-line;
+      }
       .detail-meta {
         display: flex;
         gap: 12px;
@@ -283,6 +321,10 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
         .hero-grid, .summary-grid {
           grid-template-columns: 1fr;
         }
+        .score-split-grid,
+        .opinion-grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
@@ -301,7 +343,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
       <section id="summary" class="hero">
         <div class="hero-grid">
           <div class="hero-main">
-            <div class="eyebrow">Overall Summary</div>
+            <div class="eyebrow">总体摘要</div>
             <div class="score-row">
               <div class="score">${escapeHtml(viewModel.summary.totalScore)}</div>
               <span class="badge ${viewModel.summary.hardGateLabel.includes("未") ? "success" : "danger"}">${escapeHtml(viewModel.summary.hardGateLabel)}</span>
@@ -324,7 +366,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
           </div>
           <div class="hero-side">
             <div class="mini-card meta-list">
-              <div class="eyebrow">Case Meta</div>
+              <div class="eyebrow">用例信息</div>
               <div class="meta-item"><span>用例</span><strong>${escapeHtml(viewModel.summary.caseId)}</strong></div>
               <div class="meta-item"><span>任务类型</span><strong>${escapeHtml(viewModel.summary.taskType)}</strong></div>
               <div class="meta-item"><span>生成时间</span><strong>${escapeHtml(viewModel.summary.generatedAt)}</strong></div>
@@ -389,13 +431,44 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                               <strong>${escapeHtml(item.name)}</strong>
                               <div class="detail-meta">
                                 <span>权重 ${item.weight}</span>
-                                <span>得分 ${item.score}</span>
+                                <span>最终得分 ${item.finalScore}</span>
                                 <span>置信度 ${escapeHtml(item.confidence)}</span>
                                 <span>${item.reviewRequired ? "需要人工复核" : "无需人工复核"}</span>
                               </div>
-                              <p>${escapeHtml(item.matchedBandText)}</p>
-                              <p>${escapeHtml(item.rationale)}</p>
-                              <p class="muted" style="white-space: pre-line;">${escapeHtml(item.evidence)}</p>
+                              <div class="score-split-grid">
+                                <div class="score-pill">
+                                  <span class="score-pill-label">细则评分</span>
+                                  <span class="score-pill-value">${escapeHtml(String(item.rubricScore))}</span>
+                                </div>
+                                <div class="score-pill">
+                                  <span class="score-pill-label">规则校验调整</span>
+                                  <span class="score-pill-value">${escapeHtml(item.ruleScoreText)}</span>
+                                </div>
+                                <div class="score-pill">
+                                  <span class="score-pill-label">最终得分</span>
+                                  <span class="score-pill-value">${escapeHtml(String(item.finalScore))}</span>
+                                </div>
+                              </div>
+                              <p><strong>命中档位：</strong>${escapeHtml(item.matchedBandText)}</p>
+                              <p><strong>评分计算过程：</strong>${escapeHtml(item.scoreCalculation)}</p>
+                              <div class="opinion-grid">
+                                <div class="opinion-block">
+                                  <strong>细则评分意见</strong>
+                                  <p>${escapeHtml(item.rubricOpinion)}</p>
+                                </div>
+                                <div class="opinion-block">
+                                  <strong>细则评分证据</strong>
+                                  <p>${escapeHtml(item.rubricEvidence)}</p>
+                                </div>
+                                <div class="opinion-block">
+                                  <strong>规则校验意见</strong>
+                                  <p>${escapeHtml(item.ruleOpinion)}</p>
+                                </div>
+                                <div class="opinion-block">
+                                  <strong>规则校验证据</strong>
+                                  <p>${escapeHtml(item.ruleEvidence)}</p>
+                                </div>
+                              </div>
                               ${
                                 item.deductionTrace
                                   ? `
@@ -403,7 +476,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                                       <strong>扣分依据</strong>
                                       <p><strong>代码位置：</strong>${escapeHtml(item.deductionTrace.codeLocations)}</p>
                                       <p><strong>影响范围：</strong>${escapeHtml(item.deductionTrace.impactScope)}</p>
-                                      <p><strong>Rubric 对照：</strong>${escapeHtml(item.deductionTrace.rubricComparison)}</p>
+                                      <p><strong>评分细则对照：</strong>${escapeHtml(item.deductionTrace.rubricComparison)}</p>
                                       <p><strong>评分理由：</strong>${escapeHtml(item.deductionTrace.deductionReason)}</p>
                                       <p><strong>改进建议：</strong>${escapeHtml(item.deductionTrace.improvementSuggestion)}</p>
                                     </div>`

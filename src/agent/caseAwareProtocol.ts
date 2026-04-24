@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { caseToolNameSchema } from "./caseToolSchemas.js";
 import { StrictJsonProtocolError, parseSingleJsonObjectStrict } from "./jsonProtocol.js";
+import { sharedCaseAwareToolCallSchema } from "./sharedCaseAwareToolCallSchema.js";
 import type {
   AssistedRuleCandidate,
   CaseAwareAgentFinalAnswer,
@@ -48,14 +48,7 @@ export const caseAwareFinalAnswerSchema = z
   })
   .strict();
 
-export const caseAwareToolCallSchema = z
-  .object({
-    action: z.literal("tool_call"),
-    tool: caseToolNameSchema,
-    args: z.record(z.string(), z.unknown()),
-    reason: z.string().optional(),
-  })
-  .strict();
+export const caseAwareToolCallSchema = sharedCaseAwareToolCallSchema;
 
 export const caseAwarePlannerOutputSchema = z.discriminatedUnion("action", [
   caseAwareToolCallSchema,
