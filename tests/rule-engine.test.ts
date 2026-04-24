@@ -67,17 +67,17 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
   assert.equal(result.staticRuleAuditResults[0]?.rule_id, "ARKTS-MUST-001");
   assert.ok(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
     ),
   );
   assert.ok(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-005" && item.result === "不满足",
     ),
   );
   assert.ok(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-003" && item.result === "不满足",
     ),
   );
   assert.ok(result.ruleViolations.length >= 1);
@@ -366,9 +366,7 @@ test("runRuleEngine limits incremental rule evaluation to changed files when pat
   assert.deepEqual(result.evidenceSummary.changedFiles, ["entry/src/main/ets/pages/ChangedPage.ets"]);
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) =>
-        ["ARKTS-MUST-005", "ARKTS-MUST-006", "ARKTS-FORBID-001"].includes(item.rule_id) &&
-        item.result === "不满足",
+      (item) => ["ARKTS-FORBID-004", "ARKTS-FORBID-005"].includes(item.rule_id) && item.result === "不满足",
     ),
     false,
   );
@@ -390,13 +388,13 @@ test("runRuleEngine does not report violations from files ignored by workspace g
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
     ),
     false,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-005" && item.result === "不满足",
     ),
     false,
   );
@@ -417,19 +415,19 @@ test("runRuleEngine does not report violations from ohosTest and test directorie
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
     ),
     false,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-005" && item.result === "不满足",
     ),
     false,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-FORBID-001" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-019" && item.result === "不满足",
     ),
     false,
   );
@@ -449,13 +447,13 @@ test("runRuleEngine still evaluates business code under directories named test",
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
     ),
     true,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-005" && item.result === "不满足",
     ),
     true,
   );
@@ -476,7 +474,7 @@ test("runRuleEngine only evaluates code-like files for text syntax rules", async
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-003" && item.result === "不满足",
     ),
     false,
   );
@@ -496,19 +494,19 @@ test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => 
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-003" && item.result === "不满足",
     ),
     false,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
     ),
     false,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-005" && item.result === "不满足",
     ),
     false,
   );
@@ -591,7 +589,7 @@ test("runRuleEngine does not treat hex color literals in ets files as private fi
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-003" && item.result === "不满足",
     ),
     false,
   );
@@ -681,13 +679,7 @@ test("runRuleEngine does not treat object property values as this-type usage", a
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-011" && item.result === "不满足",
-    ),
-    false,
-  );
-  assert.equal(
-    result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-009" && item.result === "不满足",
     ),
     false,
   );
@@ -754,14 +746,12 @@ test("runRuleEngine avoids known false positives from valid ArkTS syntax", async
   });
 
   for (const ruleId of [
-    "ARKTS-MUST-001",
-    "ARKTS-MUST-022",
-    "ARKTS-MUST-028",
+    "ARKTS-FORBID-001",
+    "ARKTS-FORBID-016",
+    "ARKTS-MUST-008",
     "ARKTS-SHOULD-011",
     "ARKTS-SHOULD-016",
-    "ARKTS-FORBID-001",
-    "ARKTS-FORBID-005",
-    "ARKTS-FORBID-011",
+    "ARKTS-FORBID-025",
     "ARKTS-PERF-FORBID-001",
   ]) {
     assert.equal(
@@ -819,14 +809,14 @@ test("runRuleEngine marks unsupported rules without direct evidence as 不涉及
 
   assert.equal(
     result.staticRuleAuditResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及",
+      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "不涉及",
     ),
     true,
   );
   assert.equal(
     result.staticRuleAuditResults.some(
       (item) =>
-        item.rule_id === "ARKTS-MUST-004" &&
+        item.rule_id === "ARKTS-MUST-001" &&
         item.conclusion.includes("未发现相关实现证据，当前不涉及。"),
     ),
     true,
@@ -845,11 +835,11 @@ test("runRuleEngine keeps unsupported no-evidence rules out of agent candidates"
   });
 
   assert.equal(
-    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-MUST-005"),
+    result.deterministicRuleResults.some((item) => item.rule_id === "ARKTS-FORBID-004"),
     true,
   );
   assert.equal(
-    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-004"),
+    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-001"),
     false,
   );
 });
@@ -868,14 +858,14 @@ test("runRuleEngine allows Symbol.iterator but rejects Symbol()", async (t) => {
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-002" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-002" && item.result === "不满足",
     ),
     true,
   );
   assert.equal(
     result.deterministicRuleResults.some(
       (item) =>
-        item.rule_id === "ARKTS-MUST-002" && item.conclusion.includes("仅允许使用 Symbol.iterator"),
+        item.rule_id === "ARKTS-FORBID-002" && item.conclusion.includes("仅允许使用 Symbol.iterator"),
     ),
     true,
   );
@@ -912,13 +902,13 @@ test("runRuleEngine flags unsupported module system patterns in ets files", asyn
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-025" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-018" && item.result === "不满足",
     ),
     true,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-026" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-019" && item.result === "不满足",
     ),
     true,
   );
@@ -1012,13 +1002,13 @@ test("runRuleEngine flags unsupported type signatures and constructor parameter 
   });
 
   for (const ruleId of [
-    "ARKTS-MUST-007",
-    "ARKTS-MUST-008",
-    "ARKTS-MUST-009",
-    "ARKTS-MUST-010",
-    "ARKTS-MUST-012",
-    "ARKTS-MUST-018",
-    "ARKTS-MUST-020",
+    "ARKTS-FORBID-006",
+    "ARKTS-FORBID-007",
+    "ARKTS-MUST-002",
+    "ARKTS-FORBID-008",
+    "ARKTS-FORBID-010",
+    "ARKTS-FORBID-014",
+    "ARKTS-FORBID-015",
   ]) {
     assert.equal(
       result.deterministicRuleResults.some(
@@ -1049,7 +1039,7 @@ test("runRuleEngine flags restricted runtime interfaces and NaN comparisons", as
     taskType: "bug_fix",
   });
 
-  for (const ruleId of ["ARKTS-MUST-027", "ARKTS-MUST-028", "ARKTS-MUST-029"]) {
+  for (const ruleId of ["ARKTS-FORBID-020", "ARKTS-MUST-008", "ARKTS-MUST-009"]) {
     assert.equal(
       result.deterministicRuleResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",
@@ -1079,7 +1069,7 @@ test("runRuleEngine flags advanced type features and expression-style declaratio
     taskType: "full_generation",
   });
 
-  for (const ruleId of ["ARKTS-MUST-011", "ARKTS-MUST-015"]) {
+  for (const ruleId of ["ARKTS-FORBID-009", "ARKTS-FORBID-012"]) {
     assert.equal(
       result.deterministicRuleResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",
@@ -1119,7 +1109,7 @@ test("runRuleEngine flags object layout mutation and unsupported exception or fu
     taskType: "bug_fix",
   });
 
-  for (const ruleId of ["ARKTS-MUST-017", "ARKTS-MUST-021", "ARKTS-MUST-022"]) {
+  for (const ruleId of ["ARKTS-FORBID-013", "ARKTS-MUST-006", "ARKTS-FORBID-016"]) {
     assert.equal(
       result.deterministicRuleResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",
@@ -1130,7 +1120,7 @@ test("runRuleEngine flags object layout mutation and unsupported exception or fu
   }
 });
 
-test("runRuleEngine flags forbidden weak typing and dynamic syntax patterns", async (t) => {
+test("runRuleEngine flags migrated forbidden rules without duplicate legacy forbidden hits", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": [
       "let value: any = source;",
@@ -1152,11 +1142,11 @@ test("runRuleEngine flags forbidden weak typing and dynamic syntax patterns", as
 
   for (const ruleId of [
     "ARKTS-FORBID-001",
-    "ARKTS-FORBID-002",
-    "ARKTS-FORBID-003",
-    "ARKTS-FORBID-004",
     "ARKTS-FORBID-005",
-    "ARKTS-FORBID-006",
+    "ARKTS-FORBID-009",
+    "ARKTS-FORBID-012",
+    "ARKTS-FORBID-013",
+    "ARKTS-FORBID-015",
   ]) {
     assert.equal(
       result.deterministicRuleResults.some(
@@ -1164,6 +1154,23 @@ test("runRuleEngine flags forbidden weak typing and dynamic syntax patterns", as
       ),
       true,
       ruleId,
+    );
+  }
+
+  for (const removedRuleId of [
+    "ARKTS-MUST-011",
+    "ARKTS-MUST-012",
+    "ARKTS-MUST-013",
+    "ARKTS-MUST-015",
+    "ARKTS-MUST-017",
+    "ARKTS-MUST-018",
+    "ARKTS-MUST-020",
+    "ARKTS-MUST-022",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.some((item) => item.rule_id === removedRuleId),
+      false,
+      removedRuleId,
     );
   }
 });
@@ -1196,7 +1203,7 @@ test("runRuleEngine flags dynamic property access and common style should-rules"
   });
 
   for (const ruleId of [
-    "ARKTS-MUST-001",
+    "ARKTS-FORBID-001",
     "ARKTS-SHOULD-001",
     "ARKTS-SHOULD-009",
     "ARKTS-SHOULD-010",
@@ -1226,6 +1233,7 @@ test("runRuleEngine flags forbidden risky control-flow and runtime interfaces", 
       "}",
       "const dynamicRequire = require('lib');",
       "eval('run()');",
+      "const locked = value as const;",
       "if (flag = check()) {",
       "  console.info(flag);",
       "}",
@@ -1244,11 +1252,12 @@ test("runRuleEngine flags forbidden risky control-flow and runtime interfaces", 
   });
 
   for (const ruleId of [
-    "ARKTS-FORBID-007",
-    "ARKTS-FORBID-008",
-    "ARKTS-FORBID-010",
-    "ARKTS-FORBID-011",
-    "ARKTS-FORBID-012",
+    "ARKTS-MUST-006",
+    "ARKTS-FORBID-018",
+    "ARKTS-FORBID-020",
+    "ARKTS-FORBID-024",
+    "ARKTS-FORBID-025",
+    "ARKTS-FORBID-026",
   ]) {
     assert.equal(
       result.deterministicRuleResults.some(
@@ -1291,11 +1300,11 @@ test("runRuleEngine marks AST-related unsupported rules without direct evidence 
   });
 
   for (const ruleId of [
-    "ARKTS-MUST-004",
-    "ARKTS-MUST-013",
-    "ARKTS-MUST-014",
-    "ARKTS-MUST-024",
-    "ARKTS-FORBID-009",
+    "ARKTS-MUST-001",
+    "ARKTS-FORBID-011",
+    "ARKTS-MUST-003",
+    "ARKTS-FORBID-017",
+    "ARKTS-FORBID-023",
   ]) {
     assert.equal(
       result.staticRuleAuditResults.some(

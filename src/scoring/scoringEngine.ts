@@ -110,26 +110,26 @@ function makePenaltyRule(input: {
 
 function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
   const typeRuleIds = new Set([
+    "ARKTS-FORBID-001",
+    "ARKTS-FORBID-002",
+    "ARKTS-FORBID-003",
     "ARKTS-MUST-001",
-    "ARKTS-MUST-002",
+    "ARKTS-FORBID-005",
+    "ARKTS-FORBID-006",
+    "ARKTS-FORBID-007",
+    "ARKTS-FORBID-008",
+    "ARKTS-FORBID-009",
+    "ARKTS-FORBID-010",
+    "ARKTS-FORBID-011",
     "ARKTS-MUST-003",
     "ARKTS-MUST-004",
+    "ARKTS-FORBID-014",
+    "ARKTS-MUST-005",
     "ARKTS-MUST-006",
     "ARKTS-MUST-007",
-    "ARKTS-MUST-008",
-    "ARKTS-MUST-010",
-    "ARKTS-MUST-011",
-    "ARKTS-MUST-012",
-    "ARKTS-MUST-013",
-    "ARKTS-MUST-014",
-    "ARKTS-MUST-016",
-    "ARKTS-MUST-018",
-    "ARKTS-MUST-019",
-    "ARKTS-MUST-021",
-    "ARKTS-MUST-023",
-    "ARKTS-MUST-024",
-    "ARKTS-MUST-026",
-    "ARKTS-MUST-029",
+    "ARKTS-FORBID-017",
+    "ARKTS-FORBID-019",
+    "ARKTS-MUST-009",
     "ARKTS-SHOULD-002",
     "ARKTS-SHOULD-003",
     "ARKTS-SHOULD-019",
@@ -147,8 +147,8 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
     "ARKTS-SHOULD-008",
   ]);
   const styleRuleIds = new Set([
-    "ARKTS-MUST-005",
-    "ARKTS-MUST-028",
+    "ARKTS-FORBID-004",
+    "ARKTS-MUST-008",
     "ARKTS-SHOULD-009",
     "ARKTS-SHOULD-010",
     "ARKTS-SHOULD-012",
@@ -161,24 +161,24 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
     "ARKTS-SHOULD-020",
   ]);
   const controlFlowRuleIds = new Set([
-    "ARKTS-MUST-020",
-    "ARKTS-MUST-022",
-    "ARKTS-MUST-030",
+    "ARKTS-FORBID-015",
+    "ARKTS-FORBID-016",
+    "ARKTS-MUST-010",
     "ARKTS-SHOULD-011",
     "ARKTS-FORBID-005",
-    "ARKTS-FORBID-006",
-    "ARKTS-FORBID-011",
-    "ARKTS-FORBID-012",
+    "ARKTS-FORBID-022",
+    "ARKTS-FORBID-025",
+    "ARKTS-FORBID-026",
   ]);
   const runtimeRiskRuleIds = new Set([
-    "ARKTS-MUST-015",
-    "ARKTS-MUST-017",
-    "ARKTS-MUST-025",
-    "ARKTS-MUST-027",
-    "ARKTS-FORBID-002",
+    "ARKTS-FORBID-012",
+    "ARKTS-FORBID-013",
+    "ARKTS-FORBID-018",
+    "ARKTS-FORBID-020",
+    "ARKTS-FORBID-021",
     "ARKTS-FORBID-008",
-    "ARKTS-FORBID-009",
-    "ARKTS-FORBID-010",
+    "ARKTS-FORBID-023",
+    "ARKTS-FORBID-024",
     "ARKTS-PERF-FORBID-001",
   ]);
 
@@ -275,7 +275,7 @@ function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
 
   if (
     mustViolations.some((rule) =>
-      ["ARKTS-MUST-003", "ARKTS-MUST-005", "ARKTS-MUST-006"].includes(rule.rule_id),
+      ["ARKTS-FORBID-003", "ARKTS-FORBID-004", "ARKTS-FORBID-005"].includes(rule.rule_id),
     )
   ) {
     triggered.push({ id: "G2", reason: "命中了核心 ArkTS 约束违规，说明实现与平台规则存在偏差。" });

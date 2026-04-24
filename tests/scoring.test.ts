@@ -49,13 +49,13 @@ test("computeScoreBreakdown applies penalties and hard-gate caps", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const ruleAuditResults: RuleAuditResult[] = [
     {
-      rule_id: "ARKTS-MUST-006",
+      rule_id: "ARKTS-FORBID-005",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "matched any",
     },
     {
-      rule_id: "ARKTS-MUST-005",
+      rule_id: "ARKTS-FORBID-004",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "matched var",
@@ -92,7 +92,7 @@ test("computeScoreBreakdown snaps penalized submetric scores to declared discret
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const ruleAuditResults: RuleAuditResult[] = [
     {
-      rule_id: "ARKTS-MUST-006",
+      rule_id: "ARKTS-FORBID-005",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "matched any",

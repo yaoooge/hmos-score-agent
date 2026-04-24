@@ -97,7 +97,7 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
     final_recommendation: ["优先复核低置信度指标"],
     rule_audit_results: [
       {
-        rule_id: "ARKTS-MUST-005",
+        rule_id: "ARKTS-FORBID-004",
         rule_summary: "禁止使用 any 类型。",
         rule_source: "must_rule",
         result: "不满足",

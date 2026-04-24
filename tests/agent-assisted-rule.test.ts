@@ -70,7 +70,7 @@ function makeFinalAnswer(
 test("selectAssistedRuleCandidates keeps deterministic results and extracts should-rule candidates", () => {
   const ruleAuditResults: RuleAuditResult[] = [
     {
-      rule_id: "ARKTS-MUST-001",
+      rule_id: "ARKTS-FORBID-001",
       rule_source: "must_rule",
       result: "满足",
       conclusion: "未发现违规证据。",
@@ -366,7 +366,7 @@ test("mergeRuleAuditResults keeps deterministic results authoritative and maps u
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [
       {
-        rule_id: "ARKTS-MUST-001",
+        rule_id: "ARKTS-FORBID-001",
         rule_source: "must_rule",
         result: "满足",
         conclusion: "本地已确定",
@@ -396,7 +396,7 @@ test("mergeRuleAuditResults keeps deterministic results authoritative and maps u
 
   assert.equal(merged.ruleAgentRunStatus, "success");
   assert.equal(
-    merged.mergedRuleAuditResults.find((item) => item.rule_id === "ARKTS-MUST-001")?.result,
+    merged.mergedRuleAuditResults.find((item) => item.rule_id === "ARKTS-FORBID-001")?.result,
     "满足",
   );
   assert.equal(

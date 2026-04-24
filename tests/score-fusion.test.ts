@@ -82,7 +82,7 @@ test("fuseRubricScoreWithRules records rule impacts on affected rubric items", a
   );
   const ruleAuditResults: RuleAuditResult[] = [
     {
-      rule_id: "ARKTS-MUST-006",
+      rule_id: "ARKTS-FORBID-005",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "使用 any。",
@@ -118,7 +118,7 @@ test("fuseRubricScoreWithRules records rule impacts on affected rubric items", a
   );
 
   assert.ok(arktsDetail);
-  assert.equal(arktsDetail.rule_impacts[0].rule_id, "ARKTS-MUST-006");
+  assert.equal(arktsDetail.rule_impacts[0].rule_id, "ARKTS-FORBID-005");
   assert.ok(arktsDetail.score_fusion.rule_delta < 0);
   assert.ok(
     Number.isInteger(arktsDetail.score_fusion.final_score),
@@ -248,7 +248,7 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
   );
   const ruleAuditResults: RuleAuditResult[] = [
     {
-      rule_id: "ARKTS-MUST-015",
+      rule_id: "ARKTS-FORBID-012",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "命中 must_rule。",

@@ -658,13 +658,13 @@ test("ruleAuditNode emits one ledger item per rule and preserves source ordering
   );
   assert.equal(
     result.deterministicRuleResults?.some(
-      (item) => item.rule_id === "ARKTS-MUST-005" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
     ),
     true,
   );
   assert.equal(
     result.deterministicRuleResults?.some(
-      (item) => item.rule_id === "ARKTS-MUST-006" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-005" && item.result === "不满足",
     ),
     true,
   );
@@ -692,7 +692,7 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   assert.equal(result.assistedRuleCandidates?.length, 0);
   assert.equal(
     result.deterministicRuleResults?.some(
-      (item) => item.rule_id === "ARKTS-MUST-004" && item.result === "不涉及",
+      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "不涉及",
     ),
     true,
   );
@@ -701,7 +701,7 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
 test("ruleMergeNode returns deterministic results directly when there are no assisted candidates", async () => {
   const deterministicRuleResults = [
     {
-      rule_id: "ARKTS-MUST-001",
+      rule_id: "ARKTS-FORBID-001",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "检测到规则命中，文件：entry/src/main/ets/pages/Index.ets",
@@ -725,7 +725,7 @@ test("ruleMergeNode preserves structured agent judgments from canonical runner r
     {
       deterministicRuleResults: [
         {
-          rule_id: "ARKTS-MUST-001",
+          rule_id: "ARKTS-FORBID-001",
           rule_source: "must_rule",
           result: "满足",
           conclusion: "本地静态规则已确定。",
@@ -814,7 +814,7 @@ test("scoring and report nodes fall back to deterministic results when merge out
   const referenceRoot = await createReferenceRoot(t);
   const staticRuleAuditResults = [
     {
-      rule_id: "ARKTS-MUST-004",
+      rule_id: "ARKTS-MUST-001",
       rule_source: "must_rule",
       result: "未接入判定器",
       conclusion: "该规则仍需 agent 辅助判定。",
@@ -822,7 +822,7 @@ test("scoring and report nodes fall back to deterministic results when merge out
   ];
   const deterministicRuleResults = [
     {
-      rule_id: "ARKTS-MUST-005",
+      rule_id: "ARKTS-FORBID-004",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "检测到 any 类型使用。",
@@ -851,7 +851,7 @@ test("scoring and report nodes fall back to deterministic results when merge out
 
   assert.equal(
     scoringResult.scoreComputation?.scoreFusionDetails.some((detail) =>
-      detail.rule_impacts.some((impact) => impact.rule_id === "ARKTS-MUST-005"),
+      detail.rule_impacts.some((impact) => impact.rule_id === "ARKTS-FORBID-004"),
     ),
     true,
   );
@@ -1137,7 +1137,7 @@ test("reportGenerationNode assigns matched bands for computed submetric scores",
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const deterministicRuleResults = [
     {
-      rule_id: "ARKTS-MUST-006",
+      rule_id: "ARKTS-FORBID-005",
       rule_source: "must_rule" as const,
       result: "不满足" as const,
       conclusion: "matched any",
@@ -1494,7 +1494,7 @@ test("artifactPostProcessNode generates layered html report from resultJson", as
       final_recommendation: ["优先复核低置信度指标"],
       rule_audit_results: [
         {
-          rule_id: "ARKTS-MUST-005",
+          rule_id: "ARKTS-FORBID-004",
           rule_source: "must_rule",
           result: "不满足",
           conclusion: "检测到 any 类型使用。",
@@ -1519,7 +1519,7 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
   const caseDir = await artifactStore.ensureCaseDir("case-1");
   const deterministicRuleResults = [
     {
-      rule_id: "ARKTS-MUST-005",
+      rule_id: "ARKTS-FORBID-004",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "检测到 any 类型使用。",
@@ -1681,7 +1681,8 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.ok(resultJson.dimension_results.length > 0);
   assert.ok(resultJson.dimension_results[0].item_results.length > 0);
   assert.equal("submetric_details" in resultJson, false);
-  assert.ok(resultJson.overall_conclusion.total_score <= 69);
+  assert.ok(resultJson.overall_conclusion.total_score >= 70);
+  assert.ok(resultJson.overall_conclusion.total_score <= 79);
   assert.ok(ruleAuditJson.length > 10);
   assert.ok(ruleAuditJson.some((item: { result: string }) => item.result === "不满足"));
   assert.match(reportHtml, /评分报告/);

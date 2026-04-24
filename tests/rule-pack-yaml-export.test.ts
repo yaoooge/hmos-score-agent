@@ -33,19 +33,31 @@ test("builds minimal YAML documents for each registered rule pack", () => {
     arktsLanguage.document.rule_pack_meta.source_version,
     "merged-html-and-v1-rules-2026-04-08",
   );
-  assert.equal(arktsLanguage.document.must_rules.length, 30);
+  assert.equal(arktsLanguage.document.must_rules.length, 10);
   assert.equal(arktsLanguage.document.should_rules.length, 21);
-  assert.equal(arktsLanguage.document.forbidden_patterns.length, 12);
+  assert.equal(arktsLanguage.document.forbidden_patterns.length, 26);
 
-  const must001 = arktsLanguage.document.must_rules.find((item) => item.id === "ARKTS-MUST-001");
-  assert.ok(must001);
+  const must004 = arktsLanguage.document.must_rules.find((item) => item.id === "ARKTS-MUST-001");
+  assert.ok(must004);
   assert.equal(
-    must001.rule,
+    must004.rule,
+    "类型、枚举、接口和命名空间名称必须唯一，且不得与变量或函数等标识符冲突。",
+  );
+  assert.equal(must004.detector_kind, "not_implemented");
+  assert.deepEqual(must004.detector_config, {});
+  assert.equal(must004.fallback_policy, "agent_assisted");
+
+  const movedMust001 = arktsLanguage.document.forbidden_patterns.find(
+    (item) => item.id === "ARKTS-FORBID-001",
+  );
+  assert.ok(movedMust001);
+  assert.equal(
+    movedMust001.rule,
     "对象属性名必须是合法标识符，禁止依赖数字键或普通字符串键的动态属性访问。",
   );
-  assert.equal(must001.detector_kind, "text_pattern");
-  assert.deepEqual(must001.detector_config.fileExtensions, [".ets"]);
-  assert.equal(must001.fallback_policy, "agent_assisted");
+  assert.equal(movedMust001.detector_kind, "text_pattern");
+  assert.deepEqual(movedMust001.detector_config.fileExtensions, [".ets"]);
+  assert.equal(movedMust001.fallback_policy, "agent_assisted");
 
   const performance = documents.find((item) => item.packId === "arkts-performance");
   assert.ok(performance);
@@ -94,9 +106,9 @@ test("writes one YAML file per registered rule pack", async () => {
   };
 
   assert.equal(languageDocument.rule_pack_meta.pack_id, "arkts-language");
-  assert.equal(languageDocument.must_rules.length, 30);
+  assert.equal(languageDocument.must_rules.length, 10);
   assert.equal(languageDocument.should_rules.length, 21);
-  assert.equal(languageDocument.forbidden_patterns.length, 12);
+  assert.equal(languageDocument.forbidden_patterns.length, 26);
 });
 
 test("package exposes a rule pack YAML export script", () => {
