@@ -177,14 +177,35 @@ export function runTextPatternRule(
   const fileExtensions = ((rule.detector_config.fileExtensions as string[] | undefined) ?? []).map(
     (item) => item.toLowerCase(),
   );
+  const applicabilityPatternTexts = (
+    (rule.detector_config.applicabilityPatterns as string[] | undefined) ?? []
+  ).filter(Boolean);
   const patternTexts = ((rule.detector_config.patterns as string[] | undefined) ?? []).filter(
     Boolean,
   );
+  const applicabilityPatterns = compilePatterns(applicabilityPatternTexts);
   const patterns = compilePatterns(patternTexts);
-  const keepComments = shouldKeepComments(patternTexts);
+  const keepComments = shouldKeepComments([...applicabilityPatternTexts, ...patternTexts]);
+  const candidateFiles = evidence.workspaceFiles.filter((file) =>
+    fileExtensions.includes(path.extname(file.relativePath).toLowerCase()),
+  );
+  const applicabilityMatches = candidateFiles
+    .map((file) => findTextPatternMatch(file, applicabilityPatterns, keepComments))
+    .filter((match): match is TextPatternMatch => Boolean(match));
 
-  const matches = evidence.workspaceFiles
-    .filter((file) => fileExtensions.includes(path.extname(file.relativePath).toLowerCase()))
+  if (applicabilityPatterns.length > 0 && applicabilityMatches.length === 0) {
+    return {
+      rule_id: rule.rule_id,
+      rule_source: rule.rule_source,
+      result: "不涉及",
+      conclusion: "未发现该规则的适用场景。",
+      matchedFiles: [],
+      matchedLocations: [],
+      matchedSnippets: [],
+    };
+  }
+
+  const matches = candidateFiles
     .map((file) => findTextPatternMatch(file, patterns, keepComments))
     .filter((match): match is TextPatternMatch => Boolean(match));
   const matchedFiles = matches.map((match) => match.relativePath);
@@ -199,7 +220,9 @@ export function runTextPatternRule(
     conclusion:
       matchedFiles.length > 0
         ? `${rule.summary} 检测到规则命中，文件：${conclusionLocations.join(", ")}`
-        : "未发现该规则的命中证据。",
+        : applicabilityPatterns.length > 0
+          ? "检测到规则适用场景，未发现违规命中。"
+          : "未发现该规则的命中证据。",
     matchedFiles,
     matchedLocations,
     matchedSnippets,

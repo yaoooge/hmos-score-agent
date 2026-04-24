@@ -689,10 +689,10 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   assert.equal(Array.isArray(result.staticRuleAuditResults), true);
   assert.equal(Array.isArray(result.deterministicRuleResults), true);
   assert.equal(Array.isArray(result.assistedRuleCandidates), true);
-  assert.equal(result.assistedRuleCandidates?.length, 0);
+  assert.equal((result.assistedRuleCandidates?.length ?? 0) > 0, true);
   assert.equal(
-    result.deterministicRuleResults?.some(
-      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "不涉及",
+    result.staticRuleAuditResults?.some(
+      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "未接入判定器",
     ),
     true,
   );
@@ -1824,7 +1824,7 @@ test("runScoreWorkflow emits Chinese descriptive text in result.json and report.
   assert.doesNotMatch(reportHtml, /Score Report/);
 });
 
-test("runScoreWorkflow skips agent assistance when unsupported rules have no direct evidence", async (t) => {
+test("runScoreWorkflow falls back when unsupported rules return incomplete agent assessments", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -1853,18 +1853,18 @@ test("runScoreWorkflow skips agent assistance when unsupported rules have no dir
   } as never);
 
   assert.equal(invoked, true);
-  assert.equal(result.ruleAgentRunStatus, "not_enabled");
+  assert.equal(result.ruleAgentRunStatus, "invalid_output");
   assert.equal(Array.isArray(result.mergedRuleAuditResults), true);
   assert.equal(
     (result.mergedRuleAuditResults as Array<{ rule_id: string; result: string }>).some(
-      (item) => item.rule_id === "ARKTS-SHOULD-002" && item.result === "不涉及",
+      (item) => item.rule_id === "ARKTS-SHOULD-002" && item.result === "待人工复核",
     ),
     true,
   );
   assert.equal(result.ruleAgentAssessmentResult, undefined);
 });
 
-test("runScoreWorkflow persists skipped agent artifacts when unsupported rules have no direct evidence", async (t) => {
+test("runScoreWorkflow persists invalid-output agent artifacts when unsupported rules have no direct evidence", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -1907,14 +1907,14 @@ test("runScoreWorkflow persists skipped agent artifacts when unsupported rules h
   );
 
   assert.equal(invoked, true);
-  assert.equal(result.ruleAgentRunStatus, "not_enabled");
+  assert.equal(result.ruleAgentRunStatus, "invalid_output");
   assert.match(ruleAgentPromptText, /当前判定上下文如下/);
   assert.doesNotMatch(ruleAgentPromptText, /你只能返回 tool_call 或 final_answer/);
   assert.equal(Array.isArray(agentPromptPayload.assisted_rule_candidates), true);
-  assert.equal(agentPromptPayload.assisted_rule_candidates.length, 0);
+  assert.equal(agentPromptPayload.assisted_rule_candidates.length > 0, true);
   assert.equal(Array.isArray(agentPromptPayload.tool_contract.allowed_tools), true);
   assert.equal(Array.isArray(mergedAudit), true);
-  assert.equal(agentResult.outcome, "not_enabled");
+  assert.equal(agentResult.outcome, "protocol_error");
   await assert.rejects(
     fs.readFile(path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"), "utf-8"),
   );
@@ -2017,40 +2017,45 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
 `,
   });
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
-  const outputs = [
-    JSON.stringify({
-      action: "tool_call",
-      tool: "read_file",
-      args: { path: "workspace/entry/src/main/ets/Index.ets" },
-      reason: "需要确认是否存在登录按钮调用",
-    }),
-    JSON.stringify({
-      action: "final_answer",
-      summary: {
-        assistant_scope: "本次仅辅助候选规则判定",
-        overall_confidence: "medium",
-      },
-      rule_assessments: [
-        {
-          rule_id: "HM-REQ-008-01",
-          decision: "not_applicable",
-          confidence: "high",
-          reason: "当前文件中未看到登录按钮实现，规则暂不涉及。",
-          evidence_used: ["workspace/entry/src/main/ets/Index.ets"],
-          needs_human_review: false,
-        },
-      ],
-    }),
-  ];
+  let rulePromptCallCount = 0;
+  let candidateRuleIds: string[] = [];
   const agentClient = {
     async completeJsonPrompt(
-      _prompt: string,
+      prompt: string,
       options?: { requestTag?: string },
     ): Promise<string> {
       if (options?.requestTag?.startsWith("rubric_case_aware")) {
         throw new Error("rubric mock skipped");
       }
-      return outputs.shift() ?? "";
+      rulePromptCallCount += 1;
+      if (rulePromptCallCount === 1) {
+        candidateRuleIds = (/本次必须覆盖的 rule_id:\s*([^。]+)。/.exec(prompt)?.[1] ?? "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+        return JSON.stringify({
+          action: "tool_call",
+          tool: "read_file",
+          args: { path: "workspace/entry/src/main/ets/Index.ets" },
+          reason: "需要确认是否存在登录按钮调用",
+        });
+      }
+
+      return JSON.stringify({
+        action: "final_answer",
+        summary: {
+          assistant_scope: "本次仅辅助候选规则判定",
+          overall_confidence: "medium",
+        },
+        rule_assessments: candidateRuleIds.map((ruleId) => ({
+          rule_id: ruleId,
+          decision: "not_applicable",
+          confidence: "high",
+          reason: `当前文件中未看到 ${ruleId} 对应的可判定违规证据，规则暂不涉及。`,
+          evidence_used: ["workspace/entry/src/main/ets/Index.ets"],
+          needs_human_review: false,
+        })),
+      });
     },
   };
 
@@ -2230,8 +2235,8 @@ test("runScoreWorkflow writes warning logs when agent assistance is skipped", as
 
   const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
 
-  assert.match(logText, /\[WARN\] rule agent 判定跳过 reason=无候选规则/);
-  assert.doesNotMatch(logText, /\[INFO\] rule agent 判定跳过 reason=无候选规则/);
+  assert.match(logText, /\[WARN\] rule agent 判定跳过 reason=未配置 agent client/);
+  assert.doesNotMatch(logText, /\[WARN\] rule agent 判定跳过 reason=无候选规则/);
 });
 
 test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async (t) => {
@@ -2265,7 +2270,7 @@ test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async
   );
 });
 
-test("runScoreWorkflow keeps unsupported rules without direct evidence out of agent candidates", async (t) => {
+test("runScoreWorkflow sends unsupported rules without direct evidence to agent candidates", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -2290,11 +2295,17 @@ test("runScoreWorkflow keeps unsupported rules without direct evidence out of ag
     await fs.readFile(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"), "utf-8"),
   );
 
-  assert.deepEqual(agentPromptPayload.assisted_rule_candidates, []);
+  assert.equal(agentPromptPayload.assisted_rule_candidates.length > 0, true);
+  assert.equal(
+    agentPromptPayload.assisted_rule_candidates.some(
+      (item: { rule_id: string }) => item.rule_id === "ARKTS-MUST-001",
+    ),
+    true,
+  );
   assert.equal(agentPromptPayload.tool_contract.allowed_tools.includes("read_file"), true);
 });
 
-test("runScoreWorkflow does not send unsupported should rules without direct evidence to agent review", async (t) => {
+test("runScoreWorkflow falls back unsupported should rules to 待人工复核 when agent is unavailable", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -2324,6 +2335,6 @@ test("runScoreWorkflow does not send unsupported should rules without direct evi
       (item: { rule_source: string; result: string }) =>
         item.rule_source === "should_rule" && item.result === "待人工复核",
     ),
-    false,
+    true,
   );
 });

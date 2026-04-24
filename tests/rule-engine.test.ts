@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { collectEvidence } from "../src/rules/evidenceCollector.js";
+import { runTextPatternRule } from "../src/rules/evaluators/textPatternEvaluator.js";
 import { listRegisteredRules } from "../src/rules/engine/rulePackRegistry.js";
 import { runRuleEngine } from "../src/rules/ruleEngine.js";
 import type { CaseInput, CaseRuleDefinition } from "../src/types.js";
@@ -96,7 +97,7 @@ test("runRuleEngine exposes only current rule-audit fields", async (t) => {
 
   assert.equal("ruleAuditResults" in result, false);
   assert.equal(
-    result.staticRuleAuditResults.some((item) => item.result === "不涉及"),
+    result.staticRuleAuditResults.some((item) => item.result === "未接入判定器"),
     true,
   );
 });
@@ -512,7 +513,7 @@ test("runRuleEngine only applies arkts syntax rules to ets files", async (t) => 
   );
 });
 
-test("runRuleEngine evaluates arkts-performance rules and marks unsupported no-evidence rules as not applicable", async (t) => {
+test("runRuleEngine evaluates arkts-performance rules and keeps unsupported rules agent-assisted", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": `
 function add(left?: number, right?: number): number {
@@ -568,8 +569,13 @@ intNum = 1.1;
   ]) {
     assert.equal(
       result.staticRuleAuditResults.some(
-        (item) => item.rule_id === ruleId && item.result === "不涉及",
+        (item) => item.rule_id === ruleId && item.result === "未接入判定器",
       ),
+      true,
+      ruleId,
+    );
+    assert.equal(
+      result.assistedRuleCandidates.some((item) => item.rule_id === ruleId),
       true,
       ruleId,
     );
@@ -796,7 +802,7 @@ test("runRuleEngine builds fallback evidence snippets when patch paths include w
   assert.equal((result.ruleEvidenceIndex.__fallback__?.evidenceSnippets.length ?? 0) > 0, true);
 });
 
-test("runRuleEngine marks unsupported rules without direct evidence as 不涉及", async (t) => {
+test("runRuleEngine keeps unsupported rules without direct evidence as 未接入判定器", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
   });
@@ -809,7 +815,7 @@ test("runRuleEngine marks unsupported rules without direct evidence as 不涉及
 
   assert.equal(
     result.staticRuleAuditResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "不涉及",
+      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "未接入判定器",
     ),
     true,
   );
@@ -817,13 +823,13 @@ test("runRuleEngine marks unsupported rules without direct evidence as 不涉及
     result.staticRuleAuditResults.some(
       (item) =>
         item.rule_id === "ARKTS-MUST-001" &&
-        item.conclusion.includes("未发现相关实现证据，当前不涉及。"),
+        item.conclusion.includes("当前版本未接入对应判定器。"),
     ),
     true,
   );
 });
 
-test("runRuleEngine keeps unsupported no-evidence rules out of agent candidates", async (t) => {
+test("runRuleEngine keeps unsupported no-evidence rules in agent candidates", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let x: any = 1;\nvar y = 2;\n",
   });
@@ -840,7 +846,111 @@ test("runRuleEngine keeps unsupported no-evidence rules out of agent candidates"
   );
   assert.equal(
     result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-001"),
-    false,
+    true,
+  );
+});
+
+test("runTextPatternRule marks rules as 不涉及 when applicability patterns do not match", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count = 1;\n",
+  });
+
+  const evidence = await collectEvidence(makeCaseInput(caseDir));
+  const result = runTextPatternRule(
+    {
+      pack_id: "custom-pack",
+      rule_id: "CUSTOM-FORBID-001",
+      rule_source: "forbidden_pattern",
+      summary: "禁止在 type 或 interface 中定义构造签名。",
+      detector_kind: "text_pattern",
+      detector_config: {
+        fileExtensions: [".ets"],
+        applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
+        patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+      },
+      fallback_policy: "agent_assisted",
+    },
+    evidence,
+  );
+
+  assert.equal(result.result, "不涉及");
+  assert.match(result.conclusion, /适用场景/);
+});
+
+test("runTextPatternRule marks rules as 满足 when applicability patterns match without violations", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "interface Reader {\n  read(): void;\n}\n",
+  });
+
+  const evidence = await collectEvidence(makeCaseInput(caseDir));
+  const result = runTextPatternRule(
+    {
+      pack_id: "custom-pack",
+      rule_id: "CUSTOM-FORBID-002",
+      rule_source: "forbidden_pattern",
+      summary: "禁止在 type 或 interface 中定义构造签名。",
+      detector_kind: "text_pattern",
+      detector_config: {
+        fileExtensions: [".ets"],
+        applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
+        patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+      },
+      fallback_policy: "agent_assisted",
+    },
+    evidence,
+  );
+
+  assert.equal(result.result, "满足");
+  assert.match(result.conclusion, /适用场景|违规命中/);
+});
+
+test("runTextPatternRule marks rules as 不满足 when applicability patterns and violations match", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "interface Maker {\n  new(): Maker;\n}\n",
+  });
+
+  const evidence = await collectEvidence(makeCaseInput(caseDir));
+  const result = runTextPatternRule(
+    {
+      pack_id: "custom-pack",
+      rule_id: "CUSTOM-FORBID-003",
+      rule_source: "forbidden_pattern",
+      summary: "禁止在 type 或 interface 中定义构造签名。",
+      detector_kind: "text_pattern",
+      detector_config: {
+        fileExtensions: [".ets"],
+        applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
+        patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+      },
+      fallback_policy: "agent_assisted",
+    },
+    evidence,
+  );
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:2"]);
+});
+
+test("runRuleEngine keeps unsupported rules in assisted candidates even without direct evidence", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.staticRuleAuditResults.some(
+      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "未接入判定器",
+    ),
+    true,
+  );
+  assert.equal(
+    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-001"),
+    true,
   );
 });
 
@@ -1269,7 +1379,7 @@ test("runRuleEngine flags forbidden risky control-flow and runtime interfaces", 
   }
 });
 
-test("runRuleEngine marks AST-related unsupported rules without direct evidence as 不涉及", async (t) => {
+test("runRuleEngine keeps AST-related unsupported rules in agent-assisted state", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": [
       "class Demo {}",
@@ -1308,13 +1418,17 @@ test("runRuleEngine marks AST-related unsupported rules without direct evidence 
   ]) {
     assert.equal(
       result.staticRuleAuditResults.some(
-        (item) => item.rule_id === ruleId && item.result === "不涉及",
+        (item) => item.rule_id === ruleId && item.result === "未接入判定器",
       ),
       true,
       ruleId,
     );
+    assert.equal(
+      result.assistedRuleCandidates.some((item) => item.rule_id === ruleId),
+      true,
+      ruleId,
+    );
   }
-  assert.equal(result.assistedRuleCandidates.length, 0);
 });
 
 test("runRuleEngine flags remaining text-based formatting should-rules", async (t) => {

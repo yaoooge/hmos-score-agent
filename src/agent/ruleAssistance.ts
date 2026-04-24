@@ -282,6 +282,9 @@ export function renderAgentSystemPrompt(payload: AgentBootstrapPayload): string 
     "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
     "final_answer 中的 confidence 只能是 high、medium、low。",
     "示例只展示结构，实际输出时必须替换为本次真实证据；final_answer.rule_assessments 必须覆盖全部候选 rule_id。",
+    "代码评测只针对 patch：effective_patch_path / read_patch 是判定规则是否影响本次提交的首要证据。",
+    "原工程上下文只用于辅助理解，不作为单独扣分依据；不要因为原工程已有问题而判定本次 patch 违规。",
+    "对于非 case_rule 的 must_rule，如果 patch 中未发现与该规则相关的新增或修改代码，应判定 decision=pass、needs_human_review=false，并说明补丁未见相关改动。",
     "如果证据不足，必须在对应 rule_assessments 中将 needs_human_review 置为 true。",
     "所有描述型文案必须使用中文。",
     SHARED_CASE_TOOL_CATALOG_LINE,
@@ -403,6 +406,41 @@ function mapAgentDecisionToRuleResult(
   }
 }
 
+function isNonCaseMustRuleAbsentFromPatch(
+  candidate: AssistedRuleCandidate,
+  assessment: CaseAwareAgentFinalAnswer["rule_assessments"][number],
+): boolean {
+  if (candidate.rule_source !== "must_rule" || candidate.is_case_rule || assessment.decision !== "uncertain") {
+    return false;
+  }
+
+  const text = `${assessment.reason} ${assessment.evidence_used.join(" ")}`;
+  return /补丁|patch|effective\.patch|read_patch/i.test(text) && /未(发现|见)|没有|无/.test(text);
+}
+
+function mapAgentAssessmentToRuleResult(
+  candidate: AssistedRuleCandidate,
+  assessment: CaseAwareAgentFinalAnswer["rule_assessments"][number],
+): RuleAuditResult {
+  if (isNonCaseMustRuleAbsentFromPatch(candidate, assessment)) {
+    return {
+      rule_id: candidate.rule_id,
+      rule_summary: candidate.rule_summary ?? candidate.rule_name,
+      rule_source: candidate.rule_source,
+      result: "满足",
+      conclusion: `${assessment.reason} 补丁未见相关改动，按 patch-only 评测视为无问题。`,
+    };
+  }
+
+  return {
+    rule_id: candidate.rule_id,
+    rule_summary: candidate.rule_summary ?? candidate.rule_name,
+    rule_source: candidate.rule_source,
+    result: mapAgentDecisionToRuleResult(assessment.decision),
+    conclusion: assessment.reason,
+  };
+}
+
 // mergeRuleAuditResults 负责本地优先合并，保证非法输出时仍能稳定回退。
 export function mergeRuleAuditResults(
   input: MergeRuleAuditResultsInput,
@@ -437,13 +475,7 @@ export function mergeRuleAuditResults(
       };
     }
 
-    return {
-      rule_id: candidate.rule_id,
-      rule_summary: candidate.rule_summary ?? candidate.rule_name,
-      rule_source: candidate.rule_source,
-      result: mapAgentDecisionToRuleResult(assessment.decision),
-      conclusion: assessment.reason,
-    };
+    return mapAgentAssessmentToRuleResult(candidate, assessment);
   });
 
   return {

@@ -173,6 +173,39 @@ test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () =>
   assert.equal(merged.mergedRuleAuditResults[0]?.conclusion, "未看到相关实现证据，当前不涉及。");
 });
 
+test("mergeRuleAuditResults treats non-case must rules absent from patch as satisfied", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "ARKTS-MUST-001",
+        rule_source: "must_rule",
+        why_uncertain: "类型、枚举、接口和命名空间名称必须唯一，当前版本未接入对应判定器。",
+        local_preliminary_signal: "未接入判定器",
+        evidence_files: [],
+        evidence_snippets: [],
+      },
+    ],
+    agentFinalAnswer: makeFinalAnswer([
+      {
+        rule_id: "ARKTS-MUST-001",
+        decision: "uncertain",
+        confidence: "low",
+        reason: "补丁中未发现与该 must_rule 相关的新增或修改代码，仅原工程上下文无法确认。",
+        evidence_used: ["intermediate/effective.patch"],
+        needs_human_review: true,
+      },
+    ]),
+  });
+
+  assert.equal(merged.ruleAgentRunStatus, "success");
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "满足");
+  assert.match(
+    merged.mergedRuleAuditResults[0]?.conclusion ?? "",
+    /补丁未见相关改动，按 patch-only 评测视为无问题/,
+  );
+});
+
 test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-only prompt", () => {
   const payload = buildAgentBootstrapPayload({
     caseInput: {
@@ -255,6 +288,9 @@ test("renderAgentSystemPrompt instructs the model to choose tool_call or final_a
   assert.match(prompt, /read_files/);
   assert.match(prompt, /final_answer/);
   assert.match(prompt, /tool_call/);
+  assert.match(prompt, /代码评测只针对 patch/);
+  assert.match(prompt, /原工程上下文只用于辅助理解/);
+  assert.match(prompt, /must_rule/);
   assert.doesNotMatch(prompt, /dimension_summaries/);
   assert.doesNotMatch(prompt, /"hard_gates"/);
   assert.doesNotMatch(prompt, /scoring_method/);

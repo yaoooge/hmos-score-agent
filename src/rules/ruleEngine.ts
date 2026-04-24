@@ -107,14 +107,6 @@ export async function runRuleEngine(input: {
       if (caseRuleIds.has(rule.rule_id)) {
         return normalizedRule;
       }
-      const directEvidence = ruleEvidenceIndex[rule.rule_id];
-      if (rule.result === "未接入判定器" && (directEvidence?.evidenceFiles?.length ?? 0) === 0) {
-        return {
-          ...normalizedRule,
-          result: "不涉及",
-          conclusion: "未发现相关实现证据，当前不涉及。",
-        };
-      }
       return normalizedRule;
     },
   );

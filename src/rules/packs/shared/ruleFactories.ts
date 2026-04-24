@@ -27,6 +27,7 @@ export function createTextRule(
   rule_id: string,
   summary: string,
   patterns: string[],
+  applicabilityPatterns?: string[],
 ): RegisteredRule {
   return {
     pack_id,
@@ -37,6 +38,7 @@ export function createTextRule(
     detector_config: {
       fileExtensions: defaultFileExtensions,
       patterns,
+      ...(applicabilityPatterns?.length ? { applicabilityPatterns } : {}),
     },
     fallback_policy: "agent_assisted",
   };
