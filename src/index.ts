@@ -32,11 +32,32 @@ export function createRunHandler(deps: AppDeps) {
   };
 }
 
+type AcceptedRemoteEvaluationTask = Parameters<AppDeps["executeAcceptedRemoteEvaluationTask"]>[0];
+
 export function createRunRemoteTaskHandler(deps: AppDeps) {
+  let remoteTaskExecutionQueue: Promise<void> | undefined;
+
+  async function executeRemoteTask(acceptedTask: AcceptedRemoteEvaluationTask): Promise<void> {
+    await deps.executeAcceptedRemoteEvaluationTask(acceptedTask);
+  }
+
+  function enqueueRemoteTaskExecution(acceptedTask: AcceptedRemoteEvaluationTask): Promise<void> {
+    const queuedExecution = remoteTaskExecutionQueue
+      ? remoteTaskExecutionQueue.then(() => executeRemoteTask(acceptedTask))
+      : executeRemoteTask(acceptedTask);
+    const trackedExecution = queuedExecution.catch(() => undefined).finally(() => {
+      if (remoteTaskExecutionQueue === trackedExecution) {
+        remoteTaskExecutionQueue = undefined;
+      }
+    });
+    remoteTaskExecutionQueue = trackedExecution;
+    return queuedExecution;
+  }
+
   return async (req: Request, res: Response) => {
     try {
       const acceptedTask = await deps.prepareRemoteEvaluationTask(req.body as RemoteEvaluationTask);
-      void deps.executeAcceptedRemoteEvaluationTask(acceptedTask).catch((error) => {
+      void enqueueRemoteTaskExecution(acceptedTask).catch((error) => {
         console.error("run-remote-task background execution failed", error);
       });
       res.json({

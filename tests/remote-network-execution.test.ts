@@ -305,6 +305,90 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   resolveBackgroundExecution?.();
 });
 
+test("createRunRemoteTaskHandler queues repeated remote task executions", async () => {
+  let releaseFirstExecution: (() => void) | undefined;
+  let firstExecutionStartedResolve: (() => void) | undefined;
+  let secondExecutionFinishedResolve: (() => void) | undefined;
+  const firstExecutionStarted = new Promise<void>((resolve) => {
+    firstExecutionStartedResolve = resolve;
+  });
+  const secondExecutionFinished = new Promise<void>((resolve) => {
+    secondExecutionFinishedResolve = resolve;
+  });
+  const calls: string[] = [];
+  const deps = {
+    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
+    prepareRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
+      calls.push(`prepare:${String(remoteTask.taskId)}`);
+      return {
+        taskId: Number(remoteTask.taskId),
+        caseDir: `/tmp/remote-case-${String(remoteTask.taskId)}`,
+        message: "任务接收成功，结果将通过 callback 返回",
+        remoteTask: remoteTask as never,
+        workflowState: {} as never,
+      };
+    },
+    executeAcceptedRemoteEvaluationTask: async (acceptedTask: { taskId: number }) => {
+      calls.push(`execute:start:${String(acceptedTask.taskId)}`);
+      if (acceptedTask.taskId === 1) {
+        firstExecutionStartedResolve?.();
+        await new Promise<void>((resolve) => {
+          releaseFirstExecution = resolve;
+        });
+      }
+      calls.push(`execute:end:${String(acceptedTask.taskId)}`);
+      if (acceptedTask.taskId === 2) {
+        secondExecutionFinishedResolve?.();
+      }
+    },
+    runRemoteEvaluationTask: async () => {
+      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+  };
+  const handler = createRunRemoteTaskHandler(deps as never);
+
+  function createResponse() {
+    const responseState: { statusCode: number; body?: Record<string, unknown> } = {
+      statusCode: 200,
+    };
+    const response = {
+      status(code: number) {
+        responseState.statusCode = code;
+        return response;
+      },
+      json(body: Record<string, unknown>) {
+        responseState.body = body;
+        return response;
+      },
+    };
+    return { response, responseState };
+  }
+
+  const firstResponse = createResponse();
+  await handler({ body: { taskId: 1 } } as never, firstResponse.response as never);
+  await firstExecutionStarted;
+
+  const secondResponse = createResponse();
+  await handler({ body: { taskId: 2 } } as never, secondResponse.response as never);
+  await Promise.resolve();
+
+  assert.equal(firstResponse.responseState.statusCode, 200);
+  assert.equal(secondResponse.responseState.statusCode, 200);
+  assert.deepEqual(calls, ["prepare:1", "execute:start:1", "prepare:2"]);
+
+  releaseFirstExecution?.();
+  await secondExecutionFinished;
+
+  assert.deepEqual(calls, [
+    "prepare:1",
+    "execute:start:1",
+    "prepare:2",
+    "execute:end:1",
+    "execute:start:2",
+    "execute:end:2",
+  ]);
+});
+
 test("createRunRemoteTaskHandler returns 500 when preprocessing fails", async () => {
   let executeCalled = false;
   const deps = {

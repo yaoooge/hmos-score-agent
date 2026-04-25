@@ -175,6 +175,54 @@ curl -X POST http://localhost:3000/score/run-remote-task \
 - 初始任务分析
 - 任务类型判定
 
+当前云侧任务 workflow：
+
+```mermaid
+flowchart TD
+  Cloud["云侧调用 POST /score/run-remote-task"] --> Handler["createRunRemoteTaskHandler"]
+
+  subgraph Sync["同步接收阶段：HTTP 请求等待"]
+    Handler --> Prepare["prepareRemoteEvaluationTask"]
+    Prepare --> CaseDir["创建 caseDir 并写入初始 case-info"]
+    CaseDir --> RemotePrep["remoteTaskPreparationNode<br/>下载原始工程 / workspace / patch，物化标准 case"]
+    RemotePrep --> Understand["taskUnderstandingNode<br/>初始任务分析"]
+    Understand --> Classify["inputClassificationNode<br/>任务类型判定"]
+    Classify --> Accepted["任务接收完成<br/>生成 AcceptedRemoteEvaluationTask"]
+  end
+
+  Prepare -. 同步阶段失败 .-> Http500["HTTP 500<br/>返回预处理错误"]
+  Accepted --> Enqueue["enqueueRemoteTaskExecution<br/>加入后台 FIFO 队列"]
+  Enqueue --> Http200["HTTP 200<br/>任务接收成功，结果将通过 callback 返回"]
+
+  subgraph Queue["后台执行阶段：接口不再等待"]
+    Enqueue --> WaitPrev{"前一个后台评分是否完成？"}
+    WaitPrev -- 否 --> Wait["等待前一个任务结束"]
+    Wait --> Execute
+    WaitPrev -- 是 --> Execute["executeAcceptedRemoteEvaluationTask"]
+  end
+
+  subgraph Score["评分 workflow：runPreparedScoreWorkflow"]
+    Execute --> RuleAudit["ruleAuditNode<br/>规则审计"]
+    RuleAudit --> RubricPrep["rubricPreparationNode<br/>加载评分基线"]
+    RubricPrep --> RubricPrompt["rubricScoringPromptBuilderNode"]
+    RubricPrompt --> RubricAgent["rubricScoringAgentNode"]
+    RubricPrep --> RulePrompt["ruleAgentPromptBuilderNode"]
+    RulePrompt --> RuleAgent["ruleAssessmentAgentNode"]
+    RuleAgent --> RuleMerge["ruleMergeNode"]
+    RubricAgent --> Fusion["scoreFusionOrchestrationNode<br/>评分融合"]
+    RuleMerge --> Fusion
+    Fusion --> Report["reportGenerationNode<br/>生成结果"]
+    Report --> PostProcess["artifactPostProcessNode<br/>HTML 等产物后处理"]
+    PostProcess --> Persist["persistAndUploadNode<br/>结果落盘"]
+  end
+
+  Persist --> CallbackOk["uploadTaskCallback<br/>status=completed"]
+  Execute -. 后台执行失败 .-> CallbackFail["uploadTaskCallback<br/>status=failed"]
+  CallbackOk --> Cleanup["清理 remoteTaskRootDir"]
+  CallbackFail --> Cleanup
+  Cleanup --> Next["队列继续执行下一个已接收任务"]
+```
+
 成功响应示例：
 
 ```json
@@ -190,6 +238,7 @@ curl -X POST http://localhost:3000/score/run-remote-task \
 
 - 该响应只表示任务已被本地服务接收，尚不表示最终评分完成。
 - 最终评分结果仍通过 `callback` 异步回传。
+- 重复调用接口时，已接收任务的后台评分阶段会按接收顺序排队执行，避免多个云侧用例任务并发评分。
 - 如果预处理阶段失败，例如远端目录清单下载失败、patch 下载失败或初始任务分析失败，接口会直接返回 `500`。
 
 当前远程资源格式约定：
@@ -233,7 +282,6 @@ curl -X POST http://localhost:3000/score/run-remote-task \
 - `npm run dev:api`：本地 HTTP 服务调试
 - `npm run launch:score`：交互式填写 `baseURL` / `apiKey`，写入 `.env` 后运行评分流程
 - `npm run score -- --case <path>`：与 `dev:cli` 等价
-- `npm run case:patch -- --case <path>`：基于 `original/` 和 `workspace/` 目录差异生成 `diff/changes.patch`
 
 ### 交互式启动评分
 
@@ -262,13 +310,7 @@ npm run launch:score -- --case examples/my-case
 
 ### Patch 生成说明
 
-`cases/<caseId>/workspace` 应作为主仓库中的普通目录使用，不依赖独立 Git 仓库。需要 patch 时，统一通过目录差异生成：
-
-```bash
-npm run case:patch -- --case cases/bug_fix_001
-```
-
-底层等价于在用例目录执行：
+`cases/<caseId>/workspace` 应作为主仓库中的普通目录使用，不依赖独立 Git 仓库。评分主流程会在运行期基于 `original/` 和 `workspace/` 目录差异生成有效 patch，底层等价于在用例目录执行：
 
 ```bash
 git diff --no-index -- original workspace > diff/changes.patch
@@ -276,7 +318,7 @@ git diff --no-index -- original workspace > diff/changes.patch
 
 ### Patch 与评测过滤
 
-- `case:patch` 会分别读取 `original/.gitignore` 和 `workspace/.gitignore`
+- Patch 生成逻辑会分别读取 `original/.gitignore` 和 `workspace/.gitignore`
 - 规则评测采集文件时，也会按对应目录根级 `.gitignore` 过滤
 - 当前仅支持根级 `.gitignore` 的常见规则，例如目录模式、文件模式和简单 `*` 通配
 - 如果 `.gitignore` 缺失或不可读，会回退到内置的保底忽略项
