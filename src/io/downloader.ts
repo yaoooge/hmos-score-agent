@@ -4,9 +4,10 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import * as yauzl from "yauzl";
 import { RemoteEvaluationTask, RemoteTaskFileManifest } from "../types.js";
+import { fetchWithNetworkLogging } from "./networkLogger.js";
 
 export async function downloadToFile(url: string, outputPath: string): Promise<string> {
-  const res = await fetch(url);
+  const res = await fetchWithNetworkLogging(url);
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status}`);
   }
@@ -17,7 +18,7 @@ export async function downloadToFile(url: string, outputPath: string): Promise<s
 }
 
 export async function downloadJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+  const response = await fetchWithNetworkLogging(url);
   if (!response.ok) {
     throw new Error(`Failed to download JSON ${url}: ${response.status}`);
   }
@@ -186,7 +187,7 @@ export async function downloadManifestToDirectory(
   url: string,
   outputDir: string,
 ): Promise<string[]> {
-  const response = await fetch(url);
+  const response = await fetchWithNetworkLogging(url);
   if (!response.ok) {
     throw new Error(`Failed to download remote project ${url}: ${response.status}`);
   }

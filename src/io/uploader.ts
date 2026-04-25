@@ -1,4 +1,5 @@
 import { RemoteCallbackPayload } from "../types.js";
+import { fetchWithNetworkLogging } from "./networkLogger.js";
 
 async function postJson(
   endpoint: string | undefined,
@@ -11,7 +12,7 @@ async function postJson(
     return { uploaded: false, message: missingEndpointMessage };
   }
 
-  const response = await fetch(endpoint, {
+  const response = await fetchWithNetworkLogging(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -10,6 +10,23 @@ import {
   runRemoteEvaluationTask,
 } from "../src/service.js";
 
+function createResponse() {
+  const responseState: { statusCode: number; body?: Record<string, unknown> } = {
+    statusCode: 200,
+  };
+  const response = {
+    status(code: number) {
+      responseState.statusCode = code;
+      return response;
+    },
+    json(body: Record<string, unknown>) {
+      responseState.body = body;
+      return response;
+    },
+  };
+  return { response, responseState };
+}
+
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-network-execution-"));
   t.after(async () => {
@@ -286,8 +303,19 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
     {
       body: {
         taskId: 100,
-        testCase: { id: 1, name: "x", type: "requirement", description: "", input: "", expectedOutput: "", fileUrl: "https://remote.example.com/original.json" },
-        executionResult: { isBuildSuccess: true, outputCodeUrl: "https://remote.example.com/workspace.json" },
+        testCase: {
+          id: 1,
+          name: "x",
+          type: "requirement",
+          description: "",
+          input: "",
+          expectedOutput: "",
+          fileUrl: "https://remote.example.com/original.json",
+        },
+        executionResult: {
+          isBuildSuccess: true,
+          outputCodeUrl: "https://remote.example.com/workspace.json",
+        },
         token: "remote-token",
         callback: "https://remote.example.com/callback",
       },
@@ -347,23 +375,6 @@ test("createRunRemoteTaskHandler queues repeated remote task executions", async 
   };
   const handler = createRunRemoteTaskHandler(deps as never);
 
-  function createResponse() {
-    const responseState: { statusCode: number; body?: Record<string, unknown> } = {
-      statusCode: 200,
-    };
-    const response = {
-      status(code: number) {
-        responseState.statusCode = code;
-        return response;
-      },
-      json(body: Record<string, unknown>) {
-        responseState.body = body;
-        return response;
-      },
-    };
-    return { response, responseState };
-  }
-
   const firstResponse = createResponse();
   await handler({ body: { taskId: 1 } } as never, firstResponse.response as never);
   await firstExecutionStarted;
@@ -387,6 +398,139 @@ test("createRunRemoteTaskHandler queues repeated remote task executions", async 
     "execute:start:2",
     "execute:end:2",
   ]);
+});
+
+test("createRunRemoteTaskHandler returns 504 when a task never enters execution or queue before timeout", async () => {
+  const originalTimeout = process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS;
+  process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS = "10";
+  const calls: string[] = [];
+  const deps = {
+    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
+    prepareRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
+      calls.push(`prepare:start:${String(remoteTask.taskId)}`);
+      await new Promise<void>(() => undefined);
+      throw new Error("unreachable");
+    },
+    executeAcceptedRemoteEvaluationTask: async () => {
+      calls.push("execute");
+    },
+    runRemoteEvaluationTask: async () => {
+      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+  };
+  const handler = createRunRemoteTaskHandler(deps as never);
+  const { response, responseState } = createResponse();
+
+  try {
+    await handler({ body: { taskId: 77 } } as never, response as never);
+  } finally {
+    if (originalTimeout === undefined) {
+      delete process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS;
+    } else {
+      process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS = originalTimeout;
+    }
+  }
+
+  assert.equal(responseState.statusCode, 504);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(responseState.body?.taskId, 77);
+  assert.match(String(responseState.body?.message ?? ""), /超时/);
+  assert.deepEqual(calls, ["prepare:start:77"]);
+});
+
+test("createRunRemoteTaskHandler logs remote API request, response, and errors", async () => {
+  const originalInfo = console.info;
+  const originalError = console.error;
+  const logs: string[] = [];
+  console.info = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+  console.error = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+  const deps = {
+    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("download failed");
+    },
+    executeAcceptedRemoteEvaluationTask: async () => undefined,
+    runRemoteEvaluationTask: async () => {
+      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+  };
+  const handler = createRunRemoteTaskHandler(deps as never);
+  const { response } = createResponse();
+
+  try {
+    await handler({ body: { taskId: 88 } } as never, response as never);
+  } finally {
+    console.info = originalInfo;
+    console.error = originalError;
+  }
+
+  assert.match(
+    logs.join("\n"),
+    /api_request_triggered route=POST \/score\/run-remote-task taskId=88/,
+  );
+  assert.match(
+    logs.join("\n"),
+    /api_request_failed route=POST \/score\/run-remote-task taskId=88 error=download failed/,
+  );
+  assert.match(
+    logs.join("\n"),
+    /api_response_sent route=POST \/score\/run-remote-task taskId=88 status=500 success=false/,
+  );
+});
+
+test("remote fetch helpers log request, response, and error details", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalInfo = console.info;
+  const originalError = console.error;
+  const logs: string[] = [];
+  console.info = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+  console.error = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("ok.json")) {
+      return new Response(JSON.stringify({ files: [{ path: "Index.ets", content: "ok" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error("network down");
+  }) as typeof fetch;
+
+  try {
+    const { downloadManifestToDirectory } = await import("../src/io/downloader.js");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-network-log-"));
+    await downloadManifestToDirectory("https://remote.example.com/ok.json", tempDir);
+    await assert.rejects(
+      () => downloadManifestToDirectory("https://remote.example.com/fail.json", tempDir),
+      /network down/,
+    );
+    await fs.rm(tempDir, { recursive: true, force: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalInfo;
+    console.error = originalError;
+  }
+
+  assert.match(
+    logs.join("\n"),
+    /network_request_triggered method=GET url=https:\/\/remote\.example\.com\/ok\.json/,
+  );
+  assert.match(
+    logs.join("\n"),
+    /network_response_received method=GET url=https:\/\/remote\.example\.com\/ok\.json status=200 ok=true/,
+  );
+  assert.match(
+    logs.join("\n"),
+    /network_request_failed method=GET url=https:\/\/remote\.example\.com\/fail\.json error=network down/,
+  );
 });
 
 test("createRunRemoteTaskHandler returns 500 when preprocessing fails", async () => {
@@ -481,7 +625,10 @@ test("createCorsMiddleware handles preflight and non-preflight remote task reque
   assert.equal(preflightResponseState.statusCode, 204);
   assert.equal(preflightResponseState.headers["access-control-allow-origin"], origin);
   assert.match(preflightResponseState.headers["access-control-allow-methods"] ?? "", /POST/);
-  assert.match(preflightResponseState.headers["access-control-allow-headers"] ?? "", /content-type/i);
+  assert.match(
+    preflightResponseState.headers["access-control-allow-headers"] ?? "",
+    /content-type/i,
+  );
   assert.equal(preflightResponseState.ended, true);
   assert.equal(preflightNextCalled, false);
 
