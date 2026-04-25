@@ -51,6 +51,13 @@ type RemoteTaskRecord = {
   error?: string;
 };
 
+type RemoteTaskLogContext = {
+  taskId?: number;
+  testCaseId?: number;
+};
+
+const MAX_REMOTE_TASK_CONCURRENCY = 3;
+
 function readTaskId(body: unknown): number | undefined {
   if (typeof body !== "object" || body === null) {
     return undefined;
@@ -59,30 +66,46 @@ function readTaskId(body: unknown): number | undefined {
   return typeof taskId === "number" && Number.isFinite(taskId) ? taskId : undefined;
 }
 
+function readRemoteTestCaseId(body: unknown): number | undefined {
+  if (typeof body !== "object" || body === null) {
+    return undefined;
+  }
+  const testCase = (body as { testCase?: unknown }).testCase;
+  if (typeof testCase !== "object" || testCase === null) {
+    return undefined;
+  }
+  const testCaseId = (testCase as { id?: unknown }).id;
+  return typeof testCaseId === "number" && Number.isFinite(testCaseId) ? testCaseId : undefined;
+}
+
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function logRemoteApiTriggered(taskId: number | undefined): void {
+function formatRemoteLogContext(context: RemoteTaskLogContext): string {
+  return `taskId=${String(context.taskId ?? "unknown")} testCaseId=${String(context.testCaseId ?? "unknown")}`;
+}
+
+function logRemoteApiTriggered(context: RemoteTaskLogContext): void {
   console.info(
-    `api_request_triggered route=POST /score/run-remote-task taskId=${String(taskId ?? "unknown")}`,
+    `api_request_triggered route=POST /score/run-remote-task ${formatRemoteLogContext(context)}`,
   );
 }
 
-function logRemoteApiFailed(taskId: number | undefined, error: unknown): void {
+function logRemoteApiFailed(context: RemoteTaskLogContext, error: unknown): void {
   console.error(
-    `api_request_failed route=POST /score/run-remote-task taskId=${String(taskId ?? "unknown")} error=${formatError(error)}`,
+    `api_request_failed route=POST /score/run-remote-task ${formatRemoteLogContext(context)} error=${formatError(error)}`,
   );
 }
 
 function sendRemoteApiResponse(
   res: Response,
   status: number,
-  taskId: number | undefined,
+  context: RemoteTaskLogContext,
   body: Record<string, unknown>,
 ): void {
   console.info(
-    `api_response_sent route=POST /score/run-remote-task taskId=${String(taskId ?? "unknown")} status=${String(status)} success=${String(body.success)}`,
+    `api_response_sent route=POST /score/run-remote-task ${formatRemoteLogContext(context)} status=${String(status)} success=${String(body.success)}`,
   );
   if (status === 200) {
     res.json(body);
@@ -92,10 +115,14 @@ function sendRemoteApiResponse(
 }
 
 export function createRunRemoteTaskHandler(deps: AppDeps) {
-  let remoteTaskExecutionQueue: Promise<void> | undefined;
-  let runningTaskId: number | undefined;
+  const runningTaskIds = new Set<number>();
   const queuedTaskIds = new Set<number>();
   const remoteTaskRecords = new Map<number, RemoteTaskRecord>();
+  const pendingRemoteTaskExecutions: Array<{
+    acceptedTask: AcceptedRemoteEvaluationTask;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }> = [];
 
   function upsertTaskRecord(
     taskId: number,
@@ -119,7 +146,7 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
   function isExecutingOrQueued(taskId: number): boolean {
     const status = remoteTaskRecords.get(taskId)?.status;
     return (
-      runningTaskId === taskId ||
+      runningTaskIds.has(taskId) ||
       queuedTaskIds.has(taskId) ||
       status === "running" ||
       status === "queued"
@@ -177,7 +204,7 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
 
   async function executeRemoteTask(acceptedTask: AcceptedRemoteEvaluationTask): Promise<void> {
     queuedTaskIds.delete(acceptedTask.taskId);
-    runningTaskId = acceptedTask.taskId;
+    runningTaskIds.add(acceptedTask.taskId);
     upsertTaskRecord(acceptedTask.taskId, "running", { caseDir: acceptedTask.caseDir });
     try {
       await deps.executeAcceptedRemoteEvaluationTask(acceptedTask);
@@ -189,32 +216,49 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
       });
       throw error;
     } finally {
-      if (runningTaskId === acceptedTask.taskId) {
-        runningTaskId = undefined;
+      runningTaskIds.delete(acceptedTask.taskId);
+      scheduleRemoteTaskExecutions();
+    }
+  }
+
+  function scheduleRemoteTaskExecutions(): void {
+    while (
+      runningTaskIds.size < MAX_REMOTE_TASK_CONCURRENCY &&
+      pendingRemoteTaskExecutions.length > 0
+    ) {
+      const pending = pendingRemoteTaskExecutions.shift();
+      if (!pending) {
+        return;
       }
+      void executeRemoteTask(pending.acceptedTask).then(pending.resolve, pending.reject);
     }
   }
 
   function enqueueRemoteTaskExecution(acceptedTask: AcceptedRemoteEvaluationTask): Promise<void> {
     queuedTaskIds.add(acceptedTask.taskId);
     upsertTaskRecord(acceptedTask.taskId, "queued", { caseDir: acceptedTask.caseDir });
-    const queuedExecution = remoteTaskExecutionQueue
-      ? remoteTaskExecutionQueue.then(() => executeRemoteTask(acceptedTask))
-      : executeRemoteTask(acceptedTask);
-    const trackedExecution = queuedExecution
-      .catch(() => undefined)
-      .finally(() => {
-        if (remoteTaskExecutionQueue === trackedExecution) {
-          remoteTaskExecutionQueue = undefined;
-        }
-      });
-    remoteTaskExecutionQueue = trackedExecution;
-    return queuedExecution;
+    return new Promise<void>((resolve, reject) => {
+      pendingRemoteTaskExecutions.push({ acceptedTask, resolve, reject });
+      scheduleRemoteTaskExecutions();
+    });
+  }
+
+  function buildAcceptedTaskLogContext(
+    acceptedTask: AcceptedRemoteEvaluationTask,
+  ): RemoteTaskLogContext {
+    return {
+      taskId: acceptedTask.taskId,
+      testCaseId: acceptedTask.remoteTask.testCase.id,
+    };
   }
 
   return async (req: Request, res: Response) => {
     const taskId = readTaskId(req.body);
-    logRemoteApiTriggered(taskId);
+    const requestLogContext: RemoteTaskLogContext = {
+      taskId,
+      testCaseId: readRemoteTestCaseId(req.body),
+    };
+    logRemoteApiTriggered(requestLogContext);
     try {
       if (taskId !== undefined) {
         upsertTaskRecord(taskId, "preparing");
@@ -228,17 +272,20 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
         }
         trackLatePreparation(taskId, preparation);
         const timeoutMs = getConfig().remoteTaskAcceptTimeoutMs;
-        sendRemoteApiResponse(res, 504, taskId, {
+        sendRemoteApiResponse(res, 504, requestLogContext, {
           success: false,
           taskId,
           message: `任务等待进入执行队列超时，timeoutMs=${String(timeoutMs)}`,
         });
         return;
       }
+      const acceptedTaskLogContext = buildAcceptedTaskLogContext(acceptedTask);
       void enqueueRemoteTaskExecution(acceptedTask).catch((error) => {
-        console.error("run-remote-task background execution failed", error);
+        console.error(
+          `run-remote-task background execution failed ${formatRemoteLogContext(acceptedTaskLogContext)} error=${formatError(error)}`,
+        );
       });
-      sendRemoteApiResponse(res, 200, acceptedTask.taskId, {
+      sendRemoteApiResponse(res, 200, acceptedTaskLogContext, {
         success: true,
         taskId: acceptedTask.taskId,
         caseDir: acceptedTask.caseDir,
@@ -248,8 +295,8 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
       if (taskId !== undefined) {
         upsertTaskRecord(taskId, "failed", { error: formatError(error) });
       }
-      logRemoteApiFailed(taskId, error);
-      sendRemoteApiResponse(res, 500, taskId, {
+      logRemoteApiFailed(requestLogContext, error);
+      sendRemoteApiResponse(res, 500, requestLogContext, {
         success: false,
         message: error instanceof Error ? error.message : "未知错误",
       });

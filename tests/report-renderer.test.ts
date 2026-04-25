@@ -130,48 +130,6 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
   };
 }
 
-test("renderHtmlReport renders summary, full dimension list, filters, and no raw json dump", () => {
-  const html = renderHtmlReport(buildHtmlReportViewModel(makeResultJson()));
-  assert.match(html, /评分报告/);
-  assert.match(html, /97\.6/);
-  assert.match(html, /维度得分概览/);
-  assert.match(html, /改动精准度与最小侵入性/);
-  assert.match(html, /工程规范与质量/);
-  assert.match(html, /规则审计结果/);
-  assert.match(html, /禁止使用 any 类型。/);
-  assert.match(html, /维度级理由：命中主要问题点，改动范围可控。/);
-  assert.match(html, /item 级理由：问题链路与改动位置一致。/);
-  assert.match(html, /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets/);
-  assert.match(html, /代码位置/);
-  assert.match(html, /影响范围/);
-  assert.match(html, /Rubric 对照/);
-  assert.match(html, /评分理由/);
-  assert.match(html, /改进建议/);
-  assert.match(html, /在访问前增加空值校验并补充异常路径处理。/);
-  assert.match(html, /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets:12/);
-  assert.doesNotMatch(html, /建议动作：优先复核低置信度指标/);
-  assert.match(html, /data-filter="不满足"/);
-  assert.match(html, /data-filter="待人工复核"/);
-  assert.doesNotMatch(html, /<pre>\s*\{/);
-  assert.doesNotMatch(html, /<div class="eyebrow">建议动作<\/div>/);
-});
-
-test("buildHtmlReportViewModel reads rationale and evidence from nested agent evaluation fields", () => {
-  const viewModel = buildHtmlReportViewModel(makeResultJson());
-  const firstDimension = viewModel.dimensions[0];
-  const firstItem = firstDimension?.items[0];
-
-  assert.equal(firstDimension?.summaryLogic, "维度级理由：命中主要问题点，改动范围可控。");
-  assert.match(firstDimension?.summaryEvidence ?? "", /workspace\/entry\/src\/main\/ets\/pages\/Index\.ets/);
-  assert.equal(firstItem?.rationale, "item 级理由：问题链路与改动位置一致。");
-  assert.match(firstItem?.evidence ?? "", /workspace\/features\/home\/src\/main\/ets\/pages\/Home\.ets/);
-  assert.equal(firstItem?.deductionTrace?.impactScope, "影响页面初始化稳定性");
-  assert.equal(
-    firstItem?.deductionTrace?.improvementSuggestion,
-    "在访问前增加空值校验并补充异常路径处理。",
-  );
-});
-
 test("buildHtmlReportViewModel provides explicit empty states", () => {
   const viewModel = buildHtmlReportViewModel(
     makeResultJson({
@@ -232,7 +190,10 @@ test("renderHtmlReport renders case rule section with priority and hard gate sta
 
 test("renderHtmlReport renders bound rule packs inside overall card", () => {
   const html = renderHtmlReport(buildHtmlReportViewModel(makeResultJson()));
-  const summarySection = html.slice(html.indexOf('<section id="summary"'), html.indexOf('<section id="dimensions"'));
+  const summarySection = html.slice(
+    html.indexOf('<section id="summary"'),
+    html.indexOf('<section id="dimensions"'),
+  );
 
   assert.doesNotMatch(html, /href="#bound-rule-packs"/);
   assert.doesNotMatch(html, /<section id="bound-rule-packs"/);

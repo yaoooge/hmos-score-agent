@@ -157,6 +157,10 @@ export type AcceptedRemoteEvaluationTask = {
 
 const REMOTE_TASK_ACCEPTED_MESSAGE = "任务接收成功，结果将通过 callback 返回";
 
+function formatRemoteTaskLogContext(remoteTask: RemoteEvaluationTask): string {
+  return `taskId=${String(remoteTask.taskId)} testCaseId=${String(remoteTask.testCase.id)}`;
+}
+
 function buildRemoteCaseInfoBase(
   remoteTask: RemoteEvaluationTask,
   caseDir: string,
@@ -218,7 +222,9 @@ function readRemoteTaskRootDirFromError(error: unknown): string | undefined {
   return typeof rootDir === "string" ? rootDir : undefined;
 }
 
-function toAcceptedRemoteWorkflowState(state: Partial<ScoreGraphState>): AcceptedRemoteWorkflowState {
+function toAcceptedRemoteWorkflowState(
+  state: Partial<ScoreGraphState>,
+): AcceptedRemoteWorkflowState {
   if (!state.caseDir) {
     throw new Error("Accepted remote task is missing caseDir.");
   }
@@ -266,9 +272,7 @@ function toAcceptedRemoteWorkflowState(state: Partial<ScoreGraphState>): Accepte
   };
 }
 
-export async function runSingleCase(
-  casePath: string,
-): Promise<{ caseDir: string }> {
+export async function runSingleCase(casePath: string): Promise<{ caseDir: string }> {
   const caseInput = await loadCaseFromPath(casePath);
   const result = await runCaseInput({
     caseInput,
@@ -299,7 +303,7 @@ export async function prepareRemoteEvaluationTask(
   };
 
   try {
-    await logger.info(`启动远端评分流程 taskId=${remoteTask.taskId}`);
+    await logger.info(`启动远端评分流程 ${formatRemoteTaskLogContext(remoteTask)}`);
     await artifactStore.writeJson(
       caseDir,
       "inputs/case-info.json",
@@ -307,20 +311,14 @@ export async function prepareRemoteEvaluationTask(
     );
     await logger.info("输入元数据写入完成");
     await logger.info("远端任务预处理开始");
-    Object.assign(
-      preparedState,
-      await remoteTaskPreparationNode(preparedState as ScoreGraphState),
-    );
+    Object.assign(preparedState, await remoteTaskPreparationNode(preparedState as ScoreGraphState));
     await logger.info("远端任务预处理完成");
     Object.assign(
       preparedState,
       await taskUnderstandingNode(preparedState as ScoreGraphState, { artifactStore, logger }),
     );
     await logger.info("初始任务分析完成");
-    Object.assign(
-      preparedState,
-      await inputClassificationNode(preparedState as ScoreGraphState),
-    );
+    Object.assign(preparedState, await inputClassificationNode(preparedState as ScoreGraphState));
     await logger.info(`任务类型判定完成 taskType=${String(preparedState.taskType ?? "")}`);
     await artifactStore.writeJson(
       caseDir,
@@ -338,7 +336,7 @@ export async function prepareRemoteEvaluationTask(
     };
   } catch (error) {
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    await logger.error(`预处理失败 error=${message}`);
+    await logger.error(`预处理失败 ${formatRemoteTaskLogContext(remoteTask)} error=${message}`);
     const remoteTaskRootDir =
       typeof preparedState.remoteTaskRootDir === "string"
         ? preparedState.remoteTaskRootDir
@@ -356,11 +354,15 @@ export async function executeAcceptedRemoteEvaluationTask(
   const config = getConfig();
   const artifactStore = new ArtifactStore(config.localCaseRoot);
   const logger = new CaseLogger(artifactStore, acceptedTask.caseDir);
-  const caseInfoBase = buildRemoteCaseInfoBase(acceptedTask.remoteTask, acceptedTask.caseDir, config);
+  const caseInfoBase = buildRemoteCaseInfoBase(
+    acceptedTask.remoteTask,
+    acceptedTask.caseDir,
+    config,
+  );
   let workflowResult: Record<string, unknown> = { ...acceptedTask.workflowState };
 
   try {
-    await logger.info("异步评分执行开始");
+    await logger.info(`异步评分执行开始 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)}`);
     workflowResult = await runPreparedScoreWorkflow({
       preparedState: acceptedTask.workflowState,
       caseDir: acceptedTask.caseDir,
@@ -396,12 +398,16 @@ export async function executeAcceptedRemoteEvaluationTask(
             : {},
       }),
     );
-    await logger.info(`回调结果 message=${upload.message}`);
+    await logger.info(
+      `回调结果 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} message=${upload.message}`,
+    );
     return upload.message;
   } catch (error) {
     workflowResult = readWorkflowStateFromError(error) ?? workflowResult;
     const message = error instanceof Error ? error.message : String(error);
-    await logger.error(`执行失败 error=${message}`);
+    await logger.error(
+      `执行失败 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} error=${message}`,
+    );
     await uploadTaskCallback(
       acceptedTask.remoteTask.callback,
       acceptedTask.remoteTask.token,

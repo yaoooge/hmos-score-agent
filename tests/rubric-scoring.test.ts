@@ -216,8 +216,7 @@ test("parseRubricScoringResultStrict rejects deducted items without improvement 
           ? {
               code_locations: ["workspace/entry/src/main/ets/pages/Index.ets:12"],
               impact_scope: "影响页面初始化稳定性",
-              rubric_comparison:
-                "未命中更高档，因为存在空值风险；命中当前档，因为主体路径仍可运行",
+              rubric_comparison: "未命中更高档，因为存在空值风险；命中当前档，因为主体路径仍可运行",
               deduction_reason: "发现空值未防御。",
             }
           : undefined,

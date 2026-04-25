@@ -410,7 +410,11 @@ function isNonCaseMustRuleAbsentFromPatch(
   candidate: AssistedRuleCandidate,
   assessment: CaseAwareAgentFinalAnswer["rule_assessments"][number],
 ): boolean {
-  if (candidate.rule_source !== "must_rule" || candidate.is_case_rule || assessment.decision !== "uncertain") {
+  if (
+    candidate.rule_source !== "must_rule" ||
+    candidate.is_case_rule ||
+    assessment.decision !== "uncertain"
+  ) {
     return false;
   }
 

@@ -78,20 +78,14 @@ test("read_files returns multiple files in request order", async (t) => {
   const result = await executor.execute({
     tool: "read_files" as never,
     args: {
-      paths: [
-        "workspace/entry/src/main/ets/home/HomePageVM.ets",
-        "workspace/config.json",
-      ],
+      paths: ["workspace/entry/src/main/ets/home/HomePageVM.ets", "workspace/config.json"],
     },
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(
     ((result.result?.files as Array<{ path: string }>) ?? []).map((file) => file.path),
-    [
-      "workspace/entry/src/main/ets/home/HomePageVM.ets",
-      "workspace/config.json",
-    ],
+    ["workspace/entry/src/main/ets/home/HomePageVM.ets", "workspace/config.json"],
   );
   assert.match(
     String((result.result?.files as Array<{ content: string }>)?.[0]?.content ?? ""),
@@ -115,10 +109,7 @@ test("read_files rejects path traversal when any requested file is out of scope"
   const result = await executor.execute({
     tool: "read_files" as never,
     args: {
-      paths: [
-        "workspace/entry/src/main/ets/home/HomePageVM.ets",
-        "../outside.txt",
-      ],
+      paths: ["workspace/entry/src/main/ets/home/HomePageVM.ets", "../outside.txt"],
     },
   });
 
@@ -138,10 +129,7 @@ test("read_files spends file budget per unique requested file and omits overflow
   const result = await executor.execute({
     tool: "read_files" as never,
     args: {
-      paths: [
-        "workspace/entry/src/main/ets/home/HomePageVM.ets",
-        "workspace/config.json",
-      ],
+      paths: ["workspace/entry/src/main/ets/home/HomePageVM.ets", "workspace/config.json"],
     },
   });
 
@@ -151,10 +139,9 @@ test("read_files spends file budget per unique requested file and omits overflow
     ["workspace/entry/src/main/ets/home/HomePageVM.ets"],
   );
   assert.equal(result.result?.truncated, true);
-  assert.deepEqual(
-    (result.result?.omitted_paths as string[] | undefined) ?? [],
-    ["workspace/config.json"],
-  );
+  assert.deepEqual((result.result?.omitted_paths as string[] | undefined) ?? [], [
+    "workspace/config.json",
+  ]);
   assert.equal(result.budget.readFileCount, 1);
 });
 
@@ -183,10 +170,9 @@ test("read_files returns the remaining files that fit file budget instead of fai
     ["workspace/a.txt", "workspace/b.txt"],
   );
   assert.equal(result.result?.truncated, true);
-  assert.deepEqual(
-    (result.result?.omitted_paths as string[] | undefined) ?? [],
-    ["workspace/c.txt"],
-  );
+  assert.deepEqual((result.result?.omitted_paths as string[] | undefined) ?? [], [
+    "workspace/c.txt",
+  ]);
   assert.deepEqual(result.pathsRead, ["workspace/a.txt", "workspace/b.txt"]);
   assert.equal(result.budget.readFileCount, 2);
   assert.equal(result.budget.remainingFileSlots, 0);
@@ -285,10 +271,7 @@ test("list_dir returns directory entries inside caseRoot", async (t) => {
   });
 
   assert.equal(result.ok, true);
-  assert.equal(
-    Array.isArray((result.result?.entries as Array<{ name: string }>) ?? []),
-    true,
-  );
+  assert.equal(Array.isArray((result.result?.entries as Array<{ name: string }>) ?? []), true);
   assert.equal(
     ((result.result?.entries as Array<{ name: string }>) ?? []).some(
       (entry) => entry.name === "entry",
@@ -449,7 +432,11 @@ test("grep_in_files does not spend file budget on non-matching scanned files", a
   const noiseDir = path.join(caseRoot, "workspace", "noise");
   await fs.mkdir(noiseDir, { recursive: true });
   for (let index = 0; index < 25; index += 1) {
-    await fs.writeFile(path.join(noiseDir, `Noise${index}.ets`), "export const noop = true;\n", "utf-8");
+    await fs.writeFile(
+      path.join(noiseDir, `Noise${index}.ets`),
+      "export const noop = true;\n",
+      "utf-8",
+    );
   }
   await fs.writeFile(path.join(noiseDir, "Needle.ets"), "const token = 'LocationKit';\n", "utf-8");
 

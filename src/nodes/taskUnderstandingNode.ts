@@ -343,11 +343,7 @@ async function ensureEffectivePatchPath(
   );
 
   if (state.caseInput.patchPath) {
-    await deps.artifactStore.writeText(
-      state.caseDir,
-      path.relative(state.caseDir, outputPath),
-      "",
-    );
+    await deps.artifactStore.writeText(state.caseDir, path.relative(state.caseDir, outputPath), "");
   }
 
   const caseRoot = path.dirname(state.caseInput.originalProjectPath);

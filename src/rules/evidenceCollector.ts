@@ -32,9 +32,7 @@ function extractChangedFilesFromPatch(patchText: string | undefined): string[] {
 
   return Array.from(
     new Set(
-      Array.from(
-        patchText.matchAll(/^(?:diff --git a\/.+? b\/(.+)|\+\+\+ b\/(.+))$/gm),
-      )
+      Array.from(patchText.matchAll(/^(?:diff --git a\/.+? b\/(.+)|\+\+\+ b\/(.+))$/gm))
         .map((match) => match[1] ?? match[2] ?? "")
         .map((relativePath) => normalizeRelativePath(relativePath))
         .filter((relativePath) => !isIgnoredCaseFilePath(relativePath))

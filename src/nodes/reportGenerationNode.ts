@@ -15,7 +15,10 @@ function makeMetricKey(dimensionName: string, metricName: string): string {
 }
 
 function combineConfidence(details: ScoreFusionDetail[]): ConfidenceLevel {
-  if (details.length === 0 || details.some((detail) => detail.agent_evaluation.confidence === "low")) {
+  if (
+    details.length === 0 ||
+    details.some((detail) => detail.agent_evaluation.confidence === "low")
+  ) {
     return "low";
   }
   if (details.some((detail) => detail.agent_evaluation.confidence === "medium")) {
@@ -40,9 +43,7 @@ function buildAgentEvaluationSummary(details: ScoreFusionDetail[]): Record<strin
   return {
     base_score: baseScore,
     logic:
-      logic.length > 0
-        ? logic.join(" ")
-        : "缺少 rubric agent 评价明细，需人工复核该维度评分依据。",
+      logic.length > 0 ? logic.join(" ") : "缺少 rubric agent 评价明细，需人工复核该维度评分依据。",
     key_evidence: keyEvidence,
     confidence: combineConfidence(details),
   };
@@ -126,24 +127,22 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
             detail?.review_required ??
             fusionDetail?.rule_impacts.some((impact) => impact.needs_human_review) ??
             true,
-          agent_evaluation:
-            fusionDetail?.agent_evaluation ?? {
-              base_score: 0,
-              matched_band_score: 0,
-              matched_criteria: "",
-              logic: "缺少 rubric agent 对该评分项的评价逻辑。",
-              evidence_used: [],
-              deduction_trace: null,
-              confidence: "low",
-            },
+          agent_evaluation: fusionDetail?.agent_evaluation ?? {
+            base_score: 0,
+            matched_band_score: 0,
+            matched_criteria: "",
+            logic: "缺少 rubric agent 对该评分项的评价逻辑。",
+            evidence_used: [],
+            deduction_trace: null,
+            confidence: "low",
+          },
           rule_impacts: fusionDetail?.rule_impacts ?? [],
-          score_fusion:
-            fusionDetail?.score_fusion ?? {
-              base_score: 0,
-              rule_delta: 0,
-              final_score: detail?.score ?? 0,
-              fusion_logic: "缺少评分融合明细，需人工复核该评分项。",
-            },
+          score_fusion: fusionDetail?.score_fusion ?? {
+            base_score: 0,
+            rule_delta: 0,
+            final_score: detail?.score ?? 0,
+            fusion_logic: "缺少评分融合明细，需人工复核该评分项。",
+          },
         };
       }),
     };
@@ -180,7 +179,10 @@ function enrichRuleAuditResultsWithSummary(
   ruleAuditResults: RuleAuditResult[],
 ): RuleAuditResult[] {
   const ruleSummaryById = new Map(
-    listRegisteredRules(state.caseRuleDefinitions ?? []).map((rule) => [rule.rule_id, rule.summary]),
+    listRegisteredRules(state.caseRuleDefinitions ?? []).map((rule) => [
+      rule.rule_id,
+      rule.summary,
+    ]),
   );
 
   return ruleAuditResults.map((rule) => ({
@@ -208,7 +210,9 @@ export async function reportGenerationNode(
       effectiveRuleAuditResults,
     );
     const caseRuleResults = (state.caseRuleDefinitions ?? []).map((definition) => {
-      const matchedRule = effectiveRuleAuditResults.find((rule) => rule.rule_id === definition.rule_id);
+      const matchedRule = effectiveRuleAuditResults.find(
+        (rule) => rule.rule_id === definition.rule_id,
+      );
       return {
         rule_id: definition.rule_id,
         rule_name: definition.rule_name,

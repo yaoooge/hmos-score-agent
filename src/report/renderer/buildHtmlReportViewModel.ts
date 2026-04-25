@@ -150,7 +150,9 @@ function formatEvidence(value: unknown): string {
 }
 
 function formatConfidence(value: unknown): string {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (normalized === "high") {
     return "高";
   }
@@ -298,15 +300,15 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         scoreText: `${score} / ${maxScore}`,
         progressPercent: maxScore > 0 ? Math.min(100, Math.round((score / maxScore) * 100)) : 0,
         comment: String(current.comment ?? "暂无评语。"),
-        summaryLogic: String(
-          asRecord(current.agent_evaluation_summary).logic ?? "暂无理由。",
-        ),
+        summaryLogic: String(asRecord(current.agent_evaluation_summary).logic ?? "暂无理由。"),
         summaryEvidence: formatEvidence(asRecord(current.agent_evaluation_summary).key_evidence),
         items: itemResults.map((item) => {
           const currentItem = asRecord(item);
           const agentEvaluation = asRecord(currentItem.agent_evaluation);
           const scoreFusion = asRecord(currentItem.score_fusion);
-          const ruleImpacts = Array.isArray(currentItem.rule_impacts) ? currentItem.rule_impacts : [];
+          const ruleImpacts = Array.isArray(currentItem.rule_impacts)
+            ? currentItem.rule_impacts
+            : [];
           const deductionTrace = asRecord(agentEvaluation.deduction_trace);
           return {
             name: String(currentItem.item_name ?? ""),
@@ -319,7 +321,9 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
             confidence: formatConfidence(currentItem.confidence ?? "low"),
             reviewRequired: Boolean(currentItem.review_required),
             scoreCalculation: normalizeCalculationText(scoreFusion.fusion_logic),
-            rubricOpinion: String(agentEvaluation.logic ?? currentItem.rationale ?? "暂无评分意见。"),
+            rubricOpinion: String(
+              agentEvaluation.logic ?? currentItem.rationale ?? "暂无评分意见。",
+            ),
             rubricEvidence: formatEvidence(agentEvaluation.evidence_used ?? currentItem.evidence),
             ruleOpinion: formatRuleOpinion(ruleImpacts),
             ruleEvidence: formatRuleEvidence(ruleImpacts),

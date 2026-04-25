@@ -3,11 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import { computeScoreBreakdown } from "../src/scoring/scoringEngine.js";
-import type {
-  ConstraintSummary,
-  RuleAuditResult,
-  CaseRuleDefinition,
-} from "../src/types.js";
+import type { ConstraintSummary, RuleAuditResult, CaseRuleDefinition } from "../src/types.js";
 
 const referenceRoot = path.resolve(process.cwd(), "references/scoring");
 
@@ -122,9 +118,14 @@ test("computeScoreBreakdown snaps penalized submetric scores to declared discret
   assert.equal(arktsMetric?.score, 6);
 
   for (const detail of result.submetricDetails) {
-    const rubricDimension = rubric.dimensions.find((dimension) => dimension.name === detail.dimension_name);
+    const rubricDimension = rubric.dimensions.find(
+      (dimension) => dimension.name === detail.dimension_name,
+    );
     const rubricItem = rubricDimension?.items.find((item) => item.name === detail.metric_name);
-    assert.ok(rubricItem, `missing rubric item for ${detail.dimension_name} / ${detail.metric_name}`);
+    assert.ok(
+      rubricItem,
+      `missing rubric item for ${detail.dimension_name} / ${detail.metric_name}`,
+    );
     assert.equal(
       rubricItem?.scoringBands.some((band) => band.score === detail.score),
       true,

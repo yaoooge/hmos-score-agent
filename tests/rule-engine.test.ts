@@ -154,10 +154,7 @@ test("runRuleEngine routes all runtime case rules to agent candidates and keeps 
     runtimeRules,
   });
 
-  assert.equal(
-    result.caseRuleResults.length,
-    0,
-  );
+  assert.equal(result.caseRuleResults.length, 0);
   assert.equal(
     result.deterministicRuleResults.some((item) => item.rule_id === "HM-REQ-008-01"),
     false,
@@ -364,10 +361,13 @@ test("runRuleEngine limits incremental rule evaluation to changed files when pat
   });
 
   assert.equal(result.evidenceSummary.hasPatch, true);
-  assert.deepEqual(result.evidenceSummary.changedFiles, ["entry/src/main/ets/pages/ChangedPage.ets"]);
+  assert.deepEqual(result.evidenceSummary.changedFiles, [
+    "entry/src/main/ets/pages/ChangedPage.ets",
+  ]);
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => ["ARKTS-FORBID-004", "ARKTS-FORBID-005"].includes(item.rule_id) && item.result === "不满足",
+      (item) =>
+        ["ARKTS-FORBID-004", "ARKTS-FORBID-005"].includes(item.rule_id) && item.result === "不满足",
     ),
     false,
   );
@@ -822,8 +822,7 @@ test("runRuleEngine keeps unsupported rules without direct evidence as 未接入
   assert.equal(
     result.staticRuleAuditResults.some(
       (item) =>
-        item.rule_id === "ARKTS-MUST-001" &&
-        item.conclusion.includes("当前版本未接入对应判定器。"),
+        item.rule_id === "ARKTS-MUST-001" && item.conclusion.includes("当前版本未接入对应判定器。"),
     ),
     true,
   );
@@ -975,7 +974,8 @@ test("runRuleEngine allows Symbol.iterator but rejects Symbol()", async (t) => {
   assert.equal(
     result.deterministicRuleResults.some(
       (item) =>
-        item.rule_id === "ARKTS-FORBID-002" && item.conclusion.includes("仅允许使用 Symbol.iterator"),
+        item.rule_id === "ARKTS-FORBID-002" &&
+        item.conclusion.includes("仅允许使用 Symbol.iterator"),
     ),
     true,
   );
@@ -1065,14 +1065,8 @@ test("runRuleEngine reports text-pattern violations with concrete line locations
   const evidence = result.ruleEvidenceIndex["ARKTS-SHOULD-021"];
 
   assert.equal(ruleResult?.result, "不满足");
-  assert.match(
-    ruleResult?.conclusion ?? "",
-    /entry\/src\/main\/ets\/pages\/Index\.ets:2/,
-  );
-  assert.match(
-    ruleResult?.conclusion ?? "",
-    /entry\/src\/main\/ets\/pages\/Index\.ets:3/,
-  );
+  assert.match(ruleResult?.conclusion ?? "", /entry\/src\/main\/ets\/pages\/Index\.ets:2/);
+  assert.match(ruleResult?.conclusion ?? "", /entry\/src\/main\/ets\/pages\/Index\.ets:3/);
   assert.deepEqual(violation?.affected_items, [
     "entry/src/main/ets/pages/Index.ets:2",
     "entry/src/main/ets/pages/Index.ets:3",

@@ -336,8 +336,7 @@ export function createCaseToolExecutor(config: {
               path: scopePath.relativePath,
               entries: entries
                 .filter(
-                  (entry) =>
-                    !isIgnoredScopePath(path.join(scopePath.relativePath, entry.name)),
+                  (entry) => !isIgnoredScopePath(path.join(scopePath.relativePath, entry.name)),
                 )
                 .map((entry) => ({
                   name: entry.name,

@@ -171,9 +171,7 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "forbidden_pattern",
     "ARKTS-FORBID-024",
     "禁止使用 Function.apply、Function.call、new.target 或 as const 等 ArkTS 不兼容能力。",
-    [
-      "\\bFunction\\.(?:apply|call)\\b|\\bnew\\.target\\b|\\bas\\s+const\\b",
-    ],
+    ["\\bFunction\\.(?:apply|call)\\b|\\bnew\\.target\\b|\\bas\\s+const\\b"],
   ),
   createTextRule(
     "arkts-language",

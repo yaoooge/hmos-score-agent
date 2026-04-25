@@ -45,9 +45,7 @@ function makeMetricKey(dimensionName: string, metricName: string): string {
   return `${dimensionName}::${metricName}`;
 }
 
-function formatScoringBands(
-  scoringBands: Array<{ score: number; criteria: string }>,
-): string {
+function formatScoringBands(scoringBands: Array<{ score: number; criteria: string }>): string {
   return scoringBands.map((band) => `${band.score}分：${band.criteria}`).join(" / ");
 }
 
@@ -58,10 +56,7 @@ function getInitialMetricScore(item: LoadedRubric["dimensions"][number]["items"]
   return Math.max(...item.scoringBands.map((band) => band.score));
 }
 
-function snapScoreToDeclaredBand(
-  score: number,
-  scoringBands: Array<{ score: number }>,
-): number {
+function snapScoreToDeclaredBand(score: number, scoringBands: Array<{ score: number }>): number {
   if (scoringBands.length === 0) {
     return roundScore(score);
   }
@@ -79,11 +74,7 @@ function snapScoreToDeclaredBand(
   }, scoringBands[0].score);
 }
 
-const typeSafetyMetrics = [
-  "ArkTS/ArkUI语法与类型安全",
-  "ArkTS约束遵循度",
-  "ArkTS/ArkUI规范符合度",
-];
+const typeSafetyMetrics = ["ArkTS/ArkUI语法与类型安全", "ArkTS约束遵循度", "ArkTS/ArkUI规范符合度"];
 const staticQualityMetrics = ["静态坏味道控制"];
 const namingMetrics = ["命名表达清晰度", "命名与风格一致性"];
 const complexityMetrics = ["复杂度控制"];
@@ -263,9 +254,7 @@ function selectTriggeredGates(input: ComputeScoreInput): GateTrigger[] {
       .map((rule) => rule.rule_id),
   );
 
-  if (
-    violatedRules.some((rule) => caseMustRuleIds.has(rule.rule_id) && rule.result === "不满足")
-  ) {
+  if (violatedRules.some((rule) => caseMustRuleIds.has(rule.rule_id) && rule.result === "不满足")) {
     triggered.push({ id: "G1", reason: "case_rule: 存在 P0 用例约束不满足。" });
   }
 
@@ -387,8 +376,9 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
         continue;
       }
 
-      const maxScore = rubricItemMap.get(makeMetricKey(detail.dimension_name, detail.metric_name))
-        ?.weight;
+      const maxScore = rubricItemMap.get(
+        makeMetricKey(detail.dimension_name, detail.metric_name),
+      )?.weight;
       if (maxScore === undefined) {
         continue;
       }

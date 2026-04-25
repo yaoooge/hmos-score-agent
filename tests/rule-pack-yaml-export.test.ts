@@ -92,10 +92,10 @@ test("writes one YAML file per registered rule pack", async () => {
 
   const writtenFiles = await writeRulePackYamlFiles(getRegisteredRulePacks(), outputDirectory);
 
-  assert.deepEqual(
-    writtenFiles.map((filePath) => path.basename(filePath)).sort(),
-    ["arkts-language.yaml", "arkts-performance.yaml"],
-  );
+  assert.deepEqual(writtenFiles.map((filePath) => path.basename(filePath)).sort(), [
+    "arkts-language.yaml",
+    "arkts-performance.yaml",
+  ]);
 
   const languageYaml = await fs.readFile(path.join(outputDirectory, "arkts-language.yaml"), "utf8");
   const languageDocument = yaml.load(languageYaml) as {

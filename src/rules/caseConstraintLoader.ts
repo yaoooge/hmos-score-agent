@@ -136,7 +136,10 @@ function normalizeAstSignals(value: unknown): Array<Record<string, string>> {
   return value.map((entry, index) => {
     const signal = expectRecord(entry, `ast[${index}]`);
     return Object.fromEntries(
-      Object.entries(signal).map(([key, fieldValue]) => [key, expectString(fieldValue, `ast[${index}].${key}`)]),
+      Object.entries(signal).map(([key, fieldValue]) => [
+        key,
+        expectString(fieldValue, `ast[${index}].${key}`),
+      ]),
     );
   });
 }

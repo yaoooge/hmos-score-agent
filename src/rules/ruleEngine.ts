@@ -125,9 +125,8 @@ export async function runRuleEngine(input: {
     .filter((rule) => rule.result === "未接入判定器" || caseRuleIds.has(rule.rule_id))
     .map((rule) => {
       const runtimeRule = (input.runtimeRules ?? []).find((item) => item.rule_id === rule.rule_id);
-      const staticPrecheck = evaluatedRuleById.get(rule.rule_id)?.preliminaryData?.static_precheck as
-        | AssistedRuleCandidate["static_precheck"]
-        | undefined;
+      const staticPrecheck = evaluatedRuleById.get(rule.rule_id)?.preliminaryData
+        ?.static_precheck as AssistedRuleCandidate["static_precheck"] | undefined;
       return {
         rule_id: rule.rule_id,
         rule_summary: rule.rule_summary,

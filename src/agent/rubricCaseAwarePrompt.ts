@@ -326,8 +326,7 @@ export function renderRubricCaseAwareFinalAnswerRetryPrompt(input: {
 }): string {
   const interactionPayload = buildRubricCaseAwareInteractionPayload(input.bootstrapPayload);
   const requiredItems = input.bootstrapPayload.rubric_summary.dimension_summaries.flatMap(
-    (dimension) =>
-      dimension.item_summaries.map((item) => `${dimension.name}::${item.name}`),
+    (dimension) => dimension.item_summaries.map((item) => `${dimension.name}::${item.name}`),
   );
 
   return [
@@ -379,7 +378,9 @@ export function renderRubricCaseAwareToolCallRetryPrompt(input: {
       null,
       2,
     ),
-    allowedTools.length > 0 ? `tool 只能从这些 allowed_tools 中选择: ${allowedTools.join(", ")}。` : "",
+    allowedTools.length > 0
+      ? `tool 只能从这些 allowed_tools 中选择: ${allowedTools.join(", ")}。`
+      : "",
     "args 必须是 object；不同工具的 args 形状必须遵守首轮 prompt 中的工具参数说明。",
     input.failureReason ? `上一轮失败原因: ${input.failureReason}` : "",
     `当前回合: ${input.turn}`,

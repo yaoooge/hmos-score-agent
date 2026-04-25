@@ -155,7 +155,9 @@ test("fuseRubricScoreWithRules falls back to top rubric band when rubric output 
   });
 
   for (const detail of result.scoreFusionDetails) {
-    const dimension = snapshot.dimension_summaries.find((item) => item.name === detail.dimension_name);
+    const dimension = snapshot.dimension_summaries.find(
+      (item) => item.name === detail.dimension_name,
+    );
     const metric = dimension?.item_summaries.find((item) => item.name === detail.item_name);
     assert.equal(detail.agent_evaluation.base_score, metric?.scoring_bands[0].score);
   }

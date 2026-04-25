@@ -445,11 +445,7 @@ test("runRubricCaseAwareAgent accepts markdown wrapped final_answer without repa
     rubricSnapshot,
     initialTargetFiles: [],
   });
-  const responses = [[
-    "```json",
-    JSON.stringify(finalAnswer, null, 2),
-    "```",
-  ].join("\n")];
+  const responses = [["```json", JSON.stringify(finalAnswer, null, 2), "```"].join("\n")];
 
   const result = await runRubricCaseAwareAgent({
     caseRoot,

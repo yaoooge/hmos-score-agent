@@ -323,46 +323,74 @@ git diff --no-index -- original workspace > diff/changes.patch
 - 当前仅支持根级 `.gitignore` 的常见规则，例如目录模式、文件模式和简单 `*` 通配
 - 如果 `.gitignore` 缺失或不可读，会回退到内置的保底忽略项
 
-## 5. 当前实现状态（骨架阶段）
-
-已完成：
-
-- LangGraph 节点编排与状态骨架
-- 本地输入加载与产物目录落盘
-- 规则文件读取与审计节点接口
-- 结果 JSON/HTML 产物输出
-- HTTP 上传接口预留
-
-未完成（后续增强）：
-
-- 规则逐条证据级判定（满足/不满足/不涉及的真实判定）
-- rubric 权重计算与硬门槛完整实现
-- 更严格的 schema 校验链路与维度细分评分
-- 远程下载输入（URL 模式）完整接入
-
-## 6. 代码结构速览
+## 5. 代码结构速览
 
 ```text
-src/
-  cli.ts
-  index.ts
-  service.ts
-  config.ts
-  types.ts
-  io/
-    caseLoader.ts
-    artifactStore.ts
-    uploader.ts
-    downloader.ts
-  workflow/
-    state.ts
-    scoreWorkflow.ts
-  nodes/
-    taskUnderstandingNode.ts
-    inputClassificationNode.ts
-    featureExtractionNode.ts
-    ruleAuditNode.ts
-    scoringOrchestrationNode.ts
-    reportGenerationNode.ts
-    persistAndUploadNode.ts
+hmos-score-agent/
+  README.md                         # 使用说明、调试入口与代码结构速览
+  package.json                      # npm 脚本、运行时依赖与开发依赖声明
+  tsconfig.json                     # TypeScript 编译配置
+  eslint.config.mjs                 # ESLint 规则配置
+  .env.example                      # 本地环境变量模板
+  references/
+    scoring/                        # 评分 rubrics、结果 schema 与评分说明文档
+      rubric.yaml                   # 不同任务类型的维度/指标/分值配置
+      report_result_schema.json     # result.json 输出结构校验 schema
+      *_rubric.md                   # full_generation / continuation / bug_fix 评分细则
+    rules/                          # 内置静态规则包的 YAML 导出结果
+  src/
+    index.ts                        # Express API 入口，注册本地评分与远端任务接口
+    cli.ts                          # CLI 入口，按 --case 或默认用例执行评分
+    service.ts                      # 评分服务编排层，连接用例加载、工作流与回调上传
+    config.ts                       # 环境变量读取与默认配置归一化
+    types.ts                        # 远端任务、用例、评分、报告等共享类型定义
+    agent/                          # 模型客户端、case-aware 工具协议与 agent runner
+      agentClient.ts                # 兼容 chat completions 的模型请求封装
+      caseTools.ts                  # 面向模型的文件读取/目录查看等用例工具实现
+      rubricScoring.ts              # rubric 评分 agent 的结构化结果处理
+      taskUnderstanding.ts          # 任务理解相关模型调用与结果归一化
+    io/                             # 文件、网络、日志、patch 与产物读写工具
+      caseLoader.ts                 # 从本地 case 目录加载 input/original/workspace/diff
+      artifactStore.ts              # 管理 .local-cases 下 inputs/intermediate/outputs/logs
+      downloader.ts                 # 下载远端目录清单、zip 或文本资源
+      uploader.ts                   # 向回调地址上传最终评分结果
+      patchGenerator.ts             # 基于 original/workspace 生成 gitignore-aware patch
+      caseLogger.ts                 # 单用例日志写入封装
+    workflow/                       # LangGraph 评分工作流定义与流式观测
+      scoreWorkflow.ts              # 组装评分图节点、边和执行逻辑
+      state.ts                      # 工作流状态字段定义
+      observability/                # 节点标签、摘要、custom event 与日志解释器
+    nodes/                          # 工作流节点实现，每个文件对应一个评分阶段
+      remoteTaskPreparationNode.ts  # 远端任务预处理与初始状态补齐
+      taskUnderstandingNode.ts      # 读取任务材料并生成任务理解结果
+      inputClassificationNode.ts    # 判定 full_generation / continuation / bug_fix
+      ruleAuditNode.ts              # 执行静态规则审计并收集违规证据
+      rubricPreparationNode.ts      # 加载评分 rubrics 与 case 约束
+      rubricScoring*Node.ts         # 构建并执行 rubric agent 评分
+      rule*Node.ts                  # 构建并执行规则辅助 agent、合并规则结论
+      scoreFusionOrchestrationNode.ts # 融合 rubric 分与规则扣分
+      reportGenerationNode.ts       # 生成 result.json/report.html 所需报告数据
+      artifactPostProcessNode.ts    # 报告 HTML 后处理
+      persistAndUploadNode.ts       # 落盘产物并按需回调上传
+    rules/                          # 静态规则系统：规则定义、评估器、证据采集
+      engine/                       # 规则包注册、类型定义与 YAML 导出
+      evaluators/                   # 项目结构、文本模式、case 约束等检测器
+      packs/                        # ArkTS 语言/性能规则包源码
+      ruleEngine.ts                 # 规则执行入口
+    scoring/                        # rubric 加载、基础评分与分数融合逻辑
+      rubricLoader.ts               # 读取并校验 rubric.yaml
+      scoringEngine.ts              # 根据任务类型计算维度与指标基础分
+      scoreFusion.ts                # 融合 agent 评分、规则审计和扣分明细
+    report/                         # 报告 schema 校验与 HTML 渲染
+      schemaValidator.ts            # 写入前校验 result.json schema
+      renderer/                     # HTML view model 构建与模板渲染
+    service/
+      runCaseId.ts                  # 为本地/远端任务生成稳定 caseId
+    tools/                          # 开发/运维脚本入口
+      runInteractiveScore.ts        # 交互式写入模型配置并启动评分
+      generateCasePatch.ts          # 为本地 case 生成 diff/changes.patch
+      generateRulePackYaml.ts       # 导出内置规则包到 references/rules
+  tests/                            # node:test 测试用例与 fixtures
+  docs/superpowers/                 # 历史设计文档、规格与实施计划
+  .local-cases/                     # 本地运行产物目录（运行时生成，默认输出位置）
 ```

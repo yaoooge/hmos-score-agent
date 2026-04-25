@@ -6,10 +6,7 @@ import test from "node:test";
 import { upsertEnvVars } from "../src/io/envFile.js";
 import { resolveDefaultCasePath, runSingleCase } from "../src/service.js";
 import { buildRunCaseId } from "../src/service/runCaseId.js";
-import {
-  normalizeLauncherAnswers,
-  parseLauncherArgs,
-} from "../src/tools/runInteractiveScore.js";
+import { normalizeLauncherAnswers, parseLauncherArgs } from "../src/tools/runInteractiveScore.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "interactive-launcher-"));

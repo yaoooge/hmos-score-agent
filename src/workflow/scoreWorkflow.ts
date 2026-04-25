@@ -147,9 +147,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       .addNode("rubricScoringPromptBuilderNode", (s) =>
         rubricScoringPromptBuilderNode(s, { logger }),
       )
-      .addNode("rubricScoringAgentNode", (s) =>
-        rubricScoringAgentNode(s, { agentClient, logger }),
-      )
+      .addNode("rubricScoringAgentNode", (s) => rubricScoringAgentNode(s, { agentClient, logger }))
       .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
       .addNode("ruleAssessmentAgentNode", (s) =>
         ruleAssessmentAgentNode(s, { agentClient, logger }),

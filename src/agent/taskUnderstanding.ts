@@ -46,8 +46,8 @@ export function buildFallbackConstraintSummary(
     prefersFullGeneration
       ? "任务类型: 倾向 full_generation"
       : prompt.includes("bug") || input.patchSummary.hasPatch
-      ? "任务类型: 倾向 bug_fix 或 continuation"
-      : "任务类型: 倾向 full_generation",
+        ? "任务类型: 倾向 bug_fix 或 continuation"
+        : "任务类型: 倾向 full_generation",
     `目标: ${input.promptText.slice(0, 120) || "原始 prompt 未提供明确目标"}`,
   ];
 
@@ -72,10 +72,10 @@ export function buildFallbackConstraintSummary(
     prefersFullGeneration
       ? "full_generation"
       : prompt.includes("bug")
-      ? "bug_fix"
-      : input.patchSummary.hasPatch
-        ? "continuation"
-        : "full_generation",
+        ? "bug_fix"
+        : input.patchSummary.hasPatch
+          ? "continuation"
+          : "full_generation",
   ];
 
   return {

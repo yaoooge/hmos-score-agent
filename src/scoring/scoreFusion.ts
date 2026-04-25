@@ -43,11 +43,7 @@ function makeMetricKey(dimensionName: string, metricName: string): string {
   return `${dimensionName}::${metricName}`;
 }
 
-const typeSafetyMetrics = [
-  "ArkTS/ArkUI语法与类型安全",
-  "ArkTS约束遵循度",
-  "ArkTS/ArkUI规范符合度",
-];
+const typeSafetyMetrics = ["ArkTS/ArkUI语法与类型安全", "ArkTS约束遵循度", "ArkTS/ArkUI规范符合度"];
 const staticQualityMetrics = ["静态坏味道控制"];
 const namingMetrics = ["命名表达清晰度", "命名与风格一致性"];
 const complexityMetrics = ["复杂度控制"];
@@ -230,10 +226,7 @@ function buildScoringBandsByMetric(
   );
 }
 
-function snapScoreToDeclaredBand(
-  score: number,
-  scoringBands: Array<{ score: number }>,
-): number {
+function snapScoreToDeclaredBand(score: number, scoringBands: Array<{ score: number }>): number {
   if (scoringBands.length === 0) {
     return roundScore(score);
   }
@@ -278,7 +271,9 @@ function selectBaseItems(input: FuseRubricScoreWithRulesInput): RubricScoringIte
   return buildFallbackRubricItems(input.rubric);
 }
 
-function selectTriggeredGateIds(input: FuseRubricScoreWithRulesInput): Array<"G1" | "G2" | "G3" | "G4"> {
+function selectTriggeredGateIds(
+  input: FuseRubricScoreWithRulesInput,
+): Array<"G1" | "G2" | "G3" | "G4"> {
   const violatedRules = input.ruleAuditResults.filter((rule) => rule.result === "不满足");
   const mustViolations = violatedRules.filter((rule) => rule.rule_source === "must_rule");
   const forbiddenViolations = violatedRules.filter(
@@ -458,8 +453,8 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
   const totalScore = scoreCap === undefined ? rawTotalScore : Math.min(rawTotalScore, scoreCap);
   const humanReviewItems =
     input.rubricAgentRunStatus === "success"
-        ? []
-        : [
+      ? []
+      : [
           {
             item: "Rubric Agent 降级",
             current_assessment: "rubric agent 未产出可信扣分依据，当前按满分保留。",

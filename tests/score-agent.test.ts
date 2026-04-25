@@ -328,7 +328,10 @@ test("rubricScoringPromptBuilderNode builds case-aware rubric scoring prompt", a
 test("rubricScoringPromptBuilderNode adds workspace directory summary when changed files exceed initial target limit", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
-  const changedFiles = Array.from({ length: 21 }, (_, index) => `entry/src/main/ets/pages/Page${index}.ets`);
+  const changedFiles = Array.from(
+    { length: 21 },
+    (_, index) => `entry/src/main/ets/pages/Page${index}.ets`,
+  );
 
   const result = await rubricScoringPromptBuilderNode(
     {
@@ -401,10 +404,7 @@ test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", 
   );
   const calls: Array<{ prompt: string; requestTag?: string }> = [];
   const agentClient = {
-    async completeJsonPrompt(
-      prompt: string,
-      options?: { requestTag?: string },
-    ): Promise<string> {
+    async completeJsonPrompt(prompt: string, options?: { requestTag?: string }): Promise<string> {
       calls.push({ prompt, requestTag: options?.requestTag });
       if (calls.length === 1) {
         return JSON.stringify({
@@ -481,7 +481,10 @@ test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", 
   );
   assert.equal(result.rubricAgentRunStatus, "success");
   assert.equal(result.rubricAgentRunnerMode, "case_aware");
-  assert.equal(result.rubricScoringResult?.item_scores.length, rubricSnapshot.dimension_summaries.flatMap((dimension) => dimension.item_summaries).length);
+  assert.equal(
+    result.rubricScoringResult?.item_scores.length,
+    rubricSnapshot.dimension_summaries.flatMap((dimension) => dimension.item_summaries).length,
+  );
   assert.equal(result.rubricAgentTurns?.length, 2);
   assert.equal(result.rubricAgentToolTrace?.length, 1);
   assert.equal(result.rubricAgentRunnerResult?.outcome, "success");
@@ -1395,11 +1398,17 @@ test("reportGenerationNode writes deduction_trace for deducted rubric items only
   );
 
   const scoreComputation = {
-    totalScore: scoreFusionDetails.reduce((sum, detail) => sum + detail.score_fusion.final_score, 0),
+    totalScore: scoreFusionDetails.reduce(
+      (sum, detail) => sum + detail.score_fusion.final_score,
+      0,
+    ),
     hardGateTriggered: false,
     hardGateReason: "",
     overallConclusion: {
-      total_score: scoreFusionDetails.reduce((sum, detail) => sum + detail.score_fusion.final_score, 0),
+      total_score: scoreFusionDetails.reduce(
+        (sum, detail) => sum + detail.score_fusion.final_score,
+        0,
+      ),
       hard_gate_triggered: false,
       summary: "已完成评分。",
     },
@@ -1452,7 +1461,9 @@ test("reportGenerationNode writes deduction_trace for deducted rubric items only
   );
 
   const dimensionResults = result.resultJson?.dimension_results as Array<Record<string, unknown>>;
-  const deductedDimension = dimensionResults.find((dimension) => dimension.dimension_name === firstDimension.name);
+  const deductedDimension = dimensionResults.find(
+    (dimension) => dimension.dimension_name === firstDimension.name,
+  );
   const deductedItem = (deductedDimension?.item_results as Array<Record<string, unknown>>).find(
     (item) => item.item_name === firstItem.name,
   ) as Record<string, unknown>;
@@ -1949,10 +1960,7 @@ test("runScoreWorkflow invokes rubric scoring and rule assessment agents concurr
   let activeCalls = 0;
   let maxActiveCalls = 0;
   const agentClient = {
-    async completeJsonPrompt(
-      _prompt: string,
-      options?: { requestTag?: string },
-    ): Promise<string> {
+    async completeJsonPrompt(_prompt: string, options?: { requestTag?: string }): Promise<string> {
       activeCalls += 1;
       maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
       await delay(40);
@@ -2020,10 +2028,7 @@ test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycl
   let rulePromptCallCount = 0;
   let candidateRuleIds: string[] = [];
   const agentClient = {
-    async completeJsonPrompt(
-      prompt: string,
-      options?: { requestTag?: string },
-    ): Promise<string> {
+    async completeJsonPrompt(prompt: string, options?: { requestTag?: string }): Promise<string> {
       if (options?.requestTag?.startsWith("rubric_case_aware")) {
         throw new Error("rubric mock skipped");
       }
@@ -2120,10 +2125,7 @@ test("runScoreWorkflow preserves partial agent traces when provider fails after 
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
   let callCount = 0;
   const agentClient = {
-    async completeJsonPrompt(
-      _prompt: string,
-      options?: { requestTag?: string },
-    ): Promise<string> {
+    async completeJsonPrompt(_prompt: string, options?: { requestTag?: string }): Promise<string> {
       if (options?.requestTag?.startsWith("rubric_case_aware")) {
         throw new Error("rubric mock skipped");
       }
@@ -2199,18 +2201,9 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
   assert.match(logText, /\[产物后处理artifactPostProcessNode\] 节点开始/);
   assert.match(logText, /\[结果落盘persistAndUploadNode\] 节点开始/);
   assert.doesNotMatch(logText, /featureExtractionNode/);
-  assert.match(
-    logText,
-    /\[任务分类inputClassificationNode\] 节点完成 summary=taskType=bug_fix/,
-  );
-  assert.match(
-    logText,
-    /\[评分融合scoreFusionOrchestrationNode\] 节点完成 summary=totalScore=/,
-  );
-  assert.match(
-    logText,
-    /\[产物后处理artifactPostProcessNode\] 节点完成 summary=htmlLength=/,
-  );
+  assert.match(logText, /\[任务分类inputClassificationNode\] 节点完成 summary=taskType=bug_fix/);
+  assert.match(logText, /\[评分融合scoreFusionOrchestrationNode\] 节点完成 summary=totalScore=/);
+  assert.match(logText, /\[产物后处理artifactPostProcessNode\] 节点完成 summary=htmlLength=/);
 });
 
 test("runScoreWorkflow writes warning logs when agent assistance is skipped", async (t) => {

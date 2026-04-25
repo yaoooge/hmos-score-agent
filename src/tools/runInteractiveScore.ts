@@ -45,9 +45,7 @@ export async function runInteractiveScore(argv: string[] = process.argv.slice(2)
       process.env.MODEL_PROVIDER_API_KEY ||
       "";
     const rawModel =
-      (await rl.question(
-        `模型服务 model [${process.env.MODEL_PROVIDER_MODEL ?? "gpt-5.4"}]: `,
-      )) ||
+      (await rl.question(`模型服务 model [${process.env.MODEL_PROVIDER_MODEL ?? "gpt-5.4"}]: `)) ||
       process.env.MODEL_PROVIDER_MODEL ||
       "gpt-5.4";
     const { baseURL, apiKey, model } = normalizeLauncherAnswers({

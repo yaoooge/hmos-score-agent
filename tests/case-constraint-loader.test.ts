@@ -115,8 +115,5 @@ test("loadCaseConstraintRules rejects unsupported fields instead of ignoring the
   });
   const caseInput = await loadCaseFromPath(caseDir);
 
-  await assert.rejects(
-    () => loadCaseConstraintRules(caseInput),
-    /unexpected_field/,
-  );
+  await assert.rejects(() => loadCaseConstraintRules(caseInput), /unexpected_field/);
 });

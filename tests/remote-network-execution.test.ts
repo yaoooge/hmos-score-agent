@@ -333,41 +333,51 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   resolveBackgroundExecution?.();
 });
 
-test("createRunRemoteTaskHandler queues repeated remote task executions", async () => {
-  let releaseFirstExecution: (() => void) | undefined;
-  let firstExecutionStartedResolve: (() => void) | undefined;
-  let secondExecutionFinishedResolve: (() => void) | undefined;
-  const firstExecutionStarted = new Promise<void>((resolve) => {
-    firstExecutionStartedResolve = resolve;
-  });
-  const secondExecutionFinished = new Promise<void>((resolve) => {
-    secondExecutionFinishedResolve = resolve;
-  });
+test("createRunRemoteTaskHandler executes at most three remote tasks concurrently", async () => {
+  const releases = new Map<number, () => void>();
   const calls: string[] = [];
+  const activeTaskIds = new Set<number>();
+  const startedTaskIds = new Set<number>();
+  let maxActiveExecutions = 0;
+  let startedCount = 0;
+  let startedCountResolve: (() => void) | undefined;
+  let fourthExecutionStartedResolve: (() => void) | undefined;
+  const fourthExecutionStarted = new Promise<void>((resolve) => {
+    fourthExecutionStartedResolve = resolve;
+  });
   const deps = {
     runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
     prepareRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
       calls.push(`prepare:${String(remoteTask.taskId)}`);
+      const taskId = Number(remoteTask.taskId);
       return {
-        taskId: Number(remoteTask.taskId),
+        taskId,
         caseDir: `/tmp/remote-case-${String(remoteTask.taskId)}`,
         message: "任务接收成功，结果将通过 callback 返回",
-        remoteTask: remoteTask as never,
+        remoteTask: {
+          ...remoteTask,
+          testCase: { id: taskId + 100 },
+        } as never,
         workflowState: {} as never,
       };
     },
     executeAcceptedRemoteEvaluationTask: async (acceptedTask: { taskId: number }) => {
       calls.push(`execute:start:${String(acceptedTask.taskId)}`);
-      if (acceptedTask.taskId === 1) {
-        firstExecutionStartedResolve?.();
-        await new Promise<void>((resolve) => {
-          releaseFirstExecution = resolve;
-        });
+      activeTaskIds.add(acceptedTask.taskId);
+      startedTaskIds.add(acceptedTask.taskId);
+      maxActiveExecutions = Math.max(maxActiveExecutions, activeTaskIds.size);
+      startedCount += 1;
+      if (startedCount === 3) {
+        startedCountResolve?.();
       }
+      if (acceptedTask.taskId === 4) {
+        fourthExecutionStartedResolve?.();
+      }
+      await new Promise<void>((resolve) => {
+        releases.set(acceptedTask.taskId, resolve);
+      });
+      activeTaskIds.delete(acceptedTask.taskId);
       calls.push(`execute:end:${String(acceptedTask.taskId)}`);
-      if (acceptedTask.taskId === 2) {
-        secondExecutionFinishedResolve?.();
-      }
     },
     runRemoteEvaluationTask: async () => {
       throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
@@ -375,29 +385,48 @@ test("createRunRemoteTaskHandler queues repeated remote task executions", async 
   };
   const handler = createRunRemoteTaskHandler(deps as never);
 
-  const firstResponse = createResponse();
-  await handler({ body: { taskId: 1 } } as never, firstResponse.response as never);
-  await firstExecutionStarted;
-
-  const secondResponse = createResponse();
-  await handler({ body: { taskId: 2 } } as never, secondResponse.response as never);
-  await Promise.resolve();
-
-  assert.equal(firstResponse.responseState.statusCode, 200);
-  assert.equal(secondResponse.responseState.statusCode, 200);
-  assert.deepEqual(calls, ["prepare:1", "execute:start:1", "prepare:2"]);
-
-  releaseFirstExecution?.();
-  await secondExecutionFinished;
-
-  assert.deepEqual(calls, [
-    "prepare:1",
-    "execute:start:1",
-    "prepare:2",
-    "execute:end:1",
-    "execute:start:2",
-    "execute:end:2",
+  const responses = [1, 2, 3, 4].map(() => createResponse());
+  await Promise.all(
+    [1, 2, 3, 4].map((taskId, index) =>
+      handler(
+        { body: { taskId, testCase: { id: taskId + 100 } } } as never,
+        responses[index]?.response as never,
+      ),
+    ),
+  );
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      startedCountResolve = resolve;
+      if (startedCount >= 3) {
+        resolve();
+      }
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, 20)),
   ]);
+
+  assert.deepEqual(
+    responses.map(({ responseState }) => responseState.statusCode),
+    [200, 200, 200, 200],
+  );
+  assert.deepEqual(
+    [...startedTaskIds].sort((left, right) => left - right),
+    [1, 2, 3],
+  );
+  assert.equal(activeTaskIds.size, 3);
+  assert.equal(maxActiveExecutions, 3);
+
+  releases.get(1)?.();
+  await fourthExecutionStarted;
+
+  assert.deepEqual(
+    [...startedTaskIds].sort((left, right) => left - right),
+    [1, 2, 3, 4],
+  );
+  assert.equal(maxActiveExecutions, 3);
+
+  releases.get(2)?.();
+  releases.get(3)?.();
+  releases.get(4)?.();
 });
 
 test("createRunRemoteTaskHandler returns 504 when a task never enters execution or queue before timeout", async () => {
@@ -462,7 +491,7 @@ test("createRunRemoteTaskHandler logs remote API request, response, and errors",
   const { response } = createResponse();
 
   try {
-    await handler({ body: { taskId: 88 } } as never, response as never);
+    await handler({ body: { taskId: 88, testCase: { id: 188 } } } as never, response as never);
   } finally {
     console.info = originalInfo;
     console.error = originalError;
@@ -470,15 +499,15 @@ test("createRunRemoteTaskHandler logs remote API request, response, and errors",
 
   assert.match(
     logs.join("\n"),
-    /api_request_triggered route=POST \/score\/run-remote-task taskId=88/,
+    /api_request_triggered route=POST \/score\/run-remote-task taskId=88 testCaseId=188/,
   );
   assert.match(
     logs.join("\n"),
-    /api_request_failed route=POST \/score\/run-remote-task taskId=88 error=download failed/,
+    /api_request_failed route=POST \/score\/run-remote-task taskId=88 testCaseId=188 error=download failed/,
   );
   assert.match(
     logs.join("\n"),
-    /api_response_sent route=POST \/score\/run-remote-task taskId=88 status=500 success=false/,
+    /api_response_sent route=POST \/score\/run-remote-task taskId=88 testCaseId=188 status=500 success=false/,
   );
 });
 

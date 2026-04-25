@@ -84,10 +84,7 @@ export function findTopLevelJsonObjectEnd(rawText: string): number {
   return -1;
 }
 
-export function parseSingleJsonObjectStrict<T>(
-  rawText: string,
-  schema: z.ZodSchema<T>,
-): T {
+export function parseSingleJsonObjectStrict<T>(rawText: string, schema: z.ZodSchema<T>): T {
   const trimmed = rawText.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
     throw new StrictJsonProtocolError(

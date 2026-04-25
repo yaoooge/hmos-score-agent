@@ -50,24 +50,19 @@ export async function persistAndUploadNode(
       "intermediate/agent-assisted-rule-candidates.json",
       state.assistedRuleCandidates ?? [],
     );
-    await deps.artifactStore.writeJson(
-      state.caseDir,
-      "intermediate/rubric-agent-result.json",
-      {
-        status: state.rubricAgentRunStatus ?? "skipped",
-        raw_text: state.rubricAgentRawText ?? "",
-        parsed_result: state.rubricScoringResult ?? null,
-        runner_result:
-          state.rubricAgentRunnerResult ?? {
-            outcome:
-              state.rubricAgentRunStatus === "skipped" || state.rubricAgentRunStatus === "not_enabled"
-                ? state.rubricAgentRunStatus
-                : "protocol_error",
-            turns: state.rubricAgentTurns ?? [],
-            tool_trace: state.rubricAgentToolTrace ?? [],
-        },
+    await deps.artifactStore.writeJson(state.caseDir, "intermediate/rubric-agent-result.json", {
+      status: state.rubricAgentRunStatus ?? "skipped",
+      raw_text: state.rubricAgentRawText ?? "",
+      parsed_result: state.rubricScoringResult ?? null,
+      runner_result: state.rubricAgentRunnerResult ?? {
+        outcome:
+          state.rubricAgentRunStatus === "skipped" || state.rubricAgentRunStatus === "not_enabled"
+            ? state.rubricAgentRunStatus
+            : "protocol_error",
+        turns: state.rubricAgentTurns ?? [],
+        tool_trace: state.rubricAgentToolTrace ?? [],
       },
-    );
+    });
     await deps.artifactStore.writeJson(
       state.caseDir,
       "intermediate/rule-agent-result.json",

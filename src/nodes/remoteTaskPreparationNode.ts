@@ -43,7 +43,11 @@ export async function remoteTaskPreparationNode(
     rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-remote-task-"));
     const casePath = path.join(rootDir, `remote-task-${state.remoteTask.taskId}`);
     await fs.mkdir(casePath, { recursive: true });
-    await fs.writeFile(path.join(casePath, "input.txt"), buildRemotePrompt(state.remoteTask), "utf-8");
+    await fs.writeFile(
+      path.join(casePath, "input.txt"),
+      buildRemotePrompt(state.remoteTask),
+      "utf-8",
+    );
     if (shouldMaterializeExpectedConstraints(state.remoteTask.testCase.expectedOutput)) {
       await fs.writeFile(
         path.join(casePath, "expected_constraints.yaml"),

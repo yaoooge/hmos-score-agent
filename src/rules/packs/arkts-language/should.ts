@@ -131,7 +131,7 @@ export const arktsShouldRules: RegisteredRule[] = [
     "arkts-language",
     "should_rule",
     "ARKTS-SHOULD-019",
-    "建议为类属性添加明确的可访问修饰符。",
+    "建议为class的类属性添加明确的可访问修饰符。",
   ),
   createTextRule(
     "arkts-language",

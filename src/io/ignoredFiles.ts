@@ -1,7 +1,10 @@
 export const IGNORED_FILE_NAMES = new Set(["BuildProfile.ets"]);
 
 function normalizeFilePath(filePath: string): string {
-  return filePath.split("\\").join("/").replace(/^\.\/+/, "");
+  return filePath
+    .split("\\")
+    .join("/")
+    .replace(/^\.\/+/, "");
 }
 
 export function isIgnoredCaseFilePath(filePath: string): boolean {
