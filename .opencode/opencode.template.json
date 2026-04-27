@@ -34,6 +34,77 @@
       }
     }
   },
+  "agent": {
+    "hmos-understanding": {
+      "description": "Extracts task constraints from preprocessed case input and returns only the required JSON object.",
+      "mode": "primary",
+      "prompt": "{file:./prompts/hmos-understanding-system.md}",
+      "temperature": 0.1,
+      "permission": {
+        "read": "allow",
+        "glob": "deny",
+        "grep": "deny",
+        "list": "deny",
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "skill": "deny",
+        "lsp": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "codesearch": "deny",
+        "question": "deny",
+        "external_directory": "deny",
+        "doom_loop": "deny"
+      }
+    },
+    "hmos-rubric-scoring": {
+      "description": "Scores HarmonyOS generated code against rubric items and returns only the required JSON object.",
+      "mode": "primary",
+      "prompt": "{file:./prompts/hmos-rubric-scoring-system.md}",
+      "temperature": 0.1,
+      "permission": {
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "skill": "deny",
+        "lsp": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "codesearch": "deny",
+        "question": "deny",
+        "external_directory": "deny",
+        "doom_loop": "deny"
+      }
+    },
+    "hmos-rule-assessment": {
+      "description": "Assesses assisted rule candidates in a read-only sandbox and returns only the required JSON object.",
+      "mode": "primary",
+      "prompt": "{file:./prompts/hmos-rule-assessment-system.md}",
+      "temperature": 0.1,
+      "permission": {
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "skill": "deny",
+        "lsp": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "codesearch": "deny",
+        "question": "deny",
+        "external_directory": "deny",
+        "doom_loop": "deny"
+      }
+    }
+  },
   "permission": {
     "*": "deny",
     "read": {

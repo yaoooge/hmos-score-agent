@@ -69,6 +69,7 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   let prompt = "";
   let requestTag = "";
   let title = "";
+  let agent = "";
   const sandboxRoot = "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox";
   const result = await runOpencodeRuleAssessment({
     sandboxRoot,
@@ -77,6 +78,7 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
       prompt = request.prompt;
       requestTag = request.requestTag;
       title = request.title ?? "";
+      agent = request.agent ?? "";
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
@@ -92,6 +94,7 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   assert.match(prompt, /patch\//);
   assert.equal(requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(title, requestTag);
+  assert.equal(agent, "hmos-rule-assessment");
   assert.equal(result.outcome, "success");
   assert.deepEqual(result.final_answer?.rule_assessments[0], {
     rule_id: "R1",
@@ -164,7 +167,7 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after r
   assert.doesNotMatch(calls[1]?.prompt ?? "", /bootstrap_payload:/);
 });
 
-test("runOpencodeRuleAssessment rejects incomplete rule coverage", async () => {
+test("runOpencodeRuleAssessment fills incomplete rule coverage from the local skeleton", async () => {
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/sandbox/case",
     bootstrapPayload: payload(),
@@ -179,6 +182,108 @@ test("runOpencodeRuleAssessment rejects incomplete rule coverage", async () => {
     }),
   });
 
-  assert.equal(result.outcome, "protocol_error");
-  assert.match(result.failure_reason ?? "", /missing=R1/);
+  assert.equal(result.outcome, "success");
+  assert.equal(result.final_answer?.rule_assessments[0]?.rule_id, "R1");
+  assert.equal(result.final_answer?.rule_assessments[0]?.decision, "uncertain");
+  assert.equal(result.final_answer?.rule_assessments[0]?.needs_human_review, true);
+});
+
+test("runOpencodeRuleAssessment normalizes assessments through the local rule skeleton", async () => {
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/sandbox/case",
+    bootstrapPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify({
+        summary: { assistant_scope: "读取 sandbox 后完成判定。", overall_confidence: "medium" },
+        rule_assessments: [
+          {
+            rule_id: "UNKNOWN",
+            decision: "violation",
+            confidence: "high",
+            reason: "未知规则应被过滤。",
+            evidence_used: ["generated/entry/src/main.ets"],
+            needs_human_review: false,
+          },
+          finalAnswer().rule_assessments[0],
+          {
+            ...finalAnswer().rule_assessments[0],
+            decision: "violation",
+            reason: "重复规则应被本地骨架去重。",
+          },
+        ],
+      }),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.final_answer?.rule_assessments.length, 1);
+  assert.deepEqual(result.final_answer?.rule_assessments[0], finalAnswer().rule_assessments[0]);
+});
+
+test("runOpencodeRuleAssessment fills omitted candidates as uncertain review items", async () => {
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/sandbox/case",
+    bootstrapPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify({
+        summary: { assistant_scope: "未覆盖所有候选。", overall_confidence: "low" },
+        rule_assessments: [],
+      }),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.deepEqual(result.final_answer?.rule_assessments[0], {
+    rule_id: "R1",
+    decision: "uncertain",
+    confidence: "low",
+    reason: "agent 输出遗漏该候选规则，本地骨架补为 uncertain，需人工复核。",
+    evidence_used: [],
+    needs_human_review: true,
+  });
+});
+
+test("runOpencodeRuleAssessment retry prompt targets concrete protocol failures", async () => {
+  const calls: Array<{ requestTag: string; prompt: string }> = [];
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    bootstrapPayload: payload(),
+    runPrompt: async (request) => {
+      calls.push({ requestTag: request.requestTag, prompt: request.prompt });
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "{}\n",
+        rawText:
+          calls.length === 1
+            ? JSON.stringify({
+                summary: { assistant_scope: "bad", overall_confidence: "medium" },
+                rule_assessments: [
+                  {
+                    rule_id: "R1",
+                    decision: "pass",
+                    confidence: "high",
+                    reason: "ok",
+                    evidence_used: [],
+                    needs_human_review: false,
+                    extra: "not allowed",
+                  },
+                ],
+              })
+            : JSON.stringify(finalAnswer()),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1]?.prompt ?? "", /schema_error/);
+  assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
+  assert.match(calls[1]?.prompt ?? "", /删除未声明字段/);
 });

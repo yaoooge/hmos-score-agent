@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.json\" \"*.mjs\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"*.json\" \"*.mjs\""
+    "format:fix": "prettier --fix \"src/**/*.ts\" \"tests/**/*.ts\" \"*.json\" \"*.mjs\""
   },
   "dependencies": {
     "@langchain/core": "^1.1.40",

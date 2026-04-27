@@ -57,7 +57,7 @@ test("ensureOpencodeCliAvailable fails when opencode cannot be resolved", async 
   );
 });
 
-test("serve manager rejects an already healthy external server", async () => {
+test("serve manager reuses an already healthy server", async () => {
   let spawnCount = 0;
   const manager = createOpencodeServeManager(runtimeConfig(), {
     checkHealth: async () => true,
@@ -67,10 +67,7 @@ test("serve manager rejects an already healthy external server", async () => {
     },
   });
 
-  await assert.rejects(
-    () => manager.start(),
-    /端口已被外部进程占用/,
-  );
+  await manager.start();
 
   assert.equal(spawnCount, 0);
   assert.equal(manager.serverUrl(), "http://127.0.0.1:4096");
@@ -105,6 +102,48 @@ test("serve manager starts opencode serve and waits for health", async () => {
   ]);
   assert.ok(!spawned[0]?.args.includes("--pure"));
   assert.equal(spawned[0]?.env?.OPENCODE_CONFIG, "/repo/.opencode/runtime/opencode.generated.json");
+});
+
+test("serve manager terminates an unhealthy existing server before starting a replacement", async () => {
+  const healthResults = [false, true];
+  let terminateCount = 0;
+  let spawnCount = 0;
+  const manager = createOpencodeServeManager(runtimeConfig(), {
+    checkHealth: async () => healthResults.shift() ?? true,
+    terminateExistingServer: async () => {
+      terminateCount += 1;
+    },
+    spawnProcess: () => {
+      spawnCount += 1;
+      return createFakeChild();
+    },
+    sleep: async () => undefined,
+  });
+
+  await manager.start();
+
+  assert.equal(terminateCount, 1);
+  assert.equal(spawnCount, 1);
+});
+
+test("serve manager health returns false when health endpoint does not respond", async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    })) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const manager = createOpencodeServeManager(runtimeConfig());
+
+  const result = await Promise.race([
+    manager.health(),
+    new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), 3000)),
+  ]);
+
+  assert.equal(result, false);
 });
 
 test("serve manager reports early opencode serve exit with stderr", async () => {

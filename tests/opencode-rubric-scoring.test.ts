@@ -102,6 +102,7 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   let prompt = "";
   let requestTag = "";
   let title = "";
+  let agent = "";
   const sandboxRoot = "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox";
   const result = await runOpencodeRubricScoring({
     sandboxRoot,
@@ -110,6 +111,7 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
       prompt = request.prompt;
       requestTag = request.requestTag;
       title = request.title ?? "";
+      agent = request.agent ?? "";
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
@@ -133,6 +135,7 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   assert.match(prompt, /deduction_trace 是对象/);
   assert.equal(requestTag, "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(title, requestTag);
+  assert.equal(agent, "hmos-rubric-scoring");
   assert.equal(result.outcome, "success");
   assert.equal(result.final_answer?.item_scores[0]?.dimension_name, "功能正确性");
   assert.equal(result.final_answer?.item_scores[0]?.score, 40);
@@ -166,7 +169,8 @@ test("runOpencodeRubricScoring retries once with strict format guidance after pr
   assert.match(calls[1]?.prompt ?? "", /最终答案的第一个非空字符必须是 \{/);
   assert.match(calls[1]?.prompt ?? "", /输出前必须自检 JSON 语法/);
   assert.match(calls[1]?.prompt ?? "", /每个 item_scores 条目必须先闭合自身对象/);
-  assert.match(calls[1]?.prompt ?? "", /rubric_retry_payload/);
+  assert.match(calls[1]?.prompt ?? "", /沿用上一轮对话中的 scoring_payload/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /scoring_payload:/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /original_prompt_summary/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /dimension_summaries/);
@@ -198,7 +202,8 @@ test("runOpencodeRubricScoring retries once with strict format guidance after re
   assert.match(calls[1]?.prompt ?? "", /rubric 评分 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
   assert.match(calls[1]?.prompt ?? "", /正确输出格式/);
-  assert.match(calls[1]?.prompt ?? "", /rubric_retry_payload/);
+  assert.match(calls[1]?.prompt ?? "", /沿用上一轮对话中的 scoring_payload/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /scoring_payload:/);
 });
 
@@ -243,4 +248,82 @@ test("runOpencodeRubricScoring rejects replacement scoring fields", async () => 
 
   assert.equal(result.outcome, "protocol_error");
   assert.match(result.failure_reason ?? "", /summary/);
+});
+
+test("runOpencodeRubricScoring normalizes item scores through the local rubric skeleton", async () => {
+  const answer = finalAnswer();
+  const rawItem = { ...answer.item_scores[0], max_score: 999 } as Record<string, unknown>;
+  delete rawItem.matched_band_score;
+  const duplicate = { ...answer.item_scores[0], rationale: "重复项应被本地骨架去重。" };
+  const unexpected = {
+    ...answer.item_scores[0],
+    dimension_name: "未知维度",
+    item_name: "未知评分项",
+  };
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify({
+        ...answer,
+        item_scores: [unexpected, rawItem, duplicate],
+      }),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.final_answer?.item_scores.length, 1);
+  assert.equal(result.final_answer?.item_scores[0]?.dimension_name, "功能正确性");
+  assert.equal(result.final_answer?.item_scores[0]?.item_name, "缺陷修复完整度");
+  assert.equal(result.final_answer?.item_scores[0]?.max_score, 40);
+  assert.equal(result.final_answer?.item_scores[0]?.matched_band_score, 40);
+  assert.equal(result.final_answer?.item_scores[0]?.rationale, "点击处理路径已补齐。");
+});
+
+test("runOpencodeRubricScoring retry prompt targets concrete protocol failures", async () => {
+  const calls: Array<{ requestTag: string; prompt: string }> = [];
+  const answer = finalAnswer();
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    scoringPayload: payload(),
+    runPrompt: async (request) => {
+      calls.push({ requestTag: request.requestTag, prompt: request.prompt });
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "{}\n",
+        rawText:
+          calls.length === 1
+            ? JSON.stringify({
+                ...answer,
+                item_scores: [
+                  {
+                    ...answer.item_scores[0],
+                    score: 20,
+                    matched_band_score: 20,
+                    deduction_trace: {
+                      code_locations: ["generated/entry/src/main.ets:1"],
+                      impact_scope: "影响范围",
+                      rubric_comparison: "缺少固定比较短语",
+                      deduction_reason: "扣分原因",
+                      improvement_suggestion: "改进建议",
+                    },
+                  },
+                ],
+              })
+            : JSON.stringify(answer),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1]?.prompt ?? "", /invalid_deduction_trace=功能正确性::缺陷修复完整度/);
+  assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
+  assert.match(calls[1]?.prompt ?? "", /invalid_deduction_trace/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
 });

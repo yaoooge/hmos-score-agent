@@ -3,6 +3,8 @@ import type { ChildProcess } from "node:child_process";
 import { setTimeout as sleepTimer } from "node:timers/promises";
 import type { OpencodeRuntimeConfig } from "./opencodeConfig.js";
 
+const HEALTH_CHECK_TIMEOUT_MS = 2000;
+
 export class OpencodeServeError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -26,6 +28,7 @@ type ServeManagerDeps = {
     args: string[],
     options: { env: NodeJS.ProcessEnv; stdio: ["ignore", "pipe", "pipe"] },
   ) => SpawnedProcess;
+  terminateExistingServer?: (config: OpencodeRuntimeConfig) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
 };
 
@@ -49,8 +52,12 @@ async function defaultCommandExists(): Promise<boolean> {
 }
 
 async function defaultCheckHealth(serverUrl: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
   try {
-    const response = await fetch(`${serverUrl.replace(/\/$/, "")}/global/health`);
+    const response = await fetch(`${serverUrl.replace(/\/$/, "")}/global/health`, {
+      signal: controller.signal,
+    });
     if (!response.ok) {
       return false;
     }
@@ -58,6 +65,8 @@ async function defaultCheckHealth(serverUrl: string): Promise<boolean> {
     return data?.healthy === true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -73,12 +82,46 @@ function defaultSpawnProcess(
   return spawn(command, args, options);
 }
 
+async function collectListeningPids(port: number): Promise<number[]> {
+  return new Promise((resolve) => {
+    const child = spawn("lsof", ["-ti", `tcp:${String(port)}`, "-sTCP:LISTEN"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const stdout: Buffer[] = [];
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.on("error", () => resolve([]));
+    child.on("exit", () => {
+      const pids = Buffer.concat(stdout)
+        .toString("utf-8")
+        .split(/\s+/)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      resolve([...new Set(pids)]);
+    });
+  });
+}
+
+async function defaultTerminateExistingServer(config: OpencodeRuntimeConfig): Promise<void> {
+  const pids = await collectListeningPids(config.port);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Process may have exited between discovery and termination.
+    }
+  }
+  if (pids.length > 0) {
+    await sleepTimer(500);
+  }
+}
+
 export function createOpencodeServeManager(
   config: OpencodeRuntimeConfig,
   deps: ServeManagerDeps = {},
 ): OpencodeServeManager {
   const checkHealth = deps.checkHealth ?? defaultCheckHealth;
   const spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
+  const terminateExistingServer = deps.terminateExistingServer ?? defaultTerminateExistingServer;
   const sleep = deps.sleep ?? sleepTimer;
   let child: SpawnedProcess | undefined;
 
@@ -122,14 +165,15 @@ export function createOpencodeServeManager(
 
   return {
     async start(): Promise<void> {
-      if (child && (await health())) {
+      if (await health()) {
         return;
       }
-      if (!child && (await health())) {
-        throw new OpencodeServeError(
-          `opencode serve 端口已被外部进程占用，无法保证使用工程级配置：${config.serverUrl}`,
-        );
+
+      if (child) {
+        child.kill("SIGTERM");
+        child = undefined;
       }
+      await terminateExistingServer(config);
 
       const args = [
         "serve",

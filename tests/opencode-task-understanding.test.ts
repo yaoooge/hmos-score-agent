@@ -42,6 +42,7 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   let prompt = "";
   let requestTag = "";
   let title = "";
+  let agent = "";
   const sandboxRoot = "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox";
   const result = await runOpencodeTaskUnderstanding({
     sandboxRoot,
@@ -50,6 +51,7 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
       prompt = request.prompt;
       requestTag = request.requestTag;
       title = request.title ?? "";
+      agent = request.agent ?? "";
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
@@ -73,6 +75,7 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   assert.doesNotMatch(prompt, /第二步只按 patch 和 metadata 指向的相关文件读取上下文/);
   assert.equal(requestTag, "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(title, requestTag);
+  assert.equal(agent, "hmos-understanding");
   assert.equal(result.outcome, "success");
   assert.deepEqual(result.summary?.classificationHints, ["bug_fix", "has_patch"]);
   assert.equal(result.raw_events, "{}\n");
@@ -129,8 +132,8 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /上一次任务理解输出无效/);
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
-  assert.match(calls[1]?.prompt ?? "", /正确输出格式/);
-  assert.match(calls[1]?.prompt ?? "", /最终答案的第一个非空字符必须是 \{/);
+  assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /最终答案的第一个非空字符必须是 \{/);
   assert.match(calls[1]?.prompt ?? "", /本次重试禁止读取任何文件/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /agent_input:/);
   assert.match(calls[1]?.prompt ?? "", /只根据 constraint_draft 输出最终 JSON/);
@@ -204,7 +207,7 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /上一次任务理解输出无效/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
-  assert.match(calls[1]?.prompt ?? "", /正确输出格式/);
+  assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.match(calls[1]?.prompt ?? "", /本次重试禁止读取任何文件/);
   assert.match(calls[1]?.prompt ?? "", /禁止调用 read、glob、grep、find 或任何工具/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /agent_input:/);

@@ -93,6 +93,25 @@ async function ensureRuntimeDirectories(runtimeDir: string): Promise<void> {
   );
 }
 
+async function copyPromptFiles(input: { sourceDir: string; targetDir: string }): Promise<void> {
+  await fs.mkdir(input.targetDir, { recursive: true });
+  const entries = await fs.readdir(input.sourceDir, { withFileTypes: true }).catch((error: unknown) => {
+    throw new OpencodeConfigError(
+      `无法读取 opencode system prompt 目录：${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => {
+        const sourcePath = path.join(input.sourceDir, entry.name);
+        const targetPath = path.join(input.targetDir, entry.name);
+        await fs.copyFile(sourcePath, targetPath);
+      }),
+  );
+}
+
 export async function createOpencodeRuntimeConfig(input: {
   repoRoot: string;
   env?: NodeJS.ProcessEnv;
@@ -117,6 +136,7 @@ export async function createOpencodeRuntimeConfig(input: {
   const runtimeDir = path.join(configDir, "runtime");
   const configPath = path.join(runtimeDir, "opencode.generated.json");
   const templatePath = path.join(configDir, "opencode.template.json");
+  const promptsDir = path.join(configDir, "prompts");
 
   const template = await fs.readFile(templatePath, "utf-8").catch((error: unknown) => {
     throw new OpencodeConfigError(
@@ -134,6 +154,14 @@ export async function createOpencodeRuntimeConfig(input: {
   }
 
   await ensureRuntimeDirectories(runtimeDir);
+  await copyPromptFiles({
+    sourceDir: promptsDir,
+    targetDir: path.join(runtimeDir, "prompts"),
+  });
+  await copyPromptFiles({
+    sourceDir: promptsDir,
+    targetDir: path.join(runtimeDir, "xdg-config", "opencode", "prompts"),
+  });
   const generatedConfigText = `${generatedText.trim()}\n`;
   await fs.writeFile(configPath, generatedConfigText, "utf-8");
   await fs.writeFile(

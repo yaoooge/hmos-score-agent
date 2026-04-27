@@ -30,8 +30,8 @@ const opencodeRubricScoringSchema = z
           dimension_name: z.string().min(1),
           item_name: z.string().min(1),
           score: z.number(),
-          max_score: z.number(),
-          matched_band_score: z.number(),
+          max_score: z.number().optional(),
+          matched_band_score: z.number().optional(),
           rationale: z.string().min(1),
           evidence_used: z.array(z.string()),
           confidence: confidenceSchema,
@@ -64,6 +64,8 @@ const opencodeRubricScoringSchema = z
     main_issues: z.array(z.string()),
   })
   .strict();
+
+type ParsedRubricScoringResult = z.infer<typeof opencodeRubricScoringSchema>;
 
 export type OpencodeRubricScoringOutcome = "success" | "request_failed" | "protocol_error";
 
@@ -163,26 +165,37 @@ function summarizeRetryFailureReason(reason: string): string {
   return reason.split(/\r?\n/, 1)[0]?.slice(0, 120) || "未知输出格式错误";
 }
 
-function compactRubricRetryPayload(payload: RubricScoringPayload): Record<string, unknown> {
-  return {
-    case_id: payload.case_context.case_id,
-    task_type: payload.case_context.task_type,
-    task_understanding: payload.task_understanding,
-    rubric_items: payload.rubric_summary.dimension_summaries.flatMap((dimension) =>
-      dimension.item_summaries.map((item) => ({
-        dimension_name: dimension.name,
-        item_name: item.name,
-        max_score: item.weight,
-        allowed_scores: item.scoring_bands.map((band) => band.score),
-      })),
-    ),
-    hard_gate_ids: payload.rubric_summary.hard_gates.map((gate) => gate.id),
-    initial_target_files: (payload.initial_target_files ?? []).slice(0, 20),
-  };
+function retryFailureGuidance(reason: string): string[] {
+  const guidance = [
+    "协议错误修复清单:",
+    `- listed protocol errors: ${summarizeRetryFailureReason(reason)}`,
+    "- 只修复 listed protocol errors，禁止重新评分，禁止改变未列出的 item 判断。",
+  ];
+  if (reason.includes("missing=")) {
+    guidance.push("- missing: 只补齐列出的缺失 item，分值必须来自对应 allowed score。无充分证据时保持满分并降低 confidence 或 review_required。");
+  }
+  if (reason.includes("duplicate=")) {
+    guidance.push("- duplicate: 只保留每个 dimension_name + item_name 的一个条目，删除重复条目。");
+  }
+  if (reason.includes("unexpected=")) {
+    guidance.push("- unexpected: 删除不在 rubric item 列表中的未知 item。");
+  }
+  if (reason.includes("invalid_band=")) {
+    guidance.push("- invalid_band: 将 score 改为对应 item 的 allowed score，并设置 matched_band_score 与 score 相同。");
+  }
+  if (reason.includes("invalid_weight=")) {
+    guidance.push("- invalid_weight: 将 max_score 改为对应 item 的 max_score。");
+  }
+  if (reason.includes("invalid_deduction_trace=")) {
+    guidance.push("- invalid_deduction_trace: 只补齐 listed item 的 deduction_trace；rubric_comparison 必须同时包含“未命中”和“命中当前档”。");
+  }
+  if (reason.includes("Unrecognized key") || reason.includes("Expected") || reason.includes("Invalid input")) {
+    guidance.push("- schema_error: 删除未声明字段，补齐缺失字段，并修正字段类型。");
+  }
+  return guidance;
 }
 
 function renderRubricScoringRetryPrompt(input: {
-  scoringPayload: RubricScoringPayload;
   retryContext: { failureReason: string; rawText: string };
 }): string {
   return [
@@ -192,12 +205,14 @@ function renderRubricScoringRetryPrompt(input: {
     "输入边界（必须遵守）:",
     "- 不要重新读取原始 prompt、rubric 全量说明或大段上下文。",
     "- 不要输出分析过程、评分步骤、Markdown、代码块或自然语言前后缀。",
-    "- 只根据 rubric_retry_payload 覆盖所有评分项。",
+    "- 不要重新评分，不要修改上一轮评分判断，只修正最终 JSON 的字段、去重、覆盖和格式问题。",
+    "- 沿用上一轮对话中的 scoring_payload、rubric item 列表、允许分值和证据边界。",
+    ...retryFailureGuidance(input.retryContext.failureReason),
     "",
     "任务:",
     "1. 输出一个合法 JSON object。",
-    "2. item_scores 必须覆盖 rubric_retry_payload.rubric_items 中每个 dimension_name + item_name，不能新增、遗漏或重复。",
-    "3. 每个 score 必须来自对应 allowed_scores；matched_band_score 必须与 score 相同；max_score 必须等于 max_score。",
+    "2. item_scores 必须覆盖上一轮 scoring_payload 中每个 dimension_name + item_name，不能新增、遗漏或重复。",
+    "3. 每个 score 必须来自对应 allowed score；matched_band_score 必须与 score 相同；max_score 必须等于该 item 的 max_score。",
     "4. 对扣分项必须提供 deduction_trace。",
     "5. evidence_used 只能填写 sandbox 相对路径。",
     "6. risks 必须是 array；其中每一项必须且只能包含 level、title、description、evidence 四个 string 字段。",
@@ -206,11 +221,8 @@ function renderRubricScoringRetryPrompt(input: {
     "最终输出要求:",
     "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
     "- 只输出下方结构中列出的字段。",
-    "- JSON 字段必须完全符合下面结构，不能增加额外字段。",
+    "- JSON 字段必须完全符合下面结构，不能增加额外字段，中文描述应简洁清晰。",
     ...strictOutputInstructions(),
-    "",
-    "rubric_retry_payload:",
-    stringifyForPrompt(compactRubricRetryPayload(input.scoringPayload)),
   ].join("\n");
 }
 
@@ -222,7 +234,6 @@ function renderRubricScoringPrompt(input: {
   const payload = input.scoringPayload;
   if (input.retryContext) {
     return renderRubricScoringRetryPrompt({
-      scoringPayload: input.scoringPayload,
       retryContext: input.retryContext,
     });
   }
@@ -243,6 +254,7 @@ function renderRubricScoringPrompt(input: {
     "3. 每个 item 的 score 必须等于该 item 声明的某个 scoring_bands.score，matched_band_score 必须与 score 相同，max_score 必须等于 item weight。",
     "4. 对扣分项必须提供 deduction_trace，说明未命中更高档、命中当前档、扣分原因和改进建议。",
     "5. evidence_used 只能填写 sandbox 内相对路径，例如 generated/、original/、patch/、metadata/、references/ 下的路径。",
+    "6. 优先读取 patch/effective.patch，评分范围仅限patch代码，可结合generated/相关上下文，避免大量阅读无关代码。",
     "",
     "最终输出要求:",
     "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
@@ -345,6 +357,57 @@ function validateRubricCoverage(
   return parts.length > 0 ? { ok: false, failureReason: parts.join("; ") } : { ok: true };
 }
 
+function rubricSkeleton(rubricSnapshot: LoadedRubricSnapshot): Array<{
+  key: string;
+  dimensionName: string;
+  itemName: string;
+  weight: number;
+  allowedScores: Set<number>;
+}> {
+  return rubricSnapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      key: itemKey(dimension.name, item.name),
+      dimensionName: dimension.name,
+      itemName: item.name,
+      weight: item.weight,
+      allowedScores: new Set(item.scoring_bands.map((band) => band.score)),
+    })),
+  );
+}
+
+function normalizeRubricResult(
+  finalAnswer: ParsedRubricScoringResult,
+  rubricSnapshot: LoadedRubricSnapshot,
+): RubricScoringResult {
+  const itemsByKey = new Map<string, ParsedRubricScoringResult["item_scores"][number]>();
+  for (const item of finalAnswer.item_scores) {
+    const key = itemKey(item.dimension_name, item.item_name);
+    if (!itemsByKey.has(key)) {
+      itemsByKey.set(key, item);
+    }
+  }
+
+  const normalizedItems: RubricScoringResult["item_scores"] = [];
+  for (const skeletonItem of rubricSkeleton(rubricSnapshot)) {
+    const item = itemsByKey.get(skeletonItem.key);
+    if (!item) {
+      continue;
+    }
+    normalizedItems.push({
+      ...item,
+      dimension_name: skeletonItem.dimensionName,
+      item_name: skeletonItem.itemName,
+      max_score: skeletonItem.weight,
+      matched_band_score: item.score,
+    });
+  }
+
+  return {
+    ...finalAnswer,
+    item_scores: normalizedItems,
+  };
+}
+
 function parseRubricRunResult(
   runResult: OpencodeRunResult,
   rubricSnapshot: LoadedRubricSnapshot,
@@ -372,7 +435,7 @@ function parseRubricRunResult(
     };
   }
 
-  const finalAnswer: RubricScoringResult = parsed.data;
+  const finalAnswer = normalizeRubricResult(parsed.data, rubricSnapshot);
   const validation = validateRubricCoverage(finalAnswer, rubricSnapshot);
   if (!validation.ok) {
     return {
@@ -410,6 +473,7 @@ export async function runOpencodeRubricScoring(
       sandboxRoot: input.sandboxRoot,
       requestTag: inputRequestTag,
       title: inputRequestTag,
+      agent: "hmos-rubric-scoring",
     });
   }
 

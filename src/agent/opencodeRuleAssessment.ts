@@ -82,6 +82,28 @@ function summarizeRetryFailureReason(reason: string): string {
   return reason.split(/\r?\n/, 1)[0]?.slice(0, 120) || "未知输出格式错误";
 }
 
+function retryFailureGuidance(reason: string): string[] {
+  const guidance = [
+    "协议错误修复清单:",
+    `- listed protocol errors: ${summarizeRetryFailureReason(reason)}`,
+    "- 只修复 listed protocol errors，禁止重新判定，禁止改变未列出的 rule 判断。",
+  ];
+  if (reason.includes("missing=")) {
+    guidance.push("- missing: 只补齐列出的候选 rule_id；无法确认时 decision=\"uncertain\" 且 needs_human_review=true。");
+  }
+  if (reason.includes("duplicate=")) {
+    guidance.push("- duplicate: 只保留每个 rule_id 的一个判定，删除重复条目。");
+  }
+  if (reason.includes("unexpected=")) {
+    guidance.push("- unexpected: 删除不在候选规则列表中的未知 rule_id。");
+  }
+  if (reason.includes("Unrecognized key") || reason.includes("Expected") || reason.includes("Invalid input")) {
+    guidance.push("- schema_error: 删除未声明字段，补齐缺失字段，并修正字段类型。");
+    guidance.push("- 删除未声明字段，例如 extra、message、risk_level 等。");
+  }
+  return guidance;
+}
+
 function compactRuleRetryPayload(payload: AgentBootstrapPayload): Record<string, unknown> {
   return {
     case_id: payload.case_context.case_id,
@@ -110,6 +132,7 @@ function renderRuleAssessmentRetryPrompt(input: {
     "- 不要重新读取原始 prompt、rubric 全量内容或大段上下文。",
     "- 不要输出分析过程、Markdown、代码块或自然语言前后缀。",
     "- 只根据 rule_retry_payload 覆盖所有候选 rule_id。",
+    ...retryFailureGuidance(input.retryContext.failureReason),
     "",
     "任务:",
     "1. 输出一个合法 JSON object。",
@@ -155,7 +178,7 @@ function renderRuleAssessmentPrompt(input: {
     "",
     "任务:",
     "1. 阅读 bootstrap_payload 中的候选规则、任务理解、rubric 摘要和目标文件。",
-    "2. 只基于 sandbox 内可见文件完成每条候选规则的判定。",
+    "2. 只基于 patch/effective.patch 内可见文件完成每条候选规则的判定，generated/ 仅用于相关上下文辅助。",
     "3. 必须覆盖 assisted_rule_candidates 中的每一个 rule_id，不能新增、遗漏或重复 rule_id。",
     "4. 无法确认时使用 decision=\"uncertain\"，并设置 needs_human_review=true。",
     "5. evidence_used 只能填写 sandbox 内相对路径，例如 generated/、original/、patch/、metadata/、references/ 下的路径。",
@@ -216,6 +239,39 @@ function validateRuleCoverage(
   return parts.length > 0 ? { ok: false, failureReason: parts.join("; ") } : { ok: true };
 }
 
+function normalizeRuleAssessmentResult(
+  finalAnswer: AgentAssistedRuleResult,
+  candidates: AssistedRuleCandidate[],
+): AgentAssistedRuleResult {
+  const assessmentsByRuleId = new Map<string, AgentAssistedRuleResult["rule_assessments"][number]>();
+  for (const assessment of finalAnswer.rule_assessments) {
+    if (!assessmentsByRuleId.has(assessment.rule_id)) {
+      assessmentsByRuleId.set(assessment.rule_id, assessment);
+    }
+  }
+
+  return {
+    ...finalAnswer,
+    rule_assessments: candidates.map((candidate) => {
+      const assessment = assessmentsByRuleId.get(candidate.rule_id);
+      if (assessment) {
+        return {
+          ...assessment,
+          rule_id: candidate.rule_id,
+        };
+      }
+      return {
+        rule_id: candidate.rule_id,
+        decision: "uncertain",
+        confidence: "low",
+        reason: "agent 输出遗漏该候选规则，本地骨架补为 uncertain，需人工复核。",
+        evidence_used: [],
+        needs_human_review: true,
+      };
+    }),
+  };
+}
+
 function parseRuleAssessmentRunResult(
   runResult: OpencodeRunResult,
   candidates: AssistedRuleCandidate[],
@@ -243,7 +299,7 @@ function parseRuleAssessmentRunResult(
     };
   }
 
-  const finalAnswer: AgentAssistedRuleResult = parsed.data;
+  const finalAnswer = normalizeRuleAssessmentResult(parsed.data, candidates);
   const validation = validateRuleCoverage(finalAnswer, candidates);
   if (!validation.ok) {
     return {
@@ -282,6 +338,7 @@ export async function runOpencodeRuleAssessment(
       sandboxRoot: input.sandboxRoot,
       requestTag: inputRequestTag,
       title: inputRequestTag,
+      agent: "hmos-rule-assessment",
     });
   }
 

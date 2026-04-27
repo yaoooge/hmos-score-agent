@@ -29,28 +29,6 @@ function stringifyForPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function taskUnderstandingOutputFormat(): Record<string, unknown> {
-  return {
-    explicitConstraints: ["中文短句：从 prompt 提取任务类型、场景、目标和明确要求"],
-    contextualConstraints: ["中文短句：从工程结构和相关代码提取模块、分层、技术栈和实现边界"],
-    implicitConstraints: ["中文短句：从 patch 和上下文提取修改范围、侵入程度、改动类型和隐含风险"],
-    classificationHints: ["full_generation | continuation | bug_fix | has_patch 等短标签"],
-  };
-}
-
-function strictOutputInstructions(): string[] {
-  return [
-    "强制输出格式:",
-    "- 最终答案的第一个非空字符必须是 {。",
-    "- 最后一个非空字符必须是 }。",
-    "- 不要输出分析过程、说明文字、Markdown、代码块或自然语言前后缀。",
-    "- 不要写“以下是 JSON”。",
-    "- 必须直接按“正确输出格式”输出 JSON object。",
-    "正确输出格式:",
-    stringifyForPrompt(taskUnderstandingOutputFormat()),
-  ];
-}
-
 function uniqueShortList(values: string[], limit: number): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, limit);
 }
@@ -136,8 +114,7 @@ function renderRetryTaskUnderstandingPrompt(input: {
     "4. 不要补充分析过程，不要输出 Markdown，不要输出工具调用意图。",
     "",
     "最终输出要求:",
-    "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
-    ...strictOutputInstructions(),
+    "- 只输出一个 JSON object，严格遵守 system prompt 中的正确输出格式。",
     "",
     "constraint_draft:",
     stringifyForPrompt(draft),
@@ -176,10 +153,7 @@ function renderTaskUnderstandingPrompt(input: {
     "5. classificationHints: 给后续任务分类使用的短标签，例如 full_generation、continuation、bug_fix、has_patch。",
     "",
     "最终输出要求:",
-    "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
-    "- 顶层只能包含 explicitConstraints、contextualConstraints、implicitConstraints、classificationHints。",
-    "- 四个字段都必须是中文短句数组，可以包含英文分类标签。",
-    ...strictOutputInstructions(),
+    "- 只输出一个 JSON object，严格遵守 system prompt 中的正确输出格式。",
     "",
     "agent_input:",
     stringifyForPrompt(input.agentInput),
@@ -225,6 +199,7 @@ export async function runOpencodeTaskUnderstanding(
       sandboxRoot: input.sandboxRoot,
       requestTag: inputRequestTag,
       title: inputRequestTag,
+      agent: "hmos-understanding",
     });
   }
 

@@ -43,7 +43,7 @@ function createFakeChild(): EventEmitter & {
   return child;
 }
 
-test("runOpencodePrompt invokes attached opencode run without a custom agent", async () => {
+test("runOpencodePrompt invokes attached opencode run with the requested custom agent", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-"));
   const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-"));
   const child = createFakeChild();
@@ -54,6 +54,7 @@ test("runOpencodePrompt invokes attached opencode run without a custom agent", a
       prompt: "请评分",
       sandboxRoot,
       requestTag: "rule-assessment",
+      agent: "hmos-rule-assessment",
     },
     deps: {
       spawnProcess: (command, args, options) => {
@@ -81,7 +82,8 @@ test("runOpencodePrompt invokes attached opencode run without a custom agent", a
     "json",
     "--title",
   ]);
-  assert.equal(spawned[0]?.args.includes("--agent"), false);
+  assert.equal(spawned[0]?.args.includes("--agent"), true);
+  assert.equal(spawned[0]?.args[spawned[0]?.args.indexOf("--agent") + 1], "hmos-rule-assessment");
   assert.equal(spawned[0]?.env?.OPENCODE_CONFIG, path.join(runtimeDir, "opencode.generated.json"));
   const promptPath = path.join(sandboxRoot, "metadata", "opencode-prompts", "rule-assessment.md");
   assert.equal(await fs.readFile(promptPath, "utf-8"), "请评分");

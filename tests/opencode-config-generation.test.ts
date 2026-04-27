@@ -27,6 +27,11 @@ async function copyOpencodeTemplate(repoRoot: string): Promise<void> {
     path.join(sourceRoot, ".opencode", "opencode.template.json"),
     path.join(repoRoot, ".opencode", "opencode.template.json"),
   );
+  await fs.cp(
+    path.join(sourceRoot, ".opencode", "prompts"),
+    path.join(repoRoot, ".opencode", "prompts"),
+    { recursive: true },
+  );
 }
 
 test("createOpencodeRuntimeConfig reports missing required environment variables", async () => {
@@ -89,7 +94,10 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   const generatedText = await fs.readFile(runtime.configPath, "utf-8");
   assert.doesNotMatch(generatedText, /\$\{/);
   assert.doesNotMatch(generatedText, /default_agent/);
-  assert.doesNotMatch(generatedText, /"agent"\s*:/);
+  assert.match(generatedText, /"agent"\s*:/);
+  assert.match(generatedText, /"hmos-understanding"\s*:/);
+  assert.match(generatedText, /"hmos-rubric-scoring"\s*:/);
+  assert.match(generatedText, /"hmos-rule-assessment"\s*:/);
 
   const generated = JSON.parse(generatedText) as {
     model?: string;
@@ -127,6 +135,64 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
     "opencode.json",
   );
   assert.equal(await fs.readFile(xdgConfigPath, "utf-8"), generatedText);
+
+  assert.match(
+    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-understanding-system.md"), "utf-8"),
+    /正确输出格式/,
+  );
+  assert.match(
+    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rubric-scoring-system.md"), "utf-8"),
+    /正确输出格式/,
+  );
+  assert.match(
+    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rule-assessment-system.md"), "utf-8"),
+    /正确输出格式/,
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "xdg-config",
+        "opencode",
+        "prompts",
+        "hmos-understanding-system.md",
+      ),
+      "utf-8",
+    ),
+    /正确输出格式/,
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "xdg-config",
+        "opencode",
+        "prompts",
+        "hmos-rubric-scoring-system.md",
+      ),
+      "utf-8",
+    ),
+    /正确输出格式/,
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "xdg-config",
+        "opencode",
+        "prompts",
+        "hmos-rule-assessment-system.md",
+      ),
+      "utf-8",
+    ),
+    /正确输出格式/,
+  );
 
   assert.equal(runtime.env.OPENCODE_CONFIG, runtime.configPath);
   assert.equal(runtime.env.OPENCODE_CONFIG_DIR, runtime.configDir);

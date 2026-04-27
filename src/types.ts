@@ -33,10 +33,11 @@ export interface RemoteEvaluationTask {
 
 export interface RemoteCallbackPayload {
   taskId: number;
-  status: "completed" | "failed";
-  totalScore: number;
-  maxScore: number;
-  resultData: Record<string, unknown>;
+  status: "pending" | "running" | "completed" | "failed";
+  totalScore?: number;
+  maxScore?: number;
+  resultData?: Record<string, unknown>;
+  errorMessage?: string;
 }
 
 // CaseInput 描述单条评分用例的 before/after/prompt/patch 四元组。

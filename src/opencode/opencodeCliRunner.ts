@@ -9,6 +9,7 @@ export interface OpencodeRunRequest {
   sandboxRoot: string;
   requestTag: string;
   title?: string;
+  agent?: string;
 }
 
 export interface OpencodeRunResult {
@@ -139,8 +140,13 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
     "json",
     "--title",
     input.request.title ?? input.request.requestTag,
-    `Read and follow the prompt file at ${promptRelativePath}. Return only the requested final JSON object.`,
   ];
+  if (input.request.agent) {
+    args.push("--agent", input.request.agent);
+  }
+  args.push(
+    `Read and follow the prompt file at ${promptRelativePath}. Return only the requested final JSON object.`,
+  );
 
   return new Promise<OpencodeRunResult>((resolve, reject) => {
     const stdout: Buffer[] = [];
