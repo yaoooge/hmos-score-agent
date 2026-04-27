@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 # 阿里云 ECS 单实例更新部署脚本。
-# 前提：系统依赖、Node.js、opencode CLI、运行用户和工程目录均已安装/创建。
+# 前提：系统依赖、Node.js、opencode CLI 和工程目录均已安装/创建。
+# 若运行用户不存在，脚本会自动创建并修正工程目录归属。
 # 流程：拉取/更新代码仓 -> 生成缺失的 .env -> npm ci -> build -> 写入/重启 systemd -> 健康检查。
 #
 # 用法：
@@ -62,12 +63,15 @@ check_existing_environment() {
   done
 
   if ! id "${APP_USER}" >/dev/null 2>&1; then
-    die "运行用户不存在：${APP_USER}。请先完成首次安装。"
+    log "运行用户不存在，自动创建：${APP_USER}"
+    useradd --system --create-home --shell /bin/bash "${APP_USER}"
   fi
 
   if [[ ! -d "${APP_DIR}/.git" ]]; then
     die "工程目录不是 git 仓库：${APP_DIR}。请先完成首次安装或确认 APP_DIR。"
   fi
+
+  chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 }
 
 checkout_code() {
