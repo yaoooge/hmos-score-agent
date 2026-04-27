@@ -107,6 +107,70 @@ test("remoteTaskPreparationNode converts RemoteEvaluationTask into caseInput", a
   assert.equal(typeof result.remoteTaskRootDir, "string");
 });
 
+test("remoteTaskPreparationNode supports full generation tasks without original project URL", async (t) => {
+  const workspaceUrl = "https://remote.example.com/workspace.json";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+  const requestedUrls: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requestedUrls.push(url);
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let generatedValue: number = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  const result = await remoteTaskPreparationNode({
+    caseDir: tempCaseDir,
+    remoteTask: {
+      taskId: 98,
+      testCase: {
+        id: 45,
+        name: "full_generation_007",
+        type: "new_development",
+        description: "从0到1生成茶饮元服务",
+        input: "实现茶饮订单元服务",
+        expectedOutput: "",
+        fileUrl: "",
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+        diffFileUrl: "",
+      },
+      token: "remote-token",
+      callback: "https://remote.example.com/callback",
+    },
+  } as never);
+
+  assert.equal(result.caseInput?.caseId, "remote-task-98");
+  assert.equal(result.originalFileCount, 0);
+  assert.equal(result.workspaceFileCount, 1);
+  assert.equal(result.caseInput?.originalProjectProvided, false);
+  assert.ok(result.sourceCasePath);
+  assert.deepEqual(requestedUrls, [workspaceUrl]);
+  assert.deepEqual(await fs.readdir(path.join(result.sourceCasePath, "original")), []);
+  assert.equal(
+    await fs.readFile(
+      path.join(result.sourceCasePath, "workspace", "entry/src/main/ets/pages/Index.ets"),
+      "utf-8",
+    ),
+    "let generatedValue: number = 2;\n",
+  );
+});
+
 test("remoteTaskPreparationNode accepts zip archives for original and workspace bundles", async (t) => {
   const originalUrl = "https://remote.example.com/original.zip";
   const workspaceUrl = "https://remote.example.com/workspace.zip";

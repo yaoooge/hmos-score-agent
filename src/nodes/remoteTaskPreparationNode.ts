@@ -56,10 +56,13 @@ export async function remoteTaskPreparationNode(
       );
     }
 
-    const originalFiles = await downloadManifestToDirectory(
-      state.remoteTask.testCase.fileUrl,
-      path.join(casePath, "original"),
-    );
+    const originalDir = path.join(casePath, "original");
+    const originalFiles = state.remoteTask.testCase.fileUrl.trim()
+      ? await downloadManifestToDirectory(state.remoteTask.testCase.fileUrl, originalDir)
+      : [];
+    if (originalFiles.length === 0) {
+      await fs.mkdir(originalDir, { recursive: true });
+    }
     const workspaceFiles = await downloadManifestToDirectory(
       state.remoteTask.executionResult.outputCodeUrl,
       path.join(casePath, "workspace"),
