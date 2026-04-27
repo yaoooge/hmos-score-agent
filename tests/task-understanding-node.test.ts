@@ -5,7 +5,6 @@ import path from "node:path";
 import test from "node:test";
 import { ArtifactStore } from "../src/io/artifactStore.js";
 import { taskUnderstandingNode } from "../src/nodes/taskUnderstandingNode.js";
-import type { TaskUnderstandingAgentInput } from "../src/types.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-task-understanding-"));
@@ -14,6 +13,26 @@ async function makeTempDir(t: test.TestContext): Promise<string> {
   });
   return dir;
 }
+
+function createTaskUnderstandingOpencodeMock() {
+  return {
+    async runPrompt(request: { requestTag: string }) {
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify({
+          explicitConstraints: ["任务类型: full_generation"],
+          contextualConstraints: ["保持工程结构"],
+          implicitConstraints: ["基于 patch 评估"],
+          classificationHints: ["full_generation", "has_patch"],
+        }),
+        elapsedMs: 1,
+      };
+    },
+  };
+}
+
+const referenceRoot = path.resolve(process.cwd(), "references/scoring");
 
 test("taskUnderstandingNode uses agent input from prompt, original structure and patch, then persists summary", async (t) => {
   const rootDir = await makeTempDir(t);
@@ -76,11 +95,14 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     "utf-8",
   );
 
-  const calls: TaskUnderstandingAgentInput[] = [];
-  const agentClient = {
-    async understandTask(input: TaskUnderstandingAgentInput): Promise<string> {
-      calls.push(input);
-      return JSON.stringify({
+  const prompts: string[] = [];
+  const opencode = {
+    async runPrompt(request: { requestTag: string; prompt: string; sandboxRoot: string }) {
+      prompts.push(request.prompt);
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify({
         explicitConstraints: [
           "任务类型: bug_fix",
           "行业: 餐饮",
@@ -94,7 +116,9 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
           "改动类型: UI 接入与筛选逻辑",
         ],
         classificationHints: ["bug_fix", "has_patch"],
-      });
+        }),
+        elapsedMs: 1,
+      };
     },
   };
 
@@ -109,20 +133,13 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
         patchPath,
       },
     } as never,
-    { agentClient, artifactStore },
+    { opencode, referenceRoot, artifactStore },
   );
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.promptText, "修复餐厅列表页评分筛选 bug");
-  assert.equal(calls[0]?.projectStructure.modulePaths.includes("entry"), true);
-  assert.equal(
-    calls[0]?.projectStructure.representativeFiles.includes("entry/src/main/ets/pages/Index.ets"),
-    true,
-  );
-  assert.deepEqual(calls[0]?.patchSummary.changedFiles, [
-    "entry/src/main/ets/pages/Index.ets",
-    "entry/src/main/ets/restaurant/viewmodels/RestaurantListVM.ts",
-  ]);
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0] ?? "", /修复餐厅列表页评分筛选 bug/);
+  assert.match(prompts[0] ?? "", /entry\/src\/main\/ets\/pages\/Index\.ets/);
+  assert.match(prompts[0] ?? "", /entry\/src\/main\/ets\/restaurant\/viewmodels\/RestaurantListVM\.ts/);
 
   assert.deepEqual(result.constraintSummary?.explicitConstraints, [
     "任务类型: bug_fix",
@@ -145,6 +162,7 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     ),
     true,
   );
+  assert.equal(typeof result.opencodeSandboxRoot, "string");
 
   const persisted = JSON.parse(
     await fs.readFile(path.join(caseDir, "intermediate", "constraint-summary.json"), "utf-8"),
@@ -205,7 +223,7 @@ test("taskUnderstandingNode generates patch when case patch is absent and loads 
         expectedConstraintsPath,
       },
     } as never,
-    { artifactStore },
+    { artifactStore, referenceRoot, opencode: createTaskUnderstandingOpencodeMock() },
   );
 
   assert.equal(typeof result.effectivePatchPath, "string");
@@ -261,7 +279,7 @@ test("taskUnderstandingNode regenerates patch when provided patch file is empty"
         patchPath,
       },
     } as never,
-    { artifactStore },
+    { artifactStore, referenceRoot, opencode: createTaskUnderstandingOpencodeMock() },
   );
 
   assert.equal(result.caseInput?.patchPath, path.join(caseDir, "intermediate", "effective.patch"));
@@ -297,7 +315,7 @@ test("taskUnderstandingNode creates a workspace-against-empty patch when origina
         originalProjectProvided: false,
       },
     } as never,
-    { artifactStore },
+    { artifactStore, referenceRoot, opencode: createTaskUnderstandingOpencodeMock() },
   );
 
   assert.equal(result.caseInput?.originalProjectProvided, false);

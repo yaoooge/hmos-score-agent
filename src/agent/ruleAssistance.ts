@@ -4,18 +4,12 @@ import type {
   AgentRunStatus,
   AgentBootstrapPayload,
   AssistedRuleCandidate,
-  CaseAwareAgentFinalAnswer,
   ConstraintSummary,
   LoadedRubricSnapshot,
   RuleAuditResult,
   TaskType,
 } from "../types.js";
 import type { LoadedRubric } from "../scoring/rubricLoader.js";
-import {
-  createRuleAgentToolContract,
-  SHARED_CASE_TOOL_ARGUMENT_LINES,
-  SHARED_CASE_TOOL_CATALOG_LINE,
-} from "./caseAwareToolContract.js";
 
 type SelectAssistedRuleCandidatesInput = {
   evidenceByRuleId?: Record<
@@ -51,7 +45,7 @@ type BuildAgentPromptPayloadInput = {
 type MergeRuleAuditResultsInput = {
   deterministicRuleResults: RuleAuditResult[];
   assistedRuleCandidates: AssistedRuleCandidate[];
-  agentFinalAnswer?: CaseAwareAgentFinalAnswer;
+  agentFinalAnswer?: AgentAssistedRuleResult;
 };
 
 type MergeRuleAuditResultsOutput = {
@@ -81,7 +75,7 @@ function normalizeGeneratedProjectPathForTools(
   input: BuildAgentPromptPayloadInput,
 ): string {
   const normalizedFilePath = toPosixPath(filePath).replace(/^\.\//, "");
-  if (normalizedFilePath.startsWith("workspace/") || normalizedFilePath.startsWith("original/")) {
+  if (normalizedFilePath.startsWith("generated/") || normalizedFilePath.startsWith("original/")) {
     return normalizedFilePath;
   }
 
@@ -90,7 +84,7 @@ function normalizeGeneratedProjectPathForTools(
       return toPosixPath(path.relative(input.caseRoot, filePath));
     }
     if (isPathInside(input.caseInput.generatedProjectPath, filePath)) {
-      return `workspace/${toPosixPath(path.relative(input.caseInput.generatedProjectPath, filePath))}`;
+      return `generated/${toPosixPath(path.relative(input.caseInput.generatedProjectPath, filePath))}`;
     }
     if (isPathInside(input.caseInput.originalProjectPath, filePath)) {
       return `original/${toPosixPath(path.relative(input.caseInput.originalProjectPath, filePath))}`;
@@ -98,7 +92,7 @@ function normalizeGeneratedProjectPathForTools(
     return normalizedFilePath;
   }
 
-  return `workspace/${normalizedFilePath}`;
+  return `generated/${normalizedFilePath}`;
 }
 
 function normalizeAssistedRuleCandidatePaths(
@@ -208,7 +202,7 @@ export function buildRubricSnapshot(rubric: LoadedRubric): LoadedRubricSnapshot 
   };
 }
 
-// buildAgentBootstrapPayload 把评分上下文组织成 case-aware runner 的 bootstrap 载荷。
+// buildAgentBootstrapPayload 把评分上下文组织成 opencode 规则判定载荷。
 export function buildAgentBootstrapPayload(
   input: BuildAgentPromptPayloadInput,
 ): AgentBootstrapPayload {
@@ -233,80 +227,16 @@ export function buildAgentBootstrapPayload(
     rubric_summary: input.rubricSnapshot,
     assisted_rule_candidates: assistedRuleCandidates,
     initial_target_files: initialTargetFiles,
-    tool_contract: createRuleAgentToolContract(),
-    response_contract: {
-      action_enum: ["tool_call", "final_answer"],
-      output_language: "zh-CN",
-      json_only: true,
-    },
   };
 }
 
-// renderAgentSystemPrompt 生成跨轮次稳定生效的 case-aware 协议约束。
-export function renderAgentSystemPrompt(payload: AgentBootstrapPayload): string {
-  const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
-  const exampleRuleId = candidateRuleIds[0] ?? "RULE-ID-EXAMPLE";
-  const toolCallExample = {
-    action: "tool_call",
-    tool: "read_patch",
-    args: payload.case_context.effective_patch_path ? { path: "intermediate/effective.patch" } : {},
-    reason: "先查看补丁内容以定位候选规则相关证据。",
-  };
-  const finalAnswerExample = {
-    action: "final_answer",
-    summary: {
-      assistant_scope: "基于补丁和必要文件上下文完成候选规则辅助判定。",
-      overall_confidence: "medium",
-    },
-    rule_assessments: [
-      {
-        rule_id: exampleRuleId,
-        decision: "uncertain",
-        confidence: "low",
-        reason: "当前证据不足以稳定判断该规则是否满足，需要人工复核。",
-        evidence_used: ["workspace/path/to/evidence.ets"],
-        needs_human_review: true,
-      },
-    ],
-  };
-
-  return [
-    "你是评分工作流中的 case-aware 辅助判定模块。",
-    "你可以在受限预算内调用 case 目录只读工具来补查上下文。",
-    "你只能返回 tool_call 或 final_answer 两种 JSON action。",
-    "一次只允许输出一个 JSON object，不要输出多个 JSON object，不要把多个 action 串在一起。",
-    "合法 tool_call 示例，后续所有 tool_call 必须严格遵守该形状,不允许缺失字段：",
-    JSON.stringify(toolCallExample, null, 2),
-    "合法 final_answer 示例，后续所有 final_answer 必须严格遵守该形状,不允许缺失字段：",
-    JSON.stringify(finalAnswerExample, null, 2),
-    "final_answer 中的 decision 只能是 violation、pass、not_applicable、uncertain。",
-    "final_answer 中的 confidence 只能是 high、medium、low。",
-    "示例只展示结构，实际输出时必须替换为本次真实证据；final_answer.rule_assessments 必须覆盖全部候选 rule_id。",
-    "代码评测只针对 patch：effective_patch_path / read_patch 是判定规则是否影响本次提交的首要证据。",
-    "原工程上下文只用于辅助理解，不作为单独扣分依据；不要因为原工程已有问题而判定本次 patch 违规。",
-    "对于非 case_rule 的 must_rule，如果 patch 中未发现与该规则相关的新增或修改代码，应判定 decision=pass、needs_human_review=false，并说明补丁未见相关改动。",
-    "如果证据不足，必须在对应 rule_assessments 中将 needs_human_review 置为 true。",
-    "所有描述型文案必须使用中文。",
-    SHARED_CASE_TOOL_CATALOG_LINE,
-    `工具预算：max_tool_calls=${payload.tool_contract.max_tool_calls}, max_total_bytes=${payload.tool_contract.max_total_bytes}, max_files=${payload.tool_contract.max_files}。`,
-    "工具参数必须严格匹配以下结构，不允许自造字段名：",
-    ...SHARED_CASE_TOOL_ARGUMENT_LINES,
-    "禁止输出 markdown、代码块或任何额外解释。",
-    "输出字段仅限上方 canonical schema 中出现的字段。",
-    "顶层 final_answer 必须直接包含 action、summary、rule_assessments。",
-    "请优先从 initial_target_files 和 effective_patch_path 开始收集证据，再决定是否继续读取其他文件。",
-    "最终只对 assisted_rule_candidates 中的候选规则给出判断，不要改写本地静态规则结果。",
-  ].join("\n");
-}
-
-// renderAgentBootstrapPrompt 生成 case-aware runner 的首轮 user prompt。
 export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
   const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
   const interactionPayload = buildAgentInteractionPayload(payload);
 
   return [
-    "请基于 system prompt 中的 case-aware 辅助判定协议完成本次候选规则判定。",
-    `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；final_answer.rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
+    "请基于 opencode sandbox 完成本次候选规则判定。",
+    `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
     candidateRuleIds.length > 0
       ? `本次必须覆盖的 rule_id: ${candidateRuleIds.join(", ")}。`
       : "当前没有 assisted_rule_candidates，只有在上游误调用时才可能看到本提示。",
@@ -408,7 +338,7 @@ function mapAgentDecisionToRuleResult(
 
 function isNonCaseMustRuleAbsentFromPatch(
   candidate: AssistedRuleCandidate,
-  assessment: CaseAwareAgentFinalAnswer["rule_assessments"][number],
+  assessment: AgentAssistedRuleResult["rule_assessments"][number],
 ): boolean {
   if (
     candidate.rule_source !== "must_rule" ||
@@ -424,7 +354,7 @@ function isNonCaseMustRuleAbsentFromPatch(
 
 function mapAgentAssessmentToRuleResult(
   candidate: AssistedRuleCandidate,
-  assessment: CaseAwareAgentFinalAnswer["rule_assessments"][number],
+  assessment: AgentAssistedRuleResult["rule_assessments"][number],
 ): RuleAuditResult {
   if (isNonCaseMustRuleAbsentFromPatch(candidate, assessment)) {
     return {

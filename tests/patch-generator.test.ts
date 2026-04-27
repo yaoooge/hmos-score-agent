@@ -68,6 +68,62 @@ test("generateCasePatch excludes transient workspace artifacts from the diff", a
   assert.doesNotMatch(patchText, /build\/artifact\.txt/);
 });
 
+test("generateCasePatch excludes all dot directories and resources directories", async (t) => {
+  const caseDir = await createCaseFixture(t);
+  const patchPath = path.join(caseDir, "diff", "changes.patch");
+
+  await fs.mkdir(path.join(caseDir, "workspace", "src", ".cache"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "workspace", "entry", "src", "main", "resources"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "src", ".cache", "generated.txt"),
+    "generated cache\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "entry", "src", "main", "resources", "string.json"),
+    "{\"app_name\":\"Demo\"}\n",
+    "utf-8",
+  );
+
+  await generateCasePatch(caseDir, patchPath);
+
+  const patchText = await fs.readFile(patchPath, "utf-8");
+  assert.doesNotMatch(patchText, /src\/\.cache\/generated\.txt/);
+  assert.doesNotMatch(patchText, /entry\/src\/main\/resources\/string\.json/);
+  assert.match(patchText, /restaurant-grid/);
+});
+
+test("generateCasePatch excludes src test directories", async (t) => {
+  const caseDir = await createCaseFixture(t);
+  const patchPath = path.join(caseDir, "diff", "changes.patch");
+
+  await fs.mkdir(path.join(caseDir, "workspace", "entry", "src", "test"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(caseDir, "workspace", "entry", "src", "ohosTest", "ets", "test"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "entry", "src", "test", "LocalUnit.test.ets"),
+    "local unit test\n",
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "workspace", "entry", "src", "ohosTest", "ets", "test", "Ability.test.ets"),
+    "ohos test\n",
+    "utf-8",
+  );
+
+  await generateCasePatch(caseDir, patchPath);
+
+  const patchText = await fs.readFile(patchPath, "utf-8");
+  assert.doesNotMatch(patchText, /entry\/src\/test\/LocalUnit\.test\.ets/);
+  assert.doesNotMatch(patchText, /entry\/src\/ohosTest\/ets\/test\/Ability\.test\.ets/);
+  assert.match(patchText, /restaurant-grid/);
+});
+
 test("generateCasePatch ignores files named BuildProfile.ets", async (t) => {
   const caseDir = await createCaseFixture(t);
   const patchPath = path.join(caseDir, "diff", "changes.patch");

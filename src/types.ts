@@ -198,15 +198,6 @@ export interface AssistedRuleCandidate {
   is_case_rule?: boolean;
 }
 
-export type CaseToolName =
-  | "read_patch"
-  | "list_dir"
-  | "read_file"
-  | "read_files"
-  | "read_file_chunk"
-  | "grep_in_files"
-  | "read_json";
-
 export interface CaseRuleResult {
   rule_id: string;
   rule_name: string;
@@ -262,17 +253,6 @@ export interface AgentBootstrapPayload {
   rubric_summary: LoadedRubricSnapshot;
   assisted_rule_candidates: AssistedRuleCandidate[];
   initial_target_files: string[];
-  tool_contract: {
-    allowed_tools: CaseToolName[];
-    max_tool_calls: number;
-    max_total_bytes: number;
-    max_files: number;
-  };
-  response_contract: {
-    action_enum: ["tool_call", "final_answer"];
-    output_language: "zh-CN";
-    json_only: true;
-  };
 }
 
 export interface RubricScoringPayload {
@@ -290,14 +270,7 @@ export interface RubricScoringPayload {
   initial_target_files?: string[];
   workspace_project_structure?: ProjectStructureSummary;
   workspace_project_structure_note?: string;
-  tool_contract?: {
-    allowed_tools: CaseToolName[];
-    max_tool_calls: number;
-    max_total_bytes: number;
-    max_files: number;
-  };
   response_contract: {
-    action_enum?: ["tool_call", "final_answer"];
     output_language: "zh-CN";
     json_only: true;
     required_top_level_fields?: [
@@ -366,86 +339,20 @@ export interface AgentAssistedRuleResult {
   rule_assessments: AgentRuleAssessment[];
 }
 
-export interface CaseAwareAgentToolCallAction {
-  action: "tool_call";
-  tool: CaseToolName;
-  args: Record<string, unknown>;
-  reason?: string;
-}
-
-export interface CaseAwareAgentFinalAnswer extends AgentAssistedRuleResult {
-  action: "final_answer";
-}
-
-export type CaseAwareAgentPlannerOutput = CaseAwareAgentToolCallAction | CaseAwareAgentFinalAnswer;
-
-export interface CaseToolBudgetSnapshot {
-  usedToolCalls: number;
-  usedBytes: number;
-  readFileCount: number;
-  remainingToolCalls: number;
-  remainingBytes: number;
-  remainingFileSlots: number;
-}
-
-export interface CaseToolTraceItem {
-  turn: number;
-  tool: CaseToolName;
-  args: Record<string, unknown>;
-  ok: boolean;
-  error_code?: string;
-  error_message?: string;
-  paths_read: string[];
-  bytes_returned: number;
-  truncated: boolean;
-  budget_after_call: CaseToolBudgetSnapshot;
-}
-
-export interface CaseAwareAgentTurn {
-  turn: number;
-  action: "tool_call" | "final_answer";
-  status: "success" | "error";
-  raw_output_text: string;
-  tool?: CaseToolName;
-  args?: Record<string, unknown>;
-  reason?: string;
-}
-
-export type CaseAwareRunnerOutcome =
-  | "success"
-  | "request_failed"
-  | "protocol_error"
-  | "tool_budget_exhausted";
-
-export interface CaseAwareRunnerResult {
-  outcome: CaseAwareRunnerOutcome;
-  final_answer?: CaseAwareAgentFinalAnswer;
+export interface OpencodeRuleRunnerResult {
+  outcome: "success" | "request_failed" | "protocol_error";
+  final_answer?: AgentAssistedRuleResult;
   final_answer_raw_text?: string;
+  raw_events?: string;
   failure_reason?: string;
-  turns: CaseAwareAgentTurn[];
-  tool_trace: CaseToolTraceItem[];
 }
 
-export type RubricCaseAwareRunnerOutcome =
-  | "success"
-  | "request_failed"
-  | "protocol_error"
-  | "tool_budget_exhausted";
-
-export interface RubricCaseAwareRunnerResult {
-  outcome: RubricCaseAwareRunnerOutcome;
+export interface OpencodeRubricRunnerResult {
+  outcome: "success" | "request_failed" | "protocol_error";
   final_answer?: RubricScoringResult;
   final_answer_raw_text?: string;
+  raw_events?: string;
   failure_reason?: string;
-  turns: CaseAwareAgentTurn[];
-  tool_trace: CaseToolTraceItem[];
-}
-
-export interface CaseAwareFinalAnswerValidation {
-  ok: boolean;
-  missing_rule_ids: string[];
-  duplicate_rule_ids: string[];
-  unexpected_rule_ids: string[];
 }
 
 export type RuleImpactSeverity = "review_only" | "light" | "medium" | "heavy" | "gating";

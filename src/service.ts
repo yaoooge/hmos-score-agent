@@ -7,6 +7,9 @@ import { ArtifactStore } from "./io/artifactStore.js";
 import { loadCaseFromPath } from "./io/caseLoader.js";
 import { CaseLogger } from "./io/caseLogger.js";
 import { uploadTaskCallback } from "./io/uploader.js";
+import { createOpencodeRuntimeConfig } from "./opencode/opencodeConfig.js";
+import { runOpencodePrompt } from "./opencode/opencodeCliRunner.js";
+import { createOpencodeServeManager, ensureOpencodeCliAvailable } from "./opencode/opencodeServeManager.js";
 import { inputClassificationNode } from "./nodes/inputClassificationNode.js";
 import { remoteTaskPreparationNode } from "./nodes/remoteTaskPreparationNode.js";
 import { taskUnderstandingNode } from "./nodes/taskUnderstandingNode.js";
@@ -19,8 +22,37 @@ import {
   RemoteEvaluationTask,
   TaskType,
 } from "./types.js";
-import { runPreparedScoreWorkflow, runScoreWorkflow } from "./workflow/scoreWorkflow.js";
+import {
+  runPreparedScoreWorkflow,
+  runScoreWorkflow,
+  type OpencodeRunner,
+} from "./workflow/scoreWorkflow.js";
 import type { ScoreGraphState } from "./workflow/state.js";
+
+type ServiceOpencodeDeps = {
+  opencodeRunner?: OpencodeRunner;
+};
+
+let sharedServiceOpencodeRunner: Promise<OpencodeRunner> | undefined;
+
+async function createSharedServiceOpencodeRunner(): Promise<OpencodeRunner> {
+  await ensureOpencodeCliAvailable();
+  const runtime = await createOpencodeRuntimeConfig({ repoRoot: process.cwd() });
+  const serveManager = createOpencodeServeManager(runtime);
+  await serveManager.start();
+  return {
+    runPrompt: (request) => runOpencodePrompt({ runtime, request }),
+  };
+}
+
+async function resolveServiceOpencodeRunner(deps: ServiceOpencodeDeps): Promise<OpencodeRunner> {
+  if (deps.opencodeRunner) {
+    return deps.opencodeRunner;
+  }
+
+  sharedServiceOpencodeRunner ??= createSharedServiceOpencodeRunner();
+  return sharedServiceOpencodeRunner;
+}
 
 async function runCaseInput(input: {
   caseInput: CaseInput;
@@ -50,8 +82,7 @@ async function runCaseInput(input: {
     rubric_scoring_payload_file: "inputs/rubric-scoring-payload.json",
     rule_agent_prompt_file: "inputs/rule-agent-prompt.txt",
     rule_agent_bootstrap_payload_file: "inputs/rule-agent-bootstrap-payload.json",
-    agent_assistance_enabled: Boolean(config.modelProviderBaseUrl && config.modelProviderApiKey),
-    agent_model: config.modelProviderModel ?? "gpt-5.4",
+    agent_runtime: "opencode",
   };
 
   await logger.info(`启动评分流程 sourceCasePath=${sourceCasePath}`);
@@ -178,8 +209,7 @@ function buildRemoteCaseInfoBase(
     rubric_scoring_payload_file: "inputs/rubric-scoring-payload.json",
     rule_agent_prompt_file: "inputs/rule-agent-prompt.txt",
     rule_agent_bootstrap_payload_file: "inputs/rule-agent-bootstrap-payload.json",
-    agent_assistance_enabled: Boolean(config.modelProviderBaseUrl && config.modelProviderApiKey),
-    agent_model: config.modelProviderModel ?? "gpt-5.4",
+    agent_runtime: "opencode",
     input_mode: "remote_task",
     remote_task_id: remoteTask.taskId,
     remote_test_case_id: remoteTask.testCase.id,
@@ -286,6 +316,7 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
 
 export async function prepareRemoteEvaluationTask(
   remoteTask: RemoteEvaluationTask,
+  deps: ServiceOpencodeDeps = {},
 ): Promise<AcceptedRemoteEvaluationTask> {
   const config = getConfig();
   const artifactStore = new ArtifactStore(config.localCaseRoot);
@@ -313,9 +344,15 @@ export async function prepareRemoteEvaluationTask(
     await logger.info("远端任务预处理开始");
     Object.assign(preparedState, await remoteTaskPreparationNode(preparedState as ScoreGraphState));
     await logger.info("远端任务预处理完成");
+    const opencodeRunner = await resolveServiceOpencodeRunner(deps);
     Object.assign(
       preparedState,
-      await taskUnderstandingNode(preparedState as ScoreGraphState, { artifactStore, logger }),
+      await taskUnderstandingNode(preparedState as ScoreGraphState, {
+        opencode: opencodeRunner,
+        referenceRoot: config.referenceRoot,
+        artifactStore,
+        logger,
+      }),
     );
     await logger.info("初始任务分析完成");
     Object.assign(preparedState, await inputClassificationNode(preparedState as ScoreGraphState));
@@ -350,6 +387,7 @@ export async function prepareRemoteEvaluationTask(
 
 export async function executeAcceptedRemoteEvaluationTask(
   acceptedTask: AcceptedRemoteEvaluationTask,
+  deps: ServiceOpencodeDeps = {},
 ): Promise<string> {
   const config = getConfig();
   const artifactStore = new ArtifactStore(config.localCaseRoot);
@@ -368,6 +406,7 @@ export async function executeAcceptedRemoteEvaluationTask(
       caseDir: acceptedTask.caseDir,
       referenceRoot: config.referenceRoot,
       artifactStore,
+      opencodeRunner: deps.opencodeRunner,
     });
     await artifactStore.writeJson(
       acceptedTask.caseDir,
@@ -429,9 +468,10 @@ export async function executeAcceptedRemoteEvaluationTask(
 
 export async function runRemoteEvaluationTask(
   remoteTask: RemoteEvaluationTask,
+  deps: ServiceOpencodeDeps = {},
 ): Promise<{ caseDir: string; taskId: number; uploadMessage?: string }> {
-  const acceptedTask = await prepareRemoteEvaluationTask(remoteTask);
-  const uploadMessage = await executeAcceptedRemoteEvaluationTask(acceptedTask);
+  const acceptedTask = await prepareRemoteEvaluationTask(remoteTask, deps);
+  const uploadMessage = await executeAcceptedRemoteEvaluationTask(acceptedTask, deps);
 
   return {
     caseDir: acceptedTask.caseDir,

@@ -34,6 +34,19 @@ function normalizeRelativePath(relativePath: string): string {
   return relativePath.split(path.sep).join("/");
 }
 
+function containsBuiltinIgnoredDirectory(relativePath: string, kind: EntryKind): boolean {
+  const normalized = normalizeRelativePath(relativePath);
+  const segments = normalized.split("/").filter(Boolean);
+  const directorySegments = kind === "directory" ? segments : segments.slice(0, -1);
+  if (directorySegments.some((segment) => segment.startsWith(".") || segment === "resources")) {
+    return true;
+  }
+  return directorySegments.some(
+    (segment, index) =>
+      segment === "src" && ["test", "ohosTest"].includes(directorySegments[index + 1] ?? ""),
+  );
+}
+
 function toRule(pattern: string): Rule | null {
   const trimmed = pattern.trim();
   if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("!") || trimmed.includes("**")) {
@@ -128,6 +141,9 @@ export async function loadIgnoreFilter(
     isIgnored(relativePath: string, kind: EntryKind): boolean {
       const normalized = normalizeRelativePath(relativePath);
       const segments = normalized.split("/");
+      if (containsBuiltinIgnoredDirectory(normalized, kind)) {
+        return true;
+      }
       if (segments.some((segment) => BUILTIN_EXACT_NAMES.has(segment))) {
         return true;
       }

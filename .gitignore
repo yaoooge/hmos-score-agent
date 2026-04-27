@@ -6,5 +6,6 @@ dist/
 .worktrees/
 .swift-cache/
 .superpowers/
+.opencode/runtime/
 package-lock.json
 cases/

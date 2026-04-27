@@ -9,6 +9,8 @@ import {
   prepareRemoteEvaluationTask,
   runRemoteEvaluationTask,
 } from "../src/service.js";
+import type { LoadedRubricSnapshot } from "../src/types.js";
+import type { OpencodeRunner } from "../src/workflow/scoreWorkflow.js";
 
 function createResponse() {
   const responseState: { statusCode: number; body?: Record<string, unknown> } = {
@@ -38,6 +40,106 @@ async function makeTempDir(t: test.TestContext): Promise<string> {
 function createManifest(content: string): { files: Array<{ path: string; content: string }> } {
   return {
     files: [{ path: "entry/src/main/ets/pages/Index.ets", content }],
+  };
+}
+
+function parsePromptPayload<T>(prompt: string, marker: string): T {
+  const index = prompt.lastIndexOf(`${marker}:\n`);
+  if (index < 0) {
+    throw new Error(`missing prompt marker ${marker}`);
+  }
+  return JSON.parse(prompt.slice(index + marker.length + 2)) as T;
+}
+
+function buildRubricFinalAnswer(rubricSnapshot: LoadedRubricSnapshot): Record<string, unknown> {
+  return {
+    summary: {
+      overall_assessment: "测试环境通过 opencode mock 完成评分。",
+      overall_confidence: "medium",
+    },
+    item_scores: rubricSnapshot.dimension_summaries.flatMap((dimension) =>
+      dimension.item_summaries.map((item) => ({
+        dimension_name: dimension.name,
+        item_name: item.name,
+        score: item.scoring_bands[0]?.score ?? item.weight,
+        max_score: item.weight,
+        matched_band_score: item.scoring_bands[0]?.score ?? item.weight,
+        rationale: "测试 mock 按最高档返回，验证远端执行链路。",
+        evidence_used: ["generated/entry/src/main/ets/pages/Index.ets"],
+        confidence: "medium",
+        review_required: false,
+      })),
+    ),
+    hard_gate_candidates: rubricSnapshot.hard_gates.map((gate) => ({
+      gate_id: gate.id,
+      triggered: false,
+      reason: "测试 mock 未触发硬门槛。",
+      confidence: "medium",
+    })),
+    risks: [],
+    strengths: ["测试 mock 覆盖远端评分执行链路"],
+    main_issues: [],
+  };
+}
+
+function createOpencodeRunnerMock(): OpencodeRunner {
+  return {
+    async runPrompt(request) {
+      if (request.requestTag.startsWith("task-understanding-")) {
+        return {
+          requestTag: request.requestTag,
+          rawText: JSON.stringify({
+            explicitConstraints: ["远端任务需要实现登录页"],
+            contextualConstraints: ["保持工程结构"],
+            implicitConstraints: ["基于 patch 评估"],
+            classificationHints: ["continuation", "has_patch"],
+          }),
+          rawEvents: "",
+          elapsedMs: 1,
+        };
+      }
+
+      if (request.requestTag.startsWith("rubric-scoring-")) {
+        const payload = parsePromptPayload<{ rubric_summary: LoadedRubricSnapshot }>(
+          request.prompt,
+          "scoring_payload",
+        );
+        return {
+          requestTag: request.requestTag,
+          rawText: JSON.stringify(buildRubricFinalAnswer(payload.rubric_summary)),
+          rawEvents: "",
+          elapsedMs: 1,
+        };
+      }
+
+      if (request.requestTag.startsWith("rule-assessment-")) {
+        const payload = parsePromptPayload<{ assisted_rule_candidates: Array<{ rule_id: string }> }>(
+          request.prompt,
+          "bootstrap_payload",
+        );
+        return {
+          requestTag: request.requestTag,
+          rawText: JSON.stringify({
+            summary: {
+              assistant_scope: "测试环境通过 opencode mock 完成规则判定。",
+              overall_confidence: "medium",
+            },
+            rule_assessments: payload.assisted_rule_candidates.map((candidate) => ({
+              rule_id: candidate.rule_id,
+              decision: "uncertain",
+              confidence: "low",
+              reason: "测试 mock 不读取真实上下文，交由人工复核。",
+              evidence_used: [],
+              needs_human_review: true,
+            })),
+          }),
+          rawEvents: "",
+          elapsedMs: 1,
+        };
+      }
+
+      throw new Error(`unexpected opencode requestTag=${request.requestTag}`);
+    },
   };
 }
 
@@ -128,7 +230,7 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
     },
     token: "remote-token",
     callback: callbackUrl,
-  });
+  }, { opencodeRunner: createOpencodeRunnerMock() });
 
   assert.equal(result.taskId, 4);
   assert.equal(callbackCalls.length, 1);
@@ -231,13 +333,15 @@ test("prepareRemoteEvaluationTask accepts a pushed task before executeAcceptedRe
     },
     token: "remote-token",
     callback: callbackUrl,
-  });
+  }, { opencodeRunner: createOpencodeRunnerMock() });
 
   assert.equal(accepted.taskId, 5);
   assert.equal(accepted.message, "任务接收成功，结果将通过 callback 返回");
   assert.equal(callbackCalls.length, 0);
 
-  const uploadMessage = await executeAcceptedRemoteEvaluationTask(accepted);
+  const uploadMessage = await executeAcceptedRemoteEvaluationTask(accepted, {
+    opencodeRunner: createOpencodeRunnerMock(),
+  });
 
   assert.equal(uploadMessage, "callback 上传成功。");
   assert.equal(callbackCalls.length, 1);

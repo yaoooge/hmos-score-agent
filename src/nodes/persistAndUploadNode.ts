@@ -59,8 +59,6 @@ export async function persistAndUploadNode(
           state.rubricAgentRunStatus === "skipped" || state.rubricAgentRunStatus === "not_enabled"
             ? state.rubricAgentRunStatus
             : "protocol_error",
-        turns: state.rubricAgentTurns ?? [],
-        tool_trace: state.rubricAgentToolTrace ?? [],
       },
     });
     await deps.artifactStore.writeJson(
@@ -71,8 +69,6 @@ export async function persistAndUploadNode(
           state.ruleAgentRunStatus === "skipped" || state.ruleAgentRunStatus === "not_enabled"
             ? state.ruleAgentRunStatus
             : "protocol_error",
-        turns: state.ruleAgentTurns ?? [],
-        tool_trace: state.ruleAgentToolTrace ?? [],
       },
     );
     await deps.artifactStore.writeJson(

@@ -1,6 +1,7 @@
 export type WorkflowNodeId =
   | "remoteTaskPreparationNode"
   | "taskUnderstandingNode"
+  | "opencodeSandboxPreparationNode"
   | "inputClassificationNode"
   | "ruleAuditNode"
   | "rubricPreparationNode"

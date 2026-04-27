@@ -1,10 +1,9 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
-import { AgentClient, createDefaultAgentClient } from "../agent/agentClient.js";
-import { getConfig } from "../config.js";
 import { ArtifactStore } from "../io/artifactStore.js";
 import { CaseLogger } from "../io/caseLogger.js";
 import { artifactPostProcessNode } from "../nodes/artifactPostProcessNode.js";
 import { inputClassificationNode } from "../nodes/inputClassificationNode.js";
+import { opencodeSandboxPreparationNode } from "../nodes/opencodeSandboxPreparationNode.js";
 import { persistAndUploadNode } from "../nodes/persistAndUploadNode.js";
 import { reportGenerationNode } from "../nodes/reportGenerationNode.js";
 import { remoteTaskPreparationNode } from "../nodes/remoteTaskPreparationNode.js";
@@ -17,11 +16,33 @@ import { ruleAuditNode } from "../nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../nodes/ruleMergeNode.js";
 import { scoreFusionOrchestrationNode } from "../nodes/scoreFusionOrchestrationNode.js";
 import { taskUnderstandingNode } from "../nodes/taskUnderstandingNode.js";
+import { createOpencodeRuntimeConfig, type OpencodeRuntimeConfig } from "../opencode/opencodeConfig.js";
+import {
+  runOpencodePrompt,
+  type OpencodeRunRequest,
+  type OpencodeRunResult,
+} from "../opencode/opencodeCliRunner.js";
+import {
+  createOpencodeServeManager,
+  ensureOpencodeCliAvailable,
+  type OpencodeServeManager,
+} from "../opencode/opencodeServeManager.js";
 import { CaseInput, RemoteEvaluationTask } from "../types.js";
 import { ScoreState } from "./state.js";
 import { WorkflowEventLogger } from "./observability/workflowEventLogger.js";
 import { interpretStreamChunk } from "./observability/workflowStreamInterpreter.js";
 import type { ScoreGraphState } from "./state.js";
+
+type OpencodeWorkflowRuntime = {
+  runtime: OpencodeRuntimeConfig;
+  serveManager: OpencodeServeManager;
+};
+
+export type OpencodeRunner = {
+  runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
+};
+
+let sharedOpencodeRuntime: Promise<OpencodeWorkflowRuntime> | undefined;
 
 type LocalWorkflowInput = {
   caseInput: CaseInput;
@@ -29,7 +50,9 @@ type LocalWorkflowInput = {
   sourceCasePath?: string;
   referenceRoot: string;
   artifactStore: ArtifactStore;
-  agentClient?: AgentClient;
+  opencodeRuntime?: OpencodeRuntimeConfig;
+  opencodeServeManager?: OpencodeServeManager;
+  opencodeRunner?: OpencodeRunner;
 };
 
 type RemoteWorkflowInput = {
@@ -37,7 +60,9 @@ type RemoteWorkflowInput = {
   caseDir: string;
   referenceRoot: string;
   artifactStore: ArtifactStore;
-  agentClient?: AgentClient;
+  opencodeRuntime?: OpencodeRuntimeConfig;
+  opencodeServeManager?: OpencodeServeManager;
+  opencodeRunner?: OpencodeRunner;
 };
 
 type PreparedWorkflowInput = {
@@ -59,14 +84,18 @@ type PreparedWorkflowInput = {
   caseDir: string;
   referenceRoot: string;
   artifactStore: ArtifactStore;
-  agentClient?: AgentClient;
+  opencodeRuntime?: OpencodeRuntimeConfig;
+  opencodeServeManager?: OpencodeServeManager;
+  opencodeRunner?: OpencodeRunner;
 };
 
 type WorkflowCommonInput = {
   caseDir: string;
   referenceRoot: string;
   artifactStore: ArtifactStore;
-  agentClient?: AgentClient;
+  opencodeRuntime?: OpencodeRuntimeConfig;
+  opencodeServeManager?: OpencodeServeManager;
+  opencodeRunner?: OpencodeRunner;
 };
 
 type CompiledScoreGraph = {
@@ -77,16 +106,27 @@ type CompiledScoreGraph = {
 };
 
 function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPreparedState: boolean) {
-  const config = getConfig();
   const logger = new CaseLogger(input.artifactStore, input.caseDir);
-  const agentClient = Object.prototype.hasOwnProperty.call(input, "agentClient")
-    ? input.agentClient
-    : createDefaultAgentClient(config);
+  const runtime = input.opencodeRuntime;
+  const opencode =
+    input.opencodeRunner ??
+    (runtime
+      ? {
+          runPrompt: (request: OpencodeRunRequest) => runOpencodePrompt({ runtime, request }),
+        }
+      : undefined);
+  const opencodeForState = (state: ScoreGraphState) =>
+    opencode && state.opencodeSandboxRoot
+      ? { sandboxRoot: state.opencodeSandboxRoot, runPrompt: opencode.runPrompt }
+      : undefined;
 
   if (resumeFromPreparedState) {
     return {
       logger,
       graph: new StateGraph(ScoreState)
+        .addNode("opencodeSandboxPreparationNode", (s) =>
+          opencodeSandboxPreparationNode(s, { referenceRoot: input.referenceRoot }),
+        )
         .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
         .addNode("rubricPreparationNode", (s) =>
           rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
@@ -95,11 +135,11 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
           rubricScoringPromptBuilderNode(s, { logger }),
         )
         .addNode("rubricScoringAgentNode", (s) =>
-          rubricScoringAgentNode(s, { agentClient, logger }),
+          rubricScoringAgentNode(s, { opencode: opencodeForState(s), logger }),
         )
         .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
         .addNode("ruleAssessmentAgentNode", (s) =>
-          ruleAssessmentAgentNode(s, { agentClient, logger }),
+          ruleAssessmentAgentNode(s, { opencode: opencodeForState(s), logger }),
         )
         .addNode("ruleMergeNode", (s) => ruleMergeNode(s, { logger }))
         .addNode("scoreFusionOrchestrationNode", (s) => scoreFusionOrchestrationNode(s))
@@ -112,7 +152,8 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
             artifactStore: input.artifactStore,
           }),
         )
-        .addEdge(START, "ruleAuditNode")
+        .addEdge(START, "opencodeSandboxPreparationNode")
+        .addEdge("opencodeSandboxPreparationNode", "ruleAuditNode")
         .addEdge("ruleAuditNode", "rubricPreparationNode")
         .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
         .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
@@ -135,7 +176,12 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       .addNode("taskUnderstandingNode", (s, nodeConfig) =>
         taskUnderstandingNode(
           s,
-          { agentClient, artifactStore: input.artifactStore, logger },
+          {
+            opencode,
+            referenceRoot: input.referenceRoot,
+            artifactStore: input.artifactStore,
+            logger,
+          },
           nodeConfig,
         ),
       )
@@ -147,10 +193,12 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       .addNode("rubricScoringPromptBuilderNode", (s) =>
         rubricScoringPromptBuilderNode(s, { logger }),
       )
-      .addNode("rubricScoringAgentNode", (s) => rubricScoringAgentNode(s, { agentClient, logger }))
+      .addNode("rubricScoringAgentNode", (s) =>
+        rubricScoringAgentNode(s, { opencode: opencodeForState(s), logger }),
+      )
       .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
       .addNode("ruleAssessmentAgentNode", (s) =>
-        ruleAssessmentAgentNode(s, { agentClient, logger }),
+        ruleAssessmentAgentNode(s, { opencode: opencodeForState(s), logger }),
       )
       .addNode("ruleMergeNode", (s) => ruleMergeNode(s, { logger }))
       .addNode("scoreFusionOrchestrationNode", (s) => scoreFusionOrchestrationNode(s))
@@ -179,6 +227,35 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       .addEdge("artifactPostProcessNode", "persistAndUploadNode")
       .addEdge("persistAndUploadNode", END)
       .compile(),
+  };
+}
+
+async function createSharedOpencodeRuntime(): Promise<OpencodeWorkflowRuntime> {
+  await ensureOpencodeCliAvailable();
+  const runtime = await createOpencodeRuntimeConfig({ repoRoot: process.cwd() });
+  const serveManager = createOpencodeServeManager(runtime);
+  await serveManager.start();
+  return { runtime, serveManager };
+}
+
+async function prepareOpencodeRuntime(input: WorkflowCommonInput): Promise<WorkflowCommonInput> {
+  if (input.opencodeRuntime) {
+    if (input.opencodeServeManager) {
+      await input.opencodeServeManager.start();
+    }
+    return input;
+  }
+
+  if (input.opencodeRunner) {
+    return input;
+  }
+
+  sharedOpencodeRuntime ??= createSharedOpencodeRuntime();
+  const shared = await sharedOpencodeRuntime;
+  return {
+    ...input,
+    opencodeRuntime: shared.runtime,
+    opencodeServeManager: shared.serveManager,
   };
 }
 
@@ -220,7 +297,8 @@ async function runCompiledScoreGraph(
 export async function runScoreWorkflow(
   input: LocalWorkflowInput | RemoteWorkflowInput,
 ): Promise<Record<string, unknown>> {
-  const { logger, graph } = createCompiledScoreGraph(input, false);
+  const preparedInput = await prepareOpencodeRuntime(input);
+  const { logger, graph } = createCompiledScoreGraph(preparedInput, false);
   const initialState = (() => {
     if ("remoteTask" in input) {
       return {
@@ -242,7 +320,8 @@ export async function runScoreWorkflow(
 export async function runPreparedScoreWorkflow(
   input: PreparedWorkflowInput,
 ): Promise<Record<string, unknown>> {
-  const { logger, graph } = createCompiledScoreGraph(input, true);
+  const preparedInput = await prepareOpencodeRuntime(input);
+  const { logger, graph } = createCompiledScoreGraph(preparedInput, true);
   return runCompiledScoreGraph(logger, graph as never, {
     ...input.preparedState,
     caseDir: input.caseDir,

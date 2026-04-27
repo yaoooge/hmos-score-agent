@@ -20,6 +20,8 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
         | undefined;
       return `explicit=${lengthOf(summary?.explicitConstraints)} contextual=${lengthOf(summary?.contextualConstraints)} implicit=${lengthOf(summary?.implicitConstraints)} classificationHints=${lengthOf(summary?.classificationHints)}`;
     }
+    case "opencodeSandboxPreparationNode":
+      return `sandboxReady=${String(Boolean(update.opencodeSandboxRoot))}`;
     case "inputClassificationNode":
       return `taskType=${String(update.taskType ?? "")}`;
     case "ruleAuditNode": {
