@@ -47,8 +47,76 @@ test("task understanding agent can read only through explicit prompt-file flow",
   assert.equal(permission.glob, "deny");
   assert.equal(permission.grep, "deny");
   assert.equal(permission.list, "deny");
-  assert.equal(permission.edit, "deny");
+  assert.deepEqual(permission.edit, {
+    "*": "deny",
+    "metadata/agent-output/*.json": "allow",
+    "**/metadata/agent-output/*.json": "allow",
+  });
   assert.equal(permission.bash, "deny");
+});
+
+test("task understanding system prompt allows prompt-file reads but forbids business-file reads", async () => {
+  const taskPrompt = await readProjectFile(".opencode/prompts/hmos-understanding-system.md");
+
+  assert.match(taskPrompt, /只允许读取用户消息指定的 prompt 文件/);
+  assert.match(taskPrompt, /不要读取 generated\//);
+  assert.match(taskPrompt, /不要读取 original\//);
+  assert.match(taskPrompt, /不要读取 patch\//);
+  assert.match(taskPrompt, /不要读取 references\//);
+  assert.doesNotMatch(taskPrompt, /禁止读取任何代码文件/);
+  assert.doesNotMatch(taskPrompt, /禁止读取任何文件/);
+});
+
+test("project opencode template configures json formatter for agent output files", async () => {
+  const templateText = await readProjectFile(".opencode/opencode.template.json");
+
+  assert.match(templateText, /"formatter"\s*:/);
+  assert.match(templateText, /"agent-json"\s*:/);
+  assert.match(templateText, /"extensions"\s*:\s*\[\s*"\.json"\s*\]/);
+  assert.match(templateText, /format-json\.mjs/);
+  assert.match(templateText, /\$FILE/);
+});
+
+test("opencode scoring agents can edit only sandbox agent output files", async () => {
+  const templateText = await readProjectFile(".opencode/opencode.template.json");
+  const template = JSON.parse(
+    templateText
+      .replaceAll('"${HMOS_OPENCODE_PROVIDER_ID}"', '"provider"')
+      .replaceAll('"${HMOS_OPENCODE_MODEL_ID}"', '"model"')
+      .replaceAll('"${HMOS_OPENCODE_MODEL_NAME}"', '"model name"')
+      .replaceAll('"${HMOS_OPENCODE_BASE_URL}"', '"https://example.test"')
+      .replaceAll('"${HMOS_OPENCODE_API_KEY}"', '"key-placeholder"')
+      .replaceAll('${HMOS_OPENCODE_PORT}', '4096')
+      .replaceAll('${HMOS_OPENCODE_TIMEOUT_MS}', '600000'),
+  ) as { agent?: Record<string, { permission?: Record<string, string> }> };
+
+  for (const agent of ["hmos-understanding", "hmos-rubric-scoring", "hmos-rule-assessment"]) {
+    const permission = template.agent?.[agent]?.permission ?? {};
+    assert.equal(permission.write, "allow", agent);
+    assert.deepEqual(
+      permission.edit,
+      {
+        "*": "deny",
+        "metadata/agent-output/*.json": "allow",
+        "**/metadata/agent-output/*.json": "allow",
+      },
+      agent,
+    );
+    assert.equal(permission.bash, "deny", agent);
+  }
+});
+
+test("opencode agent system prompts require writing final json to output_file", async () => {
+  for (const file of [
+    ".opencode/prompts/hmos-understanding-system.md",
+    ".opencode/prompts/hmos-rubric-scoring-system.md",
+    ".opencode/prompts/hmos-rule-assessment-system.md",
+  ]) {
+    const prompt = await readProjectFile(file);
+    assert.match(prompt, /写入用户消息指定的 output_file/);
+    assert.match(prompt, /不要在最终回复中重复完整结果 JSON/);
+    assert.match(prompt, /\{"output_file":"<output_file>"\}/);
+  }
 });
 
 test("project opencode agents put strict output formats in system prompts", async () => {

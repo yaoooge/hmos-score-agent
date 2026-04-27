@@ -32,6 +32,11 @@ async function copyOpencodeTemplate(repoRoot: string): Promise<void> {
     path.join(repoRoot, ".opencode", "prompts"),
     { recursive: true },
   );
+  await fs.cp(
+    path.join(sourceRoot, ".opencode", "formatters"),
+    path.join(repoRoot, ".opencode", "formatters"),
+    { recursive: true },
+  );
 }
 
 test("createOpencodeRuntimeConfig reports missing required environment variables", async () => {
@@ -192,6 +197,26 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
       "utf-8",
     ),
     /正确输出格式/,
+  );
+
+  assert.match(
+    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "formatters", "format-json.mjs"), "utf-8"),
+    /JSON\.parse/,
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "xdg-config",
+        "opencode",
+        "formatters",
+        "format-json.mjs",
+      ),
+      "utf-8",
+    ),
+    /JSON\.stringify/,
   );
 
   assert.equal(runtime.env.OPENCODE_CONFIG, runtime.configPath);

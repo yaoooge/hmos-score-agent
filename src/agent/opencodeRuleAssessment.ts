@@ -49,27 +49,10 @@ export interface OpencodeRuleAssessmentInput {
   };
 }
 
+const RULE_ASSESSMENT_OUTPUT_FILE = "metadata/agent-output/rule-assessment.json";
+
 function stringifyForPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
-}
-
-function ruleAssessmentOutputFormat(): Record<string, unknown> {
-  return {
-    summary: {
-      assistant_scope: "说明读取了哪些 sandbox 内容以及判定范围",
-      overall_confidence: "high | medium | low",
-    },
-    rule_assessments: [
-      {
-        rule_id: "候选规则 id",
-        decision: "violation | pass | not_applicable | uncertain",
-        confidence: "high | medium | low",
-        reason: "中文说明判定依据",
-        evidence_used: ["generated/entry/src/main.ets"],
-        needs_human_review: false,
-      },
-    ],
-  };
 }
 
 function summarizeRetryFailureReason(reason: string): string {
@@ -106,17 +89,8 @@ function retryFailureGuidance(reason: string): string[] {
 
 function compactRuleRetryPayload(payload: AgentBootstrapPayload): Record<string, unknown> {
   return {
-    case_id: payload.case_context.case_id,
-    task_type: payload.case_context.task_type,
-    task_understanding: payload.task_understanding,
-    assisted_rule_candidates: payload.assisted_rule_candidates.map((candidate) => ({
-      rule_id: candidate.rule_id,
-      rule_source: candidate.rule_source,
-      why_uncertain: candidate.why_uncertain,
-      local_preliminary_signal: candidate.local_preliminary_signal,
-      evidence_files: candidate.evidence_files.slice(0, 8),
-    })),
-    initial_target_files: payload.initial_target_files.slice(0, 20),
+    candidate_rule_ids: payload.assisted_rule_candidates.map((candidate) => candidate.rule_id),
+    output_file: RULE_ASSESSMENT_OUTPUT_FILE,
   };
 }
 
@@ -131,24 +105,27 @@ function renderRuleAssessmentRetryPrompt(input: {
     "输入边界（必须遵守）:",
     "- 不要重新读取原始 prompt、rubric 全量内容或大段上下文。",
     "- 不要输出分析过程、Markdown、代码块或自然语言前后缀。",
-    "- 只根据 rule_retry_payload 覆盖所有候选 rule_id。",
+    "- 只根据 candidate_rule_ids 覆盖所有候选 rule_id。",
     ...retryFailureGuidance(input.retryContext.failureReason),
     "",
     "任务:",
     "1. 输出一个合法 JSON object。",
-    "2. rule_assessments 必须覆盖 rule_retry_payload.assisted_rule_candidates 中每个 rule_id，不能新增、遗漏或重复。",
+    "2. rule_assessments 必须覆盖 candidate_rule_ids 中每个 rule_id，不能新增、遗漏或重复。",
     "3. 无法确认时使用 decision=\"uncertain\"，并设置 needs_human_review=true。",
     "4. evidence_used 只能填写 sandbox 相对路径。",
     "",
     "最终输出要求:",
+    "- 将最终 JSON object 写入 output_file。",
+    "- assistant 最终回复只输出 {\"output_file\":\"metadata/agent-output/rule-assessment.json\"}。",
+    "- 覆盖写入 output_file，不要沿用旧文件内容。",
+    `output_file: ${RULE_ASSESSMENT_OUTPUT_FILE}`,
+    "- 严格遵守 system prompt 中的正确输出格式。",
     "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
-    "- JSON 字段必须完全符合下面结构，不能增加额外字段。",
+    "- JSON 字段必须完全符合 system prompt 中的结构，不能增加额外字段。",
     "- 最终答案的第一个非空字符必须是 {。",
     "- 最后一个非空字符必须是 }。",
-    "正确输出格式:",
-    stringifyForPrompt(ruleAssessmentOutputFormat()),
     "",
-    "rule_retry_payload:",
+    "candidate_rule_ids:",
     stringifyForPrompt(compactRuleRetryPayload(input.bootstrapPayload)),
   ].join("\n");
 }
@@ -184,14 +161,16 @@ function renderRuleAssessmentPrompt(input: {
     "5. evidence_used 只能填写 sandbox 内相对路径，例如 generated/、original/、patch/、metadata/、references/ 下的路径。",
     "",
     "最终输出要求:",
+    "- 将最终 JSON object 写入 output_file。",
+    "- assistant 最终回复只输出 {\"output_file\":\"metadata/agent-output/rule-assessment.json\"}。",
+    `output_file: ${RULE_ASSESSMENT_OUTPUT_FILE}`,
+    "- 严格遵守 system prompt 中的正确输出格式。",
     "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
-    "- JSON 字段必须完全符合下面结构，不能增加额外字段。",
+    "- JSON 字段必须完全符合 system prompt 中的结构，不能增加额外字段。",
     "- 最终答案的第一个非空字符必须是 {。",
     "- 最后一个非空字符必须是 }。",
     "- 不要输出分析过程、说明文字、Markdown、代码块或自然语言前后缀。",
-    "- 必须直接按“正确输出格式”输出 JSON object。",
-    "正确输出格式:",
-    stringifyForPrompt(ruleAssessmentOutputFormat()),
+    "- 严格遵守 system prompt 中的正确输出格式。",
     "",
     "bootstrap_payload:",
     stringifyForPrompt({
@@ -339,6 +318,7 @@ export async function runOpencodeRuleAssessment(
       requestTag: inputRequestTag,
       title: inputRequestTag,
       agent: "hmos-rule-assessment",
+      outputFile: RULE_ASSESSMENT_OUTPUT_FILE,
     });
   }
 

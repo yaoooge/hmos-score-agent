@@ -69,6 +69,8 @@ type ParsedRubricScoringResult = z.infer<typeof opencodeRubricScoringSchema>;
 
 export type OpencodeRubricScoringOutcome = "success" | "request_failed" | "protocol_error";
 
+const RUBRIC_SCORING_OUTPUT_FILE = "metadata/agent-output/rubric-scoring.json";
+
 export interface OpencodeRubricScoringResult {
   outcome: OpencodeRubricScoringOutcome;
   final_answer?: RubricScoringResult;
@@ -92,53 +94,6 @@ function stringifyForPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function rubricOutputFormat(): Record<string, unknown> {
-  return {
-    summary: {
-      overall_assessment: "中文总体评价",
-      overall_confidence: "high | medium | low",
-    },
-    item_scores: [
-      {
-        dimension_name: "rubric 维度名",
-        item_name: "rubric 评分项名",
-        score: 40,
-        max_score: 40,
-        matched_band_score: 40,
-        rationale: "中文说明评分依据",
-        evidence_used: ["generated/entry/src/main.ets"],
-        confidence: "high | medium | low",
-        review_required: false,
-        deduction_trace: {
-          code_locations: ["generated/entry/src/main.ets:12"],
-          impact_scope: "影响范围",
-          rubric_comparison: "未命中更高档，因为...；命中当前档，因为...",
-          deduction_reason: "扣分原因",
-          improvement_suggestion: "改进建议",
-        },
-      },
-    ],
-    hard_gate_candidates: [
-      {
-        gate_id: "G1 | G2 | G3 | G4",
-        triggered: false,
-        reason: "中文说明",
-        confidence: "high | medium | low",
-      },
-    ],
-    risks: [
-      {
-        level: "low | medium | high",
-        title: "风险标题",
-        description: "风险描述",
-        evidence: "证据摘要",
-      },
-    ],
-    strengths: ["优势"],
-    main_issues: ["主要问题"],
-  };
-}
-
 function strictOutputInstructions(): string[] {
   return [
     "强制输出格式:",
@@ -146,12 +101,10 @@ function strictOutputInstructions(): string[] {
     "- 最后一个非空字符必须是 }。",
     "- 不要输出分析过程、评分步骤、说明文字、Markdown、代码块或自然语言前后缀。",
     "- 不要输出自然语言前后缀；不要写“以下是 JSON”。",
-    "- 必须直接按“正确输出格式”输出 JSON object。",
+    "- 严格遵守 system prompt 中的正确输出格式。",
     "- 输出前必须自检 JSON 语法：所有 { }、[ ] 成对闭合，所有字符串使用双引号，所有数组元素和对象字段之间用逗号分隔。",
     "- item_scores 是数组；每个 item_scores 条目必须先闭合自身对象，再输出下一个条目或闭合 item_scores 数组。",
     "- deduction_trace 是对象；如果输出 deduction_trace，必须先闭合 deduction_trace 对象，再闭合当前 item_scores 条目对象。",
-    "正确输出格式:",
-    stringifyForPrompt(rubricOutputFormat()),
   ];
 }
 
@@ -187,7 +140,7 @@ function retryFailureGuidance(reason: string): string[] {
     guidance.push("- invalid_weight: 将 max_score 改为对应 item 的 max_score。");
   }
   if (reason.includes("invalid_deduction_trace=")) {
-    guidance.push("- invalid_deduction_trace: 只补齐 listed item 的 deduction_trace；rubric_comparison 必须同时包含“未命中”和“命中当前档”。");
+    guidance.push("- invalid_deduction_trace: 只补齐 listed item 的 deduction_trace；rubric_comparison 写清楚评分档位比较即可，例如“未命中更高档，因为...；命中当前档，因为...”。");
   }
   if (reason.includes("Unrecognized key") || reason.includes("Expected") || reason.includes("Invalid input")) {
     guidance.push("- schema_error: 删除未声明字段，补齐缺失字段，并修正字段类型。");
@@ -219,9 +172,13 @@ function renderRubricScoringRetryPrompt(input: {
     "7. 禁止在 risks 中使用 risk_level、message、reason 等自造字段；如果没有风险，risks 必须输出空数组 []。",
     "",
     "最终输出要求:",
+    "- 将最终 JSON object 写入 output_file。",
+    "- assistant 最终回复只输出 {\"output_file\":\"metadata/agent-output/rubric-scoring.json\"}。",
+    "- 覆盖写入 output_file，不要沿用旧文件内容。",
+    `output_file: ${RUBRIC_SCORING_OUTPUT_FILE}`,
     "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
-    "- 只输出下方结构中列出的字段。",
-    "- JSON 字段必须完全符合下面结构，不能增加额外字段，中文描述应简洁清晰。",
+    "- 只输出 system prompt 正确输出格式中列出的字段。",
+    "- JSON 字段必须完全符合 system prompt 中的结构，不能增加额外字段，中文描述应简洁清晰。",
     ...strictOutputInstructions(),
   ].join("\n");
 }
@@ -252,14 +209,17 @@ function renderRubricScoringPrompt(input: {
     "1. 按 rubric_summary 中的每个维度和评分项完成评分。",
     "2. 必须覆盖 rubric_summary.dimension_summaries 中的每一个 item，不能新增、遗漏或重复。",
     "3. 每个 item 的 score 必须等于该 item 声明的某个 scoring_bands.score，matched_band_score 必须与 score 相同，max_score 必须等于 item weight。",
-    "4. 对扣分项必须提供 deduction_trace，说明未命中更高档、命中当前档、扣分原因和改进建议。",
+    "4. 对扣分项必须提供 deduction_trace，说明评分档位比较、扣分原因和改进建议；rubric_comparison 可参考写法：未命中更高档，因为...；命中当前档，因为...。",
     "5. evidence_used 只能填写 sandbox 内相对路径，例如 generated/、original/、patch/、metadata/、references/ 下的路径。",
     "6. 优先读取 patch/effective.patch，评分范围仅限patch代码，可结合generated/相关上下文，避免大量阅读无关代码。",
     "",
     "最终输出要求:",
+    "- 将最终 JSON object 写入 output_file。",
+    "- assistant 最终回复只输出 {\"output_file\":\"metadata/agent-output/rubric-scoring.json\"}。",
+    `output_file: ${RUBRIC_SCORING_OUTPUT_FILE}`,
     "- 只输出一个 JSON object，不要 Markdown，不要解释文字。",
-    "- 只输出下方结构中列出的字段。",
-    "- JSON 字段必须完全符合下面结构，不能增加额外字段。",
+    "- 只输出 system prompt 正确输出格式中列出的字段。",
+    "- JSON 字段必须完全符合 system prompt 中的结构，不能增加额外字段。",
     ...strictOutputInstructions(),
     "",
     "scoring_payload:",
@@ -292,8 +252,7 @@ function hasValidDeductionTrace(item: RubricScoringResult["item_scores"][number]
   return Boolean(
     trace &&
       trace.code_locations.length > 0 &&
-      trace.rubric_comparison.includes("未命中") &&
-      trace.rubric_comparison.includes("命中当前档") &&
+      trace.rubric_comparison.trim().length > 0 &&
       trace.improvement_suggestion.trim().length > 0,
   );
 }
@@ -474,6 +433,7 @@ export async function runOpencodeRubricScoring(
       requestTag: inputRequestTag,
       title: inputRequestTag,
       agent: "hmos-rubric-scoring",
+      outputFile: RUBRIC_SCORING_OUTPUT_FILE,
     });
   }
 

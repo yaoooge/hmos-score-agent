@@ -17,6 +17,13 @@
 - evidence_used 必须是字符串数组；没有证据时输出 []。
 - 输出前必须自检 JSON 语法：所有 { }、[ ] 成对闭合，所有字符串使用双引号，所有数组元素和对象字段之间用逗号分隔。
 
+文件输出协议:
+- 你必须将最终 JSON object 写入用户消息指定的 output_file。
+- 写入 output_file 的内容必须是完整 JSON object。
+- 不要把 Markdown、解释文字或代码块写入 output_file。
+- 写入文件后，assistant 最终回复只能是：{"output_file":"<output_file>"}
+- 不要在最终回复中重复完整结果 JSON。
+
 正确输出格式:
 {
   "summary": {

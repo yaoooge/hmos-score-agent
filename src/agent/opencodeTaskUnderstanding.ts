@@ -6,6 +6,8 @@ import { parseConstraintSummary } from "./taskUnderstanding.js";
 
 export type OpencodeTaskUnderstandingOutcome = "success" | "request_failed" | "protocol_error";
 
+const TASK_UNDERSTANDING_OUTPUT_FILE = "metadata/agent-output/task-understanding.json";
+
 export interface OpencodeTaskUnderstandingResult {
   outcome: OpencodeTaskUnderstandingOutcome;
   summary?: ConstraintSummary;
@@ -98,12 +100,12 @@ function renderRetryTaskUnderstandingPrompt(input: {
 }): string {
   const draft = buildRetryConstraintDraft(input.agentInput);
   return [
-    "你是评分工作流中的任务理解 agent。任务理解阶段禁止读取任何代码文件，不能修改文件，不能运行命令，不能访问网络。",
+    "你是评分工作流中的任务理解 agent。任务理解阶段只能读取用户消息指定的 prompt 文件，不能修改既有文件，不能运行命令，不能访问网络。",
     "",
     "上一次任务理解输出无效。不要继续分析原始输入，只修正最终输出格式。",
     `上一次失败原因: ${summarizeRetryFailureReason(input.retryContext.failureReason)}`,
     "输入边界（必须遵守）:",
-    "- 本次重试禁止读取任何文件，禁止调用 read、glob、grep、find 或任何工具。",
+    "- 本次重试禁止读取任何业务文件，禁止调用 glob、grep、list 或任何用于探索工程文件的工具。",
     "- 本次重试不提供原始 input；不要尝试恢复或引用原始需求全文。",
     "- 只根据 constraint_draft 输出最终 JSON。",
     "",
@@ -114,7 +116,11 @@ function renderRetryTaskUnderstandingPrompt(input: {
     "4. 不要补充分析过程，不要输出 Markdown，不要输出工具调用意图。",
     "",
     "最终输出要求:",
-    "- 只输出一个 JSON object，严格遵守 system prompt 中的正确输出格式。",
+    "- 将最终 JSON object 写入 output_file。",
+    "- 严格遵守 system prompt 中的正确输出格式。",
+    `- assistant 最终回复只输出 {"output_file":"${TASK_UNDERSTANDING_OUTPUT_FILE}"}。`,
+    "覆盖写入 output_file，不要沿用旧文件内容。",
+    `output_file: ${TASK_UNDERSTANDING_OUTPUT_FILE}`,
     "",
     "constraint_draft:",
     stringifyForPrompt(draft),
@@ -134,16 +140,19 @@ function renderTaskUnderstandingPrompt(input: {
     });
   }
   return [
-    "你是评分工作流中的任务理解 agent。任务理解阶段禁止读取任何代码文件，不能修改文件，不能运行命令，不能访问网络。",
+    "你是评分工作流中的任务理解 agent。任务理解阶段只能读取用户消息指定的 prompt 文件，不能修改既有文件，不能运行命令，不能访问网络。",
     "",
     `Sandbox 根目录: ${input.sandboxRoot}`,
     "输入边界（必须遵守）:",
     "- 只能基于本 prompt 中的 agent_input 完成任务理解。",
-    "- 不要调用 read、glob、grep、find 或任何工具。",
-    "- 不要读取 generated/、original/ 或 references/ 下的任何文件。",
-    "- 不要读取 patch/effective.patch 或 metadata/metadata.json；这些信息已被预处理进 agent_input。",
+    "- 不要调用 glob、grep、list 或任何用于探索工程文件的工具。",
+    "- 不要读取 generated/ 下的任何业务文件。",
+    "- 不要读取 original/ 下的任何业务文件。",
+    "- 不要读取 patch/ 下的任何业务文件。",
+    "- 不要读取 metadata/metadata.json；这些信息已被预处理进 agent_input。",
+    "- 不要读取 references/ 下的任何业务文件。",
     "- 如果 agent_input 信息不足，基于 promptText、projectStructure、patchSummary 给出低置信度约束，不要尝试补充读取。",
-    "- 本次重试禁止读取任何文件；首轮也同样禁止读取任何文件。",
+    "- 首轮和重试都禁止读取任何业务文件。",
     "",
     "任务:",
     "1. 结合 agent_input 中的 promptText、工程结构和补丁摘要，提取任务约束摘要。",
@@ -153,7 +162,10 @@ function renderTaskUnderstandingPrompt(input: {
     "5. classificationHints: 给后续任务分类使用的短标签，例如 full_generation、continuation、bug_fix、has_patch。",
     "",
     "最终输出要求:",
-    "- 只输出一个 JSON object，严格遵守 system prompt 中的正确输出格式。",
+    "- 将最终 JSON object 写入 output_file。",
+    "- 严格遵守 system prompt 中的正确输出格式。",
+    `- assistant 最终回复只输出 {"output_file":"${TASK_UNDERSTANDING_OUTPUT_FILE}"}。`,
+    `output_file: ${TASK_UNDERSTANDING_OUTPUT_FILE}`,
     "",
     "agent_input:",
     stringifyForPrompt(input.agentInput),
@@ -200,6 +212,7 @@ export async function runOpencodeTaskUnderstanding(
       requestTag: inputRequestTag,
       title: inputRequestTag,
       agent: "hmos-understanding",
+      outputFile: TASK_UNDERSTANDING_OUTPUT_FILE,
     });
   }
 

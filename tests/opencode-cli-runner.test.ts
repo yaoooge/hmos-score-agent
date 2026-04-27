@@ -124,6 +124,109 @@ test("runOpencodePrompt concatenates streamed opencode text part events", async 
   assert.equal(result.rawText, '{"ok":true}');
 });
 
+test("runOpencodePrompt reads final JSON from requested output file", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-file-output-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-file-output-"));
+  const child = createFakeChild();
+
+  const result = await runOpencodePrompt({
+    runtime: runtimeConfig(runtimeDir),
+    request: {
+      prompt: "请评分",
+      sandboxRoot,
+      requestTag: "rule-assessment",
+      agent: "hmos-rule-assessment",
+      outputFile: "metadata/agent-output/rule-assessment.json",
+    },
+    deps: {
+      spawnProcess: () => {
+        queueMicrotask(async () => {
+          await fs.mkdir(path.join(sandboxRoot, "metadata", "agent-output"), { recursive: true });
+          await fs.writeFile(
+            path.join(sandboxRoot, "metadata", "agent-output", "rule-assessment.json"),
+            '{"ok":true}\n',
+            "utf-8",
+          );
+          child.stdout.emit(
+            "data",
+            Buffer.from(
+              '{"type":"text","part":{"type":"text","text":"{\\"output_file\\":\\"metadata/agent-output/rule-assessment.json\\"}"}}\n',
+            ),
+          );
+          child.emit("exit", 0);
+        });
+        return child;
+      },
+    },
+  });
+
+  assert.equal(result.rawText, '{"ok":true}\n');
+  assert.equal(result.outputFile, "metadata/agent-output/rule-assessment.json");
+  assert.equal(result.outputFileText, '{"ok":true}\n');
+  assert.match(result.assistantText ?? "", /output_file/);
+});
+
+test("runOpencodePrompt rejects output files outside the agent output directory", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-bad-output-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-bad-output-"));
+
+  await assert.rejects(
+    () =>
+      runOpencodePrompt({
+        runtime: runtimeConfig(runtimeDir),
+        request: {
+          prompt: "x",
+          sandboxRoot,
+          requestTag: "bad-output",
+          outputFile: "../result.json",
+        },
+        deps: { spawnProcess: () => createFakeChild() },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof OpencodeRunError);
+      assert.match(error.message, /invalid agent output file/);
+      return true;
+    },
+  );
+});
+
+test("runOpencodePrompt removes stale output file before invoking opencode", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-stale-output-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-stale-output-"));
+  const outputPath = path.join(sandboxRoot, "metadata", "agent-output", "rule-assessment.json");
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, '{"stale":true}\n', "utf-8");
+  const child = createFakeChild();
+
+  await assert.rejects(
+    () =>
+      runOpencodePrompt({
+        runtime: runtimeConfig(runtimeDir),
+        request: {
+          prompt: "x",
+          sandboxRoot,
+          requestTag: "missing-output",
+          outputFile: "metadata/agent-output/rule-assessment.json",
+        },
+        deps: {
+          spawnProcess: () => {
+            queueMicrotask(() => {
+              child.stdout.emit("data", Buffer.from('{"type":"text","part":{"type":"text","text":"done"}}\n'));
+              child.emit("exit", 0);
+            });
+            return child;
+          },
+        },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof OpencodeRunError);
+      assert.match(error.message, /opencode agent output file missing/);
+      return true;
+    },
+  );
+  await assert.rejects(() => fs.readFile(outputPath, "utf-8"), /ENOENT/);
+});
+
 test("runOpencodePrompt reports non-zero exits with stderr snippets", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-exit-"));
   const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-exit-"));

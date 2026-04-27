@@ -10,6 +10,7 @@ export interface OpencodeRunRequest {
   requestTag: string;
   title?: string;
   agent?: string;
+  outputFile?: string;
 }
 
 export interface OpencodeRunResult {
@@ -17,6 +18,9 @@ export interface OpencodeRunResult {
   rawText: string;
   rawEvents: string;
   elapsedMs: number;
+  assistantText?: string;
+  outputFile?: string;
+  outputFileText?: string;
 }
 
 export class OpencodeRunError extends Error {
@@ -118,6 +122,19 @@ function extractAssistantText(rawEvents: string): string {
   return text;
 }
 
+function resolveAgentOutputPath(sandboxRoot: string, outputFile: string): string {
+  if (!/^metadata\/agent-output\/[a-z-]+\.json$/.test(outputFile)) {
+    throw new OpencodeRunError(`invalid agent output file: ${outputFile}`);
+  }
+
+  const root = path.resolve(sandboxRoot);
+  const resolved = path.resolve(root, outputFile);
+  if (!resolved.startsWith(`${root}${path.sep}`)) {
+    throw new OpencodeRunError(`agent output file escapes sandbox: ${outputFile}`);
+  }
+  return resolved;
+}
+
 export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunResult> {
   const startedAt = Date.now();
   const spawnProcess = input.deps?.spawnProcess ?? defaultSpawnProcess;
@@ -129,6 +146,14 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
   const promptPath = path.join(promptDir, promptFileName);
   const promptRelativePath = path.posix.join("metadata", "opencode-prompts", promptFileName);
   await fs.writeFile(promptPath, input.request.prompt, "utf-8");
+
+  const outputPath = input.request.outputFile
+    ? resolveAgentOutputPath(input.request.sandboxRoot, input.request.outputFile)
+    : undefined;
+  if (outputPath) {
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.rm(outputPath, { force: true });
+  }
 
   const args = [
     "run",
@@ -144,9 +169,10 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
   if (input.request.agent) {
     args.push("--agent", input.request.agent);
   }
-  args.push(
-    `Read and follow the prompt file at ${promptRelativePath}. Return only the requested final JSON object.`,
-  );
+  const runMessage = input.request.outputFile
+    ? `Read and follow the prompt file at ${promptRelativePath}. Write the final JSON object to ${input.request.outputFile}. After writing the file, reply only with {"output_file":"${input.request.outputFile}"}.`
+    : `Read and follow the prompt file at ${promptRelativePath}. Return only the requested final JSON object.`;
+  args.push(runMessage);
 
   return new Promise<OpencodeRunResult>((resolve, reject) => {
     const stdout: Buffer[] = [];
@@ -202,27 +228,43 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
       if (settled) {
         return;
       }
-      if (code !== 0) {
-        fail(
-          new OpencodeRunError(
-            `opencode 调用失败 request=${input.request.requestTag} exitCode=${code} stderr=${stderrSnippet(stderr)}`,
-          ),
-        );
-        return;
-      }
+      void (async () => {
+        if (code !== 0) {
+          fail(
+            new OpencodeRunError(
+              `opencode 调用失败 request=${input.request.requestTag} exitCode=${code} stderr=${stderrSnippet(stderr)}`,
+            ),
+          );
+          return;
+        }
 
-      const rawEvents = Buffer.concat(stdout).toString("utf-8");
-      try {
-        const rawText = extractAssistantText(rawEvents);
+        const rawEvents = Buffer.concat(stdout).toString("utf-8");
+        const assistantText = extractAssistantText(rawEvents);
+        let rawText = assistantText;
+        let outputFileText: string | undefined;
+        if (input.request.outputFile && outputPath) {
+          try {
+            outputFileText = await fs.readFile(outputPath, "utf-8");
+            rawText = outputFileText;
+          } catch (error) {
+            throw new OpencodeRunError(
+              `opencode agent output file missing request=${input.request.requestTag} outputFile=${input.request.outputFile}`,
+              { cause: error },
+            );
+          }
+        }
         succeed({
           requestTag: input.request.requestTag,
           rawText,
           rawEvents,
           elapsedMs: Date.now() - startedAt,
+          assistantText,
+          outputFile: input.request.outputFile,
+          outputFileText,
         });
-      } catch (error) {
+      })().catch((error: unknown) => {
         fail(error instanceof Error ? error : new OpencodeRunError(String(error)));
-      }
+      });
     });
   });
 }

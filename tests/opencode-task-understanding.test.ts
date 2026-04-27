@@ -43,6 +43,7 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   let requestTag = "";
   let title = "";
   let agent = "";
+  let outputFile = "";
   const sandboxRoot = "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox";
   const result = await runOpencodeTaskUnderstanding({
     sandboxRoot,
@@ -52,6 +53,7 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
       requestTag = request.requestTag;
       title = request.title ?? "";
       agent = request.agent ?? "";
+      outputFile = request.outputFile ?? "";
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
@@ -67,15 +69,20 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   });
 
   assert.equal(prompt.includes("tool" + "_call"), false);
-  assert.match(prompt, /任务理解阶段禁止读取任何代码文件/);
+  assert.match(prompt, /任务理解阶段只能读取用户消息指定的 prompt 文件/);
   assert.match(prompt, /只能基于本 prompt 中的 agent_input/);
-  assert.match(prompt, /不要调用 read、glob、grep、find 或任何工具/);
-  assert.match(prompt, /不要读取 generated\/、original\/ 或 references\/ 下的任何文件/);
+  assert.match(prompt, /不要调用 glob、grep、list 或任何用于探索工程文件的工具/);
+  assert.match(prompt, /不要读取 generated\//);
+  assert.match(prompt, /不要读取 original\//);
+  assert.match(prompt, /不要读取 patch\//);
+  assert.match(prompt, /不要读取 references\//);
+  assert.match(prompt, /output_file: metadata\/agent-output\/task-understanding\.json/);
   assert.doesNotMatch(prompt, /第一步只读取 patch\/effective\.patch/);
   assert.doesNotMatch(prompt, /第二步只按 patch 和 metadata 指向的相关文件读取上下文/);
   assert.equal(requestTag, "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(title, requestTag);
   assert.equal(agent, "hmos-understanding");
+  assert.equal(outputFile, "metadata/agent-output/task-understanding.json");
   assert.equal(result.outcome, "success");
   assert.deepEqual(result.summary?.classificationHints, ["bug_fix", "has_patch"]);
   assert.equal(result.raw_events, "{}\n");
@@ -134,7 +141,8 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /最终答案的第一个非空字符必须是 \{/);
-  assert.match(calls[1]?.prompt ?? "", /本次重试禁止读取任何文件/);
+  assert.match(calls[1]?.prompt ?? "", /本次重试禁止读取任何业务文件/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /本次重试禁止读取任何文件/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /agent_input:/);
   assert.match(calls[1]?.prompt ?? "", /只根据 constraint_draft 输出最终 JSON/);
   assert.match(calls[1]?.prompt ?? "", /explicitConstraints/);
@@ -208,7 +216,8 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.match(calls[1]?.prompt ?? "", /上一次任务理解输出无效/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
-  assert.match(calls[1]?.prompt ?? "", /本次重试禁止读取任何文件/);
-  assert.match(calls[1]?.prompt ?? "", /禁止调用 read、glob、grep、find 或任何工具/);
+  assert.match(calls[1]?.prompt ?? "", /本次重试禁止读取任何业务文件/);
+  assert.match(calls[1]?.prompt ?? "", /禁止调用 glob、grep、list 或任何用于探索工程文件的工具/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /禁止调用 read、glob、grep、find 或任何工具/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /agent_input:/);
 });

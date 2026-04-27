@@ -70,6 +70,7 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   let requestTag = "";
   let title = "";
   let agent = "";
+  let outputFile = "";
   const sandboxRoot = "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox";
   const result = await runOpencodeRuleAssessment({
     sandboxRoot,
@@ -79,6 +80,7 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
       requestTag = request.requestTag;
       title = request.title ?? "";
       agent = request.agent ?? "";
+      outputFile = request.outputFile ?? "";
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
@@ -92,9 +94,14 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   assert.match(prompt, /generated\//);
   assert.match(prompt, /original\//);
   assert.match(prompt, /patch\//);
+  assert.match(prompt, /output_file: metadata\/agent-output\/rule-assessment\.json/);
+  assert.match(prompt, /严格遵守 system prompt 中的正确输出格式/);
+  assert.doesNotMatch(prompt, /正确输出格式:/);
+  assert.doesNotMatch(prompt, /"rule_assessments"\s*:/);
   assert.equal(requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(title, requestTag);
   assert.equal(agent, "hmos-rule-assessment");
+  assert.equal(outputFile, "metadata/agent-output/rule-assessment.json");
   assert.equal(result.outcome, "success");
   assert.deepEqual(result.final_answer?.rule_assessments[0], {
     rule_id: "R1",
@@ -130,8 +137,12 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after p
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
-  assert.match(calls[1]?.prompt ?? "", /正确输出格式/);
-  assert.match(calls[1]?.prompt ?? "", /rule_retry_payload/);
+  assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
+  assert.match(calls[1]?.prompt ?? "", /candidate_rule_ids/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /正确输出格式:/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /rule_retry_payload/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /task_understanding/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /why_uncertain/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /bootstrap_payload:/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /original_prompt_summary/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_summary/);
@@ -162,8 +173,10 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after r
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
-  assert.match(calls[1]?.prompt ?? "", /正确输出格式/);
-  assert.match(calls[1]?.prompt ?? "", /rule_retry_payload/);
+  assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
+  assert.match(calls[1]?.prompt ?? "", /candidate_rule_ids/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /正确输出格式:/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /rule_retry_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /bootstrap_payload:/);
 });
 

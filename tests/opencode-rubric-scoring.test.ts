@@ -103,6 +103,7 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   let requestTag = "";
   let title = "";
   let agent = "";
+  let outputFile = "";
   const sandboxRoot = "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox";
   const result = await runOpencodeRubricScoring({
     sandboxRoot,
@@ -112,6 +113,7 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
       requestTag = request.requestTag;
       title = request.title ?? "";
       agent = request.agent ?? "";
+      outputFile = request.outputFile ?? "";
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
@@ -129,13 +131,17 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   assert.match(prompt, /最后一个非空字符必须是 \}/);
   assert.match(prompt, /不要输出分析过程/);
   assert.match(prompt, /不要输出自然语言前后缀/);
-  assert.match(prompt, /必须直接按“正确输出格式”输出 JSON object/);
+  assert.match(prompt, /严格遵守 system prompt 中的正确输出格式/);
+  assert.doesNotMatch(prompt, /正确输出格式:/);
   assert.match(prompt, /输出前必须自检 JSON 语法/);
   assert.match(prompt, /item_scores 是数组/);
   assert.match(prompt, /deduction_trace 是对象/);
+  assert.doesNotMatch(prompt, /"deduction_trace"\s*:/);
+  assert.match(prompt, /output_file: metadata\/agent-output\/rubric-scoring\.json/);
   assert.equal(requestTag, "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(title, requestTag);
   assert.equal(agent, "hmos-rubric-scoring");
+  assert.equal(outputFile, "metadata/agent-output/rubric-scoring.json");
   assert.equal(result.outcome, "success");
   assert.equal(result.final_answer?.item_scores[0]?.dimension_name, "功能正确性");
   assert.equal(result.final_answer?.item_scores[0]?.score, 40);
@@ -165,7 +171,8 @@ test("runOpencodeRubricScoring retries once with strict format guidance after pr
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /rubric 评分 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
-  assert.match(calls[1]?.prompt ?? "", /正确输出格式/);
+  assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /正确输出格式:/);
   assert.match(calls[1]?.prompt ?? "", /最终答案的第一个非空字符必须是 \{/);
   assert.match(calls[1]?.prompt ?? "", /输出前必须自检 JSON 语法/);
   assert.match(calls[1]?.prompt ?? "", /每个 item_scores 条目必须先闭合自身对象/);
@@ -201,7 +208,8 @@ test("runOpencodeRubricScoring retries once with strict format guidance after re
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /rubric 评分 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
-  assert.match(calls[1]?.prompt ?? "", /正确输出格式/);
+  assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /正确输出格式:/);
   assert.match(calls[1]?.prompt ?? "", /沿用上一轮对话中的 scoring_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /scoring_payload:/);
@@ -304,13 +312,6 @@ test("runOpencodeRubricScoring retry prompt targets concrete protocol failures",
                     ...answer.item_scores[0],
                     score: 20,
                     matched_band_score: 20,
-                    deduction_trace: {
-                      code_locations: ["generated/entry/src/main.ets:1"],
-                      impact_scope: "影响范围",
-                      rubric_comparison: "缺少固定比较短语",
-                      deduction_reason: "扣分原因",
-                      improvement_suggestion: "改进建议",
-                    },
                   },
                 ],
               })
@@ -326,4 +327,33 @@ test("runOpencodeRubricScoring retry prompt targets concrete protocol failures",
   assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
   assert.match(calls[1]?.prompt ?? "", /invalid_deduction_trace/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
+});
+
+test("runOpencodeRubricScoring does not hard-validate rubric comparison wording", async () => {
+  const answer = finalAnswer();
+  answer.item_scores[0] = {
+    ...answer.item_scores[0],
+    score: 20,
+    matched_band_score: 20,
+    deduction_trace: {
+      code_locations: ["generated/entry/src/main.ets:1"],
+      impact_scope: "影响范围",
+      rubric_comparison: "这里没有使用固定比较短语，但仍然说明了评分依据。",
+      deduction_reason: "扣分原因",
+      improvement_suggestion: "改进建议",
+    },
+  };
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
 });

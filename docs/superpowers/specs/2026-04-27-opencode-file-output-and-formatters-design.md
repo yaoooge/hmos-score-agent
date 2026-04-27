@@ -401,6 +401,130 @@ metadata/agent-output/rule-assessment.json
 
 这些失败原因进入现有 retry prompt 的 `listed protocol errors`。
 
+## 冗余内容清理设计
+
+文件落盘输出稳定后，需要同步清理 stdout JSON-only 时代留下的重复协议与命名歧义，避免形成新的技术债。
+
+### 清理 stdout JSON-only 主路径
+
+迁移稳定后，task understanding、rubric scoring、rule assessment 三条主链路不再使用 assistant 最终文本作为权威结果来源。
+
+需要清理或降级的内容包括：
+
+- `runOpencodePrompt` 中的 `Return only the requested final JSON object.` 指令。
+- `extractAssistantText` 作为 agent 最终结果来源的职责。
+- `extractFinalJsonObject` 在 task/rubric/rule 主解析路径中的使用。
+
+保留原则：
+
+- `extractAssistantText` 可以保留为诊断信息来源，用于记录 assistant 最终确认文本。
+- `extractFinalJsonObject` 可以短期保留为 stdout fallback 或历史兼容工具，但不应继续作为新协议主路径。
+- 稳定阶段移除 stdout fallback 后，agent 输出解析应只接受 output file 的完整 JSON 文本，并用 `JSON.parse` 解析。
+
+### 清理重复输出格式 prompt
+
+当前输出格式已经写入各自 system prompt。文件落盘协议实施后，普通 prompt 与 retry prompt 不再内联完整“正确输出格式”。
+
+推荐职责划分：
+
+- system prompt：保存完整 JSON schema 样例、文件写入协议、不可变输出规则。
+- 普通 prompt：保存本次任务输入、证据边界、`output_file`。
+- retry prompt：保存 failure reason、定向修复清单、同一个 `output_file`。
+
+需要清理的运行时代码包括：
+
+- `rubricOutputFormat()`。
+- `ruleAssessmentOutputFormat()`。
+- rubric/rule prompt 中的 `strictOutputInstructions()` 大段拼接。
+- 普通 prompt 与 retry prompt 中重复的“只输出一个 JSON object”“正确输出格式”等 stdout 导向文案。
+
+如果测试仍需要固定样例，应读取 `.opencode/prompts/*.md` 或测试 fixture，而不是在运行时代码里保留第二份 schema 样例。
+
+### 精简 retry payload
+
+file output 后，retry 只负责修复协议错误，不应重新判定业务。rule retry 当前携带较大的 `rule_retry_payload`，容易增加模型跑偏概率。
+
+推荐清理为：
+
+```json
+{
+  "candidate_rule_ids": ["ARKTS-MUST-001", "ARKTS-SHOULD-001"],
+  "output_file": "metadata/agent-output/rule-assessment.json"
+}
+```
+
+rubric retry 继续不携带 `rubric_retry_payload`。如果必须提供 item 信息，只提供 item key 列表和 failure reason，不提供完整 rubric、任务理解或长上下文。
+
+### 拆分 raw text 命名
+
+当前 `final_answer_raw_text`、`raw_text` 容易混淆 assistant stdout 与最终解析源。文件输出后应拆分为：
+
+```ts
+interface OpencodeRunResult {
+  rawText: string;          // 迁移期兼容字段，最终可删除或改语义
+  assistantText?: string;   // assistant 最终确认文本，仅用于诊断
+  outputFile?: string;      // sandbox 相对路径
+  outputFileText?: string;  // output file 内容，最终权威结果文本
+  rawEvents: string;
+}
+```
+
+稳定后：
+
+- agent 解析只使用 `outputFileText`。
+- `assistantText` 不参与 schema 校验。
+- `final_answer_raw_text` 改名或移除，避免误导下游继续依赖 stdout。
+
+### 收敛持久化产物
+
+文件输出后，应把 agent output file 作为核心调试产物保存。
+
+新增或保留：
+
+```text
+opencode-sandbox/metadata/agent-output/task-understanding.json
+opencode-sandbox/metadata/agent-output/rubric-scoring.json
+opencode-sandbox/metadata/agent-output/rule-assessment.json
+```
+
+可降级的内容：
+
+- `raw_text` 只作为诊断字段。
+- `raw_events` 体积较大，可考虑只在失败时完整保存，成功时保存摘要或保留现状作为过渡。
+
+仍应保留：
+
+- `inputs/*-prompt.txt`，用于复现 prompt。
+- `inputs/*-payload.json`，用于复现本地输入。
+- `intermediate/*-agent-result.json`，用于记录解析后结构、output file 路径与 runner 诊断。
+
+### 修正 task understanding 文案
+
+`hmos-understanding` 必须允许读取 prompt 文件，因此 system prompt 与普通 prompt 不应再写“禁止读取任何文件”这种绝对表达。
+
+推荐文案：
+
+```text
+只允许读取用户消息指定的 prompt 文件。
+不要读取 generated/、original/、patch/、metadata/metadata.json 或 references/ 下的任何业务文件。
+不要调用 glob、grep、list。
+```
+
+这样权限与 prompt 一致：`read` 允许用于 prompt 文件，探索类工具禁用。
+
+### 不应清理的防线
+
+以下内容不是技术债，file output 后仍必须保留：
+
+- zod/schema 校验。
+- `parseConstraintSummary`。
+- `normalizeRubricResult`。
+- `normalizeRuleAssessmentResult`。
+- `validateRubricCoverage`。
+- 定向 retry failure guidance。
+
+formatter 只保证 JSON 语法合法，不保证业务结构合法，因此这些本地防线仍是最终可靠性的核心。
+
 ## 兼容与迁移计划
 
 ### 阶段一：最小修复
@@ -506,4 +630,3 @@ metadata/agent-output/rule-assessment.json
 - formatter 能格式化 agent 写入的 JSON 文件。
 - 本地 schema 校验和 normalize 保持现有行为。
 - `simple_test` 和 `glm_test1` 能稳定生成最终 `outputs/result.json`。
-

@@ -89,15 +89,20 @@ async function ensureRuntimeDirectories(runtimeDir: string): Promise<void> {
       path.join(runtimeDir, "xdg-data"),
       path.join(runtimeDir, "xdg-cache"),
       path.join(runtimeDir, "prompts"),
+      path.join(runtimeDir, "formatters"),
     ].map((dirPath) => fs.mkdir(dirPath, { recursive: true })),
   );
 }
 
-async function copyPromptFiles(input: { sourceDir: string; targetDir: string }): Promise<void> {
+async function copyFilesFromDirectory(input: {
+  sourceDir: string;
+  targetDir: string;
+  label: string;
+}): Promise<void> {
   await fs.mkdir(input.targetDir, { recursive: true });
   const entries = await fs.readdir(input.sourceDir, { withFileTypes: true }).catch((error: unknown) => {
     throw new OpencodeConfigError(
-      `无法读取 opencode system prompt 目录：${error instanceof Error ? error.message : String(error)}`,
+      `无法读取 opencode ${input.label} 目录：${error instanceof Error ? error.message : String(error)}`,
     );
   });
 
@@ -137,6 +142,7 @@ export async function createOpencodeRuntimeConfig(input: {
   const configPath = path.join(runtimeDir, "opencode.generated.json");
   const templatePath = path.join(configDir, "opencode.template.json");
   const promptsDir = path.join(configDir, "prompts");
+  const formattersDir = path.join(configDir, "formatters");
 
   const template = await fs.readFile(templatePath, "utf-8").catch((error: unknown) => {
     throw new OpencodeConfigError(
@@ -154,13 +160,25 @@ export async function createOpencodeRuntimeConfig(input: {
   }
 
   await ensureRuntimeDirectories(runtimeDir);
-  await copyPromptFiles({
+  await copyFilesFromDirectory({
     sourceDir: promptsDir,
     targetDir: path.join(runtimeDir, "prompts"),
+    label: "system prompt",
   });
-  await copyPromptFiles({
+  await copyFilesFromDirectory({
     sourceDir: promptsDir,
     targetDir: path.join(runtimeDir, "xdg-config", "opencode", "prompts"),
+    label: "system prompt",
+  });
+  await copyFilesFromDirectory({
+    sourceDir: formattersDir,
+    targetDir: path.join(runtimeDir, "formatters"),
+    label: "formatter",
+  });
+  await copyFilesFromDirectory({
+    sourceDir: formattersDir,
+    targetDir: path.join(runtimeDir, "xdg-config", "opencode", "formatters"),
+    label: "formatter",
   });
   const generatedConfigText = `${generatedText.trim()}\n`;
   await fs.writeFile(configPath, generatedConfigText, "utf-8");

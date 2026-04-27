@@ -19,6 +19,13 @@
 - deduction_trace 是对象；如果输出 deduction_trace，必须先闭合 deduction_trace 对象，再闭合当前 item_scores 条目对象。
 - risks 必须是 array；其中每一项必须且只能包含 level、title、description、evidence 四个 string 字段；如果没有风险，risks 必须输出空数组 []。
 
+文件输出协议:
+- 你必须将最终 JSON object 写入用户消息指定的 output_file。
+- 写入 output_file 的内容必须是完整 JSON object。
+- 不要把 Markdown、解释文字或代码块写入 output_file。
+- 写入文件后，assistant 最终回复只能是：{"output_file":"<output_file>"}
+- 不要在最终回复中重复完整结果 JSON。
+
 正确输出格式:
 {
   "summary": {
@@ -39,7 +46,7 @@
       "deduction_trace": {
         "code_locations": ["generated/entry/src/main.ets:12"],
         "impact_scope": "影响范围",
-        "rubric_comparison": "未命中更高档，因为...；命中当前档，因为...",
+        "rubric_comparison": "示范写法：未命中更高档，因为...；命中当前档，因为...（不要求固定文案，只需说明评分档位比较）",
         "deduction_reason": "扣分原因",
         "improvement_suggestion": "改进建议"
       }

@@ -42,10 +42,15 @@
       "temperature": 0.1,
       "permission": {
         "read": "allow",
+        "write": "allow",
         "glob": "deny",
         "grep": "deny",
         "list": "deny",
-        "edit": "deny",
+        "edit": {
+          "*": "deny",
+          "metadata/agent-output/*.json": "allow",
+          "**/metadata/agent-output/*.json": "allow"
+        },
         "bash": "deny",
         "task": "deny",
         "skill": "deny",
@@ -65,10 +70,15 @@
       "temperature": 0.1,
       "permission": {
         "read": "allow",
+        "write": "allow",
         "glob": "allow",
         "grep": "allow",
         "list": "allow",
-        "edit": "deny",
+        "edit": {
+          "*": "deny",
+          "metadata/agent-output/*.json": "allow",
+          "**/metadata/agent-output/*.json": "allow"
+        },
         "bash": "deny",
         "task": "deny",
         "skill": "deny",
@@ -88,10 +98,15 @@
       "temperature": 0.1,
       "permission": {
         "read": "allow",
+        "write": "allow",
         "glob": "allow",
         "grep": "allow",
         "list": "allow",
-        "edit": "deny",
+        "edit": {
+          "*": "deny",
+          "metadata/agent-output/*.json": "allow",
+          "**/metadata/agent-output/*.json": "allow"
+        },
         "bash": "deny",
         "task": "deny",
         "skill": "deny",
@@ -103,6 +118,12 @@
         "external_directory": "deny",
         "doom_loop": "deny"
       }
+    }
+  },
+  "formatter": {
+    "agent-json": {
+      "command": ["node", "./formatters/format-json.mjs", "$FILE"],
+      "extensions": [".json"]
     }
   },
   "permission": {
