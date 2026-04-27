@@ -23,6 +23,8 @@ import {
   renderRubricCaseAwareToolCallRetryPrompt,
 } from "./rubricCaseAwarePrompt.js";
 
+const RUBRIC_CASE_AWARE_MAX_PLANNER_TURNS = 20;
+
 function isActionRetryCandidate(rawText: string, action: "final_answer" | "tool_call"): boolean {
   const trimmed = rawText.trim();
   let candidateJson = trimmed;
@@ -86,7 +88,7 @@ export async function runRubricCaseAwareAgent(input: {
   const executor = createCaseToolExecutor({
     caseRoot: input.caseRoot,
     effectivePatchPath: input.bootstrapPayload.case_context.effective_patch_path,
-    maxToolCalls: contract.max_tool_calls,
+    maxToolCalls: Number.MAX_SAFE_INTEGER,
     maxTotalBytes: contract.max_total_bytes,
     maxFiles: contract.max_files,
   });
@@ -103,7 +105,7 @@ export async function runRubricCaseAwareAgent(input: {
     `rubric case-aware agent 评分开始 caseId=${input.bootstrapPayload.case_context.case_id} targetFiles=${input.bootstrapPayload.initial_target_files?.length ?? 0} hasPatch=${Boolean(input.bootstrapPayload.case_context.effective_patch_path)}`,
   );
 
-  const maxTurns = contract.max_tool_calls + 1;
+  const maxTurns = RUBRIC_CASE_AWARE_MAX_PLANNER_TURNS;
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
     let topLevelRepairRetryUsed = false;
@@ -111,7 +113,7 @@ export async function runRubricCaseAwareAgent(input: {
     let toolCallRepairRetryUsed = false;
     const budget = executor.getBudget();
     await input.logger?.info(
-      `rubric case-aware planner 开始 turn=${turn} remainingTools=${budget.remainingToolCalls} remainingBytes=${budget.remainingBytes}`,
+      `rubric case-aware planner 开始 turn=${turn} toolsUsed=${budget.usedToolCalls} remainingBytes=${budget.remainingBytes}`,
     );
 
     const prompt =
@@ -392,13 +394,6 @@ export async function runRubricCaseAwareAgent(input: {
       break;
     }
 
-    if (toolTrace.length >= contract.max_tool_calls) {
-      outcome = "tool_budget_exhausted";
-      failureReason = "tool_budget_exceeded";
-      await input.logger?.warn(`rubric case-aware 工具预算耗尽 turn=${turn}`);
-      break;
-    }
-
     const toolResult = await executor.execute({
       tool: decision.tool,
       args: decision.args,
@@ -451,6 +446,14 @@ export async function runRubricCaseAwareAgent(input: {
       failureReason = toolResult.error.code;
       break;
     }
+  }
+
+  if (!outcome && turns.length >= RUBRIC_CASE_AWARE_MAX_PLANNER_TURNS) {
+    outcome = "protocol_error";
+    failureReason = "planner_turn_limit_exceeded";
+    await input.logger?.warn(
+      `rubric case-aware planner 回合上限耗尽 turns=${RUBRIC_CASE_AWARE_MAX_PLANNER_TURNS}`,
+    );
   }
 
   return {

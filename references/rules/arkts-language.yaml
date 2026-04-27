@@ -128,15 +128,6 @@ should_rules:
         - \t
     fallback_policy: agent_assisted
   - id: ARKTS-SHOULD-010
-    rule: 建议代码行宽不超过 120 个字符。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - ^.{121,}$
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-011
     rule: 条件语句和循环语句建议使用大括号。
     detector_kind: text_pattern
     detector_config:
@@ -145,7 +136,7 @@ should_rules:
       patterns:
         - ^\s*(?:if|for|while)\s*\((?:[^()]|\([^()]*\))*\)\s*(?!\{)\S
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-012
+  - id: ARKTS-SHOULD-011
     rule: switch 语句中的 case 和 default 需按层级缩进。
     detector_kind: text_pattern
     detector_config:
@@ -155,21 +146,12 @@ should_rules:
         - (^[ \t]*)switch\b[^\n]*\{\r?\n\1(?:case|default)\b
         - (^[ \t]*)(?:case\b[^\n]*|default)\s*:[ \t]*\r?\n\1\S
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-013
-    rule: 表达式换行应保持一致，运算符放在行末。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - ^\s*(?:\+|\-|\*|/|%|&&|\|\||\?\?|===|==|!==|!=|<=|>=|<|>|\?|:)\s+\S
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-014
+  - id: ARKTS-SHOULD-012
     rule: 空格应突出关键字和重要信息，避免不必要空格和多个连续空格。
     detector_kind: not_implemented
     detector_config: {}
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-015
+  - id: ARKTS-SHOULD-013
     rule: 建议字符串统一使用单引号。
     detector_kind: text_pattern
     detector_config:
@@ -178,25 +160,7 @@ should_rules:
       patterns:
         - '"[^"\n]*"'
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-016
-    rule: 对象字面量属性超过 4 个时建议统一换行。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - \{[ \t]*(?:[A-Za-z_$][\w$]*[ \t]*:[ \t]*[^,{}\n]+,[ \t]*){4,}[A-Za-z_$][\w$]*[ \t]*:[ \t]*[^,{}\n]+[ \t]*\}
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-017
-    rule: else 或 catch 放在前一个代码块闭括号的同一行。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - '}\s*\n\s*(?:else|catch)\b'
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-018
+  - id: ARKTS-SHOULD-014
     rule: 大括号应与控制语句或声明语句位于同一行。
     detector_kind: text_pattern
     detector_config:
@@ -205,12 +169,12 @@ should_rules:
       patterns:
         - \b(?:if|for|while|switch|else|catch|class|interface|enum|struct|function)\b[^\n{]*\n\s*\{
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-019
-    rule: 建议为类属性添加明确的可访问修饰符。
+  - id: ARKTS-SHOULD-015
+    rule: 建议为class的类属性添加明确的可访问修饰符。
     detector_kind: not_implemented
     detector_config: {}
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-020
+  - id: ARKTS-SHOULD-016
     rule: 不建议省略浮点数小数点前后的 0。
     detector_kind: text_pattern
     detector_config:
@@ -218,15 +182,6 @@ should_rules:
         - .ets
       patterns:
         - (?<![\w.])\.\d+\b|\b\d+\.(?!\d)
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-021
-    rule: 使用 T[] 表示数组类型，而不是 Array<T>。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - \bArray\s*<[^>]+>
     fallback_policy: agent_assisted
 forbidden_patterns:
   - id: ARKTS-FORBID-001

@@ -34,7 +34,7 @@ test("builds minimal YAML documents for each registered rule pack", () => {
     "merged-html-and-v1-rules-2026-04-08",
   );
   assert.equal(arktsLanguage.document.must_rules.length, 10);
-  assert.equal(arktsLanguage.document.should_rules.length, 21);
+  assert.equal(arktsLanguage.document.should_rules.length, 16);
   assert.equal(arktsLanguage.document.forbidden_patterns.length, 26);
 
   const must004 = arktsLanguage.document.must_rules.find((item) => item.id === "ARKTS-MUST-001");
@@ -107,7 +107,7 @@ test("writes one YAML file per registered rule pack", async () => {
 
   assert.equal(languageDocument.rule_pack_meta.pack_id, "arkts-language");
   assert.equal(languageDocument.must_rules.length, 10);
-  assert.equal(languageDocument.should_rules.length, 21);
+  assert.equal(languageDocument.should_rules.length, 16);
   assert.equal(languageDocument.forbidden_patterns.length, 26);
 });
 

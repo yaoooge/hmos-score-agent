@@ -171,6 +171,130 @@ test("runRubricCaseAwareAgent executes read_files and records multiple paths in 
   assert.equal(result.final_answer?.item_scores.length, finalAnswer.item_scores.length);
 });
 
+test("runRubricCaseAwareAgent continues after configured tool call budget is reached", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const finalAnswer = buildFullScoreFinalAnswer(rubricSnapshot);
+  const responses = [
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_file",
+      args: { path: "workspace/entry/src/main/ets/Missing.ets" },
+      reason: "先尝试读取模型推断的文件路径。",
+    }),
+    JSON.stringify({
+      action: "tool_call",
+      tool: "read_file",
+      args: { path: "workspace/entry/src/main/ets/Index.ets" },
+      reason: "上一次路径不存在，改读目录中实际存在的文件。",
+    }),
+    JSON.stringify(finalAnswer),
+  ];
+  const payload = buildRubricCaseAwarePayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "修复页面 bug",
+      originalProjectPath: path.join(caseRoot, "original"),
+      generatedProjectPath: path.join(caseRoot, "workspace"),
+    },
+    caseRoot,
+    taskType: "bug_fix",
+    constraintSummary: {
+      explicitConstraints: ["修复页面 bug"],
+      contextualConstraints: ["保持工程结构"],
+      implicitConstraints: [],
+      classificationHints: ["bug_fix"],
+    },
+    rubricSnapshot,
+    initialTargetFiles: ["workspace/entry/src/main/ets/Index.ets"],
+  });
+  payload.tool_contract = {
+    ...payload.tool_contract,
+    max_tool_calls: 1,
+  };
+
+  const result = await runRubricCaseAwareAgent({
+    caseRoot,
+    bootstrapPayload: payload,
+    async completeJsonPrompt() {
+      return responses.shift() ?? "";
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.tool_trace.length, 2);
+  assert.equal(result.tool_trace[0]?.ok, false);
+  assert.equal(result.tool_trace[0]?.error_code, "file_not_found");
+  assert.equal(result.tool_trace[1]?.ok, true);
+});
+
+test("runRubricCaseAwareAgent retries final_answer schema field violations with concrete schema guidance", async (t) => {
+  const caseRoot = await makeCaseRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const invalidFinalAnswer = buildFullScoreFinalAnswer(rubricSnapshot) as RubricScoringResult & {
+    action: "final_answer";
+    risks: Array<Record<string, unknown>>;
+  };
+  invalidFinalAnswer.risks = [
+    {
+      risk_level: "medium",
+      description: "工作区文件路径不存在，无法读取实际代码内容进行详细评审。",
+    },
+  ];
+  const validFinalAnswer = buildFullScoreFinalAnswer(rubricSnapshot);
+  validFinalAnswer.risks = [
+    {
+      level: "medium",
+      title: "工作区文件路径不存在",
+      description: "无法读取实际代码内容进行详细评审。",
+      evidence: "read_files 返回 file_not_found。",
+    },
+  ];
+  const responses = [JSON.stringify(invalidFinalAnswer), JSON.stringify(validFinalAnswer)];
+  const prompts: string[] = [];
+  const requestTags: string[] = [];
+  const payload = buildRubricCaseAwarePayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "修复页面 bug",
+      originalProjectPath: path.join(caseRoot, "original"),
+      generatedProjectPath: path.join(caseRoot, "workspace"),
+    },
+    caseRoot,
+    taskType: "bug_fix",
+    constraintSummary: {
+      explicitConstraints: ["修复页面 bug"],
+      contextualConstraints: ["保持工程结构"],
+      implicitConstraints: [],
+      classificationHints: ["bug_fix"],
+    },
+    rubricSnapshot,
+    initialTargetFiles: ["workspace/entry/src/main/ets/Index.ets"],
+  });
+
+  const result = await runRubricCaseAwareAgent({
+    caseRoot,
+    bootstrapPayload: payload,
+    async completeJsonPrompt(prompt, options) {
+      prompts.push(prompt);
+      requestTags.push(options?.requestTag ?? "");
+      return responses.shift() ?? "";
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.deepEqual(requestTags, [
+    "rubric_case_aware_turn_1",
+    "rubric_case_aware_turn_1_final_answer_retry",
+  ]);
+  assert.match(prompts[1] ?? "", /risks\[0\]\.level/);
+  assert.match(prompts[1] ?? "", /risk_level/);
+  assert.match(prompts[1] ?? "", /level.*title.*description.*evidence/s);
+  assert.equal(result.final_answer?.risks[0]?.level, "medium");
+});
+
 test("runRubricCaseAwareAgent rejects incomplete rubric final answer", async (t) => {
   const caseRoot = await makeCaseRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);

@@ -134,7 +134,7 @@ test("computeScoreBreakdown snaps penalized submetric scores to declared discret
   }
 });
 
-test("computeScoreBreakdown maps array type style rules only to type-related rubric items", async () => {
+test("computeScoreBreakdown maps class property modifier rules only to type-related rubric items", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
 
   const result = computeScoreBreakdown({
@@ -142,10 +142,10 @@ test("computeScoreBreakdown maps array type style rules only to type-related rub
     rubric,
     ruleAuditResults: [
       {
-        rule_id: "ARKTS-SHOULD-021",
+        rule_id: "ARKTS-SHOULD-015",
         rule_source: "should_rule",
         result: "不满足",
-        conclusion: "使用 T[] 表示数组类型，而不是 Array<T>。",
+        conclusion: "建议为class的类属性添加明确的可访问修饰符。",
       },
     ],
     ruleViolations: [],
@@ -174,7 +174,7 @@ test("computeScoreBreakdown maps array type style rules only to type-related rub
   assert.equal(complexityMetric?.score, 5);
   assert.equal(complexityMetric?.rationale, "按 rubric 基线满分初始化。");
   assert.equal(arktsMetric?.score, 6);
-  assert.match(arktsMetric?.rationale ?? "", /ARKTS-SHOULD-021/);
+  assert.match(arktsMetric?.rationale ?? "", /ARKTS-SHOULD-015/);
 });
 
 test("computeScoreBreakdown triggers hard gate when case P0 rule fails", async () => {
