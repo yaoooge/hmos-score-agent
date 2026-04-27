@@ -1,0 +1,19 @@
+{
+  "routerMap": [
+    {
+      "name": "CourseFormPage",
+      "pageSourceFile": "src/main/ets/pages/CourseFormPage.ets",
+      "buildFunction": "buildCourseFormPage"
+    },
+    {
+      "name": "CourseDetailPage",
+      "pageSourceFile": "src/main/ets/pages/CourseDetailPage.ets",
+      "buildFunction": "buildCourseDetailPage"
+    },
+    {
+      "name": "TimetablePage",
+      "pageSourceFile": "src/main/ets/pages/TimetablePage.ets",
+      "buildFunction": "buildTimetablePage"
+    }
+  ]
+}

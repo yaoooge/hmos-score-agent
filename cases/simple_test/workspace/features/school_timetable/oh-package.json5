@@ -1,0 +1,12 @@
+{
+  "name": "school_timetable",
+  "version": "1.0.0",
+  "description": "Please describe the basic information.",
+  "main": "Index.ets",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "module_course_schedule": "file:../../components/module_course_schedule",
+    "foundation": "file:../../common/foundation"
+  }
+}

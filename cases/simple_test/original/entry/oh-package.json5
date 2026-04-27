@@ -1,0 +1,16 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Please describe the basic information.",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "foundation": "file:../common/foundation",
+    "network": "file:../common/network",
+    "school_timetable": "file:../features/school_timetable",
+    "module_course_schedule": "file:../components/module_course_schedule",
+    "module_secure_checkin": "file:../components/module_secure_checkin",
+    "atomicservice_login": "file:../components/atomicservice_login"
+  }
+}

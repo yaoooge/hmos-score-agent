@@ -1,0 +1,9 @@
+{
+  "module": {
+    "name": "module_course_schedule",
+    "type": "har",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

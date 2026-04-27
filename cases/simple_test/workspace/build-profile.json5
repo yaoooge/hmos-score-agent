@@ -1,0 +1,67 @@
+{
+  "app": {
+/**todo: 配置手动签名 */
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.0.2(22)",
+        "compatibleSdkVersion": "5.1.0(18)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "foundation",
+      "srcPath": "./common/foundation"
+    },
+    {
+      "name": "network",
+      "srcPath": "./common/network"
+    },
+    {
+      "name": "school_timetable",
+      "srcPath": "./features/school_timetable"
+    },
+    {
+      "name": "module_course_schedule",
+      "srcPath": "./components/module_course_schedule"
+    },
+    {
+      "name": "module_secure_checkin",
+      "srcPath": "./components/module_secure_checkin"
+    },
+    {
+      "name": "atomicservice_login",
+      "srcPath": "./components/atomicservice_login"
+    }
+  ]
+}

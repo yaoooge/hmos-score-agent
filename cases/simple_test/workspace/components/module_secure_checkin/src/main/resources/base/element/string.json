@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "permission_reason_location",
+      "value": "用于在签到时获取位置信息"
+    },
+    {
+      "name": "agcit_huawei_school_life_module_secure_checkin",
+      "value": "1.0.1"
+    },
+    {
+      "name": "agcittype_huawei_school_life_module_secure_checkin",
+      "value": "serviceComponent"
+    }
+  ]
+}

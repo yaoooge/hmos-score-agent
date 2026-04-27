@@ -1,0 +1,9 @@
+{
+  "module": {
+    "name": "foundation",
+    "type": "har",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

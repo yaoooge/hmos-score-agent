@@ -1,0 +1,14 @@
+{
+  "module": {
+    "name": "atomicservice_login",
+    "type": "har",
+    "deviceTypes": [
+      "phone"
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      }
+    ]
+  }
+}

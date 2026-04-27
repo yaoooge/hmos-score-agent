@@ -1,0 +1,9 @@
+{
+  "routerMap": [
+    {
+      "name": "CheckinPage",
+      "pageSourceFile": "src/main/ets/pages/CheckinPage.ets",
+      "buildFunction": "buildCheckinPage"
+    }
+  ]
+}
