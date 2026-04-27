@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import express, { NextFunction, Request, Response } from "express";
 import { getConfig } from "./config.js";
 import {
+  acceptRemoteEvaluationTask,
   executeAcceptedRemoteEvaluationTask,
   prepareRemoteEvaluationTask,
   resolveDefaultCasePath,
@@ -13,6 +14,7 @@ import type { RemoteEvaluationTask } from "./types.js";
 type AppDeps = {
   runSingleCase: typeof runSingleCase;
   runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
+  acceptRemoteEvaluationTask: typeof acceptRemoteEvaluationTask;
   prepareRemoteEvaluationTask: typeof prepareRemoteEvaluationTask;
   executeAcceptedRemoteEvaluationTask: typeof executeAcceptedRemoteEvaluationTask;
 };
@@ -153,55 +155,6 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
     );
   }
 
-  async function waitForTaskAcceptance(
-    taskId: number,
-    preparation: Promise<AcceptedRemoteEvaluationTask>,
-  ): Promise<AcceptedRemoteEvaluationTask | undefined> {
-    const timeoutMs = getConfig().remoteTaskAcceptTimeoutMs;
-    let timeout: NodeJS.Timeout | undefined;
-    const timeoutResult = new Promise<undefined>((resolve) => {
-      timeout = setTimeout(() => {
-        if (!isExecutingOrQueued(taskId)) {
-          upsertTaskRecord(taskId, "timed_out", {
-            error: `任务等待进入执行队列超时，timeoutMs=${String(timeoutMs)}`,
-          });
-          resolve(undefined);
-        }
-      }, timeoutMs);
-    });
-
-    try {
-      return await Promise.race([preparation, timeoutResult]);
-    } finally {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    }
-  }
-
-  function trackLatePreparation(
-    taskId: number,
-    preparation: Promise<AcceptedRemoteEvaluationTask>,
-  ): void {
-    preparation
-      .then((acceptedTask) => {
-        if (remoteTaskRecords.get(taskId)?.status !== "timed_out") {
-          return;
-        }
-        console.error(
-          `run-remote-task preparation resolved after timeout taskId=${String(taskId)} caseDir=${acceptedTask.caseDir}`,
-        );
-      })
-      .catch((error) => {
-        if (remoteTaskRecords.get(taskId)?.status !== "timed_out") {
-          return;
-        }
-        console.error(
-          `run-remote-task preparation failed after timeout taskId=${String(taskId)} error=${formatError(error)}`,
-        );
-      });
-  }
-
   async function executeRemoteTask(acceptedTask: AcceptedRemoteEvaluationTask): Promise<void> {
     queuedTaskIds.delete(acceptedTask.taskId);
     runningTaskIds.add(acceptedTask.taskId);
@@ -263,22 +216,7 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
       if (taskId !== undefined) {
         upsertTaskRecord(taskId, "preparing");
       }
-      const preparation = deps.prepareRemoteEvaluationTask(req.body as RemoteEvaluationTask);
-      const acceptedTask =
-        taskId === undefined ? await preparation : await waitForTaskAcceptance(taskId, preparation);
-      if (!acceptedTask) {
-        if (taskId === undefined) {
-          throw new Error("远端任务缺少 taskId，无法跟踪执行状态。");
-        }
-        trackLatePreparation(taskId, preparation);
-        const timeoutMs = getConfig().remoteTaskAcceptTimeoutMs;
-        sendRemoteApiResponse(res, 504, requestLogContext, {
-          success: false,
-          taskId,
-          message: `任务等待进入执行队列超时，timeoutMs=${String(timeoutMs)}`,
-        });
-        return;
-      }
+      const acceptedTask = await deps.acceptRemoteEvaluationTask(req.body as RemoteEvaluationTask);
       const acceptedTaskLogContext = buildAcceptedTaskLogContext(acceptedTask);
       void enqueueRemoteTaskExecution(acceptedTask).catch((error) => {
         console.error(
@@ -288,7 +226,6 @@ export function createRunRemoteTaskHandler(deps: AppDeps) {
       sendRemoteApiResponse(res, 200, acceptedTaskLogContext, {
         success: true,
         taskId: acceptedTask.taskId,
-        caseDir: acceptedTask.caseDir,
         message: acceptedTask.message,
       });
     } catch (error) {
@@ -333,11 +270,13 @@ export function createApp(
   deps: {
     runSingleCase: typeof runSingleCase;
     runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
+    acceptRemoteEvaluationTask: typeof acceptRemoteEvaluationTask;
     prepareRemoteEvaluationTask: typeof prepareRemoteEvaluationTask;
     executeAcceptedRemoteEvaluationTask: typeof executeAcceptedRemoteEvaluationTask;
   } = {
     runSingleCase,
     runRemoteEvaluationTask,
+    acceptRemoteEvaluationTask,
     prepareRemoteEvaluationTask,
     executeAcceptedRemoteEvaluationTask,
   },

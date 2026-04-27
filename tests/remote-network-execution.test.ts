@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createApp, createCorsMiddleware, createRunRemoteTaskHandler } from "../src/index.js";
 import {
+  acceptRemoteEvaluationTask,
   executeAcceptedRemoteEvaluationTask,
   prepareRemoteEvaluationTask,
   runRemoteEvaluationTask,
@@ -113,10 +114,9 @@ function createOpencodeRunnerMock(): OpencodeRunner {
       }
 
       if (request.requestTag.startsWith("rule-assessment-")) {
-        const payload = parsePromptPayload<{ assisted_rule_candidates: Array<{ rule_id: string }> }>(
-          request.prompt,
-          "bootstrap_payload",
-        );
+        const payload = parsePromptPayload<{
+          assisted_rule_candidates: Array<{ rule_id: string }>;
+        }>(request.prompt, "bootstrap_payload");
         return {
           requestTag: request.requestTag,
           rawText: JSON.stringify({
@@ -212,38 +212,63 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
     }
   });
 
-  const result = await runRemoteEvaluationTask({
-    taskId: 4,
-    testCase: {
-      id: 8,
-      name: "remote-case",
-      type: "requirement",
-      description: "新增页面",
-      input: "请实现登录页",
-      expectedOutput: "实现登录页",
-      fileUrl: originalUrl,
+  const result = await runRemoteEvaluationTask(
+    {
+      taskId: 4,
+      testCase: {
+        id: 8,
+        name: "remote-case",
+        type: "requirement",
+        description: "新增页面",
+        input: "请实现登录页",
+        expectedOutput: "实现登录页",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+        diffFileUrl: patchUrl,
+      },
+      token: "remote-token",
+      callback: callbackUrl,
     },
-    executionResult: {
-      isBuildSuccess: true,
-      outputCodeUrl: workspaceUrl,
-      diffFileUrl: patchUrl,
-    },
-    token: "remote-token",
-    callback: callbackUrl,
-  }, { opencodeRunner: createOpencodeRunnerMock() });
+    { opencodeRunner: createOpencodeRunnerMock() },
+  );
 
   assert.equal(result.taskId, 4);
-  assert.equal(callbackCalls.length, 1);
-  assert.equal(callbackCalls[0]?.headers.get("token"), "remote-token");
-  assert.equal(callbackCalls[0]?.body.taskId, 4);
-  assert.equal(callbackCalls[0]?.body.status, "completed");
-  assert.equal(callbackCalls[0]?.body.maxScore, 100);
-  assert.equal(typeof callbackCalls[0]?.body.totalScore, "number");
-  assert.equal(typeof callbackCalls[0]?.body.resultData, "object");
+  assert.deepEqual(
+    callbackCalls.map((call) => call.body.status),
+    ["pending", "running", "running", "completed"],
+  );
+  for (const callbackCall of callbackCalls) {
+    assert.equal(callbackCall.headers.get("token"), "remote-token");
+    assert.equal(callbackCall.body.taskId, 4);
+  }
+  const finalCallback = callbackCalls.at(-1);
+  assert.equal(finalCallback?.body.maxScore, 100);
+  assert.equal(typeof finalCallback?.body.totalScore, "number");
+  assert.equal(typeof finalCallback?.body.resultData, "object");
   const resultJson = JSON.parse(
     await fs.readFile(path.join(result.caseDir, "outputs", "result.json"), "utf-8"),
   );
-  assert.equal(callbackCalls[0]?.body.totalScore, resultJson.overall_conclusion.total_score);
+  assert.equal(finalCallback?.body.totalScore, resultJson.overall_conclusion.total_score);
+  const logText = await fs.readFile(path.join(result.caseDir, "logs", "run.log"), "utf-8");
+  assert.match(
+    logText,
+    /回调结果 .*status=pending phase=execution_accepted .*message=callback 上传成功。/,
+  );
+  assert.match(
+    logText,
+    /回调结果 .*status=running phase=workflow_started .*message=callback 上传成功。/,
+  );
+  assert.match(
+    logText,
+    /回调结果 .*status=running phase=result_persisted .*message=callback 上传成功。/,
+  );
+  assert.match(
+    logText,
+    /回调结果 .*status=completed phase=completed .*message=callback 上传成功。/,
+  );
 });
 
 test("prepareRemoteEvaluationTask accepts a pushed task before executeAcceptedRemoteEvaluationTask uploads callback payload", async (t) => {
@@ -315,39 +340,170 @@ test("prepareRemoteEvaluationTask accepts a pushed task before executeAcceptedRe
     }
   });
 
-  const accepted = await prepareRemoteEvaluationTask({
-    taskId: 5,
-    testCase: {
-      id: 9,
-      name: "remote-case-prepare",
-      type: "requirement",
-      description: "新增页面",
-      input: "请实现登录页",
-      expectedOutput: "实现登录页",
-      fileUrl: originalUrl,
+  const requestTags: string[] = [];
+  const opencodeRunner = createOpencodeRunnerMock();
+  const sharedOpencodeRunner: OpencodeRunner = {
+    async runPrompt(request) {
+      requestTags.push(request.requestTag);
+      return opencodeRunner.runPrompt(request);
     },
-    executionResult: {
-      isBuildSuccess: true,
-      outputCodeUrl: workspaceUrl,
-      diffFileUrl: patchUrl,
+  };
+
+  const accepted = await prepareRemoteEvaluationTask(
+    {
+      taskId: 5,
+      testCase: {
+        id: 9,
+        name: "remote-case-prepare",
+        type: "requirement",
+        description: "新增页面",
+        input: "请实现登录页",
+        expectedOutput: "实现登录页",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+        diffFileUrl: patchUrl,
+      },
+      token: "remote-token",
+      callback: callbackUrl,
     },
-    token: "remote-token",
-    callback: callbackUrl,
-  }, { opencodeRunner: createOpencodeRunnerMock() });
+    { opencodeRunner: sharedOpencodeRunner },
+  );
 
   assert.equal(accepted.taskId, 5);
   assert.equal(accepted.message, "任务接收成功，结果将通过 callback 返回");
   assert.equal(callbackCalls.length, 0);
 
-  const uploadMessage = await executeAcceptedRemoteEvaluationTask(accepted, {
-    opencodeRunner: createOpencodeRunnerMock(),
-  });
+  const uploadMessage = await executeAcceptedRemoteEvaluationTask(accepted);
 
   assert.equal(uploadMessage, "callback 上传成功。");
-  assert.equal(callbackCalls.length, 1);
-  assert.equal(callbackCalls[0]?.headers.get("token"), "remote-token");
-  assert.equal(callbackCalls[0]?.body.taskId, 5);
-  assert.equal(callbackCalls[0]?.body.status, "completed");
+  assert.ok(requestTags.some((tag) => tag.startsWith("task-understanding-")));
+  assert.ok(requestTags.some((tag) => tag.startsWith("rubric-scoring-")));
+  assert.ok(requestTags.some((tag) => tag.startsWith("rule-assessment-")));
+  assert.deepEqual(
+    callbackCalls.map((call) => call.body.status),
+    ["pending", "running", "running", "completed"],
+  );
+  for (const callbackCall of callbackCalls) {
+    assert.equal(callbackCall.headers.get("token"), "remote-token");
+    assert.equal(callbackCall.body.taskId, 5);
+  }
+});
+
+test("executeAcceptedRemoteEvaluationTask uploads failed callback when workflow execution fails", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
+
+  const originalUrl = "https://remote.example.com/assets/original-execution-fails.json";
+  const workspaceUrl = "https://remote.example.com/assets/workspace-execution-fails.json";
+  const patchUrl = "https://remote.example.com/assets/execution-fails.patch";
+  const callbackUrl = "https://remote.example.com/api/evaluation-tasks/execution-fails-callback";
+  const callbackCalls: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url === originalUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: any = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === patchUrl) {
+      return new Response(
+        "diff --git a/entry/src/main/ets/pages/Index.ets b/entry/src/main/ets/pages/Index.ets\n@@ -1 +1 @@\n-let value: number = 1;\n+let value: any = 2;\n",
+        { status: 200, headers: { "Content-Type": "text/plain" } },
+      );
+    }
+
+    if (url === callbackUrl) {
+      callbackCalls.push({
+        headers: new Headers(init?.headers),
+        body: JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
+          string,
+          unknown
+        >,
+      });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+    if (originalReferenceRoot === undefined) {
+      delete process.env.DEFAULT_REFERENCE_ROOT;
+    } else {
+      process.env.DEFAULT_REFERENCE_ROOT = originalReferenceRoot;
+    }
+  });
+
+  const baseRunner = createOpencodeRunnerMock();
+  const failingRunner: OpencodeRunner = {
+    async runPrompt(request) {
+      if (request.requestTag.startsWith("rubric-scoring-")) {
+        throw new Error("rubric scoring crashed");
+      }
+      return baseRunner.runPrompt(request);
+    },
+  };
+  const accepted = await prepareRemoteEvaluationTask(
+    {
+      taskId: 6,
+      testCase: {
+        id: 10,
+        name: "remote-case-execution-fails",
+        type: "requirement",
+        description: "新增页面",
+        input: "请实现登录页",
+        expectedOutput: "实现登录页",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+        diffFileUrl: patchUrl,
+      },
+      token: "remote-token",
+      callback: callbackUrl,
+    },
+    { opencodeRunner: failingRunner },
+  );
+
+  await assert.rejects(() => executeAcceptedRemoteEvaluationTask(accepted), /rubric scoring crashed/);
+
+  assert.deepEqual(
+    callbackCalls.map((call) => call.body.status),
+    ["pending", "running", "failed"],
+  );
+  const failedCallback = callbackCalls.at(-1);
+  assert.equal(failedCallback?.headers.get("token"), "remote-token");
+  assert.equal(failedCallback?.body.taskId, 6);
+  assert.equal(failedCallback?.body.status, "failed");
+  assert.match(String(failedCallback?.body.errorMessage ?? ""), /rubric scoring crashed/);
 });
 
 test("createApp exposes POST /score/run-remote-task and removes the old downloadUrl route", async () => {
@@ -355,8 +511,8 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   const calls: string[] = [];
   const deps = {
     runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
-    prepareRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
-      calls.push(`prepare:${String(remoteTask.taskId)}`);
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
+      calls.push(`accept:${String(remoteTask.taskId)}`);
       return {
         taskId: 99,
         caseDir: "/tmp/remote-case",
@@ -364,6 +520,9 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
         remoteTask: remoteTask as never,
         workflowState: {} as never,
       };
+    },
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
     },
     executeAcceptedRemoteEvaluationTask: async () => {
       calls.push("execute");
@@ -428,13 +587,56 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   );
 
   assert.equal(responseState.statusCode, 200);
-  assert.deepEqual(calls, ["prepare:100", "execute"]);
+  assert.deepEqual(calls, ["accept:100", "execute"]);
   assert.equal(responseState.body?.success, true);
   assert.equal(responseState.body?.taskId, 99);
-  assert.equal(responseState.body?.caseDir, "/tmp/remote-case");
+  assert.equal("caseDir" in (responseState.body ?? {}), false);
   assert.equal(responseState.body?.message, "任务接收成功，结果将通过 callback 返回");
 
   resolveBackgroundExecution?.();
+});
+
+test("createRunRemoteTaskHandler returns success before remote preprocessing finishes", async () => {
+  let executeStarted = false;
+  let releaseExecution: (() => void) | undefined;
+  const deps = {
+    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => ({
+      taskId: Number(remoteTask.taskId),
+      caseDir: "/tmp/remote-case-early-ack",
+      message: "任务接收成功，结果将通过 callback 返回",
+      remoteTask: { ...remoteTask, testCase: { id: 201 } } as never,
+      workflowState: {
+        stage: "accepted",
+        caseDir: "/tmp/remote-case-early-ack",
+      } as never,
+    }),
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+    executeAcceptedRemoteEvaluationTask: async () => {
+      executeStarted = true;
+      await new Promise<void>((resolve) => {
+        releaseExecution = resolve;
+      });
+    },
+    runRemoteEvaluationTask: async () => {
+      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+  };
+  const handler = createRunRemoteTaskHandler(deps as never);
+  const { response, responseState } = createResponse();
+
+  await handler({ body: { taskId: 201, testCase: { id: 201 } } } as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  assert.equal(responseState.body?.taskId, 201);
+  assert.equal(responseState.body?.message, "任务接收成功，结果将通过 callback 返回");
+  assert.equal("caseDir" in (responseState.body ?? {}), false);
+  assert.equal(executeStarted, true);
+
+  releaseExecution?.();
 });
 
 test("createRunRemoteTaskHandler executes at most three remote tasks concurrently", async () => {
@@ -451,8 +653,8 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
   });
   const deps = {
     runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
-    prepareRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
-      calls.push(`prepare:${String(remoteTask.taskId)}`);
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
+      calls.push(`accept:${String(remoteTask.taskId)}`);
       const taskId = Number(remoteTask.taskId);
       return {
         taskId,
@@ -464,6 +666,9 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
         } as never,
         workflowState: {} as never,
       };
+    },
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
     },
     executeAcceptedRemoteEvaluationTask: async (acceptedTask: { taskId: number }) => {
       calls.push(`execute:start:${String(acceptedTask.taskId)}`);
@@ -533,44 +738,6 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
   releases.get(4)?.();
 });
 
-test("createRunRemoteTaskHandler returns 504 when a task never enters execution or queue before timeout", async () => {
-  const originalTimeout = process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS;
-  process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS = "10";
-  const calls: string[] = [];
-  const deps = {
-    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
-    prepareRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
-      calls.push(`prepare:start:${String(remoteTask.taskId)}`);
-      await new Promise<void>(() => undefined);
-      throw new Error("unreachable");
-    },
-    executeAcceptedRemoteEvaluationTask: async () => {
-      calls.push("execute");
-    },
-    runRemoteEvaluationTask: async () => {
-      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
-    },
-  };
-  const handler = createRunRemoteTaskHandler(deps as never);
-  const { response, responseState } = createResponse();
-
-  try {
-    await handler({ body: { taskId: 77 } } as never, response as never);
-  } finally {
-    if (originalTimeout === undefined) {
-      delete process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS;
-    } else {
-      process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS = originalTimeout;
-    }
-  }
-
-  assert.equal(responseState.statusCode, 504);
-  assert.equal(responseState.body?.success, false);
-  assert.equal(responseState.body?.taskId, 77);
-  assert.match(String(responseState.body?.message ?? ""), /超时/);
-  assert.deepEqual(calls, ["prepare:start:77"]);
-});
-
 test("createRunRemoteTaskHandler logs remote API request, response, and errors", async () => {
   const originalInfo = console.info;
   const originalError = console.error;
@@ -583,8 +750,11 @@ test("createRunRemoteTaskHandler logs remote API request, response, and errors",
   };
   const deps = {
     runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
-    prepareRemoteEvaluationTask: async () => {
+    acceptRemoteEvaluationTask: async () => {
       throw new Error("download failed");
+    },
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
     },
     executeAcceptedRemoteEvaluationTask: async () => undefined,
     runRemoteEvaluationTask: async () => {
@@ -666,49 +836,119 @@ test("remote fetch helpers log request, response, and error details", async () =
   );
 });
 
-test("createRunRemoteTaskHandler returns 500 when preprocessing fails", async () => {
-  let executeCalled = false;
+test("createRunRemoteTaskHandler reports preprocessing failures through callback after acknowledgement", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
+
+  const originalUrl = "https://remote.example.com/assets/original-fails.json";
+  const workspaceUrl = "https://remote.example.com/assets/workspace.json";
+  const callbackUrl = "https://remote.example.com/api/evaluation-tasks/callback";
+  const callbackCalls: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url === originalUrl) {
+      throw new Error("download original manifest failed");
+    }
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: any = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url === callbackUrl) {
+      callbackCalls.push({
+        headers: new Headers(init?.headers),
+        body: JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
+          string,
+          unknown
+        >,
+      });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+    if (originalReferenceRoot === undefined) {
+      delete process.env.DEFAULT_REFERENCE_ROOT;
+    } else {
+      process.env.DEFAULT_REFERENCE_ROOT = originalReferenceRoot;
+    }
+  });
+
+  let backgroundFinished: Promise<void> | undefined;
   const deps = {
     runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
+    acceptRemoteEvaluationTask,
     prepareRemoteEvaluationTask: async () => {
-      throw new Error("download original manifest failed");
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
     },
     executeAcceptedRemoteEvaluationTask: async () => {
-      executeCalled = true;
+      throw new Error("executeAcceptedRemoteEvaluationTask should be wrapped below");
     },
     runRemoteEvaluationTask: async () => {
       throw new Error("runRemoteEvaluationTask should not be used when preprocessing fails");
     },
   };
-  const handler = createRunRemoteTaskHandler(deps as never);
-  const responseState: {
-    statusCode: number;
-    body?: Record<string, unknown>;
-  } = { statusCode: 200 };
-  const response = {
-    status(code: number) {
-      responseState.statusCode = code;
-      return response;
-    },
-    json(body: Record<string, unknown>) {
-      responseState.body = body;
-      return response;
-    },
+  deps.executeAcceptedRemoteEvaluationTask = async (acceptedTask: never) => {
+    backgroundFinished = executeAcceptedRemoteEvaluationTask(acceptedTask).then(
+      () => undefined,
+      () => undefined,
+    );
+    await backgroundFinished;
   };
+  const handler = createRunRemoteTaskHandler(deps as never);
+  const { response, responseState } = createResponse();
 
   await handler(
     {
       body: {
         taskId: 101,
+        testCase: {
+          id: 301,
+          name: "remote-case-preprocess-failure",
+          type: "requirement",
+          description: "新增页面",
+          input: "请实现登录页",
+          expectedOutput: "实现登录页",
+          fileUrl: originalUrl,
+        },
+        executionResult: {
+          isBuildSuccess: true,
+          outputCodeUrl: workspaceUrl,
+        },
+        token: "remote-token",
+        callback: callbackUrl,
       },
     } as never,
     response as never,
   );
+  await backgroundFinished;
 
-  assert.equal(responseState.statusCode, 500);
-  assert.equal(responseState.body?.success, false);
-  assert.match(String(responseState.body?.message ?? ""), /download original manifest failed/);
-  assert.equal(executeCalled, false);
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  assert.equal("caseDir" in (responseState.body ?? {}), false);
+  assert.equal(callbackCalls.at(-1)?.headers.get("token"), "remote-token");
+  assert.equal(callbackCalls.at(-1)?.body.taskId, 101);
+  assert.equal(callbackCalls.at(-1)?.body.status, "failed");
+  assert.match(
+    String(callbackCalls.at(-1)?.body.errorMessage ?? ""),
+    /download original manifest failed/,
+  );
 });
 
 test("createCorsMiddleware handles preflight and non-preflight remote task requests", async () => {

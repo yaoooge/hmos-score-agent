@@ -9,7 +9,10 @@ import { CaseLogger } from "./io/caseLogger.js";
 import { uploadTaskCallback } from "./io/uploader.js";
 import { createOpencodeRuntimeConfig } from "./opencode/opencodeConfig.js";
 import { runOpencodePrompt } from "./opencode/opencodeCliRunner.js";
-import { createOpencodeServeManager, ensureOpencodeCliAvailable } from "./opencode/opencodeServeManager.js";
+import {
+  createOpencodeServeManager,
+  ensureOpencodeCliAvailable,
+} from "./opencode/opencodeServeManager.js";
 import { inputClassificationNode } from "./nodes/inputClassificationNode.js";
 import { remoteTaskPreparationNode } from "./nodes/remoteTaskPreparationNode.js";
 import { taskUnderstandingNode } from "./nodes/taskUnderstandingNode.js";
@@ -132,24 +135,63 @@ async function runCaseInput(input: {
 
 function buildRemoteCallbackPayload(input: {
   taskId: number;
-  status: "completed" | "failed";
-  resultData: Record<string, unknown>;
+  status: RemoteCallbackPayload["status"];
+  resultData?: Record<string, unknown>;
+  errorMessage?: string;
 }): RemoteCallbackPayload {
   const totalScore =
     input.status === "completed"
       ? Number(
-          (input.resultData.overall_conclusion as { total_score?: number } | undefined)
+          (input.resultData?.overall_conclusion as { total_score?: number } | undefined)
             ?.total_score ?? 0,
         )
-      : 0;
+      : undefined;
 
-  return {
+  const payload: RemoteCallbackPayload = {
     taskId: input.taskId,
     status: input.status,
-    totalScore,
-    maxScore: 100,
-    resultData: input.resultData,
   };
+
+  if (totalScore !== undefined) {
+    payload.totalScore = totalScore;
+    payload.maxScore = 100;
+  }
+  if (input.resultData) {
+    payload.resultData = input.resultData;
+  }
+  if (input.errorMessage) {
+    payload.errorMessage = input.errorMessage;
+  }
+
+  return payload;
+}
+
+async function uploadRemoteTaskCallbackWithLog(input: {
+  remoteTask: RemoteEvaluationTask;
+  logger: CaseLogger;
+  status: RemoteCallbackPayload["status"];
+  phase: string;
+  resultData?: Record<string, unknown>;
+  errorMessage?: string;
+}): Promise<string> {
+  const payload = buildRemoteCallbackPayload({
+    taskId: input.remoteTask.taskId,
+    status: input.status,
+    resultData: {
+      phase: input.phase,
+      ...(input.resultData ?? {}),
+    },
+    errorMessage: input.errorMessage,
+  });
+  const upload = await uploadTaskCallback(
+    input.remoteTask.callback,
+    input.remoteTask.token,
+    payload,
+  );
+  await input.logger.info(
+    `回调结果 ${formatRemoteTaskLogContext(input.remoteTask)} status=${input.status} phase=${input.phase} uploaded=${String(upload.uploaded)} message=${upload.message}`,
+  );
+  return upload.message;
 }
 
 function readWorkflowStateFromError(error: unknown): Record<string, unknown> | undefined {
@@ -178,12 +220,18 @@ type AcceptedRemoteWorkflowState = {
   hasPatch: boolean;
 };
 
+type InitialAcceptedRemoteWorkflowState = {
+  stage: "accepted";
+  caseDir: string;
+};
+
 export type AcceptedRemoteEvaluationTask = {
   taskId: number;
   caseDir: string;
   message: string;
   remoteTask: RemoteEvaluationTask;
-  workflowState: AcceptedRemoteWorkflowState;
+  workflowState: InitialAcceptedRemoteWorkflowState | AcceptedRemoteWorkflowState;
+  opencodeRunner?: OpencodeRunner;
 };
 
 const REMOTE_TASK_ACCEPTED_MESSAGE = "任务接收成功，结果将通过 callback 返回";
@@ -314,9 +362,8 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
   };
 }
 
-export async function prepareRemoteEvaluationTask(
+export async function acceptRemoteEvaluationTask(
   remoteTask: RemoteEvaluationTask,
-  deps: ServiceOpencodeDeps = {},
 ): Promise<AcceptedRemoteEvaluationTask> {
   const config = getConfig();
   const artifactStore = new ArtifactStore(config.localCaseRoot);
@@ -328,20 +375,52 @@ export async function prepareRemoteEvaluationTask(
   );
   const logger = new CaseLogger(artifactStore, caseDir);
   const caseInfoBase = buildRemoteCaseInfoBase(remoteTask, caseDir, config);
-  const preparedState: Partial<ScoreGraphState> = {
-    remoteTask,
+  const acceptedState: InitialAcceptedRemoteWorkflowState = {
+    stage: "accepted",
     caseDir,
   };
 
+  await logger.info(`启动远端评分流程 ${formatRemoteTaskLogContext(remoteTask)}`);
+  await artifactStore.writeJson(
+    caseDir,
+    "inputs/case-info.json",
+    buildRemoteCaseInfoPayload(caseInfoBase, acceptedState),
+  );
+  await logger.info("输入元数据写入完成");
+  await logger.info("远端任务预处理开始");
+
+  return {
+    taskId: remoteTask.taskId,
+    caseDir,
+    message: REMOTE_TASK_ACCEPTED_MESSAGE,
+    remoteTask,
+    workflowState: acceptedState,
+  };
+}
+
+async function prepareAcceptedRemoteEvaluationTask(
+  acceptedTask: AcceptedRemoteEvaluationTask,
+  deps: ServiceOpencodeDeps = {},
+): Promise<AcceptedRemoteEvaluationTask> {
+  if (!("stage" in acceptedTask.workflowState)) {
+    return acceptedTask;
+  }
+
+  const config = getConfig();
+  const artifactStore = new ArtifactStore(config.localCaseRoot);
+  const logger = new CaseLogger(artifactStore, acceptedTask.caseDir);
+  const caseInfoBase = buildRemoteCaseInfoBase(
+    acceptedTask.remoteTask,
+    acceptedTask.caseDir,
+    config,
+  );
+  const preparedState: Partial<ScoreGraphState> = {
+    ...acceptedTask.workflowState,
+    remoteTask: acceptedTask.remoteTask,
+    caseDir: acceptedTask.caseDir,
+  };
+
   try {
-    await logger.info(`启动远端评分流程 ${formatRemoteTaskLogContext(remoteTask)}`);
-    await artifactStore.writeJson(
-      caseDir,
-      "inputs/case-info.json",
-      buildRemoteCaseInfoPayload(caseInfoBase, preparedState),
-    );
-    await logger.info("输入元数据写入完成");
-    await logger.info("远端任务预处理开始");
     Object.assign(preparedState, await remoteTaskPreparationNode(preparedState as ScoreGraphState));
     await logger.info("远端任务预处理完成");
     const opencodeRunner = await resolveServiceOpencodeRunner(deps);
@@ -358,22 +437,22 @@ export async function prepareRemoteEvaluationTask(
     Object.assign(preparedState, await inputClassificationNode(preparedState as ScoreGraphState));
     await logger.info(`任务类型判定完成 taskType=${String(preparedState.taskType ?? "")}`);
     await artifactStore.writeJson(
-      caseDir,
+      acceptedTask.caseDir,
       "inputs/case-info.json",
       buildRemoteCaseInfoPayload(caseInfoBase, preparedState),
     );
     await logger.info("任务接收完成，已转入异步执行");
 
     return {
-      taskId: remoteTask.taskId,
-      caseDir,
-      message: REMOTE_TASK_ACCEPTED_MESSAGE,
-      remoteTask,
+      ...acceptedTask,
       workflowState: toAcceptedRemoteWorkflowState(preparedState),
+      opencodeRunner,
     };
   } catch (error) {
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    await logger.error(`预处理失败 ${formatRemoteTaskLogContext(remoteTask)} error=${message}`);
+    await logger.error(
+      `预处理失败 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} error=${message}`,
+    );
     const remoteTaskRootDir =
       typeof preparedState.remoteTaskRootDir === "string"
         ? preparedState.remoteTaskRootDir
@@ -383,6 +462,14 @@ export async function prepareRemoteEvaluationTask(
     }
     throw error;
   }
+}
+
+export async function prepareRemoteEvaluationTask(
+  remoteTask: RemoteEvaluationTask,
+  deps: ServiceOpencodeDeps = {},
+): Promise<AcceptedRemoteEvaluationTask> {
+  const acceptedTask = await acceptRemoteEvaluationTask(remoteTask);
+  return await prepareAcceptedRemoteEvaluationTask(acceptedTask, deps);
 }
 
 export async function executeAcceptedRemoteEvaluationTask(
@@ -398,15 +485,36 @@ export async function executeAcceptedRemoteEvaluationTask(
     config,
   );
   let workflowResult: Record<string, unknown> = { ...acceptedTask.workflowState };
+  let preparedTask = acceptedTask;
 
   try {
     await logger.info(`异步评分执行开始 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)}`);
+    await uploadRemoteTaskCallbackWithLog({
+      remoteTask: acceptedTask.remoteTask,
+      logger,
+      status: "pending",
+      phase: "execution_accepted",
+      resultData: {
+        caseDir: acceptedTask.caseDir,
+      },
+    });
+    await uploadRemoteTaskCallbackWithLog({
+      remoteTask: acceptedTask.remoteTask,
+      logger,
+      status: "running",
+      phase: "workflow_started",
+      resultData: {
+        caseDir: acceptedTask.caseDir,
+      },
+    });
+    preparedTask = await prepareAcceptedRemoteEvaluationTask(acceptedTask, deps);
+    workflowResult = { ...preparedTask.workflowState };
     workflowResult = await runPreparedScoreWorkflow({
-      preparedState: acceptedTask.workflowState,
-      caseDir: acceptedTask.caseDir,
+      preparedState: preparedTask.workflowState as AcceptedRemoteWorkflowState,
+      caseDir: preparedTask.caseDir,
       referenceRoot: config.referenceRoot,
       artifactStore,
-      opencodeRunner: deps.opencodeRunner,
+      opencodeRunner: deps.opencodeRunner ?? preparedTask.opencodeRunner,
     });
     await artifactStore.writeJson(
       acceptedTask.caseDir,
@@ -424,45 +532,51 @@ export async function executeAcceptedRemoteEvaluationTask(
     );
     await logger.info("工作流执行完成");
     await logger.info("结果已落盘");
+    await uploadRemoteTaskCallbackWithLog({
+      remoteTask: acceptedTask.remoteTask,
+      logger,
+      status: "running",
+      phase: "result_persisted",
+      resultData: {
+        caseDir: acceptedTask.caseDir,
+      },
+    });
 
-    const upload = await uploadTaskCallback(
-      acceptedTask.remoteTask.callback,
-      acceptedTask.remoteTask.token,
-      buildRemoteCallbackPayload({
-        taskId: acceptedTask.taskId,
-        status: "completed",
-        resultData:
-          typeof workflowResult.resultJson === "object" && workflowResult.resultJson !== null
-            ? (workflowResult.resultJson as Record<string, unknown>)
-            : {},
-      }),
-    );
-    await logger.info(
-      `回调结果 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} message=${upload.message}`,
-    );
-    return upload.message;
+    return await uploadRemoteTaskCallbackWithLog({
+      remoteTask: acceptedTask.remoteTask,
+      logger,
+      status: "completed",
+      phase: "completed",
+      resultData:
+        typeof workflowResult.resultJson === "object" && workflowResult.resultJson !== null
+          ? (workflowResult.resultJson as Record<string, unknown>)
+          : {},
+    });
   } catch (error) {
     workflowResult = readWorkflowStateFromError(error) ?? workflowResult;
     const message = error instanceof Error ? error.message : String(error);
     await logger.error(
       `执行失败 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} error=${message}`,
     );
-    await uploadTaskCallback(
-      acceptedTask.remoteTask.callback,
-      acceptedTask.remoteTask.token,
-      buildRemoteCallbackPayload({
-        taskId: acceptedTask.taskId,
-        status: "failed",
-        resultData: { error: message },
-      }),
-    );
+    await uploadRemoteTaskCallbackWithLog({
+      remoteTask: acceptedTask.remoteTask,
+      logger,
+      status: "failed",
+      phase: "failed",
+      resultData: { error: message },
+      errorMessage: message,
+    });
     throw error;
   } finally {
     const remoteTaskRootDir =
       typeof workflowResult.remoteTaskRootDir === "string"
         ? workflowResult.remoteTaskRootDir
-        : acceptedTask.workflowState.remoteTaskRootDir;
-    await fsp.rm(remoteTaskRootDir, { recursive: true, force: true });
+        : "remoteTaskRootDir" in preparedTask.workflowState
+          ? preparedTask.workflowState.remoteTaskRootDir
+          : undefined;
+    if (remoteTaskRootDir) {
+      await fsp.rm(remoteTaskRootDir, { recursive: true, force: true });
+    }
   }
 }
 
