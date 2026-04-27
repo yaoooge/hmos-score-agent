@@ -5,12 +5,11 @@ import {
   buildRubricSnapshot,
   mergeRuleAuditResults,
   renderAgentBootstrapPrompt,
-  renderAgentSystemPrompt,
   selectAssistedRuleCandidates,
 } from "../src/agent/ruleAssistance.js";
 import type {
+  AgentAssistedRuleResult,
   AssistedRuleCandidate,
-  CaseAwareAgentFinalAnswer,
   ConstraintSummary,
   LoadedRubricSnapshot,
   RuleAuditResult,
@@ -54,14 +53,13 @@ const rubricSnapshot: LoadedRubricSnapshot = {
 };
 
 function makeFinalAnswer(
-  rule_assessments: CaseAwareAgentFinalAnswer["rule_assessments"],
-  summary: CaseAwareAgentFinalAnswer["summary"] = {
+  rule_assessments: AgentAssistedRuleResult["rule_assessments"],
+  summary: AgentAssistedRuleResult["summary"] = {
     assistant_scope: "本次仅辅助弱规则判定",
     overall_confidence: "medium",
   },
-): CaseAwareAgentFinalAnswer {
+): AgentAssistedRuleResult {
   return {
-    action: "final_answer",
     summary,
     rule_assessments,
   };
@@ -206,7 +204,7 @@ test("mergeRuleAuditResults treats non-case must rules absent from patch as sati
   );
 });
 
-test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-only prompt", () => {
+test("buildAgentBootstrapPayload emits opencode sandbox context instead of inline evidence-only prompt", () => {
   const payload = buildAgentBootstrapPayload({
     caseInput: {
       caseId: "case-1",
@@ -240,19 +238,15 @@ test("buildAgentBootstrapPayload emits tool contract instead of inline evidence-
   );
   assert.equal(
     payload.initial_target_files[0],
-    "workspace/entry/src/main/ets/home/viewmodels/HomePageVM.ets",
+    "generated/entry/src/main/ets/home/viewmodels/HomePageVM.ets",
   );
   assert.equal(
     payload.assisted_rule_candidates[0]?.evidence_files[0],
-    "workspace/entry/src/main/ets/pages/Index.ets",
+    "generated/entry/src/main/ets/pages/Index.ets",
   );
-  assert.equal(payload.tool_contract.allowed_tools.includes("read_file"), true);
-  assert.equal(payload.tool_contract.allowed_tools.includes("read_files"), true);
-  assert.equal(payload.tool_contract.allowed_tools.includes("read_patch"), true);
-  assert.deepEqual(payload.response_contract.action_enum, ["tool_call", "final_answer"]);
 });
 
-test("renderAgentSystemPrompt instructs the model to choose tool_call or final_answer only", () => {
+test("renderAgentBootstrapPrompt records opencode rule context without legacy tool protocol", () => {
   const payload = buildAgentBootstrapPayload({
     caseInput: {
       caseId: "case-1",
@@ -279,38 +273,12 @@ test("renderAgentSystemPrompt instructs the model to choose tool_call or final_a
     initialTargetFiles: ["entry/src/main/ets/home/viewmodels/HomePageVM.ets"],
   });
 
-  const prompt = renderAgentSystemPrompt(payload);
-  assert.match(prompt, /你只能返回 tool_call 或 final_answer/);
-  assert.match(prompt, /case 目录只读工具/);
-  assert.match(prompt, /禁止输出 markdown/);
-  assert.match(prompt, /read_patch/);
-  assert.match(prompt, /read_file/);
-  assert.match(prompt, /read_files/);
-  assert.match(prompt, /final_answer/);
-  assert.match(prompt, /tool_call/);
-  assert.match(prompt, /代码评测只针对 patch/);
-  assert.match(prompt, /原工程上下文只用于辅助理解/);
-  assert.match(prompt, /must_rule/);
-  assert.doesNotMatch(prompt, /dimension_summaries/);
-  assert.doesNotMatch(prompt, /"hard_gates"/);
-  assert.doesNotMatch(prompt, /scoring_method/);
-  assert.doesNotMatch(prompt, /score_cap/);
-  assert.equal(payload.response_contract.output_language, "zh-CN");
-  assert.equal(payload.response_contract.json_only, true);
-  assert.deepEqual(payload.tool_contract.allowed_tools, [
-    "read_patch",
-    "list_dir",
-    "read_file",
-    "read_files",
-    "read_file_chunk",
-    "grep_in_files",
-    "read_json",
-  ]);
-
   const bootstrapPrompt = renderAgentBootstrapPrompt(payload);
   assert.match(bootstrapPrompt, /当前判定上下文如下/);
   assert.match(bootstrapPrompt, /本次必须覆盖的 rule_id: ARKTS-SHOULD-001/);
-  assert.doesNotMatch(bootstrapPrompt, /你只能返回 tool_call 或 final_answer/);
+  assert.match(bootstrapPrompt, /opencode sandbox/);
+  assert.doesNotMatch(bootstrapPrompt, new RegExp("tool" + "_call"));
+  assert.doesNotMatch(bootstrapPrompt, new RegExp("action" + "_enum"));
 });
 
 test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates", () => {

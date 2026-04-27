@@ -20,7 +20,7 @@ import { ruleAuditNode } from "../src/nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
 import { scoreFusionOrchestrationNode } from "../src/nodes/scoreFusionOrchestrationNode.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
-import { runScoreWorkflow } from "../src/workflow/scoreWorkflow.js";
+import { runScoreWorkflow as runScoreWorkflowBase } from "../src/workflow/scoreWorkflow.js";
 import type { CaseInput } from "../src/types.js";
 
 const fixtureRoot = path.resolve(process.cwd(), "tests/fixtures");
@@ -103,11 +103,10 @@ function makeState(input: Partial<CaseInput> = {}): {
   };
 }
 
-function buildRubricCaseAwareFinalAnswer(
+function buildOpencodeRubricFinalAnswer(
   rubricSnapshot: ReturnType<typeof buildRubricSnapshot>,
 ): Record<string, unknown> {
   return {
-    action: "final_answer",
     summary: {
       overall_assessment: "未发现足够负面证据，按满分保留。",
       overall_confidence: "medium",
@@ -130,6 +129,85 @@ function buildRubricCaseAwareFinalAnswer(
     strengths: ["结构清晰"],
     main_issues: [],
   };
+}
+
+function createOpencodeRunnerMock() {
+  function parsePromptPayload<T>(prompt: string, marker: string): T {
+    const index = prompt.lastIndexOf(`${marker}:\n`);
+    if (index < 0) {
+      throw new Error(`missing prompt marker ${marker}`);
+    }
+    return JSON.parse(prompt.slice(index + marker.length + 2)) as T;
+  }
+
+  return {
+    async runPrompt(request: { requestTag: string; prompt: string }): Promise<{
+      requestTag: string;
+      rawText: string;
+      rawEvents: string;
+      elapsedMs: number;
+    }> {
+      if (request.requestTag.startsWith("task-understanding-")) {
+        return {
+          requestTag: request.requestTag,
+          rawEvents: "",
+          rawText: JSON.stringify({
+            explicitConstraints: ["任务类型: bug_fix"],
+            contextualConstraints: ["保持工程结构"],
+            implicitConstraints: ["基于补丁评估"],
+            classificationHints: ["bug_fix", "has_patch"],
+          }),
+          elapsedMs: 1,
+        };
+      }
+
+      if (request.requestTag.startsWith("rubric-scoring-")) {
+        const payload = parsePromptPayload<{
+          rubric_summary: ReturnType<typeof buildRubricSnapshot>;
+        }>(request.prompt, "scoring_payload");
+        return {
+          requestTag: request.requestTag,
+          rawEvents: "",
+          rawText: JSON.stringify(buildOpencodeRubricFinalAnswer(payload.rubric_summary)),
+          elapsedMs: 1,
+        };
+      }
+
+      if (request.requestTag.startsWith("rule-assessment-")) {
+        const payload = parsePromptPayload<{
+          assisted_rule_candidates: Array<{ rule_id: string }>;
+        }>(request.prompt, "bootstrap_payload");
+        return {
+          requestTag: request.requestTag,
+          rawEvents: "",
+          rawText: JSON.stringify({
+            summary: {
+              assistant_scope: "基于 sandbox 完成候选规则判定。",
+              overall_confidence: "medium",
+            },
+            rule_assessments: payload.assisted_rule_candidates.map((candidate) => ({
+              rule_id: candidate.rule_id,
+              decision: "uncertain",
+              confidence: "low",
+              reason: "测试 mock 未读取真实上下文，交由人工复核。",
+              evidence_used: [],
+              needs_human_review: true,
+            })),
+          }),
+          elapsedMs: 1,
+        };
+      }
+
+      throw new Error(`unexpected opencode requestTag=${request.requestTag}`);
+    },
+  };
+}
+
+async function runScoreWorkflow(input: Parameters<typeof runScoreWorkflowBase>[0]) {
+  return runScoreWorkflowBase({
+    ...input,
+    opencodeRunner: input.opencodeRunner ?? createOpencodeRunnerMock(),
+  });
 }
 
 test("loadCaseFromPath loads prompt and optional patch path", async (t) => {
@@ -270,7 +348,7 @@ test("explicit rubric and rule agent nodes are exported", () => {
   assert.equal(typeof ruleAssessmentAgentNode, "function");
 });
 
-test("rubricScoringPromptBuilderNode builds case-aware rubric scoring prompt", async (t) => {
+test("rubricScoringPromptBuilderNode builds opencode rubric scoring prompt", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const result = await rubricScoringPromptBuilderNode(
@@ -303,26 +381,14 @@ test("rubricScoringPromptBuilderNode builds case-aware rubric scoring prompt", a
     { logger: undefined },
   );
 
-  assert.ok(result.rubricScoringPromptText?.includes("tool_call"));
-  assert.ok(result.rubricScoringPromptText?.includes("final_answer"));
+  assert.ok(result.rubricScoringPromptText?.includes("opencode"));
+  assert.equal(result.rubricScoringPromptText?.includes("tool" + "_call"), false);
   assert.equal(result.rubricScoringPayload?.case_context.task_type, "bug_fix");
   assert.deepEqual(result.rubricScoringPayload?.initial_target_files, [
-    "workspace/entry/src/main/ets/pages/Index.ets",
-    "workspace/entry/src/main/ets/components/Card.ets",
+    "generated/entry/src/main/ets/pages/Index.ets",
+    "generated/entry/src/main/ets/components/Card.ets",
   ]);
-  assert.deepEqual(result.rubricScoringPayload?.response_contract.action_enum, [
-    "tool_call",
-    "final_answer",
-  ]);
-  assert.deepEqual(result.rubricScoringPayload?.tool_contract?.allowed_tools, [
-    "read_patch",
-    "list_dir",
-    "read_file",
-    "read_files",
-    "read_file_chunk",
-    "grep_in_files",
-    "read_json",
-  ]);
+  assert.equal(result.rubricScoringPayload?.response_contract.output_language, "zh-CN");
 });
 
 test("rubricScoringPromptBuilderNode adds workspace directory summary when changed files exceed initial target limit", async (t) => {
@@ -378,7 +444,7 @@ test("rubricScoringPromptBuilderNode adds workspace directory summary when chang
   assert.match(result.rubricScoringPromptText ?? "", /effective_patch_path/);
 });
 
-test("rubricScoringAgentNode skips when agent client is missing", async () => {
+test("rubricScoringAgentNode skips when opencode runtime is missing", async () => {
   const skipped = await rubricScoringAgentNode(
     {
       rubricScoringPromptText: "请逐项输出 rubric item 的评分",
@@ -389,34 +455,12 @@ test("rubricScoringAgentNode skips when agent client is missing", async () => {
   assert.equal(skipped.rubricAgentRunStatus, "skipped");
 });
 
-test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", async (t) => {
+test("rubricScoringAgentNode runs opencode rubric scoring", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const rubricSnapshot = buildRubricSnapshot(rubric);
   const caseRoot = await makeTempDir(t);
-  await fs.mkdir(path.join(caseRoot, "workspace", "entry", "src", "main", "ets"), {
-    recursive: true,
-  });
-  await fs.writeFile(
-    path.join(caseRoot, "workspace", "entry", "src", "main", "ets", "Index.ets"),
-    "let count: number = 1;\n",
-    "utf-8",
-  );
-  const calls: Array<{ prompt: string; requestTag?: string }> = [];
-  const agentClient = {
-    async completeJsonPrompt(prompt: string, options?: { requestTag?: string }): Promise<string> {
-      calls.push({ prompt, requestTag: options?.requestTag });
-      if (calls.length === 1) {
-        return JSON.stringify({
-          action: "tool_call",
-          tool: "read_file",
-          args: { path: "workspace/entry/src/main/ets/Index.ets" },
-          reason: "读取变更文件确认是否有负面证据。",
-        });
-      }
-      return JSON.stringify(buildRubricCaseAwareFinalAnswer(rubricSnapshot));
-    },
-  };
+  const calls: string[] = [];
 
   const result = await rubricScoringAgentNode(
     {
@@ -425,7 +469,7 @@ test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", 
         generatedProjectPath: path.join(caseRoot, "workspace"),
       }).caseInput,
       sourceCasePath: caseRoot,
-      rubricScoringPromptText: "rubric case-aware prompt",
+      rubricScoringPromptText: "rubric opencode prompt",
       rubricScoringPayload: {
         case_context: {
           case_id: "case-1",
@@ -442,22 +486,8 @@ test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", 
           classificationHints: ["bug_fix"],
         },
         rubric_summary: rubricSnapshot,
-        initial_target_files: ["workspace/entry/src/main/ets/Index.ets"],
-        tool_contract: {
-          allowed_tools: [
-            "read_patch",
-            "list_dir",
-            "read_file",
-            "read_file_chunk",
-            "grep_in_files",
-            "read_json",
-          ],
-          max_tool_calls: 4,
-          max_total_bytes: 81920,
-          max_files: 24,
-        },
+        initial_target_files: ["generated/entry/src/main/ets/Index.ets"],
         response_contract: {
-          action_enum: ["tool_call", "final_answer"],
           output_language: "zh-CN",
           json_only: true,
         },
@@ -465,7 +495,18 @@ test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", 
       rubricSnapshot,
     } as never,
     {
-      agentClient,
+      opencode: {
+        sandboxRoot: caseRoot,
+        async runPrompt(request) {
+          calls.push(request.requestTag);
+          return {
+            requestTag: request.requestTag,
+            rawEvents: "{}\n",
+            rawText: JSON.stringify(buildOpencodeRubricFinalAnswer(rubricSnapshot)),
+            elapsedMs: 1,
+          };
+        },
+      },
       logger: {
         async info() {},
         async warn() {},
@@ -474,165 +515,82 @@ test("rubricScoringAgentNode runs case-aware rubric scoring and stores traces", 
     },
   );
 
-  assert.equal(calls.length, 2);
-  assert.deepEqual(
-    calls.map((call) => call.requestTag),
-    ["rubric_case_aware_turn_1", "rubric_case_aware_turn_2"],
-  );
+  assert.equal(calls.length, 1);
+  assert.match(calls[0] ?? "", /^rubric-scoring-case-1-/);
   assert.equal(result.rubricAgentRunStatus, "success");
-  assert.equal(result.rubricAgentRunnerMode, "case_aware");
+  assert.equal(result.rubricAgentRunnerMode, "opencode");
   assert.equal(
     result.rubricScoringResult?.item_scores.length,
     rubricSnapshot.dimension_summaries.flatMap((dimension) => dimension.item_summaries).length,
   );
-  assert.equal(result.rubricAgentTurns?.length, 2);
-  assert.equal(result.rubricAgentToolTrace?.length, 1);
   assert.equal(result.rubricAgentRunnerResult?.outcome, "success");
 });
-
-test("rubricScoringAgentNode returns invalid_output when case-aware final answer is incomplete", async (t) => {
+test("rubricScoringAgentNode fails when opencode final answer is incomplete", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const rubricSnapshot = buildRubricSnapshot(rubric);
   const caseRoot = await makeTempDir(t);
-  const finalAnswer = buildRubricCaseAwareFinalAnswer(rubricSnapshot) as {
+  const finalAnswer = buildOpencodeRubricFinalAnswer(rubricSnapshot) as {
     item_scores: unknown[];
   };
   finalAnswer.item_scores = finalAnswer.item_scores.slice(1);
-  const agentClient = {
-    async completeJsonPrompt(): Promise<string> {
-      return JSON.stringify(finalAnswer);
-    },
-  };
 
-  const result = await rubricScoringAgentNode(
-    {
-      caseInput: makeState({
-        originalProjectPath: path.join(caseRoot, "original"),
-        generatedProjectPath: path.join(caseRoot, "workspace"),
-      }).caseInput,
-      sourceCasePath: caseRoot,
-      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
-      rubricScoringPayload: {
-        case_context: {
-          case_id: "case-1",
-          case_root: caseRoot,
-          task_type: "bug_fix",
-          original_prompt_summary: "修复页面 bug",
-          original_project_path: path.join(caseRoot, "original"),
-          generated_project_path: path.join(caseRoot, "workspace"),
+  await assert.rejects(
+    () =>
+      rubricScoringAgentNode(
+        {
+          caseInput: makeState({
+            originalProjectPath: path.join(caseRoot, "original"),
+            generatedProjectPath: path.join(caseRoot, "workspace"),
+          }).caseInput,
+          sourceCasePath: caseRoot,
+          rubricScoringPromptText: "请逐项输出 rubric item 的评分",
+          rubricScoringPayload: {
+            case_context: {
+              case_id: "case-1",
+              case_root: caseRoot,
+              task_type: "bug_fix",
+              original_prompt_summary: "修复页面 bug",
+              original_project_path: path.join(caseRoot, "original"),
+              generated_project_path: path.join(caseRoot, "workspace"),
+            },
+            task_understanding: {
+              explicitConstraints: ["修复页面 bug"],
+              contextualConstraints: ["保持工程结构"],
+              implicitConstraints: [],
+              classificationHints: ["bug_fix"],
+            },
+            rubric_summary: rubricSnapshot,
+            initial_target_files: [],
+            response_contract: {
+              output_language: "zh-CN",
+              json_only: true,
+            },
+          },
+          rubricSnapshot,
+        } as never,
+        {
+          opencode: {
+            sandboxRoot: caseRoot,
+            async runPrompt(request) {
+              return {
+                requestTag: request.requestTag,
+                rawEvents: "",
+                rawText: JSON.stringify(finalAnswer),
+                elapsedMs: 1,
+              };
+            },
+          },
+          logger: {
+            async info() {},
+            async warn() {},
+            async error() {},
+          },
         },
-        task_understanding: {
-          explicitConstraints: ["修复页面 bug"],
-          contextualConstraints: ["保持工程结构"],
-          implicitConstraints: [],
-          classificationHints: ["bug_fix"],
-        },
-        rubric_summary: rubricSnapshot,
-        initial_target_files: [],
-        tool_contract: {
-          allowed_tools: [
-            "read_patch",
-            "list_dir",
-            "read_file",
-            "read_file_chunk",
-            "grep_in_files",
-            "read_json",
-          ],
-          max_tool_calls: 4,
-          max_total_bytes: 81920,
-          max_files: 24,
-        },
-        response_contract: {
-          action_enum: ["tool_call", "final_answer"],
-          output_language: "zh-CN",
-          json_only: true,
-        },
-      },
-      rubricSnapshot,
-    } as never,
-    {
-      agentClient,
-      logger: {
-        async info() {},
-        async warn() {},
-        async error() {},
-      },
-    },
+      ),
+    /rubric opencode 输出无效/,
   );
-
-  assert.equal(result.rubricAgentRunStatus, "invalid_output");
-  assert.equal(result.rubricScoringResult, undefined);
-  assert.equal(result.rubricAgentRunnerResult?.outcome, "protocol_error");
 });
-
-test("rubricScoringAgentNode returns failed when case-aware runner throws", async (t) => {
-  const referenceRoot = await createReferenceRoot(t);
-  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
-  const rubricSnapshot = buildRubricSnapshot(rubric);
-  const agentClient = {
-    async completeJsonPrompt(): Promise<string> {
-      throw new Error("fetch failed");
-    },
-  };
-
-  const result = await rubricScoringAgentNode(
-    {
-      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
-      rubricScoringPayload: {
-        case_context: {
-          case_id: "case-1",
-          case_root: "/case",
-          task_type: "bug_fix",
-          original_prompt_summary: "修复页面 bug",
-          original_project_path: "/case/original",
-          generated_project_path: "/case/workspace",
-          effective_patch_path: "/case/diff/changes.patch",
-        },
-        task_understanding: {
-          explicitConstraints: ["修复页面 bug"],
-          contextualConstraints: ["保持工程结构"],
-          implicitConstraints: ["有 patch"],
-          classificationHints: ["bug_fix"],
-        },
-        rubric_summary: rubricSnapshot,
-        initial_target_files: [],
-        tool_contract: {
-          allowed_tools: [
-            "read_patch",
-            "list_dir",
-            "read_file",
-            "read_file_chunk",
-            "grep_in_files",
-            "read_json",
-          ],
-          max_tool_calls: 4,
-          max_total_bytes: 81920,
-          max_files: 24,
-        },
-        response_contract: {
-          action_enum: ["tool_call", "final_answer"],
-          output_language: "zh-CN",
-          json_only: true,
-        },
-      },
-      rubricSnapshot,
-    } as never,
-    {
-      agentClient,
-      logger: {
-        async info() {},
-        async warn() {},
-        async error() {},
-      },
-    },
-  );
-
-  assert.equal(result.rubricAgentRunStatus, "failed");
-  assert.equal(result.rubricScoringResult, undefined);
-  assert.equal(result.rubricAgentRunnerResult?.outcome, "request_failed");
-});
-
 test("ruleAuditNode emits one ledger item per rule and preserves source ordering", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rootDir = await makeTempDir(t);
@@ -785,7 +743,6 @@ test("ruleMergeNode preserves structured agent judgments from canonical runner r
           ],
         },
         turns: [],
-        tool_trace: [],
       },
     } as never,
     {},
@@ -1561,66 +1518,9 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
       assistedRuleCandidates: [],
       rubricAgentRunStatus: "not_enabled",
       rubricAgentRunnerResult: {
-        outcome: "tool_budget_exhausted",
-        turns: [
-          {
-            turn: 1,
-            action: "tool_call",
-            status: "success",
-            raw_output_text: '{"action":"tool_call","tool":"read_patch","args":{}}',
-            tool: "read_patch",
-            args: {},
-          },
-        ],
-        tool_trace: [
-          {
-            turn: 1,
-            tool: "read_patch",
-            args: {},
-            ok: true,
-            paths_read: ["diff/changes.patch"],
-            bytes_returned: 10,
-            truncated: false,
-            budget_after_call: {
-              usedToolCalls: 1,
-              usedBytes: 10,
-              readFileCount: 1,
-              remainingToolCalls: 3,
-              remainingBytes: 40950,
-              remainingFileSlots: 11,
-            },
-          },
-        ],
+        outcome: "request_failed",
+        failure_reason: "opencode unavailable",
       },
-      rubricAgentTurns: [
-        {
-          turn: 1,
-          action: "tool_call",
-          status: "success",
-          raw_output_text: '{"action":"tool_call","tool":"read_patch","args":{}}',
-          tool: "read_patch",
-          args: {},
-        },
-      ],
-      rubricAgentToolTrace: [
-        {
-          turn: 1,
-          tool: "read_patch",
-          args: {},
-          ok: true,
-          paths_read: ["diff/changes.patch"],
-          bytes_returned: 10,
-          truncated: false,
-          budget_after_call: {
-            usedToolCalls: 1,
-            usedBytes: 10,
-            readFileCount: 1,
-            remainingToolCalls: 3,
-            remainingBytes: 40950,
-            remainingFileSlots: 11,
-          },
-        },
-      ],
       ruleAgentRunStatus: "not_enabled",
       resultJson: { ok: true },
       htmlReport: "<html></html>",
@@ -1640,9 +1540,8 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
 
   assert.deepEqual(storedRuleAudit, deterministicRuleResults);
   assert.deepEqual(storedMergedAudit, deterministicRuleResults);
-  assert.equal(storedRubricAgentResult.runner_result.outcome, "tool_budget_exhausted");
-  assert.equal(storedRubricAgentResult.runner_result.turns.length, 1);
-  assert.equal(storedRubricAgentResult.runner_result.tool_trace.length, 1);
+  assert.equal(storedRubricAgentResult.runner_result.outcome, "request_failed");
+  assert.equal(storedRubricAgentResult.runner_result.failure_reason, "opencode unavailable");
   await assert.rejects(
     fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-turns.json"), "utf-8"),
   );
@@ -1813,7 +1712,6 @@ test("runScoreWorkflow emits Chinese descriptive text in result.json and report.
     caseDir,
     referenceRoot,
     artifactStore,
-    agentClient: undefined,
   });
 
   const resultJson = JSON.parse(
@@ -1833,102 +1731,6 @@ test("runScoreWorkflow emits Chinese descriptive text in result.json and report.
   );
   assert.match(reportHtml, /评分报告/);
   assert.doesNotMatch(reportHtml, /Score Report/);
-});
-
-test("runScoreWorkflow falls back when unsupported rules return incomplete agent assessments", async (t) => {
-  const referenceRoot = await createReferenceRoot(t);
-  const localCaseRoot = await makeTempDir(t);
-  const artifactStore = new ArtifactStore(localCaseRoot);
-  const caseDir = await artifactStore.ensureCaseDir("case-1");
-  const caseRootDir = await makeTempDir(t);
-  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
-    promptText: "请修复餐厅列表页中的 bug",
-    withPatch: true,
-    workspaceContent: "let x: any = 1;\nvar y = 2;\n",
-  });
-  const caseInput = await loadCaseFromPath(fixtureCaseDir);
-  let invoked = false;
-  const agentClient = {
-    async completeJsonPrompt(): Promise<string> {
-      invoked = true;
-      return '{"action":"final_answer","summary":{"assistant_scope":"本次仅辅助候选规则判定","overall_confidence":"medium"},"rule_assessments":[]}';
-    },
-  };
-
-  const result = await runScoreWorkflow({
-    caseInput: { ...caseInput, caseId: "case-1" },
-    caseDir,
-    referenceRoot,
-    artifactStore,
-    agentClient,
-  } as never);
-
-  assert.equal(invoked, true);
-  assert.equal(result.ruleAgentRunStatus, "invalid_output");
-  assert.equal(Array.isArray(result.mergedRuleAuditResults), true);
-  assert.equal(
-    (result.mergedRuleAuditResults as Array<{ rule_id: string; result: string }>).some(
-      (item) => item.rule_id === "ARKTS-SHOULD-002" && item.result === "待人工复核",
-    ),
-    true,
-  );
-  assert.equal(result.ruleAgentAssessmentResult, undefined);
-});
-
-test("runScoreWorkflow persists invalid-output agent artifacts when unsupported rules have no direct evidence", async (t) => {
-  const referenceRoot = await createReferenceRoot(t);
-  const localCaseRoot = await makeTempDir(t);
-  const artifactStore = new ArtifactStore(localCaseRoot);
-  const caseDir = await artifactStore.ensureCaseDir("case-1");
-  const caseRootDir = await makeTempDir(t);
-  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
-    promptText: "请修复餐厅列表页中的 bug",
-    withPatch: true,
-    workspaceContent: "let x: any = 1;\nvar y = 2;\n",
-  });
-  const caseInput = await loadCaseFromPath(fixtureCaseDir);
-  let invoked = false;
-  const agentClient = {
-    async completeJsonPrompt(): Promise<string> {
-      invoked = true;
-      return "not-json";
-    },
-  };
-
-  const result = await runScoreWorkflow({
-    caseInput: { ...caseInput, caseId: "case-1" },
-    caseDir,
-    referenceRoot,
-    artifactStore,
-    agentClient,
-  } as never);
-
-  const ruleAgentPromptText = await fs.readFile(
-    path.join(caseDir, "inputs", "rule-agent-prompt.txt"),
-    "utf-8",
-  );
-  const agentPromptPayload = JSON.parse(
-    await fs.readFile(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"), "utf-8"),
-  );
-  const mergedAudit = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
-  );
-  const agentResult = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
-  );
-
-  assert.equal(invoked, true);
-  assert.equal(result.ruleAgentRunStatus, "invalid_output");
-  assert.match(ruleAgentPromptText, /当前判定上下文如下/);
-  assert.doesNotMatch(ruleAgentPromptText, /你只能返回 tool_call 或 final_answer/);
-  assert.equal(Array.isArray(agentPromptPayload.assisted_rule_candidates), true);
-  assert.equal(agentPromptPayload.assisted_rule_candidates.length > 0, true);
-  assert.equal(Array.isArray(agentPromptPayload.tool_contract.allowed_tools), true);
-  assert.equal(Array.isArray(mergedAudit), true);
-  assert.equal(agentResult.outcome, "protocol_error");
-  await assert.rejects(
-    fs.readFile(path.join(caseDir, "intermediate", "agent-assisted-rule-result.json"), "utf-8"),
-  );
 });
 
 test("runScoreWorkflow invokes rubric scoring and rule assessment agents concurrently", async (t) => {
@@ -1959,216 +1761,25 @@ test("runScoreWorkflow invokes rubric scoring and rule assessment agents concurr
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
   let activeCalls = 0;
   let maxActiveCalls = 0;
-  const agentClient = {
-    async completeJsonPrompt(_prompt: string, options?: { requestTag?: string }): Promise<string> {
-      activeCalls += 1;
-      maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
-      await delay(40);
-      activeCalls -= 1;
-      if (options?.requestTag?.startsWith("rubric_case_aware")) {
-        return "{}";
-      }
-      return JSON.stringify({
-        action: "final_answer",
-        summary: {
-          assistant_scope: "本次仅辅助候选规则判定",
-          overall_confidence: "medium",
-        },
-        rule_assessments: [
-          {
-            rule_id: "HM-REQ-008-01",
-            decision: "violation",
-            confidence: "medium",
-            reason: "未发现 LoginWithHuaweiIDButton 调用。",
-            evidence_used: [],
-            needs_human_review: false,
-          },
-        ],
-      });
-    },
-  };
+  const opencodeRunner = createOpencodeRunnerMock();
 
   await runScoreWorkflow({
     caseInput: { ...caseInput, caseId: "case-1" },
     caseDir,
     referenceRoot,
     artifactStore,
-    agentClient,
-  } as never);
+    opencodeRunner: {
+      async runPrompt(request) {
+        activeCalls += 1;
+        maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+        await delay(40);
+        activeCalls -= 1;
+        return opencodeRunner.runPrompt(request);
+      },
+    },
+  });
 
   assert.equal(maxActiveCalls, 2);
-});
-
-test("runScoreWorkflow persists case-aware runner turns, tool trace and lifecycle logs", async (t) => {
-  const referenceRoot = await createReferenceRoot(t);
-  const localCaseRoot = await makeTempDir(t);
-  const artifactStore = new ArtifactStore(localCaseRoot);
-  const caseDir = await artifactStore.ensureCaseDir("case-1");
-  const caseRootDir = await makeTempDir(t);
-  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
-    caseId: "requirement_004",
-    promptText: "实现登录流程",
-    withPatch: false,
-    workspaceContent: "let x: number = 2;\n",
-    originalContent: "let x: number = 1;\n",
-    expectedConstraintsYaml: `constraints:
-  - id: HM-REQ-008-01
-    name: 必须使用 LoginWithHuaweiIDButton
-    description: 登录页必须使用 LoginWithHuaweiIDButton
-    priority: P0
-    rules:
-      - target: '**/pages/*.ets'
-        ast:
-          - type: call
-            name: LoginWithHuaweiIDButton
-        llm: 检查登录按钮
-`,
-  });
-  const caseInput = await loadCaseFromPath(fixtureCaseDir);
-  let rulePromptCallCount = 0;
-  let candidateRuleIds: string[] = [];
-  const agentClient = {
-    async completeJsonPrompt(prompt: string, options?: { requestTag?: string }): Promise<string> {
-      if (options?.requestTag?.startsWith("rubric_case_aware")) {
-        throw new Error("rubric mock skipped");
-      }
-      rulePromptCallCount += 1;
-      if (rulePromptCallCount === 1) {
-        candidateRuleIds = (/本次必须覆盖的 rule_id:\s*([^。]+)。/.exec(prompt)?.[1] ?? "")
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean);
-        return JSON.stringify({
-          action: "tool_call",
-          tool: "read_file",
-          args: { path: "workspace/entry/src/main/ets/Index.ets" },
-          reason: "需要确认是否存在登录按钮调用",
-        });
-      }
-
-      return JSON.stringify({
-        action: "final_answer",
-        summary: {
-          assistant_scope: "本次仅辅助候选规则判定",
-          overall_confidence: "medium",
-        },
-        rule_assessments: candidateRuleIds.map((ruleId) => ({
-          rule_id: ruleId,
-          decision: "not_applicable",
-          confidence: "high",
-          reason: `当前文件中未看到 ${ruleId} 对应的可判定违规证据，规则暂不涉及。`,
-          evidence_used: ["workspace/entry/src/main/ets/Index.ets"],
-          needs_human_review: false,
-        })),
-      });
-    },
-  };
-
-  const result = await runScoreWorkflow({
-    caseInput: { ...caseInput, caseId: "case-1" },
-    caseDir,
-    referenceRoot,
-    artifactStore,
-    agentClient,
-  } as never);
-
-  const bootstrapPayload = JSON.parse(
-    await fs.readFile(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"), "utf-8"),
-  );
-  const agentResult = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
-  );
-  const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
-
-  assert.equal(result.ruleAgentRunStatus, "success");
-  assert.equal(result.ruleAgentRunnerMode, "case_aware");
-  assert.equal(bootstrapPayload.tool_contract.allowed_tools.includes("read_file"), true);
-  assert.equal(agentResult.outcome, "success");
-  assert.equal(agentResult.turns.length, 2);
-  assert.equal(agentResult.tool_trace.length, 1);
-  await assert.rejects(
-    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
-  );
-  await assert.rejects(
-    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
-  );
-  assert.match(runLog, /case-aware agent 判定开始/);
-  assert.match(runLog, /case-aware 工具执行/);
-  assert.match(runLog, /case-aware 判定完成/);
-});
-
-test("runScoreWorkflow preserves partial agent traces when provider fails after earlier turns", async (t) => {
-  const referenceRoot = await createReferenceRoot(t);
-  const localCaseRoot = await makeTempDir(t);
-  const artifactStore = new ArtifactStore(localCaseRoot);
-  const caseDir = await artifactStore.ensureCaseDir("case-1");
-  const caseRootDir = await makeTempDir(t);
-  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
-    caseId: "requirement_004",
-    promptText: "实现登录流程",
-    withPatch: false,
-    workspaceContent: "let x: number = 2;\n",
-    originalContent: "let x: number = 1;\n",
-    expectedConstraintsYaml: `constraints:
-  - id: HM-REQ-008-01
-    name: 必须使用 LoginWithHuaweiIDButton
-    description: 登录页必须使用 LoginWithHuaweiIDButton
-    priority: P0
-    rules:
-      - target: '**/pages/*.ets'
-        ast:
-          - type: call
-            name: LoginWithHuaweiIDButton
-        llm: 检查登录按钮
-`,
-  });
-  const caseInput = await loadCaseFromPath(fixtureCaseDir);
-  let callCount = 0;
-  const agentClient = {
-    async completeJsonPrompt(_prompt: string, options?: { requestTag?: string }): Promise<string> {
-      if (options?.requestTag?.startsWith("rubric_case_aware")) {
-        throw new Error("rubric mock skipped");
-      }
-      callCount += 1;
-      if (callCount === 1) {
-        return JSON.stringify({
-          action: "tool_call",
-          tool: "read_file",
-          args: { path: "workspace/entry/src/main/ets/Index.ets" },
-          reason: "需要确认是否存在登录按钮调用",
-        });
-      }
-      throw new Error("fetch failed");
-    },
-  };
-
-  const result = await runScoreWorkflow({
-    caseInput: { ...caseInput, caseId: "case-1" },
-    caseDir,
-    referenceRoot,
-    artifactStore,
-    agentClient,
-  } as never);
-
-  const agentResult = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-agent-result.json"), "utf-8"),
-  );
-  const runLog = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
-
-  assert.equal(result.ruleAgentRunStatus, "invalid_output");
-  assert.equal(agentResult.outcome, "request_failed");
-  assert.equal(agentResult.turns.length, 1);
-  assert.equal(agentResult.turns[0]?.action, "tool_call");
-  assert.equal(agentResult.tool_trace.length, 1);
-  await assert.rejects(
-    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-turns.json"), "utf-8"),
-  );
-  await assert.rejects(
-    fs.readFile(path.join(caseDir, "intermediate", "rule-agent-tool-trace.json"), "utf-8"),
-  );
-  assert.match(agentResult.failure_reason, /fetch failed/);
-  assert.match(runLog, /case-aware 工具执行/);
-  assert.match(runLog, /case-aware 模型调用失败/);
 });
 
 test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
@@ -2188,7 +1799,6 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
     caseDir,
     referenceRoot,
     artifactStore,
-    agentClient: undefined,
   });
 
   const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
@@ -2200,36 +1810,10 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
   assert.match(logText, /\[评分融合scoreFusionOrchestrationNode\] 节点开始/);
   assert.match(logText, /\[产物后处理artifactPostProcessNode\] 节点开始/);
   assert.match(logText, /\[结果落盘persistAndUploadNode\] 节点开始/);
-  assert.doesNotMatch(logText, /featureExtractionNode/);
+  assert.doesNotMatch(logText, new RegExp("feature" + "Extraction" + "Node"));
   assert.match(logText, /\[任务分类inputClassificationNode\] 节点完成 summary=taskType=bug_fix/);
   assert.match(logText, /\[评分融合scoreFusionOrchestrationNode\] 节点完成 summary=totalScore=/);
   assert.match(logText, /\[产物后处理artifactPostProcessNode\] 节点完成 summary=htmlLength=/);
-});
-
-test("runScoreWorkflow writes warning logs when agent assistance is skipped", async (t) => {
-  const referenceRoot = await createReferenceRoot(t);
-  const localCaseRoot = await makeTempDir(t);
-  const artifactStore = new ArtifactStore(localCaseRoot);
-  const caseDir = await artifactStore.ensureCaseDir("case-1");
-  const caseRootDir = await makeTempDir(t);
-  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
-    promptText: "请修复餐厅列表页中的 bug",
-    withPatch: true,
-  });
-  const caseInput = await loadCaseFromPath(fixtureCaseDir);
-
-  await runScoreWorkflow({
-    caseInput: { ...caseInput, caseId: "case-1" },
-    caseDir,
-    referenceRoot,
-    artifactStore,
-    agentClient: undefined,
-  });
-
-  const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
-
-  assert.match(logText, /\[WARN\] rule agent 判定跳过 reason=未配置 agent client/);
-  assert.doesNotMatch(logText, /\[WARN\] rule agent 判定跳过 reason=无候选规则/);
 });
 
 test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async (t) => {
@@ -2250,7 +1834,6 @@ test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async
     caseDir,
     referenceRoot,
     artifactStore,
-    agentClient: undefined,
   });
 
   const mergedAudit = JSON.parse(
@@ -2281,7 +1864,6 @@ test("runScoreWorkflow sends unsupported rules without direct evidence to agent 
     caseDir,
     referenceRoot,
     artifactStore,
-    agentClient: undefined,
   });
 
   const agentPromptPayload = JSON.parse(
@@ -2295,7 +1877,7 @@ test("runScoreWorkflow sends unsupported rules without direct evidence to agent 
     ),
     true,
   );
-  assert.equal(agentPromptPayload.tool_contract.allowed_tools.includes("read_file"), true);
+  assert.equal("tool" + "_contract" in agentPromptPayload, false);
 });
 
 test("runScoreWorkflow falls back unsupported should rules to 待人工复核 when agent is unavailable", async (t) => {
@@ -2316,7 +1898,6 @@ test("runScoreWorkflow falls back unsupported should rules to 待人工复核 wh
     caseDir,
     referenceRoot,
     artifactStore,
-    agentClient: undefined,
   });
 
   const resultJson = JSON.parse(

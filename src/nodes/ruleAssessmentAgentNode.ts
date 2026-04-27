@@ -1,13 +1,15 @@
-import path from "node:path";
-import type { AgentClient } from "../agent/agentClient.js";
-import { runCaseAwareAgent } from "../agent/caseAwareAgentRunner.js";
+import { runOpencodeRuleAssessment } from "../agent/opencodeRuleAssessment.js";
+import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
 import { emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
 export async function ruleAssessmentAgentNode(
   state: ScoreGraphState,
   deps: {
-    agentClient?: AgentClient;
+    opencode?: {
+      sandboxRoot: string;
+      runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
+    };
     logger?: {
       info(message: string): Promise<void>;
       warn(message: string): Promise<void>;
@@ -19,56 +21,43 @@ export async function ruleAssessmentAgentNode(
   if ((state.assistedRuleCandidates?.length ?? 0) === 0) {
     await deps.logger?.warn("rule agent 判定跳过 reason=无候选规则");
     return {
-      ruleAgentRunnerMode: "case_aware",
+      ruleAgentRunnerMode: "opencode",
       ruleAgentRunStatus: "not_enabled",
       ruleAgentRunnerResult: undefined,
-      ruleAgentTurns: [],
-      ruleAgentToolTrace: [],
     };
   }
 
-  if (!deps.agentClient) {
-    await deps.logger?.warn("rule agent 判定跳过 reason=未配置 agent client");
+  if (!deps.opencode) {
+    await deps.logger?.warn("rule agent 判定跳过 reason=未配置 opencode runtime");
     return {
-      ruleAgentRunnerMode: "case_aware",
+      ruleAgentRunnerMode: "opencode",
       ruleAgentRunStatus: "skipped",
       ruleAgentRunnerResult: undefined,
-      ruleAgentTurns: [],
-      ruleAgentToolTrace: [],
     };
   }
 
   try {
-    const runnerResult = await runCaseAwareAgent({
-      caseRoot: state.sourceCasePath ?? path.dirname(state.caseInput.originalProjectPath),
+    const runnerResult = await runOpencodeRuleAssessment({
+      sandboxRoot: deps.opencode.sandboxRoot,
       bootstrapPayload: state.ruleAgentBootstrapPayload,
-      completeJsonPrompt: (prompt, options) =>
-        deps.agentClient!.completeJsonPrompt(prompt, options),
+      runPrompt: deps.opencode.runPrompt,
       logger: deps.logger,
     });
-    const ruleAgentRunStatus = runnerResult.final_answer ? "success" : "invalid_output";
+    if (!runnerResult.final_answer) {
+      throw new Error(
+        `rule opencode 输出无效 outcome=${runnerResult.outcome} reason=${runnerResult.failure_reason ?? ""}`,
+      );
+    }
+
     return {
-      ruleAgentRunnerMode: "case_aware",
-      ruleAgentRunStatus,
+      ruleAgentRunnerMode: "opencode",
+      ruleAgentRunStatus: "success",
       ruleAgentRunnerResult: runnerResult,
       ruleAgentAssessmentResult: runnerResult.final_answer,
-      ruleAgentTurns: runnerResult.turns,
-      ruleAgentToolTrace: runnerResult.tool_trace,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await deps.logger?.error(`rule agent 调用失败 error=${message}`);
-    return {
-      ruleAgentRunnerMode: "case_aware",
-      ruleAgentRunStatus: "failed",
-      ruleAgentRunnerResult: {
-        outcome: "request_failed",
-        failure_reason: message,
-        turns: [],
-        tool_trace: [],
-      },
-      ruleAgentTurns: [],
-      ruleAgentToolTrace: [],
-    };
+    throw error;
   }
 }

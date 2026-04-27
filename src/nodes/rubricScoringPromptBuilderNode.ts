@@ -1,8 +1,8 @@
 import path from "node:path";
 import {
-  buildRubricCaseAwarePayload,
-  renderRubricCaseAwareBootstrapPrompt,
-} from "../agent/rubricCaseAwarePrompt.js";
+  buildOpencodeRubricPayload,
+  renderOpencodeRubricPrompt,
+} from "../agent/opencodeRubricPrompt.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 import type { ProjectStructureSummary } from "../types.js";
@@ -12,7 +12,7 @@ function buildInitialTargetFiles(state: ScoreGraphState): string[] {
   const normalized = changedFiles
     .filter((filePath) => typeof filePath === "string" && filePath.trim().length > 0)
     .map((filePath) =>
-      filePath.startsWith("workspace/") ? filePath : path.posix.join("workspace", filePath),
+      filePath.startsWith("generated/") ? filePath : path.posix.join("generated", filePath),
     );
 
   return Array.from(new Set(normalized)).slice(0, 20);
@@ -51,7 +51,7 @@ export async function rubricScoringPromptBuilderNode(
   emitNodeStarted("rubricScoringPromptBuilderNode");
   try {
     const caseRoot = state.sourceCasePath ?? path.dirname(state.caseInput.originalProjectPath);
-    const payload = buildRubricCaseAwarePayload({
+    const payload = buildOpencodeRubricPayload({
       caseInput: state.caseInput,
       caseRoot,
       effectivePatchPath: state.effectivePatchPath,
@@ -61,7 +61,7 @@ export async function rubricScoringPromptBuilderNode(
       initialTargetFiles: buildInitialTargetFiles(state),
       ...buildWorkspaceProjectStructureContext(state),
     });
-    const prompt = renderRubricCaseAwareBootstrapPrompt(payload);
+    const prompt = renderOpencodeRubricPrompt(payload);
     await deps.logger?.info(
       `rubric scoring prompt 组装完成 dimensions=${payload.rubric_summary.dimension_summaries.length} promptLength=${prompt.length}`,
     );

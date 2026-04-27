@@ -3,6 +3,7 @@ import type { WorkflowNodeId } from "./types.js";
 const NODE_LABELS: Record<WorkflowNodeId, string> = {
   remoteTaskPreparationNode: "远端任务预处理",
   taskUnderstandingNode: "任务理解",
+  opencodeSandboxPreparationNode: "opencode 沙箱准备",
   inputClassificationNode: "任务分类",
   ruleAuditNode: "规则审计",
   rubricPreparationNode: "评分基线准备",

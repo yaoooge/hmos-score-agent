@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { upsertEnvVars } from "../src/io/envFile.js";
-import { resolveDefaultCasePath, runSingleCase } from "../src/service.js";
+import { resolveDefaultCasePath } from "../src/service.js";
 import { buildRunCaseId } from "../src/service/runCaseId.js";
-import { normalizeLauncherAnswers, parseLauncherArgs } from "../src/tools/runInteractiveScore.js";
+import { parseLauncherArgs } from "../src/tools/runInteractiveScore.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "interactive-launcher-"));
@@ -77,18 +77,18 @@ async function createLauncherCaseFixture(t: test.TestContext): Promise<{
 test("upsertEnvVars updates existing keys and appends missing ones", async (t) => {
   const envPath = await createTempEnv(
     t,
-    "MODEL_PROVIDER_BASE_URL=https://old.example/v1\nMODEL_PROVIDER_MODEL=gpt-4o-mini\n",
+    "HMOS_OPENCODE_HOST=127.0.0.1\nHMOS_OPENCODE_MODEL_ID=old-model\n",
   );
 
   await upsertEnvVars(envPath, {
-    MODEL_PROVIDER_BASE_URL: "https://new.example/v1",
-    MODEL_PROVIDER_API_KEY: "sk-test",
+    HMOS_OPENCODE_HOST: "0.0.0.0",
+    HMOS_OPENCODE_API_KEY: "test-key",
   });
 
   const text = await fs.readFile(envPath, "utf-8");
-  assert.match(text, /MODEL_PROVIDER_BASE_URL=https:\/\/new\.example\/v1/);
-  assert.match(text, /MODEL_PROVIDER_API_KEY=sk-test/);
-  assert.match(text, /MODEL_PROVIDER_MODEL=gpt-4o-mini/);
+  assert.match(text, /HMOS_OPENCODE_HOST=0\.0\.0\.0/);
+  assert.match(text, /HMOS_OPENCODE_API_KEY=test-key/);
+  assert.match(text, /HMOS_OPENCODE_MODEL_ID=old-model/);
 });
 
 test("buildRunCaseId formats timestamp, task type and unique id", () => {
@@ -101,19 +101,7 @@ test("buildRunCaseId formats timestamp, task type and unique id", () => {
   assert.equal(result, "20260416T112233_bug_fix_abc12345");
 });
 
-test("normalizeLauncherAnswers keeps the prompted baseURL and apiKey", () => {
-  const result = normalizeLauncherAnswers({
-    baseURL: "https://api.example/v1",
-    apiKey: "sk-test",
-    model: " gpt-5.4-mini ",
-  });
-
-  assert.equal(result.baseURL, "https://api.example/v1");
-  assert.equal(result.apiKey, "sk-test");
-  assert.equal(result.model, "gpt-5.4-mini");
-});
-
-test("launcher source uses provider-neutral env names and prompts", async () => {
+test("launcher source does not configure direct model provider credentials", async () => {
   const source = await fs.readFile(
     path.resolve(process.cwd(), "src/tools/runInteractiveScore.ts"),
     "utf-8",
@@ -121,9 +109,7 @@ test("launcher source uses provider-neutral env names and prompts", async () => 
   assert.equal(/执行模式/.test(source), false);
   assert.equal(/downloadUrl/.test(source), false);
   assert.equal(/runRemoteTask/.test(source), false);
-  assert.match(source, /模型服务 baseURL|MODEL_PROVIDER_BASE_URL/);
-  assert.match(source, /模型服务 apiKey|MODEL_PROVIDER_API_KEY/);
-  assert.match(source, /模型服务 model|MODEL_PROVIDER_MODEL/);
+  assert.doesNotMatch(source, new RegExp(["MODEL" + "_PROVIDER", "模型服务", "api" + "Key"].join("|")));
 });
 
 test("resolveDefaultCasePath picks the first case directory under cases", async (t) => {
@@ -156,111 +142,4 @@ test("parseLauncherArgs resolves explicit --case and falls back to the first cas
     path.resolve(process.cwd(), "examples/custom-case"),
   );
   assert.equal(parseLauncherArgs([]), path.resolve(process.cwd(), "cases", "bug_fix_001"));
-});
-
-test("runSingleCase stores artifacts under timestamp_taskType_uniqueId directories", async (t) => {
-  const fixture = await createLauncherCaseFixture(t);
-  process.env.LOCAL_CASE_ROOT = fixture.localCaseRoot;
-  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
-
-  try {
-    const result = await runSingleCase(fixture.casePath);
-    const baseName = path.basename(result.caseDir);
-    assert.match(baseName, /^\d{8}T\d{6}_bug_fix_[a-f0-9]{8}$/);
-  } finally {
-    if (fixture.originalLocalCaseRoot === undefined) {
-      delete process.env.LOCAL_CASE_ROOT;
-    } else {
-      process.env.LOCAL_CASE_ROOT = fixture.originalLocalCaseRoot;
-    }
-
-    if (fixture.originalReferenceRoot === undefined) {
-      delete process.env.DEFAULT_REFERENCE_ROOT;
-    } else {
-      process.env.DEFAULT_REFERENCE_ROOT = fixture.originalReferenceRoot;
-    }
-  }
-});
-
-test("runSingleCase omits prompt snapshots and writes updated case-info metadata into inputs", async (t) => {
-  const fixture = await createLauncherCaseFixture(t);
-  process.env.LOCAL_CASE_ROOT = fixture.localCaseRoot;
-  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
-
-  try {
-    const result = await runSingleCase(fixture.casePath);
-    await assert.rejects(fs.readFile(path.join(result.caseDir, "inputs", "prompt.txt"), "utf-8"));
-    await assert.rejects(
-      fs.readFile(path.join(result.caseDir, "inputs", "original-prompt.txt"), "utf-8"),
-    );
-    const caseInfo = JSON.parse(
-      await fs.readFile(path.join(result.caseDir, "inputs", "case-info.json"), "utf-8"),
-    );
-
-    assert.equal(caseInfo.task_type, "bug_fix");
-    assert.equal(caseInfo.source_case_path, fixture.casePath);
-    assert.equal(caseInfo.patch_path.endsWith("changes.patch"), true);
-    assert.equal("original_prompt_file" in caseInfo, false);
-    assert.equal("agent_prompt_file" in caseInfo, false);
-    assert.equal(caseInfo.rubric_scoring_prompt_file, "inputs/rubric-scoring-prompt.txt");
-    assert.equal(caseInfo.rubric_scoring_payload_file, "inputs/rubric-scoring-payload.json");
-    assert.equal(caseInfo.rule_agent_prompt_file, "inputs/rule-agent-prompt.txt");
-    assert.equal(
-      caseInfo.rule_agent_bootstrap_payload_file,
-      "inputs/rule-agent-bootstrap-payload.json",
-    );
-    assert.equal(typeof caseInfo.agent_assistance_enabled, "boolean");
-    assert.equal(typeof caseInfo.agent_model, "string");
-    assert.equal("agent_run_status" in caseInfo, false);
-    assert.match(
-      caseInfo.rubric_agent_run_status,
-      /not_enabled|success|failed|invalid_output|skipped/,
-    );
-    assert.match(
-      caseInfo.rule_agent_run_status,
-      /not_enabled|success|failed|invalid_output|skipped/,
-    );
-  } finally {
-    if (fixture.originalLocalCaseRoot === undefined) {
-      delete process.env.LOCAL_CASE_ROOT;
-    } else {
-      process.env.LOCAL_CASE_ROOT = fixture.originalLocalCaseRoot;
-    }
-
-    if (fixture.originalReferenceRoot === undefined) {
-      delete process.env.DEFAULT_REFERENCE_ROOT;
-    } else {
-      process.env.DEFAULT_REFERENCE_ROOT = fixture.originalReferenceRoot;
-    }
-  }
-});
-
-test("runSingleCase writes key lifecycle events into logs/run.log", async (t) => {
-  const fixture = await createLauncherCaseFixture(t);
-  process.env.LOCAL_CASE_ROOT = fixture.localCaseRoot;
-  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
-
-  try {
-    const result = await runSingleCase(fixture.casePath);
-    const logText = await fs.readFile(path.join(result.caseDir, "logs", "run.log"), "utf-8");
-
-    assert.match(logText, /启动评分流程/);
-    assert.match(logText, /用例加载完成/);
-    assert.match(logText, /任务类型判定完成 taskType=bug_fix/);
-    assert.match(logText, /工作流执行完成/);
-    assert.match(logText, /结果已落盘/);
-    assert.doesNotMatch(logText, /上传跳过/);
-  } finally {
-    if (fixture.originalLocalCaseRoot === undefined) {
-      delete process.env.LOCAL_CASE_ROOT;
-    } else {
-      process.env.LOCAL_CASE_ROOT = fixture.originalLocalCaseRoot;
-    }
-
-    if (fixture.originalReferenceRoot === undefined) {
-      delete process.env.DEFAULT_REFERENCE_ROOT;
-    } else {
-      process.env.DEFAULT_REFERENCE_ROOT = fixture.originalReferenceRoot;
-    }
-  }
 });

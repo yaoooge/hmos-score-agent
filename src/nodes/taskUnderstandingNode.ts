@@ -1,14 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-import type { AgentClient } from "../agent/agentClient.js";
-import {
-  buildFallbackConstraintSummary,
-  parseConstraintSummary,
-} from "../agent/taskUnderstanding.js";
+import { runOpencodeTaskUnderstanding } from "../agent/opencodeTaskUnderstanding.js";
 import type { ArtifactStore } from "../io/artifactStore.js";
 import { filterPatchTextForIgnoredFiles, isIgnoredCaseFilePath } from "../io/ignoredFiles.js";
 import { generateCasePatch } from "../io/patchGenerator.js";
+import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
+import { buildOpencodeSandbox } from "../opencode/sandboxBuilder.js";
 import { loadCaseConstraintRules } from "../rules/caseConstraintLoader.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
@@ -21,7 +19,10 @@ import type {
 } from "../types.js";
 
 type TaskUnderstandingDeps = {
-  agentClient?: Partial<Pick<AgentClient, "understandTask">>;
+  opencode?: {
+    runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
+  };
+  referenceRoot?: string;
   artifactStore?: ArtifactStore;
   logger?: {
     info(message: string): Promise<void>;
@@ -56,7 +57,7 @@ function isDeps(
   if (!value || typeof value !== "object") {
     return false;
   }
-  return "agentClient" in value || "artifactStore" in value || "logger" in value;
+  return "opencode" in value || "referenceRoot" in value || "artifactStore" in value || "logger" in value;
 }
 
 function normalizeRelativePath(filePath: string): string {
@@ -267,22 +268,28 @@ async function readPatchSummary(patchPath?: string): Promise<PatchSummary> {
 async function understandWithAgent(
   input: TaskUnderstandingAgentInput,
   deps: TaskUnderstandingDeps,
+  sandboxRoot?: string,
 ): Promise<ConstraintSummary> {
-  if (!deps.agentClient?.understandTask) {
-    await deps.logger?.warn("任务理解 agent 跳过 reason=未配置 task understanding 能力");
-    return buildFallbackConstraintSummary(input);
+  if (!deps.opencode || !sandboxRoot) {
+    throw new Error("任务理解 opencode runtime 未配置");
   }
 
   try {
-    await deps.logger?.info("任务理解 agent 调用开始");
-    const rawOutputText = await deps.agentClient.understandTask(input);
-    const summary = parseConstraintSummary(rawOutputText);
-    await deps.logger?.info("任务理解 agent 调用完成");
-    return summary;
+    await deps.logger?.info("任务理解 opencode 调用开始");
+    const result = await runOpencodeTaskUnderstanding({
+      sandboxRoot,
+      agentInput: input,
+      runPrompt: deps.opencode.runPrompt,
+      logger: deps.logger,
+    });
+    if (result.outcome === "success" && result.summary) {
+      await deps.logger?.info("任务理解 opencode 调用完成");
+      return result.summary;
+    }
+    throw new Error(`任务理解 opencode 输出无效 reason=${result.failure_reason ?? result.outcome}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await deps.logger?.warn(`任务理解 agent 输出无效，已回退本地摘要 reason=${message}`);
-    return buildFallbackConstraintSummary(input);
+    throw new Error(`任务理解 opencode 调用失败 reason=${message}`);
   }
 }
 
@@ -388,6 +395,25 @@ export async function taskUnderstandingNode(
     const effectivePatchPath = await ensureEffectivePatchPath(state, deps);
     const patchSummary = await readPatchSummary(effectivePatchPath);
     const caseRuleDefinitions = await loadCaseConstraintRules(state.caseInput);
+    const opencodeSandbox =
+      deps.opencode && deps.referenceRoot && state.caseDir
+        ? await buildOpencodeSandbox({
+            caseDir: state.caseDir,
+            generatedProjectPath: state.caseInput.generatedProjectPath,
+            originalProjectPath: state.caseInput.originalProjectPath,
+            originalProjectProvided: state.caseInput.originalProjectProvided,
+            effectivePatchPath,
+            referenceRoot: deps.referenceRoot,
+            metadata: {
+              case_id: state.caseInput.caseId,
+              prompt_text: state.caseInput.promptText,
+              original_project_provided: state.caseInput.originalProjectProvided ?? true,
+              patch_summary: patchSummary,
+              project_structure: projectStructure,
+              workspace_project_structure: workspaceProjectStructure,
+            },
+          })
+        : undefined;
     const agentInput: TaskUnderstandingAgentInput = {
       caseId: state.caseInput.caseId,
       promptText: state.caseInput.promptText,
@@ -397,7 +423,7 @@ export async function taskUnderstandingNode(
       projectStructure,
       patchSummary,
     };
-    const constraintSummary = await understandWithAgent(agentInput, deps);
+    const constraintSummary = await understandWithAgent(agentInput, deps, opencodeSandbox?.root);
     await persistConstraintSummary(state, deps, constraintSummary);
     await persistCaseRuleDefinitions(state, deps, caseRuleDefinitions);
 
@@ -407,6 +433,7 @@ export async function taskUnderstandingNode(
         patchPath: effectivePatchPath,
       },
       effectivePatchPath,
+      opencodeSandboxRoot: opencodeSandbox?.root,
       caseRuleDefinitions,
       constraintSummary,
       workspaceProjectStructure,

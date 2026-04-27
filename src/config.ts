@@ -6,9 +6,6 @@ export interface AppConfig {
   localCaseRoot: string;
   referenceRoot: string;
   remoteTaskAcceptTimeoutMs: number;
-  modelProviderBaseUrl?: string;
-  modelProviderApiKey?: string;
-  modelProviderModel?: string;
 }
 
 export function getConfig(): AppConfig {
@@ -18,8 +15,5 @@ export function getConfig(): AppConfig {
     referenceRoot:
       process.env.DEFAULT_REFERENCE_ROOT ?? path.resolve(process.cwd(), "references/scoring"),
     remoteTaskAcceptTimeoutMs: Number(process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS ?? 300000),
-    modelProviderBaseUrl: process.env.MODEL_PROVIDER_BASE_URL,
-    modelProviderApiKey: process.env.MODEL_PROVIDER_API_KEY,
-    modelProviderModel: process.env.MODEL_PROVIDER_MODEL ?? "gpt-5.4",
   };
 }

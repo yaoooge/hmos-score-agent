@@ -6,6 +6,7 @@ import { summarizeNodeUpdate } from "../src/workflow/observability/nodeSummaries
 test("getNodeLabel returns Chinese labels for workflow nodes", () => {
   assert.equal(getNodeLabel("remoteTaskPreparationNode"), "远端任务预处理");
   assert.equal(getNodeLabel("taskUnderstandingNode"), "任务理解");
+  assert.equal(getNodeLabel("opencodeSandboxPreparationNode"), "opencode 沙箱准备");
   assert.equal(getNodeLabel("rubricScoringAgentNode"), "Rubric Agent 评分");
   assert.equal(getNodeLabel("ruleAssessmentAgentNode"), "规则 Agent 判定");
   assert.equal(getNodeLabel("scoreFusionOrchestrationNode"), "评分融合");
@@ -34,6 +35,13 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
       },
     }),
     "explicit=2 contextual=1 implicit=3 classificationHints=1",
+  );
+
+  assert.equal(
+    summarizeNodeUpdate("opencodeSandboxPreparationNode", {
+      opencodeSandboxRoot: "/tmp/sandbox",
+    }),
+    "sandboxReady=true",
   );
 
   assert.equal(
