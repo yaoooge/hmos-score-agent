@@ -87,6 +87,21 @@ function createStoredResultJson(totalScore = 88): Record<string, unknown> {
   };
 }
 
+function assertRemoteCallbackPayloadShape(body: Record<string, unknown>) {
+  assert.equal("body" in body, false, "callback payload must not be wrapped in a body field");
+  const allowedKeys = new Set([
+    "taskId",
+    "status",
+    "totalScore",
+    "maxScore",
+    "resultData",
+    "errorMessage",
+  ]);
+  for (const key of Object.keys(body)) {
+    assert.equal(allowedKeys.has(key), true, `unexpected callback payload key: ${key}`);
+  }
+}
+
 async function waitForAssertion(assertion: () => Promise<void>, attempts = 20): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -231,7 +246,7 @@ test("API definitions include unified request and response schemas", () => {
   assert.equal(runRemoteTaskProperties?.taskId?.type, "number");
   assert.equal(runRemoteTaskProperties?.testCase?.required, true);
   assert.equal(runRemoteTaskProperties?.executionResult?.required, true);
-  assert.equal(runRemoteTaskProperties?.token?.type, "string");
+  assert.equal(runRemoteTaskProperties?.token?.required, false);
   assert.equal(runRemoteTaskProperties?.callback?.type, "string");
 
   const runRemoteTaskResponses = runRemoteTask?.responses as
@@ -251,13 +266,10 @@ test("API definitions include unified request and response schemas", () => {
     (definition) => definition.method === "GET" && definition.path === API_PATHS.remoteTaskResult,
   ) as Record<string, unknown> | undefined;
   const remoteTaskResultRequest = remoteTaskResult?.request as Record<string, unknown> | undefined;
-  const remoteTaskResultHeaders = remoteTaskResultRequest?.headers as
-    | Record<string, Record<string, unknown>>
-    | undefined;
   const remoteTaskResultPathParams = remoteTaskResultRequest?.pathParams as
     | Record<string, Record<string, unknown>>
     | undefined;
-  assert.equal(remoteTaskResultHeaders?.token?.required, true);
+  assert.equal("headers" in (remoteTaskResultRequest ?? {}), false);
   assert.equal(remoteTaskResultPathParams?.taskId?.type, "number");
 
   const runRemoteTaskCallbacks = runRemoteTask?.callbacks as
@@ -271,6 +283,7 @@ test("API definitions include unified request and response schemas", () => {
     | Record<string, Record<string, unknown>>
     | undefined;
   assert.equal(remoteTaskCallback?.method, "POST");
+  assert.equal("headers" in (remoteTaskCallback ?? {}), false);
   assert.equal(remoteTaskCallbackProperties?.taskId?.type, "number");
   assert.equal(remoteTaskCallbackProperties?.status?.type, "enum");
   assert.deepEqual(remoteTaskCallbackProperties?.status?.values, [
@@ -283,7 +296,7 @@ test("API definitions include unified request and response schemas", () => {
   assert.equal(remoteTaskCallbackProperties?.resultData?.type, "object");
 });
 
-test("createGetRemoteTaskResultHandler returns completed resultData with valid token", async (t) => {
+test("createGetRemoteTaskResultHandler returns completed resultData without token", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case-1");
   const resultJson = createStoredResultJson(91);
@@ -301,7 +314,7 @@ test("createGetRemoteTaskResultHandler returns completed resultData with valid t
   const handler = createGetRemoteTaskResultHandler(registry);
   const { response, responseState } = createResponse();
 
-  await handler(createResultRequest(701, "remote-token") as never, response as never);
+  await handler(createResultRequest(701) as never, response as never);
 
   assert.equal(responseState.statusCode, 200);
   assert.equal(responseState.body?.success, true);
@@ -310,7 +323,7 @@ test("createGetRemoteTaskResultHandler returns completed resultData with valid t
   assert.deepEqual(responseState.body?.resultData, resultJson);
 });
 
-test("createGetRemoteTaskResultHandler rejects invalid token", async (t) => {
+test("createGetRemoteTaskResultHandler ignores invalid token", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case-unauthorized");
   await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
@@ -332,9 +345,9 @@ test("createGetRemoteTaskResultHandler rejects invalid token", async (t) => {
 
   await handler(createResultRequest(702, "wrong-token") as never, response as never);
 
-  assert.equal(responseState.statusCode, 401);
-  assert.equal(responseState.body?.success, false);
-  assert.equal(responseState.body?.message, "Unauthorized");
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  assert.equal(responseState.body?.taskId, 702);
 });
 
 test("createGetRemoteTaskResultHandler reports running task as result unavailable", async (t) => {
@@ -350,7 +363,7 @@ test("createGetRemoteTaskResultHandler reports running task as result unavailabl
   const handler = createGetRemoteTaskResultHandler(registry);
   const { response, responseState } = createResponse();
 
-  await handler(createResultRequest(703, "remote-token") as never, response as never);
+  await handler(createResultRequest(703) as never, response as never);
 
   assert.equal(responseState.statusCode, 409);
   assert.equal(responseState.body?.success, false);
@@ -393,7 +406,7 @@ test("remote task registry reloads persisted records after restart", async (t) =
   const handler = createGetRemoteTaskResultHandler(secondRegistry);
   const { response, responseState } = createResponse();
 
-  await handler(createResultRequest(705, "remote-token") as never, response as never);
+  await handler(createResultRequest(705) as never, response as never);
 
   assert.equal(responseState.statusCode, 200);
   assert.deepEqual(responseState.body?.resultData, resultJson);
@@ -443,7 +456,7 @@ test("createRunRemoteTaskHandler persists completed task for result handler", as
     const resultResponse = createResponse();
 
     await resultHandler(
-      createResultRequest(806, "remote-token") as never,
+      createResultRequest(806) as never,
       resultResponse.response as never,
     );
 
@@ -550,13 +563,17 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
     ["pending", "running", "running", "completed"],
   );
   for (const callbackCall of callbackCalls) {
-    assert.equal(callbackCall.headers.get("token"), "remote-token");
+    assert.equal(callbackCall.headers.get("token"), null);
     assert.equal(callbackCall.body.taskId, 4);
+    assertRemoteCallbackPayloadShape(callbackCall.body);
     assert.equal(
       "caseDir" in ((callbackCall.body.resultData as Record<string, unknown> | undefined) ?? {}),
       false,
     );
   }
+  assert.equal("resultData" in callbackCalls[0].body, false);
+  assert.equal("resultData" in callbackCalls[1].body, false);
+  assert.equal("resultData" in callbackCalls[2].body, false);
   const finalCallback = callbackCalls.at(-1);
   assert.equal(finalCallback?.body.maxScore, 100);
   assert.equal(typeof finalCallback?.body.totalScore, "number");
@@ -566,18 +583,8 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
   );
   assert.equal(finalCallback?.body.totalScore, resultJson.overall_conclusion.total_score);
   const finalResultData = finalCallback?.body.resultData as Record<string, unknown>;
-  assert.equal(finalResultData.phase, "completed");
-  assert.equal(finalResultData.resultMode, "api");
+  assert.deepEqual(finalResultData, resultJson);
   assert.equal("resultUrl" in finalResultData, false);
-  assert.equal("overall_conclusion" in finalResultData, false);
-  const overview = finalResultData.overview as Record<string, unknown>;
-  assert.equal(overview.testCaseId, 8);
-  assert.equal(overview.totalScore, resultJson.overall_conclusion.total_score);
-  assert.equal(overview.maxScore, 100);
-  assert.equal(overview.hardGateTriggered, resultJson.overall_conclusion.hard_gate_triggered);
-  assert.equal(overview.reviewRequired, resultJson.human_review_items.length > 0);
-  assert.equal(overview.riskCount, resultJson.risks.length);
-  assert.equal(overview.humanReviewItemCount, resultJson.human_review_items.length);
   const logText = await fs.readFile(path.join(result.caseDir, "logs", "run.log"), "utf-8");
   assert.match(
     logText,
@@ -713,9 +720,13 @@ test("prepareRemoteEvaluationTask accepts a pushed task before executeAcceptedRe
     ["pending", "running", "running", "completed"],
   );
   for (const callbackCall of callbackCalls) {
-    assert.equal(callbackCall.headers.get("token"), "remote-token");
+    assert.equal(callbackCall.headers.get("token"), null);
     assert.equal(callbackCall.body.taskId, 5);
+    assertRemoteCallbackPayloadShape(callbackCall.body);
   }
+  assert.equal("resultData" in callbackCalls[0].body, false);
+  assert.equal("resultData" in callbackCalls[1].body, false);
+  assert.equal("resultData" in callbackCalls[2].body, false);
 });
 
 test("executeAcceptedRemoteEvaluationTask uploads failed callback when workflow execution fails", async (t) => {
@@ -829,9 +840,11 @@ test("executeAcceptedRemoteEvaluationTask uploads failed callback when workflow 
     ["pending", "running", "failed"],
   );
   const failedCallback = callbackCalls.at(-1);
-  assert.equal(failedCallback?.headers.get("token"), "remote-token");
+  assert.equal(failedCallback?.headers.get("token"), null);
+  assertRemoteCallbackPayloadShape(failedCallback?.body ?? {});
   assert.equal(failedCallback?.body.taskId, 6);
   assert.equal(failedCallback?.body.status, "failed");
+  assert.equal("resultData" in (failedCallback?.body ?? {}), false);
   assert.match(String(failedCallback?.body.errorMessage ?? ""), /rubric scoring crashed/);
 });
 
@@ -1255,9 +1268,11 @@ test("createRunRemoteTaskHandler reports preprocessing failures through callback
   assert.equal(responseState.statusCode, 200);
   assert.equal(responseState.body?.success, true);
   assert.equal("caseDir" in (responseState.body ?? {}), false);
-  assert.equal(callbackCalls.at(-1)?.headers.get("token"), "remote-token");
+  assert.equal(callbackCalls.at(-1)?.headers.get("token"), null);
+  assertRemoteCallbackPayloadShape(callbackCalls.at(-1)?.body ?? {});
   assert.equal(callbackCalls.at(-1)?.body.taskId, 101);
   assert.equal(callbackCalls.at(-1)?.body.status, "failed");
+  assert.equal("resultData" in (callbackCalls.at(-1)?.body ?? {}), false);
   assert.match(
     String(callbackCalls.at(-1)?.body.errorMessage ?? ""),
     /download original manifest failed/,

@@ -375,11 +375,6 @@ export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
       return;
     }
 
-    if (req.header("token") !== record.token) {
-      res.status(401).json({ success: false, message: "Unauthorized" });
-      return;
-    }
-
     if (record.status !== "completed") {
       res.status(409).json({
         success: false,
@@ -438,7 +433,7 @@ export function createCorsMiddleware() {
       "Access-Control-Allow-Headers",
       requestedHeaders && requestedHeaders.length > 0
         ? requestedHeaders
-        : "Content-Type, Authorization, token",
+        : "Content-Type, Authorization",
     );
     res.setHeader("Access-Control-Max-Age", "600");
 

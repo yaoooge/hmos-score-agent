@@ -177,38 +177,6 @@ function buildRemoteCallbackPayload(input: {
   return payload;
 }
 
-function arrayLength(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0;
-}
-
-function buildCompletedRemoteResultData(input: {
-  remoteTask: RemoteEvaluationTask;
-  resultJson: Record<string, unknown>;
-}): Record<string, unknown> {
-  const overallConclusion =
-    typeof input.resultJson.overall_conclusion === "object" &&
-    input.resultJson.overall_conclusion !== null
-      ? (input.resultJson.overall_conclusion as Record<string, unknown>)
-      : {};
-  const totalScore = Number(overallConclusion.total_score ?? 0);
-  const hardGateTriggered = overallConclusion.hard_gate_triggered === true;
-  const humanReviewItemCount = arrayLength(input.resultJson.human_review_items);
-
-  return {
-    phase: "completed",
-    resultMode: "api",
-    overview: {
-      testCaseId: input.remoteTask.testCase.id,
-      totalScore,
-      maxScore: 100,
-      hardGateTriggered,
-      reviewRequired: humanReviewItemCount > 0,
-      riskCount: arrayLength(input.resultJson.risks),
-      humanReviewItemCount,
-    },
-  };
-}
-
 async function uploadRemoteTaskCallbackWithLog(input: {
   remoteTask: RemoteEvaluationTask;
   logger: CaseLogger;
@@ -220,10 +188,7 @@ async function uploadRemoteTaskCallbackWithLog(input: {
   const payload = buildRemoteCallbackPayload({
     taskId: input.remoteTask.taskId,
     status: input.status,
-    resultData: {
-      phase: input.phase,
-      ...(input.resultData ?? {}),
-    },
+    resultData: input.resultData,
     errorMessage: input.errorMessage,
   });
   const upload = await uploadTaskCallback(
@@ -592,10 +557,7 @@ export async function executeAcceptedRemoteEvaluationTask(
       logger,
       status: "completed",
       phase: "completed",
-      resultData: buildCompletedRemoteResultData({
-        remoteTask: acceptedTask.remoteTask,
-        resultJson,
-      }),
+      resultData: resultJson,
     });
   } catch (error) {
     workflowResult = readWorkflowStateFromError(error) ?? workflowResult;
@@ -608,7 +570,6 @@ export async function executeAcceptedRemoteEvaluationTask(
       logger,
       status: "failed",
       phase: "failed",
-      resultData: { error: message },
       errorMessage: message,
     });
     throw error;

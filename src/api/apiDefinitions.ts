@@ -150,7 +150,7 @@ const remoteExecutionResultSchema = {
 const resultDataField = {
   type: "object",
   required: false,
-  description: "Scoring result JSON or callback phase payload.",
+  description: "Scoring result JSON. Present for completed callbacks.",
 } as const satisfies ApiFieldSchema;
 
 const remoteCallbackDefinition = {
@@ -158,13 +158,6 @@ const remoteCallbackDefinition = {
   method: "POST",
   urlSource: "request.body.callback",
   description: "Callback sent to the remote platform while executing an accepted remote task.",
-  headers: {
-    token: {
-      type: "string",
-      required: true,
-      description: "The request body token is sent back in the callback token header.",
-    },
-  },
   body: {
     type: "object",
     description: "Remote task callback payload produced by this service.",
@@ -225,8 +218,8 @@ export const API_DEFINITIONS: ApiDefinition[] = [
           executionResult: remoteExecutionResultSchema,
           token: {
             type: "string",
-            required: true,
-            description: "Callback authentication token echoed in callback headers.",
+            required: false,
+            description: "Deprecated. This service no longer requires or echoes callback tokens.",
           },
           callback: {
             type: "string",
@@ -306,13 +299,6 @@ export const API_DEFINITIONS: ApiDefinition[] = [
       pathParams: {
         taskId: taskIdField,
       },
-      headers: {
-        token: {
-          type: "string",
-          required: true,
-          description: "Remote task token. Must match the token stored for the task.",
-        },
-      },
     },
     responses: [
       {
@@ -332,11 +318,6 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             },
           },
         },
-      },
-      {
-        status: 401,
-        description: "Token header does not match the task token.",
-        body: errorResponseBody,
       },
       {
         status: 404,

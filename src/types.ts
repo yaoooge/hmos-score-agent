@@ -27,7 +27,7 @@ export interface RemoteEvaluationTask {
   taskId: number;
   testCase: RemoteTestCase;
   executionResult: RemoteExecutionResult;
-  token: string;
+  token?: string;
   callback: string;
 }
 
