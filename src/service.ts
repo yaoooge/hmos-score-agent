@@ -34,6 +34,11 @@ import type { ScoreGraphState } from "./workflow/state.js";
 
 type ServiceOpencodeDeps = {
   opencodeRunner?: OpencodeRunner;
+  onCompleted?: (input: {
+    acceptedTask: AcceptedRemoteEvaluationTask;
+    workflowResult: Record<string, unknown>;
+    resultJson: Record<string, unknown>;
+  }) => Promise<void>;
 };
 
 let sharedServiceOpencodeRunner: Promise<OpencodeRunner> | undefined;
@@ -575,6 +580,12 @@ export async function executeAcceptedRemoteEvaluationTask(
       typeof workflowResult.resultJson === "object" && workflowResult.resultJson !== null
         ? (workflowResult.resultJson as Record<string, unknown>)
         : {};
+
+    await deps.onCompleted?.({
+      acceptedTask: preparedTask,
+      workflowResult,
+      resultJson,
+    });
 
     return await uploadRemoteTaskCallbackWithLog({
       remoteTask: acceptedTask.remoteTask,

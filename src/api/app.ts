@@ -5,6 +5,14 @@ import { API_PATHS } from "./apiDefinitions.js";
 import { getConfig } from "../config.js";
 import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 import {
+  buildRuleViolationStatsResponse,
+  createRuleViolationStatsStore,
+  extractRuleViolationRunSnapshot,
+  validateRuleViolationStatsQuery,
+  type RuleViolationStatsQuery,
+  type RuleViolationStatsStore,
+} from "./ruleViolationStatsStore.js";
+import {
   acceptRemoteEvaluationTask,
   executeAcceptedRemoteEvaluationTask,
   prepareRemoteEvaluationTask,
@@ -101,7 +109,11 @@ function sendRemoteApiResponse(
   res.status(status).json(body);
 }
 
-export function createRunRemoteTaskHandler(deps: AppDeps, registry?: RemoteTaskRegistry) {
+export function createRunRemoteTaskHandler(
+  deps: AppDeps,
+  registry?: RemoteTaskRegistry,
+  ruleViolationStatsStore?: RuleViolationStatsStore,
+) {
   const runningTaskIds = new Set<number>();
   const queuedTaskIds = new Set<number>();
   const remoteTaskRecords = new Map<number, RemoteTaskRecord>();
@@ -167,7 +179,33 @@ export function createRunRemoteTaskHandler(deps: AppDeps, registry?: RemoteTaskR
       testCaseId: acceptedTask.remoteTask.testCase.id,
     });
     try {
-      await deps.executeAcceptedRemoteEvaluationTask(acceptedTask);
+      await deps.executeAcceptedRemoteEvaluationTask(acceptedTask, {
+        onCompleted: ruleViolationStatsStore
+          ? async ({ acceptedTask: completedTask, workflowResult, resultJson }) => {
+              await ruleViolationStatsStore.upsertRun(
+                extractRuleViolationRunSnapshot({
+                  taskId: completedTask.taskId,
+                  caseId:
+                    typeof workflowResult.caseInput === "object" &&
+                    workflowResult.caseInput !== null
+                      ? String((workflowResult.caseInput as { caseId?: unknown }).caseId ?? "")
+                      : String(completedTask.remoteTask.testCase.id),
+                  testCaseId: completedTask.remoteTask.testCase.id,
+                  caseName: completedTask.remoteTask.testCase.name,
+                  boundRulePacks: Array.isArray(resultJson.bound_rule_packs)
+                    ? (resultJson.bound_rule_packs as Array<{
+                        pack_id?: unknown;
+                        display_name?: unknown;
+                      }>)
+                    : [],
+                  ruleAuditResults: Array.isArray(resultJson.rule_audit_results)
+                    ? (resultJson.rule_audit_results as never)
+                    : [],
+                }),
+              );
+            }
+          : undefined,
+      });
       upsertTaskRecord(acceptedTask.taskId, "completed", {
         caseDir: acceptedTask.caseDir,
         token: acceptedTask.remoteTask.token,
@@ -275,6 +313,49 @@ function readRouteTaskId(req: Request): number | undefined {
   return Number.isFinite(taskId) ? taskId : undefined;
 }
 
+function readOptionalQueryString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  return undefined;
+}
+
+function readRuleViolationStatsQuery(req: Request): RuleViolationStatsQuery | string {
+  const testCaseIdText = readOptionalQueryString(req.query.testCaseId);
+  const testCaseId = testCaseIdText === undefined ? undefined : Number(testCaseIdText);
+  if (testCaseIdText !== undefined && !Number.isFinite(testCaseId)) {
+    return "Invalid query parameter: testCaseId must be a number";
+  }
+
+  const query: RuleViolationStatsQuery = {
+    caseId: readOptionalQueryString(req.query.caseId),
+    testCaseId,
+    packId: readOptionalQueryString(req.query.packId),
+    from: readOptionalQueryString(req.query.from),
+    to: readOptionalQueryString(req.query.to),
+  };
+  const validationError = validateRuleViolationStatsQuery(query);
+  return validationError ?? query;
+}
+
+export function createGetRuleViolationStatsHandler(store: RuleViolationStatsStore) {
+  return async (req: Request, res: Response) => {
+    const query = readRuleViolationStatsQuery(req);
+    if (typeof query === "string") {
+      res.status(400).json({ success: false, message: query });
+      return;
+    }
+
+    try {
+      const runs = await store.listRuns();
+      res.json(buildRuleViolationStatsResponse(runs, query));
+    } catch (error) {
+      console.error(`rule_violation_stats_read_failed error=${formatError(error)}`);
+      res.status(500).json({ success: false, message: "Rule violation stats are unavailable" });
+    }
+  };
+}
+
 export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
   return async (req: Request, res: Response) => {
     const taskId = readRouteTaskId(req);
@@ -373,7 +454,9 @@ export function createApp(
   },
 ) {
   const app = express();
-  const registry = createRemoteTaskRegistry(getConfig().localCaseRoot);
+  const config = getConfig();
+  const registry = createRemoteTaskRegistry(config.localCaseRoot);
+  const ruleViolationStatsStore = createRuleViolationStatsStore(config.localCaseRoot);
   app.use(createCorsMiddleware());
   app.use(express.json());
 
@@ -381,7 +464,14 @@ export function createApp(
     res.json({ ok: true });
   });
 
-  app.post(API_PATHS.runRemoteTask, createRunRemoteTaskHandler(deps, registry));
+  app.post(
+    API_PATHS.runRemoteTask,
+    createRunRemoteTaskHandler(deps, registry, ruleViolationStatsStore),
+  );
+  app.get(
+    API_PATHS.ruleViolationStats,
+    createGetRuleViolationStatsHandler(ruleViolationStatsStore),
+  );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
 
   return app;

@@ -55,6 +55,7 @@ export const API_PATHS = {
   health: "/health",
   runRemoteTask: "/score/run-remote-task",
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
+  ruleViolationStats: "/score/rule-violation-stats",
 } as const;
 
 const successField = {
@@ -255,6 +256,45 @@ export const API_DEFINITIONS: ApiDefinition[] = [
       { status: 500, description: "Remote task acceptance failed.", body: errorResponseBody },
     ],
     callbacks: [remoteCallbackDefinition],
+  },
+  {
+    method: "GET",
+    path: API_PATHS.ruleViolationStats,
+    description: "Read aggregated static rule violation statistics.",
+    responses: [
+      {
+        status: 200,
+        description: "Static rule violation statistics.",
+        body: {
+          type: "object",
+          description: "Rules-only static violation stats response.",
+          properties: {
+            success: successField,
+            filters: {
+              type: "object",
+              required: true,
+              description: "Applied query filters.",
+            },
+            summary: {
+              type: "object",
+              required: true,
+              description: "Aggregate run and violation counts.",
+            },
+            rules: {
+              type: "array",
+              required: true,
+              description: "Aggregated static rule violation rows. No cases summary is returned.",
+              items: {
+                type: "object",
+                description: "One static rule violation aggregate.",
+              },
+            },
+          },
+        },
+      },
+      { status: 400, description: "Invalid query parameter.", body: errorResponseBody },
+      { status: 500, description: "Stats index could not be read.", body: errorResponseBody },
+    ],
   },
   {
     method: "GET",
