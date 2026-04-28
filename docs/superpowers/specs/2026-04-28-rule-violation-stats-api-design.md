@@ -26,6 +26,7 @@
 - 支持按 `caseId`、`testCaseId`、`packId`、时间范围过滤。
 - 优先使用本地文件索引落盘，保持当前服务部署简单。
 - 统计数据只在任务完成且 `outputs/result.json` 已生成后写入，避免把失败或未完成任务计入规则违反统计。
+- 统计索引只保存远端用例执行记录；本地 CLI 或交互式执行结果不进入该索引。
 
 ## 非目标
 
@@ -36,6 +37,7 @@
 - 不改变现有 completed callback 或完整结果读取接口的语义。
 - 不统计未完成、失败、超时任务的规则不满足项；这些任务仍由远端任务状态或日志排查。
 - 不统计 `case_rule_results` 或 `is_case_rule === true` 的用例约束规则。
+- 不在 `rule-violation-stats.json` 中保存 `满足`、`不涉及`、`待人工复核` 等非违反规则。
 
 ## 当前相关代码
 
@@ -107,7 +109,8 @@ remote task completed
 - 同一 `taskId` 重复写入时覆盖旧记录，避免重试或重复回调导致重复计数。
 - 只保留规则最终判定结果，不保存完整报告 HTML 或源码路径。
 - `boundRulePacks` 只保存静态规则包，过滤掉 `case-requirement_*` 等用例约束规则包。
-- `rules` 只包含静态规则包中的最终规则判定，查询时只把 `result === "不满足"` 计入违反次数。
+- `rules` 只保存静态规则包中 `result === "不满足"` 的规则；`满足`、`不涉及`、`待人工复核` 不写入索引。
+- `boundRulePacks` 只保存存在不满足规则的静态规则包；没有违反事件的静态规则包不写入该执行快照。
 
 ## 规则与规则包关联
 
@@ -116,7 +119,7 @@ remote task completed
 本设计要求新增一个规则元数据映射步骤：
 
 1. 使用内置静态规则注册表建立 `rule_id -> pack_id` 映射，不传入 `state.caseRuleDefinitions`。
-2. 提取统计快照时，只保留能在静态规则注册表中找到的 `rule_audit_results`。
+2. 提取统计快照时，只保留能在静态规则注册表中找到且结果为 `不满足` 的 `rule_audit_results`。
 3. 过滤掉 `case_rule_results`、`is_case_rule === true`、`case-requirement_*` 等用例约束规则。
 4. 如果某条规则找不到静态 `pack_id`，默认认为它不属于本统计口径并跳过，不写入 `unknown`。
 
@@ -232,9 +235,19 @@ GET /score/rule-violation-stats
 新增快照提取模块：
 
 - 从 `ScoreGraphState` 或完成后的 `resultJson` 中提取 `taskId`、`caseId`、`testCaseId`、`caseName`、静态 `boundRulePacks`。
-- 从最终规则判定结果提取静态规则列表。
+- 从最终规则判定结果提取结果为 `不满足` 的静态规则列表。
 - 通过内置静态规则注册表补齐 `pack_id`，并跳过用例约束规则。
 - 输出不包含本地路径和大字段的轻量统计快照。
+
+### 离线 rebuild 工具
+
+新增 `src/tools/rebuildRuleViolationStats.ts` 用于从历史产物重建 `<LOCAL_CASE_ROOT>/rule-violation-stats.json`：
+
+- 扫描 `<LOCAL_CASE_ROOT>/**/outputs/result.json`。
+- 读取同级用例目录下的 `inputs/case-info.json` 补充远端任务元数据。
+- 只重建包含 `remote_task_id` 或 `report_meta.unit_name` 为 `remote-task-<id>` 的远端用例。
+- 本地执行用例即使存在 `outputs/result.json` 也会被忽略。
+- 写入索引前仍执行相同的静态规则和 `不满足` 过滤。
 
 ### API handler
 

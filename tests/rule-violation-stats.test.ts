@@ -97,6 +97,33 @@ test("rule violation stats store upserts snapshots by task id", async (t) => {
   assert.equal(runs[0]?.completedAt, "2026-04-28T11:00:00.000Z");
 });
 
+test("rule violation stats store persists only violated rules and their packs", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createRuleViolationStatsStore(localCaseRoot);
+
+  await store.upsertRun(
+    createSnapshot({
+      boundRulePacks: [
+        {
+          pack_id: "arkts-language",
+          display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+        },
+        { pack_id: "arkts-performance", display_name: "ArkTS 高性能编程实践" },
+      ],
+    }),
+  );
+
+  const runs = await createRuleViolationStatsStore(localCaseRoot).listRuns();
+  assert.deepEqual(
+    runs[0]?.rules.map((rule) => ({ rule_id: rule.rule_id, result: rule.result })),
+    [{ rule_id: "ARKTS-MUST-001", result: "不满足" }],
+  );
+  assert.deepEqual(
+    runs[0]?.boundRulePacks.map((pack) => pack.pack_id),
+    ["arkts-language"],
+  );
+});
+
 test("rule violation stats store returns empty runs when index is missing", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const store = createRuleViolationStatsStore(localCaseRoot);
@@ -104,7 +131,7 @@ test("rule violation stats store returns empty runs when index is missing", asyn
   assert.deepEqual(await store.listRuns(), []);
 });
 
-test("extractRuleViolationRunSnapshot keeps only static rule-pack results", () => {
+test("extractRuleViolationRunSnapshot keeps only violated static rule-pack results", () => {
   const snapshot = extractRuleViolationRunSnapshot({
     taskId: 120,
     caseId: "case-120",
@@ -125,6 +152,13 @@ test("extractRuleViolationRunSnapshot keeps only static rule-pack results", () =
         rule_source: "must_rule",
         result: "不满足",
         conclusion: "静态规则不满足。",
+      },
+      {
+        rule_id: "ARKTS-SHOULD-001",
+        rule_summary: "静态已满足规则摘要",
+        rule_source: "should_rule",
+        result: "满足",
+        conclusion: "静态规则已满足。",
       },
       {
         rule_id: "HM-REQ-120-01",
@@ -156,16 +190,7 @@ test("buildRuleViolationStatsResponse aggregates rules only and omits cases", ()
         taskId: 103,
         caseId: "005",
         testCaseId: 5,
-        rules: [
-          {
-            pack_id: "arkts-language",
-            rule_id: "ARKTS-MUST-001",
-            rule_summary: "必须遵循 ArkTS 语言约束",
-            rule_source: "must_rule",
-            result: "满足",
-            conclusion: "已满足。",
-          },
-        ],
+        rules: [],
       }),
     ],
     {},
@@ -403,6 +428,13 @@ test("rebuildRuleViolationStatsIndex rebuilds stats from historical result files
           conclusion: "静态规则不满足。",
         },
         {
+          rule_id: "ARKTS-SHOULD-001",
+          rule_summary: "静态已满足规则摘要",
+          rule_source: "should_rule",
+          result: "满足",
+          conclusion: "静态规则已满足。",
+        },
+        {
           rule_id: "HM-REQ-154-01",
           rule_summary: "用例规则摘要",
           rule_source: "must_rule",
@@ -413,9 +445,41 @@ test("rebuildRuleViolationStatsIndex rebuilds stats from historical result files
     }),
   );
 
+  const localCaseDir = path.join(localCaseRoot, "20260428T020304_full_generation_local1234");
+  await fs.mkdir(path.join(localCaseDir, "inputs"), { recursive: true });
+  await fs.mkdir(path.join(localCaseDir, "outputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(localCaseDir, "inputs", "case-info.json"),
+    JSON.stringify({ case_id: "local-case", started_at: "2026-04-28T02:03:04.000Z" }),
+  );
+  await fs.writeFile(
+    path.join(localCaseDir, "outputs", "result.json"),
+    JSON.stringify({
+      report_meta: {
+        unit_name: "local-case",
+        generated_at: "2026-04-28T02:10:00.000Z",
+      },
+      bound_rule_packs: [
+        {
+          pack_id: "arkts-language",
+          display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+        },
+      ],
+      rule_audit_results: [
+        {
+          rule_id: "ARKTS-MUST-001",
+          rule_summary: "静态规则摘要",
+          rule_source: "must_rule",
+          result: "不满足",
+          conclusion: "本地执行不应进入统计。",
+        },
+      ],
+    }),
+  );
+
   const summary = await rebuildRuleViolationStatsIndex(localCaseRoot);
 
-  assert.deepEqual(summary, { scannedResultFiles: 1, rebuiltRuns: 1, skippedFiles: 0 });
+  assert.deepEqual(summary, { scannedResultFiles: 2, rebuiltRuns: 1, skippedFiles: 0 });
   const rebuiltRuns = await createRuleViolationStatsStore(localCaseRoot).listRuns();
   assert.equal(rebuiltRuns.length, 1);
   assert.equal(rebuiltRuns[0]?.taskId, 154);

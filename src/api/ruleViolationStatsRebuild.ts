@@ -105,7 +105,7 @@ function buildSnapshotFromResult(input: {
   resultPath: string;
   resultJson: ResultJson;
   caseInfo?: CaseInfo;
-}): RuleViolationRunSnapshot {
+}): RuleViolationRunSnapshot | undefined {
   const caseDir = path.dirname(path.dirname(input.resultPath));
   const relativeCaseDir = path.relative(input.localCaseRoot, caseDir) || path.basename(caseDir);
   const unitName = readString(input.resultJson.report_meta?.unit_name);
@@ -115,6 +115,12 @@ function buildSnapshotFromResult(input: {
     readNumber(input.caseInfo?.remote_task_id) ??
     parseRemoteTaskId(unitName) ??
     stableNumericId(relativeCaseDir);
+  const isRemoteRun =
+    readNumber(input.caseInfo?.remote_task_id) !== undefined ||
+    parseRemoteTaskId(unitName) !== undefined;
+  if (!isRemoteRun) {
+    return undefined;
+  }
   const testCaseId = readNumber(input.caseInfo?.remote_test_case_id) ?? taskId;
   const completedAt =
     readString(input.resultJson.report_meta?.generated_at) ??
@@ -152,14 +158,15 @@ export async function rebuildRuleViolationStatsIndex(
       }
       const caseDir = path.dirname(path.dirname(resultPath));
       const caseInfo = await readJsonFile<CaseInfo>(path.join(caseDir, "inputs", "case-info.json"));
-      snapshots.push(
-        buildSnapshotFromResult({
-          localCaseRoot,
-          resultPath,
-          resultJson,
-          caseInfo,
-        }),
-      );
+      const snapshot = buildSnapshotFromResult({
+        localCaseRoot,
+        resultPath,
+        resultJson,
+        caseInfo,
+      });
+      if (snapshot) {
+        snapshots.push(snapshot);
+      }
     } catch (error) {
       skippedFiles += 1;
       console.warn(

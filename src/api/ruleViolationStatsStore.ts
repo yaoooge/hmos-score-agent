@@ -182,28 +182,48 @@ function makeRuleKey(packId: string, ruleId: string): string {
   return `${packId}\u0000${ruleId}`;
 }
 
+function sanitizeRuleViolationRunSnapshot(
+  snapshot: RuleViolationRunSnapshot,
+): RuleViolationRunSnapshot {
+  const metadata = getStaticRuleMetadata();
+  const rules = snapshot.rules
+    .filter((rule) => rule.result === "不满足")
+    .map((rule): RuleViolationRuleResult | undefined => {
+      const staticRule = metadata.ruleById.get(rule.rule_id);
+      if (!staticRule) {
+        return undefined;
+      }
+      return {
+        pack_id: staticRule.pack_id,
+        rule_id: rule.rule_id,
+        rule_summary: rule.rule_summary || staticRule.rule_summary,
+        rule_source: staticRule.rule_source,
+        result: "不满足",
+        conclusion: rule.conclusion,
+      };
+    })
+    .filter((rule): rule is RuleViolationRuleResult => Boolean(rule));
+  const violatedPackIds = new Set(rules.map((rule) => rule.pack_id));
+  const boundRulePacks = Array.from(violatedPackIds)
+    .map((packId) => metadata.packById.get(packId))
+    .filter((pack): pack is RuleViolationBoundRulePack => Boolean(pack))
+    .sort((left, right) => left.pack_id.localeCompare(right.pack_id));
+
+  return {
+    ...snapshot,
+    boundRulePacks,
+    rules,
+  };
+}
+
 export function extractRuleViolationRunSnapshot(
   input: ExtractRuleViolationRunSnapshotInput,
 ): RuleViolationRunSnapshot {
   const metadata = getStaticRuleMetadata();
-  const seenPackIds = new Set<string>();
-  const boundRulePacks = (input.boundRulePacks ?? [])
-    .map((pack) =>
-      typeof pack.pack_id === "string" ? metadata.packById.get(pack.pack_id) : undefined,
-    )
-    .filter((pack): pack is RuleViolationBoundRulePack => Boolean(pack))
-    .filter((pack) => {
-      if (seenPackIds.has(pack.pack_id)) {
-        return false;
-      }
-      seenPackIds.add(pack.pack_id);
-      return true;
-    });
-
   const rules = (input.ruleAuditResults ?? [])
     .map((rule): RuleViolationRuleResult | undefined => {
       const staticRule = metadata.ruleById.get(rule.rule_id);
-      if (!staticRule) {
+      if (!staticRule || rule.result !== "不满足") {
         return undefined;
       }
       return {
@@ -216,6 +236,11 @@ export function extractRuleViolationRunSnapshot(
       };
     })
     .filter((rule): rule is RuleViolationRuleResult => Boolean(rule));
+  const violatedPackIds = new Set(rules.map((rule) => rule.pack_id));
+  const boundRulePacks = Array.from(violatedPackIds)
+    .map((packId) => metadata.packById.get(packId))
+    .filter((pack): pack is RuleViolationBoundRulePack => Boolean(pack))
+    .sort((left, right) => left.pack_id.localeCompare(right.pack_id));
 
   return {
     taskId: input.taskId,
@@ -343,7 +368,7 @@ export function createRuleViolationStatsStore(localCaseRoot: string): RuleViolat
       const text = await fs.readFile(indexPath, "utf-8");
       const stored = parseStoredStats(JSON.parse(text) as unknown);
       for (const run of stored.runs) {
-        runs.set(run.taskId, run);
+        runs.set(run.taskId, sanitizeRuleViolationRunSnapshot(run));
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -387,9 +412,10 @@ export function createRuleViolationStatsStore(localCaseRoot: string): RuleViolat
     async upsertRun(snapshot: RuleViolationRunSnapshot): Promise<RuleViolationRunSnapshot> {
       return await runExclusive(async () => {
         await load();
-        runs.set(snapshot.taskId, snapshot);
+        const sanitizedSnapshot = sanitizeRuleViolationRunSnapshot(snapshot);
+        runs.set(sanitizedSnapshot.taskId, sanitizedSnapshot);
         await save();
-        return snapshot;
+        return sanitizedSnapshot;
       });
     },
 
@@ -398,7 +424,8 @@ export function createRuleViolationStatsStore(localCaseRoot: string): RuleViolat
         await load();
         runs.clear();
         for (const snapshot of snapshots) {
-          runs.set(snapshot.taskId, snapshot);
+          const sanitizedSnapshot = sanitizeRuleViolationRunSnapshot(snapshot);
+          runs.set(sanitizedSnapshot.taskId, sanitizedSnapshot);
         }
         await save();
         return Array.from(runs.values()).sort((left, right) => left.taskId - right.taskId);
