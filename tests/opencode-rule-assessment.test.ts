@@ -262,6 +262,70 @@ test("runOpencodeRuleAssessment fills omitted candidates as uncertain review ite
   });
 });
 
+test("runOpencodeRuleAssessment ignores extra fields and coerces review boolean strings", async () => {
+  const answer = finalAnswer() as unknown as Record<string, unknown>;
+  answer["extra_top_level"] = "ignored";
+  answer.summary = {
+    ...(answer.summary as Record<string, unknown>),
+    extra_summary: "ignored",
+  };
+  answer.rule_assessments = [
+    {
+      ...finalAnswer().rule_assessments[0],
+      needs_human_review: "false",
+      extra_assessment_note: "ignored",
+    },
+  ];
+
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/sandbox/case",
+    bootstrapPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.final_answer?.rule_assessments[0]?.needs_human_review, false);
+  assert.equal("extra_top_level" in (result.final_answer as unknown as Record<string, unknown>), false);
+  assert.equal(
+    "extra_assessment_note" in
+      (result.final_answer?.rule_assessments[0] as unknown as Record<string, unknown>),
+    false,
+  );
+});
+
+test("runOpencodeRuleAssessment rejects replacement reason fields without required names", async () => {
+  const answer = finalAnswer() as unknown as Record<string, unknown>;
+  answer.rule_assessments = [
+    {
+      rule_id: "R1",
+      decision: "pass",
+      confidence: "high",
+      message: "替代字段不应生效。",
+      evidence_used: [],
+      needs_human_review: false,
+    },
+  ];
+
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/sandbox/case",
+    bootstrapPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "protocol_error");
+  assert.match(result.failure_reason ?? "", /rule_assessments\.0\.reason|rule_assessments\[0\]\.reason/);
+});
+
 test("runOpencodeRuleAssessment retry prompt targets concrete protocol failures", async () => {
   const calls: Array<{ requestTag: string; prompt: string }> = [];
   const result = await runOpencodeRuleAssessment({
@@ -281,7 +345,7 @@ test("runOpencodeRuleAssessment retry prompt targets concrete protocol failures"
                     rule_id: "R1",
                     decision: "pass",
                     confidence: "high",
-                    reason: "ok",
+                    message: "replacement reason field is invalid",
                     evidence_used: [],
                     needs_human_review: false,
                     extra: "not allowed",

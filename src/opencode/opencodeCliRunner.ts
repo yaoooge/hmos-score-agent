@@ -178,15 +178,18 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let settled = false;
-    let child: SpawnedProcess;
-    let timer: NodeJS.Timeout | undefined;
+    const child: SpawnedProcess = spawnProcess("opencode", args, {
+      env: input.runtime.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const timerRef: { current?: NodeJS.Timeout } = {};
 
     function fail(error: Error): void {
       if (settled) {
         return;
       }
       settled = true;
-      clearTimer(timer);
+      clearTimer(timerRef.current);
       reject(error);
     }
 
@@ -195,14 +198,12 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
         return;
       }
       settled = true;
-      clearTimer(timer);
+      clearTimer(timerRef.current);
       resolve(result);
     }
 
-    child = spawnProcess("opencode", args, { env: input.runtime.env, stdio: ["ignore", "pipe", "pipe"] });
-
-    timer = setTimer(() => {
-      child?.kill("SIGTERM");
+    timerRef.current = setTimer(() => {
+      child.kill("SIGTERM");
       fail(new OpencodeRunError(`opencode 调用超时 request=${input.request.requestTag}`));
     }, input.runtime.timeoutMs);
 

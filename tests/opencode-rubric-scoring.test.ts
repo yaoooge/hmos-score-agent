@@ -292,6 +292,128 @@ test("runOpencodeRubricScoring normalizes item scores through the local rubric s
   assert.equal(result.final_answer?.item_scores[0]?.rationale, "点击处理路径已补齐。");
 });
 
+test("runOpencodeRubricScoring ignores extra fields and coerces scalar strings", async () => {
+  const answer = finalAnswer() as unknown as Record<string, unknown>;
+  answer["extra_top_level"] = "ignored";
+  answer.summary = {
+    ...(answer.summary as Record<string, unknown>),
+    extra_summary: "ignored",
+  };
+  answer.item_scores = [
+    {
+      ...finalAnswer().item_scores[0],
+      score: "32",
+      matched_band_score: "32",
+      max_score: "999",
+      review_required: "false",
+      extra_item_note: "ignored",
+    },
+  ];
+  answer.hard_gate_candidates = [
+    {
+      ...finalAnswer().hard_gate_candidates[0],
+      triggered: "false",
+      extra_gate_note: "ignored",
+    },
+  ];
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.final_answer?.item_scores[0]?.score, 40);
+  assert.equal(result.final_answer?.item_scores[0]?.matched_band_score, 40);
+  assert.equal(result.final_answer?.item_scores[0]?.max_score, 40);
+  assert.equal(result.final_answer?.item_scores[0]?.review_required, false);
+  assert.equal(result.final_answer?.hard_gate_candidates[0]?.triggered, false);
+  assert.equal("extra_top_level" in (result.final_answer as unknown as Record<string, unknown>), false);
+  assert.equal(
+    "extra_item_note" in (result.final_answer?.item_scores[0] as unknown as Record<string, unknown>),
+    false,
+  );
+});
+
+test("runOpencodeRubricScoring snaps tie scores upward to the nearest rubric band", async () => {
+  const answer = finalAnswer();
+  answer.item_scores[0] = {
+    ...answer.item_scores[0],
+    score: 30,
+    matched_band_score: 30,
+  };
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.final_answer?.item_scores[0]?.score, 40);
+  assert.equal(result.final_answer?.item_scores[0]?.matched_band_score, 40);
+});
+
+test("runOpencodeRubricScoring still requires deduction trace after score snapping", async () => {
+  const answer = finalAnswer();
+  answer.item_scores[0] = {
+    ...answer.item_scores[0],
+    score: 12,
+    matched_band_score: 12,
+  };
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "protocol_error");
+  assert.match(result.failure_reason ?? "", /invalid_deduction_trace=功能正确性::缺陷修复完整度/);
+});
+
+test("runOpencodeRubricScoring rejects replacement risk fields without required names", async () => {
+  const answer = finalAnswer() as unknown as Record<string, unknown>;
+  answer.risks = [
+    {
+      risk_level: "medium",
+      title: "风险标题",
+      description: "风险说明",
+      evidence: "generated/entry/src/main.ets",
+    },
+  ];
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "protocol_error");
+  assert.match(result.failure_reason ?? "", /risks\.0\.level|risks\[0\]\.level/);
+});
+
 test("runOpencodeRubricScoring retry prompt targets concrete protocol failures", async () => {
   const calls: Array<{ requestTag: string; prompt: string }> = [];
   const answer = finalAnswer();

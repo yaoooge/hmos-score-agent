@@ -2,6 +2,7 @@ import { z } from "zod";
 import { extractFinalJsonObject } from "../opencode/finalJson.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
 import type { LoadedRubricSnapshot, RubricScoringPayload, RubricScoringResult } from "../types.js";
+import { booleanLikeSchema, finiteNumberSchema, snapScoreToAllowedBand } from "./agentOutputNormalization.js";
 import { buildOpencodeRequestTag } from "./opencodeRequestTag.js";
 
 const confidenceSchema = z.enum(["high", "medium", "low"]);
@@ -14,7 +15,7 @@ const deductionTraceSchema = z
     deduction_reason: z.string().min(1),
     improvement_suggestion: z.string(),
   })
-  .strict();
+  .strip();
 
 const opencodeRubricScoringSchema = z
   .object({
@@ -23,32 +24,32 @@ const opencodeRubricScoringSchema = z
         overall_assessment: z.string().min(1),
         overall_confidence: confidenceSchema,
       })
-      .strict(),
+      .strip(),
     item_scores: z.array(
       z
         .object({
           dimension_name: z.string().min(1),
           item_name: z.string().min(1),
-          score: z.number(),
-          max_score: z.number().optional(),
-          matched_band_score: z.number().optional(),
+          score: finiteNumberSchema,
+          max_score: finiteNumberSchema.optional(),
+          matched_band_score: finiteNumberSchema.optional(),
           rationale: z.string().min(1),
           evidence_used: z.array(z.string()),
           confidence: confidenceSchema,
-          review_required: z.boolean(),
+          review_required: booleanLikeSchema,
           deduction_trace: deductionTraceSchema.optional(),
         })
-        .strict(),
+        .strip(),
     ),
     hard_gate_candidates: z.array(
       z
         .object({
           gate_id: z.enum(["G1", "G2", "G3", "G4"]),
-          triggered: z.boolean(),
+          triggered: booleanLikeSchema,
           reason: z.string(),
           confidence: confidenceSchema,
         })
-        .strict(),
+        .strip(),
     ),
     risks: z.array(
       z
@@ -58,12 +59,12 @@ const opencodeRubricScoringSchema = z
           description: z.string(),
           evidence: z.string(),
         })
-        .strict(),
+        .strip(),
     ),
     strengths: z.array(z.string()),
     main_issues: z.array(z.string()),
   })
-  .strict();
+  .strip();
 
 type ParsedRubricScoringResult = z.infer<typeof opencodeRubricScoringSchema>;
 
@@ -274,28 +275,17 @@ function validateRubricCoverage(
   );
   const expectedKeys = Array.from(expected.keys());
   const seen = new Set<string>();
-  const duplicate = new Set<string>();
-  const unexpected = new Set<string>();
-  const invalidBand = new Set<string>();
-  const invalidWeight = new Set<string>();
   const invalidDeductionTrace = new Set<string>();
 
   for (const item of finalAnswer.item_scores) {
     const key = itemKey(item.dimension_name, item.item_name);
     const expectedItem = expected.get(key);
     if (seen.has(key)) {
-      duplicate.add(key);
+      continue;
     }
     seen.add(key);
     if (!expectedItem) {
-      unexpected.add(key);
       continue;
-    }
-    if (item.max_score !== expectedItem.weight) {
-      invalidWeight.add(key);
-    }
-    if (!expectedItem.scores.has(item.score) || item.matched_band_score !== item.score) {
-      invalidBand.add(key);
     }
     if (!hasValidDeductionTrace(item)) {
       invalidDeductionTrace.add(key);
@@ -305,10 +295,6 @@ function validateRubricCoverage(
   const missing = expectedKeys.filter((key) => !seen.has(key));
   const parts = [
     missing.length > 0 ? `missing=${missing.join(",")}` : "",
-    duplicate.size > 0 ? `duplicate=${Array.from(duplicate).join(",")}` : "",
-    unexpected.size > 0 ? `unexpected=${Array.from(unexpected).join(",")}` : "",
-    invalidBand.size > 0 ? `invalid_band=${Array.from(invalidBand).join(",")}` : "",
-    invalidWeight.size > 0 ? `invalid_weight=${Array.from(invalidWeight).join(",")}` : "",
     invalidDeductionTrace.size > 0
       ? `invalid_deduction_trace=${Array.from(invalidDeductionTrace).join(",")}`
       : "",
@@ -352,12 +338,14 @@ function normalizeRubricResult(
     if (!item) {
       continue;
     }
+    const snappedScore = snapScoreToAllowedBand(item.score, skeletonItem.allowedScores);
     normalizedItems.push({
       ...item,
       dimension_name: skeletonItem.dimensionName,
       item_name: skeletonItem.itemName,
       max_score: skeletonItem.weight,
-      matched_band_score: item.score,
+      score: snappedScore,
+      matched_band_score: snappedScore,
     });
   }
 

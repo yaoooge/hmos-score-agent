@@ -2,6 +2,7 @@ import { z } from "zod";
 import { extractFinalJsonObject } from "../opencode/finalJson.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
 import type { AgentAssistedRuleResult, AgentBootstrapPayload, AssistedRuleCandidate } from "../types.js";
+import { booleanLikeSchema } from "./agentOutputNormalization.js";
 import { buildOpencodeRequestTag } from "./opencodeRequestTag.js";
 
 const opencodeRuleAssessmentSchema = z
@@ -11,7 +12,7 @@ const opencodeRuleAssessmentSchema = z
         assistant_scope: z.string().min(1),
         overall_confidence: z.enum(["high", "medium", "low"]),
       })
-      .strict(),
+      .strip(),
     rule_assessments: z
       .array(
         z
@@ -21,12 +22,12 @@ const opencodeRuleAssessmentSchema = z
             confidence: z.enum(["high", "medium", "low"]),
             reason: z.string().min(1),
             evidence_used: z.array(z.string()),
-            needs_human_review: z.boolean(),
+            needs_human_review: booleanLikeSchema,
           })
-          .strict(),
+          .strip(),
       ),
   })
-  .strict();
+  .strip();
 
 export type OpencodeRuleAssessmentOutcome = "success" | "request_failed" | "protocol_error";
 
