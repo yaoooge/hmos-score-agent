@@ -10,15 +10,16 @@
 <caseDir>/outputs/result.json
 ```
 
-因此不需要在 completed callback 中继续内联完整 JSON。更小的改动是：仅在任务完成时将 callback 改为轻量结果摘要和结果访问地址；完整 JSON 通过一个本地开放接口按需读取。
+因此不需要在 completed callback 中继续内联完整 JSON。更小的改动是：仅在任务完成时将 callback 改为轻量结果概要；完整 JSON 通过一个固定结果接口按需读取。
 
 ## 目标
 
 - 未完成状态 callback 行为保持不变，包括 `pending`、`running` 阶段的调用时机、状态值和现有 `resultData` 内容。
-- completed callback 不再内联完整 `result.json`，改为回传概要信息、`summary` 和完整结果访问地址。
+- completed callback 不再内联完整 `result.json`，改为回传概要信息。
 - 新增一个结果访问接口，用于外部读取完整结果 JSON。
 - 结果访问接口的响应字段兼容当前 callback 的 `resultData` 字段，即外部可以从响应中拿到等价于旧 completed callback `resultData` 的完整结果对象。
 - 暂不新增任务状态查询、artifact 列表、报告下载等其他接口。
+- 新增一个统一接口定义文件，集中声明当前服务已开放接口和后续新增接口，方便开发者查看和维护。
 
 ## 非目标
 
@@ -31,7 +32,7 @@
 
 ## 当前相关代码
 
-- `src/index.ts`：`createRunRemoteTaskHandler` 接收远端任务、维护内存任务记录并触发异步执行。
+- `src/api/app.ts`：`createRunRemoteTaskHandler` 接收远端任务、维护内存任务记录并触发异步执行。
 - `src/service.ts`：`buildRemoteCallbackPayload` 组装 callback payload；`executeAcceptedRemoteEvaluationTask` 在 completed 阶段传入完整 `workflowResult.resultJson`。
 - `src/nodes/persistAndUploadNode.ts`：将完整结果写入 `outputs/result.json`。
 - `src/types.ts`：定义 `RemoteCallbackPayload`。
@@ -45,8 +46,8 @@ remote task accepted
   -> pending callback: unchanged
   -> running callback: unchanged
   -> workflow writes outputs/result.json
-  -> completed callback: lightweight summary + resultUrl
-  -> remote system GET resultUrl when full JSON is needed
+  -> completed callback: lightweight overview
+  -> remote system GET /score/remote-tasks/:taskId/result when full JSON is needed
   -> result endpoint reads outputs/result.json and returns it as resultData
 ```
 
@@ -89,9 +90,11 @@ Accept: application/json
     "final_recommendation": "",
     "rule_audit_results": [],
     "case_rule_results": [],
-    "artifacts": {
+    "report_meta": {
+      "report_file_name": "report.html",
       "result_json_file_name": "result.json",
-      "report_html_file_name": "report.html"
+      "unit_name": "remote-case",
+      "generated_at": "2026-04-28T10:20:30.000Z"
     }
   }
 }
@@ -181,9 +184,8 @@ completed callback 顶层继续保持当前 `RemoteCallbackPayload` 结构：
 ```json
 {
   "phase": "completed",
-  "resultMode": "url",
-  "resultUrl": "http://<public-host>/score/remote-tasks/123/result",
-  "summary": {
+  "resultMode": "api",
+  "overview": {
     "testCaseId": 456,
     "totalScore": 86,
     "maxScore": 100,
@@ -198,73 +200,89 @@ completed callback 顶层继续保持当前 `RemoteCallbackPayload` 结构：
 字段说明：
 
 - `phase`：保持现有阶段字段，completed 时固定为 `completed`。
-- `resultMode`：固定为 `url`，表示完整结果不在 callback body 中。
-- `resultUrl`：完整结果访问接口地址。
-- `summary.testCaseId`：远端用例 ID，来自 `remoteTask.testCase.id`。
-- `summary.totalScore`：与 callback 顶层 `totalScore` 一致，来自 `resultJson.overall_conclusion.total_score`。
-- `summary.maxScore`：与 callback 顶层 `maxScore` 一致，当前固定为 `100`。
-- `summary.hardGateTriggered`：来自 `resultJson.overall_conclusion.hard_gate_triggered`，缺失时为 `false`。
-- `summary.reviewRequired`：当 `resultJson.human_review_items` 非空时为 `true`，否则为 `false`。
-- `summary.riskCount`：`resultJson.risks` 数组长度，缺失或非数组时为 `0`。
-- `summary.humanReviewItemCount`：`resultJson.human_review_items` 数组长度，缺失或非数组时为 `0`。
+- `resultMode`：固定为 `api`，表示完整结果不在 callback body 中，需通过标准结果接口按 `taskId` 获取。
+- `overview.testCaseId`：远端用例 ID，来自 `remoteTask.testCase.id`。
+- `overview.totalScore`：与 callback 顶层 `totalScore` 一致，来自 `resultJson.overall_conclusion.total_score`。
+- `overview.maxScore`：与 callback 顶层 `maxScore` 一致，当前固定为 `100`。
+- `overview.hardGateTriggered`：来自 `resultJson.overall_conclusion.hard_gate_triggered`，缺失时为 `false`。
+- `overview.reviewRequired`：当 `resultJson.human_review_items` 非空时为 `true`，否则为 `false`。
+- `overview.riskCount`：`resultJson.risks` 数组长度，缺失或非数组时为 `0`。
+- `overview.humanReviewItemCount`：`resultJson.human_review_items` 数组长度，缺失或非数组时为 `0`。
+
+`overview` 只放适合远端列表页、任务详情页直接展示的结构化概要。
 
 为保持最小化，本轮不在 completed callback 中加入 `resultAuth`、`caseDir`、`caseId`、`artifacts`、`timestamps` 等扩展字段。
 
 ## 未完成状态 callback
 
-未完成状态 callback 保持当前行为不变。
+未完成状态 callback 保持当前行为不变。所有callback删除caseDir字段
 
-示例 pending callback 仍为当前形态：
+示例 pending callback：
 
 ```json
 {
   "taskId": 123,
   "status": "pending",
   "resultData": {
-    "phase": "execution_accepted",
-    "caseDir": "<existing-value>"
+    "phase": "execution_accepted"
   }
 }
 ```
 
-示例 running callback 仍为当前形态：
+示例 running callback：
 
 ```json
 {
   "taskId": 123,
   "status": "running",
   "resultData": {
-    "phase": "workflow_started",
-    "caseDir": "<existing-value>"
+    "phase": "workflow_started"
   }
 }
 ```
 
-`result_persisted` 阶段也保持现有 callback 调用不变，不提前暴露 `resultUrl`。远端只应在收到 completed callback 后读取完整结果。
+`result_persisted` 阶段也保持现有 callback 调用不变。远端只应在收到 completed callback 后，通过固定接口 `GET /score/remote-tasks/:taskId/result` 读取完整结果。
 
-## 结果 URL 生成
+## 统一接口定义文件
 
-新增配置：
-
-```env
-PUBLIC_BASE_URL=http://<externally-accessible-host>:3000
-```
-
-completed callback 中的 `resultUrl` 由该配置生成：
+当前服务已经开放 `GET /health`、`POST /score/run`、`POST /score/run-remote-task` 等接口，后续还会新增结果访问接口。为避免接口分散在 `src/index.ts` 中难以查看，需要新增统一接口定义文件：
 
 ```text
-${PUBLIC_BASE_URL}/score/remote-tasks/${taskId}/result
+src/api/apiDefinitions.ts
 ```
 
-配置规则：
+该文件只描述接口契约，不实现业务逻辑。最小字段包括：
 
-- 生产或远端联调环境必须配置 `PUBLIC_BASE_URL`，否则远端无法访问本地结果接口。
-- 本地开发环境可以回退为 `http://127.0.0.1:${PORT}`，仅用于本机调试。
-- `PUBLIC_BASE_URL` 写入 callback 前应去掉末尾 `/`，避免生成双斜杠。
+```ts
+export type ApiMethod = "GET" | "POST" | "OPTIONS";
+
+export type ApiDefinition = {
+  method: ApiMethod;
+  path: string;
+  description: string;
+};
+
+export const API_DEFINITIONS: ApiDefinition[] = [
+  { method: "GET", path: "/health", description: "Service health check." },
+  { method: "POST", path: "/score/run", description: "Run one local score case." },
+  {
+    method: "POST",
+    path: "/score/run-remote-task",
+    description: "Accept one remote evaluation task and execute it asynchronously.",
+  },
+  {
+    method: "GET",
+    path: "/score/remote-tasks/:taskId/result",
+    description: "Read the completed remote task result JSON as resultData.",
+  },
+];
+```
+
+`src/api/app.ts` 注册路由时优先引用该文件中的 path 常量或派生常量，避免接口文档和实际路由漂移。该文件暂不生成 OpenAPI，也不新增对外接口列表 API。
 
 ## 任务记录与结果定位
 
-结果接口需要通过 `taskId` 找到对应的 `caseDir` 和 token。最小化实现可以复用当前 `createRunRemoteTaskHandler` 内部的 `remoteTaskRecords`，但需要把它提升为该 handler 和结果 handler 共享的任务记录容器。
+结果接口需要通过 `taskId` 找到对应的 `caseDir` 和 token。当前 `createRunRemoteTaskHandler` 内部的 `remoteTaskRecords` 只存在于内存中，无法满足服务重启后历史任务结果接口可用的要求。因此需要引入最小持久化任务索引。
 
 记录字段最小集合：
 
@@ -281,13 +299,19 @@ type RemoteTaskRecord = {
 };
 ```
 
-最小化版本接受以下限制：
+索引文件位置：
 
-- 任务记录只保存在进程内存中。
-- 服务重启后，旧任务的结果接口不可用，返回 `404 Remote task not found`。
-- 本轮不新增 `.local-cases` 索引文件，也不扫描历史 case 目录。
+```text
+<LOCAL_CASE_ROOT>/remote-task-index.json
+```
 
-这个限制符合“最小化落地”，后续如需要跨重启访问，再单独设计持久化索引。
+持久化规则：
+
+- 远端任务 accepted 后写入或更新索引，记录 `taskId`、`caseDir`、`token`、`testCaseId` 和初始状态。
+- 状态变更为 `queued`、`running`、`completed`、`failed` 时同步更新索引。
+- 结果接口优先从内存读取记录；内存不存在时读取 `remote-task-index.json`。
+- 服务重启后，只要索引文件和 `<caseDir>/outputs/result.json` 仍存在，completed 历史任务可以继续通过结果接口读取。
+- 本轮不做索引清理、过期策略、并发锁或跨进程写入协调；当前服务单进程运行时，串行读写 JSON 文件即可满足最小需求。
 
 ## 安全与暴露边界
 
@@ -295,13 +319,13 @@ type RemoteTaskRecord = {
 - callback 中不回传 token。
 - 结果接口不接受本地文件路径参数，只接受 `taskId`。
 - 结果接口固定读取记录中 `caseDir/outputs/result.json`，不能读取任意相对路径。
-- completed callback 不暴露 `caseDir`，避免泄漏本地绝对路径。未完成 callback 由于本轮要求保持不变，暂不调整其已有字段。
+- completed callback 不暴露 `caseDir`，避免泄漏本地绝对路径。
 
 ## 测试设计
 
 新增或更新远端任务测试，覆盖以下场景：
 
-1. completed callback 不再携带完整 `result.json` 字段，包含 `resultMode: "url"`、`resultUrl` 和 `summary`。
+1. completed callback 不再携带完整 `result.json` 字段，包含 `resultMode: "api"` 和 `overview`，且不包含 `resultUrl`。
 2. completed callback 顶层 `totalScore`、`maxScore` 保持不变。
 3. pending/running callback body 与当前行为一致。
 4. `GET /score/remote-tasks/:taskId/result` 在 token 正确且任务 completed 时返回 `success: true` 和完整 `resultData`。
@@ -314,17 +338,13 @@ type RemoteTaskRecord = {
 
 对远端系统的迁移方式：
 
-- 原来从 completed callback 的 `body.resultData` 读取完整结果。
-- 新流程从 completed callback 的 `body.resultData.resultUrl` 发起 GET。
-- GET 响应中的 `body.resultData` 等价于旧 completed callback 的完整 `body.resultData`。
-
-因此旧结果解析逻辑可以保留，只需要把输入来源从 callback body 切换为结果接口响应 body。
+- 不保留历史兼容
 
 ## 验收标准
 
 - 远端任务未完成状态 callback 调用次数和 body 结构不变。
 - 远端任务 completed callback body 不再包含完整 `result.json`。
-- completed callback 包含可访问的 `resultUrl` 和最小 `summary`。
+- completed callback 不包含 `resultUrl`，只包含 `resultMode: "api"` 和最小 `overview`。
 - 正确 token 访问结果接口时，可以读取完整 `result.json`，且位于响应 `resultData` 字段。
 - 错误 token、未完成任务、不存在任务都有明确 HTTP 状态码和 JSON 错误响应。
 - 现有本地评分流程、`result.json` schema 和 HTML 报告生成不受影响。

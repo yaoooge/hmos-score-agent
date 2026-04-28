@@ -139,11 +139,17 @@ function buildRemoteCallbackPayload(input: {
   resultData?: Record<string, unknown>;
   errorMessage?: string;
 }): RemoteCallbackPayload {
+  const overview =
+    typeof input.resultData?.overview === "object" && input.resultData.overview !== null
+      ? (input.resultData.overview as { totalScore?: number; maxScore?: number })
+      : undefined;
   const totalScore =
     input.status === "completed"
       ? Number(
-          (input.resultData?.overall_conclusion as { total_score?: number } | undefined)
-            ?.total_score ?? 0,
+          overview?.totalScore ??
+            (input.resultData?.overall_conclusion as { total_score?: number } | undefined)
+              ?.total_score ??
+            0,
         )
       : undefined;
 
@@ -154,7 +160,7 @@ function buildRemoteCallbackPayload(input: {
 
   if (totalScore !== undefined) {
     payload.totalScore = totalScore;
-    payload.maxScore = 100;
+    payload.maxScore = overview?.maxScore ?? 100;
   }
   if (input.resultData) {
     payload.resultData = input.resultData;
@@ -164,6 +170,38 @@ function buildRemoteCallbackPayload(input: {
   }
 
   return payload;
+}
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function buildCompletedRemoteResultData(input: {
+  remoteTask: RemoteEvaluationTask;
+  resultJson: Record<string, unknown>;
+}): Record<string, unknown> {
+  const overallConclusion =
+    typeof input.resultJson.overall_conclusion === "object" &&
+    input.resultJson.overall_conclusion !== null
+      ? (input.resultJson.overall_conclusion as Record<string, unknown>)
+      : {};
+  const totalScore = Number(overallConclusion.total_score ?? 0);
+  const hardGateTriggered = overallConclusion.hard_gate_triggered === true;
+  const humanReviewItemCount = arrayLength(input.resultJson.human_review_items);
+
+  return {
+    phase: "completed",
+    resultMode: "api",
+    overview: {
+      testCaseId: input.remoteTask.testCase.id,
+      totalScore,
+      maxScore: 100,
+      hardGateTriggered,
+      reviewRequired: humanReviewItemCount > 0,
+      riskCount: arrayLength(input.resultJson.risks),
+      humanReviewItemCount,
+    },
+  };
 }
 
 async function uploadRemoteTaskCallbackWithLog(input: {
@@ -494,18 +532,12 @@ export async function executeAcceptedRemoteEvaluationTask(
       logger,
       status: "pending",
       phase: "execution_accepted",
-      resultData: {
-        caseDir: acceptedTask.caseDir,
-      },
     });
     await uploadRemoteTaskCallbackWithLog({
       remoteTask: acceptedTask.remoteTask,
       logger,
       status: "running",
       phase: "workflow_started",
-      resultData: {
-        caseDir: acceptedTask.caseDir,
-      },
     });
     preparedTask = await prepareAcceptedRemoteEvaluationTask(acceptedTask, deps);
     workflowResult = { ...preparedTask.workflowState };
@@ -537,20 +569,22 @@ export async function executeAcceptedRemoteEvaluationTask(
       logger,
       status: "running",
       phase: "result_persisted",
-      resultData: {
-        caseDir: acceptedTask.caseDir,
-      },
     });
+
+    const resultJson =
+      typeof workflowResult.resultJson === "object" && workflowResult.resultJson !== null
+        ? (workflowResult.resultJson as Record<string, unknown>)
+        : {};
 
     return await uploadRemoteTaskCallbackWithLog({
       remoteTask: acceptedTask.remoteTask,
       logger,
       status: "completed",
       phase: "completed",
-      resultData:
-        typeof workflowResult.resultJson === "object" && workflowResult.resultJson !== null
-          ? (workflowResult.resultJson as Record<string, unknown>)
-          : {},
+      resultData: buildCompletedRemoteResultData({
+        remoteTask: acceptedTask.remoteTask,
+        resultJson,
+      }),
     });
   } catch (error) {
     workflowResult = readWorkflowStateFromError(error) ?? workflowResult;

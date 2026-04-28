@@ -3,7 +3,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createApp, createCorsMiddleware, createRunRemoteTaskHandler } from "../src/index.js";
+import { API_DEFINITIONS, API_PATHS } from "../src/api/apiDefinitions.js";
+import {
+  createApp,
+  createCorsMiddleware,
+  createGetRemoteTaskResultHandler,
+  createRunRemoteTaskHandler,
+} from "../src/api/app.js";
+import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import {
   acceptRemoteEvaluationTask,
   executeAcceptedRemoteEvaluationTask,
@@ -42,6 +49,56 @@ function createManifest(content: string): { files: Array<{ path: string; content
   return {
     files: [{ path: "entry/src/main/ets/pages/Index.ets", content }],
   };
+}
+
+function createResultRequest(taskId: number, token?: string) {
+  return {
+    params: { taskId: String(taskId) },
+    header(name: string) {
+      return name.toLowerCase() === "token" ? token : undefined;
+    },
+  };
+}
+
+function createStoredResultJson(totalScore = 88): Record<string, unknown> {
+  return {
+    basic_info: { task_type: "continuation" },
+    overall_conclusion: {
+      total_score: totalScore,
+      hard_gate_triggered: false,
+      summary: "测试结果摘要",
+    },
+    dimension_results: [],
+    rule_violations: [],
+    bound_rule_packs: [],
+    risks: [],
+    strengths: [],
+    main_issues: [],
+    human_review_items: [],
+    final_recommendation: "建议通过",
+    rule_audit_results: [],
+    case_rule_results: [],
+    report_meta: {
+      report_file_name: "report.html",
+      result_json_file_name: "result.json",
+      unit_name: "remote-case",
+      generated_at: "2026-04-28T10:20:30.000Z",
+    },
+  };
+}
+
+async function waitForAssertion(assertion: () => Promise<void>, attempts = 20): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
 }
 
 function parsePromptPayload<T>(prompt: string, marker: string): T {
@@ -143,6 +200,186 @@ function createOpencodeRunnerMock(): OpencodeRunner {
   };
 }
 
+test("API definitions include the remote task result endpoint", () => {
+  assert.equal(API_PATHS.remoteTaskResult, "/score/remote-tasks/:taskId/result");
+  assert.ok(
+    API_DEFINITIONS.some(
+      (definition) =>
+        definition.method === "GET" && definition.path === "/score/remote-tasks/:taskId/result",
+    ),
+  );
+});
+
+test("createGetRemoteTaskResultHandler returns completed resultData with valid token", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-1");
+  const resultJson = createStoredResultJson(91);
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(resultJson));
+
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 701,
+    status: "completed",
+    caseDir,
+    token: "remote-token",
+    testCaseId: 1701,
+  });
+  const handler = createGetRemoteTaskResultHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createResultRequest(701, "remote-token") as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  assert.equal(responseState.body?.taskId, 701);
+  assert.equal(responseState.body?.status, "completed");
+  assert.deepEqual(responseState.body?.resultData, resultJson);
+});
+
+test("createGetRemoteTaskResultHandler rejects invalid token", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-unauthorized");
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(createStoredResultJson()));
+
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 702,
+    status: "completed",
+    caseDir,
+    token: "remote-token",
+    testCaseId: 1702,
+  });
+  const handler = createGetRemoteTaskResultHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createResultRequest(702, "wrong-token") as never, response as never);
+
+  assert.equal(responseState.statusCode, 401);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(responseState.body?.message, "Unauthorized");
+});
+
+test("createGetRemoteTaskResultHandler reports running task as result unavailable", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 703,
+    status: "running",
+    caseDir: path.join(localCaseRoot, "remote-case-running"),
+    token: "remote-token",
+    testCaseId: 1703,
+  });
+  const handler = createGetRemoteTaskResultHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createResultRequest(703, "remote-token") as never, response as never);
+
+  assert.equal(responseState.statusCode, 409);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(responseState.body?.taskId, 703);
+  assert.equal(responseState.body?.status, "running");
+  assert.equal(responseState.body?.message, "Result is not available yet");
+});
+
+test("createGetRemoteTaskResultHandler reports unknown task", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  const handler = createGetRemoteTaskResultHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createResultRequest(704, "remote-token") as never, response as never);
+
+  assert.equal(responseState.statusCode, 404);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(responseState.body?.taskId, 704);
+  assert.equal(responseState.body?.message, "Remote task not found");
+});
+
+test("remote task registry reloads persisted records after restart", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-persisted");
+  const resultJson = createStoredResultJson(77);
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(resultJson));
+
+  const firstRegistry = createRemoteTaskRegistry(localCaseRoot);
+  await firstRegistry.upsert({
+    taskId: 705,
+    status: "completed",
+    caseDir,
+    token: "remote-token",
+    testCaseId: 1705,
+  });
+
+  const secondRegistry = createRemoteTaskRegistry(localCaseRoot);
+  const handler = createGetRemoteTaskResultHandler(secondRegistry);
+  const { response, responseState } = createResponse();
+
+  await handler(createResultRequest(705, "remote-token") as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.deepEqual(responseState.body?.resultData, resultJson);
+});
+
+test("createRunRemoteTaskHandler persists completed task for result handler", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-handler-completed");
+  const resultJson = createStoredResultJson(83);
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(resultJson));
+
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  const deps = {
+    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => ({
+      taskId: Number(remoteTask.taskId),
+      caseDir,
+      message: "任务接收成功，结果将通过 callback 返回",
+      remoteTask: {
+        ...remoteTask,
+        token: "remote-token",
+        testCase: { id: 1806 },
+      } as never,
+      workflowState: { stage: "accepted", caseDir } as never,
+    }),
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+    executeAcceptedRemoteEvaluationTask: async () => undefined,
+    runRemoteEvaluationTask: async () => {
+      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+  };
+  const runHandler = createRunRemoteTaskHandler(deps as never, registry);
+  const runResponse = createResponse();
+
+  await runHandler(
+    {
+      body: {
+        taskId: 806,
+        token: "remote-token",
+        testCase: { id: 1806 },
+      },
+    } as never,
+    runResponse.response as never,
+  );
+
+  await waitForAssertion(async () => {
+    const resultHandler = createGetRemoteTaskResultHandler(createRemoteTaskRegistry(localCaseRoot));
+    const resultResponse = createResponse();
+
+    await resultHandler(
+      createResultRequest(806, "remote-token") as never,
+      resultResponse.response as never,
+    );
+
+    assert.equal(resultResponse.responseState.statusCode, 200);
+    assert.deepEqual(resultResponse.responseState.body?.resultData, resultJson);
+  });
+});
+
 test("runRemoteEvaluationTask executes a pushed remote task and uploads callback payload", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
@@ -243,6 +480,10 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
   for (const callbackCall of callbackCalls) {
     assert.equal(callbackCall.headers.get("token"), "remote-token");
     assert.equal(callbackCall.body.taskId, 4);
+    assert.equal(
+      "caseDir" in ((callbackCall.body.resultData as Record<string, unknown> | undefined) ?? {}),
+      false,
+    );
   }
   const finalCallback = callbackCalls.at(-1);
   assert.equal(finalCallback?.body.maxScore, 100);
@@ -252,6 +493,19 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
     await fs.readFile(path.join(result.caseDir, "outputs", "result.json"), "utf-8"),
   );
   assert.equal(finalCallback?.body.totalScore, resultJson.overall_conclusion.total_score);
+  const finalResultData = finalCallback?.body.resultData as Record<string, unknown>;
+  assert.equal(finalResultData.phase, "completed");
+  assert.equal(finalResultData.resultMode, "api");
+  assert.equal("resultUrl" in finalResultData, false);
+  assert.equal("overall_conclusion" in finalResultData, false);
+  const overview = finalResultData.overview as Record<string, unknown>;
+  assert.equal(overview.testCaseId, 8);
+  assert.equal(overview.totalScore, resultJson.overall_conclusion.total_score);
+  assert.equal(overview.maxScore, 100);
+  assert.equal(overview.hardGateTriggered, resultJson.overall_conclusion.hard_gate_triggered);
+  assert.equal(overview.reviewRequired, resultJson.human_review_items.length > 0);
+  assert.equal(overview.riskCount, resultJson.risks.length);
+  assert.equal(overview.humanReviewItemCount, resultJson.human_review_items.length);
   const logText = await fs.readFile(path.join(result.caseDir, "logs", "run.log"), "utf-8");
   assert.match(
     logText,
