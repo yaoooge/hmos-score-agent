@@ -30,12 +30,12 @@ async function postJson(
 
 export async function uploadTaskCallback(
   endpoint: string | undefined,
-  token: string | undefined,
+  _token: string | undefined,
   payload: RemoteCallbackPayload,
 ): Promise<{ uploaded: boolean; message: string }> {
   return postJson(
     endpoint,
-    token ? { token } : {},
+    {},
     payload,
     "未提供 callback，已跳过回传。",
     "callback 上传成功。",
