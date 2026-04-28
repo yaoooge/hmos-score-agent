@@ -6,7 +6,9 @@ const BUILTIN_EXACT_NAMES = new Set([
   ".git",
   ".gitignore",
   ".agent_bench",
+  ".DS_Store",
   ".hvigor",
+  "__MACOSX",
   "build",
   "node_modules",
   "oh_modules",
@@ -145,6 +147,9 @@ export async function loadIgnoreFilter(
         return true;
       }
       if (segments.some((segment) => BUILTIN_EXACT_NAMES.has(segment))) {
+        return true;
+      }
+      if (kind === "file" && segments.some((segment) => segment.startsWith("._"))) {
         return true;
       }
       if (kind === "file" && isIgnoredCaseFilePath(normalized)) {

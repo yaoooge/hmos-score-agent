@@ -56,14 +56,12 @@ export type ApiDefinition = {
 
 export const API_PATHS = {
   health: "/health",
-  scoreRun: "/score/run",
   runRemoteTask: "/score/run-remote-task",
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
 } as const;
 
 export const API_DEFINITIONS: ApiDefinition[] = [
   { method: "GET", path: API_PATHS.health, description: "Service health check." },
-  { method: "POST", path: API_PATHS.scoreRun, description: "Run one local score case." },
   {
     method: "POST",
     path: API_PATHS.runRemoteTask,

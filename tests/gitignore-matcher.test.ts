@@ -44,11 +44,19 @@ test("loadIgnoreFilter applies root gitignore patterns and built-in fallback ign
 test("collectVisibleFiles returns only non-ignored relative paths", async (t) => {
   const rootDir = await makeTempDir(t);
   await fs.mkdir(path.join(rootDir, "src"), { recursive: true });
+  await fs.mkdir(path.join(rootDir, "__MACOSX", "src"), { recursive: true });
   await fs.mkdir(path.join(rootDir, "generated"), { recursive: true });
   await fs.mkdir(path.join(rootDir, "build"), { recursive: true });
   await fs.mkdir(path.join(rootDir, "foo-build"), { recursive: true });
   await fs.writeFile(path.join(rootDir, ".gitignore"), "generated/\nfoo*/\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "src", "Index.ets"), "let value = 1;\n", "utf-8");
+  await fs.writeFile(path.join(rootDir, ".DS_Store"), "metadata\n", "utf-8");
+  await fs.writeFile(path.join(rootDir, "src", "._Index.ets"), "metadata\n", "utf-8");
+  await fs.writeFile(
+    path.join(rootDir, "__MACOSX", "src", "._Index.ets"),
+    "metadata\n",
+    "utf-8",
+  );
   await fs.writeFile(path.join(rootDir, "generated", "artifact.txt"), "noise\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "foo-build", "artifact.txt"), "noise\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "foo-build.txt"), "noise\n", "utf-8");

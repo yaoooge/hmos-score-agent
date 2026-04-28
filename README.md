@@ -134,14 +134,6 @@ npm run dev:api
 curl http://localhost:3000/health
 ```
 
-触发本地评分：
-
-```bash
-curl -X POST http://localhost:3000/score/run \
-  -H "Content-Type: application/json" \
-  -d '{"casePath":"cases/bug_fix_001"}'
-```
-
 触发远端评分任务：
 
 ```bash

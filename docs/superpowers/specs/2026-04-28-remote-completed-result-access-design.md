@@ -245,7 +245,7 @@ completed callback 顶层继续保持当前 `RemoteCallbackPayload` 结构：
 
 ## 统一接口定义文件
 
-当前服务已经开放 `GET /health`、`POST /score/run`、`POST /score/run-remote-task` 等接口，后续还会新增结果访问接口。为避免接口分散在 `src/index.ts` 中难以查看，需要新增统一接口定义文件：
+当前服务已经开放 `GET /health`、`POST /score/run-remote-task` 等接口，后续还会新增结果访问接口。为避免接口分散在 `src/index.ts` 中难以查看，需要新增统一接口定义文件：
 
 ```text
 src/api/apiDefinitions.ts
@@ -264,7 +264,6 @@ export type ApiDefinition = {
 
 export const API_DEFINITIONS: ApiDefinition[] = [
   { method: "GET", path: "/health", description: "Service health check." },
-  { method: "POST", path: "/score/run", description: "Run one local score case." },
   {
     method: "POST",
     path: "/score/run-remote-task",

@@ -30,7 +30,6 @@
 
 - 不引入数据库、消息队列、任务查询接口或任务状态持久化表。
 - 不改变 `callback` payload 结构。
-- 不修改本地 `POST /score/run` 语义。
 
 ## Required Behavior
 

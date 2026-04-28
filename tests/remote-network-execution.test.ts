@@ -210,6 +210,79 @@ test("API definitions include the remote task result endpoint", () => {
   );
 });
 
+test("API definitions omit the deprecated local score endpoint", () => {
+  assert.equal("scoreRun" in API_PATHS, false);
+  assert.equal(
+    API_DEFINITIONS.some((definition) => definition.path === "/score/run"),
+    false,
+  );
+});
+
+test("API definitions include unified request and response schemas", () => {
+  const runRemoteTask = API_DEFINITIONS.find(
+    (definition) => definition.method === "POST" && definition.path === API_PATHS.runRemoteTask,
+  ) as Record<string, unknown> | undefined;
+  const runRemoteTaskRequest = runRemoteTask?.request as Record<string, unknown> | undefined;
+  const runRemoteTaskBody = runRemoteTaskRequest?.body as Record<string, unknown> | undefined;
+  const runRemoteTaskProperties = runRemoteTaskBody?.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+
+  assert.equal(runRemoteTaskProperties?.taskId?.type, "number");
+  assert.equal(runRemoteTaskProperties?.testCase?.required, true);
+  assert.equal(runRemoteTaskProperties?.executionResult?.required, true);
+  assert.equal(runRemoteTaskProperties?.token?.type, "string");
+  assert.equal(runRemoteTaskProperties?.callback?.type, "string");
+
+  const runRemoteTaskResponses = runRemoteTask?.responses as
+    | Array<Record<string, unknown>>
+    | undefined;
+  const runRemoteTaskSuccessBody = runRemoteTaskResponses?.find(
+    (response) => response.status === 200,
+  )?.body as Record<string, unknown> | undefined;
+  const runRemoteTaskSuccessProperties = runRemoteTaskSuccessBody?.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  assert.equal(runRemoteTaskSuccessProperties?.success?.type, "boolean");
+  assert.equal(runRemoteTaskSuccessProperties?.taskId?.type, "number");
+  assert.equal(runRemoteTaskSuccessProperties?.message?.type, "string");
+
+  const remoteTaskResult = API_DEFINITIONS.find(
+    (definition) => definition.method === "GET" && definition.path === API_PATHS.remoteTaskResult,
+  ) as Record<string, unknown> | undefined;
+  const remoteTaskResultRequest = remoteTaskResult?.request as Record<string, unknown> | undefined;
+  const remoteTaskResultHeaders = remoteTaskResultRequest?.headers as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  const remoteTaskResultPathParams = remoteTaskResultRequest?.pathParams as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  assert.equal(remoteTaskResultHeaders?.token?.required, true);
+  assert.equal(remoteTaskResultPathParams?.taskId?.type, "number");
+
+  const runRemoteTaskCallbacks = runRemoteTask?.callbacks as
+    | Array<Record<string, unknown>>
+    | undefined;
+  const remoteTaskCallback = runRemoteTaskCallbacks?.find(
+    (callback) => callback.name === "remoteTaskCallback",
+  );
+  const remoteTaskCallbackBody = remoteTaskCallback?.body as Record<string, unknown> | undefined;
+  const remoteTaskCallbackProperties = remoteTaskCallbackBody?.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  assert.equal(remoteTaskCallback?.method, "POST");
+  assert.equal(remoteTaskCallbackProperties?.taskId?.type, "number");
+  assert.equal(remoteTaskCallbackProperties?.status?.type, "enum");
+  assert.deepEqual(remoteTaskCallbackProperties?.status?.values, [
+    "pending",
+    "running",
+    "completed",
+    "failed",
+  ]);
+  assert.equal(remoteTaskCallbackProperties?.totalScore?.required, false);
+  assert.equal(remoteTaskCallbackProperties?.resultData?.type, "object");
+});
+
 test("createGetRemoteTaskResultHandler returns completed resultData with valid token", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case-1");
@@ -241,7 +314,10 @@ test("createGetRemoteTaskResultHandler rejects invalid token", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case-unauthorized");
   await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(createStoredResultJson()));
+  await fs.writeFile(
+    path.join(caseDir, "outputs", "result.json"),
+    JSON.stringify(createStoredResultJson()),
+  );
 
   const registry = createRemoteTaskRegistry(localCaseRoot);
   await registry.upsert({
@@ -332,7 +408,6 @@ test("createRunRemoteTaskHandler persists completed task for result handler", as
 
   const registry = createRemoteTaskRegistry(localCaseRoot);
   const deps = {
-    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
     acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => ({
       taskId: Number(remoteTask.taskId),
       caseDir,
@@ -348,9 +423,6 @@ test("createRunRemoteTaskHandler persists completed task for result handler", as
       throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
     },
     executeAcceptedRemoteEvaluationTask: async () => undefined,
-    runRemoteEvaluationTask: async () => {
-      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
-    },
   };
   const runHandler = createRunRemoteTaskHandler(deps as never, registry);
   const runResponse = createResponse();
@@ -747,7 +819,10 @@ test("executeAcceptedRemoteEvaluationTask uploads failed callback when workflow 
     { opencodeRunner: failingRunner },
   );
 
-  await assert.rejects(() => executeAcceptedRemoteEvaluationTask(accepted), /rubric scoring crashed/);
+  await assert.rejects(
+    () => executeAcceptedRemoteEvaluationTask(accepted),
+    /rubric scoring crashed/,
+  );
 
   assert.deepEqual(
     callbackCalls.map((call) => call.body.status),
@@ -764,7 +839,6 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   let resolveBackgroundExecution: (() => void) | undefined;
   const calls: string[] = [];
   const deps = {
-    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
     acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
       calls.push(`accept:${String(remoteTask.taskId)}`);
       return {
@@ -784,9 +858,6 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
         resolveBackgroundExecution = resolve;
       });
     },
-    runRemoteEvaluationTask: async () => {
-      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
-    },
   };
   const app = createApp(deps as never);
   const routerStack = (
@@ -798,6 +869,9 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   ).router?.stack;
   const route = routerStack?.find((layer) => layer.route?.path === "/score/run-remote-task");
   const oldRoute = routerStack?.find((layer) => layer.route?.path === "/score/run-remote");
+  const deprecatedLocalScoreRoute = routerStack?.find(
+    (layer) => layer.route?.path === "/score/run",
+  );
   const handler = createRunRemoteTaskHandler(deps as never);
   const responseState: {
     statusCode: number;
@@ -816,6 +890,7 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
 
   assert.equal(route?.route?.methods?.post, true);
   assert.equal(oldRoute, undefined);
+  assert.equal(deprecatedLocalScoreRoute, undefined);
   await handler(
     {
       body: {
@@ -854,7 +929,6 @@ test("createRunRemoteTaskHandler returns success before remote preprocessing fin
   let executeStarted = false;
   let releaseExecution: (() => void) | undefined;
   const deps = {
-    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
     acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => ({
       taskId: Number(remoteTask.taskId),
       caseDir: "/tmp/remote-case-early-ack",
@@ -873,9 +947,6 @@ test("createRunRemoteTaskHandler returns success before remote preprocessing fin
       await new Promise<void>((resolve) => {
         releaseExecution = resolve;
       });
-    },
-    runRemoteEvaluationTask: async () => {
-      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
     },
   };
   const handler = createRunRemoteTaskHandler(deps as never);
@@ -906,7 +977,6 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
     fourthExecutionStartedResolve = resolve;
   });
   const deps = {
-    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
     acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
       calls.push(`accept:${String(remoteTask.taskId)}`);
       const taskId = Number(remoteTask.taskId);
@@ -941,9 +1011,6 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
       });
       activeTaskIds.delete(acceptedTask.taskId);
       calls.push(`execute:end:${String(acceptedTask.taskId)}`);
-    },
-    runRemoteEvaluationTask: async () => {
-      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
     },
   };
   const handler = createRunRemoteTaskHandler(deps as never);
@@ -1003,7 +1070,6 @@ test("createRunRemoteTaskHandler logs remote API request, response, and errors",
     logs.push(args.map(String).join(" "));
   };
   const deps = {
-    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
     acceptRemoteEvaluationTask: async () => {
       throw new Error("download failed");
     },
@@ -1011,9 +1077,6 @@ test("createRunRemoteTaskHandler logs remote API request, response, and errors",
       throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
     },
     executeAcceptedRemoteEvaluationTask: async () => undefined,
-    runRemoteEvaluationTask: async () => {
-      throw new Error("runRemoteEvaluationTask should not be used by the HTTP handler");
-    },
   };
   const handler = createRunRemoteTaskHandler(deps as never);
   const { response } = createResponse();
@@ -1146,16 +1209,12 @@ test("createRunRemoteTaskHandler reports preprocessing failures through callback
 
   let backgroundFinished: Promise<void> | undefined;
   const deps = {
-    runSingleCase: async () => ({ caseDir: "/tmp/local-case" }),
     acceptRemoteEvaluationTask,
     prepareRemoteEvaluationTask: async () => {
       throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
     },
     executeAcceptedRemoteEvaluationTask: async () => {
       throw new Error("executeAcceptedRemoteEvaluationTask should be wrapped below");
-    },
-    runRemoteEvaluationTask: async () => {
-      throw new Error("runRemoteEvaluationTask should not be used when preprocessing fails");
     },
   };
   deps.executeAcceptedRemoteEvaluationTask = async (acceptedTask: never) => {

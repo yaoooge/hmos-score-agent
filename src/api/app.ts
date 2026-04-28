@@ -8,34 +8,14 @@ import {
   acceptRemoteEvaluationTask,
   executeAcceptedRemoteEvaluationTask,
   prepareRemoteEvaluationTask,
-  resolveDefaultCasePath,
-  runRemoteEvaluationTask,
-  runSingleCase,
 } from "../service.js";
 import type { RemoteEvaluationTask } from "../types.js";
 
 type AppDeps = {
-  runSingleCase: typeof runSingleCase;
-  runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
   acceptRemoteEvaluationTask: typeof acceptRemoteEvaluationTask;
   prepareRemoteEvaluationTask: typeof prepareRemoteEvaluationTask;
   executeAcceptedRemoteEvaluationTask: typeof executeAcceptedRemoteEvaluationTask;
 };
-
-export function createRunHandler(deps: AppDeps) {
-  return async (req: Request, res: Response) => {
-    try {
-      const casePath = String(req.body?.casePath ?? resolveDefaultCasePath());
-      const result = await deps.runSingleCase(casePath);
-      res.json({ success: true, ...result });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: error instanceof Error ? error.message : "未知错误",
-      });
-    }
-  };
-}
 
 type AcceptedRemoteEvaluationTask = Parameters<AppDeps["executeAcceptedRemoteEvaluationTask"]>[0];
 
@@ -150,18 +130,20 @@ export function createRunRemoteTaskHandler(deps: AppDeps, registry?: RemoteTaskR
     };
     remoteTaskRecords.set(taskId, record);
     if (registry) {
-      void registry.upsert({
-        taskId: record.taskId,
-        status: record.status,
-        caseDir: record.caseDir,
-        token: record.token,
-        testCaseId: record.testCaseId,
-        error: record.error,
-      }).catch((error) => {
-        console.error(
-          `remote_task_registry_update_failed ${formatRemoteLogContext({ taskId: record.taskId, testCaseId: record.testCaseId })} error=${formatError(error)}`,
-        );
-      });
+      void registry
+        .upsert({
+          taskId: record.taskId,
+          status: record.status,
+          caseDir: record.caseDir,
+          token: record.token,
+          testCaseId: record.testCaseId,
+          error: record.error,
+        })
+        .catch((error) => {
+          console.error(
+            `remote_task_registry_update_failed ${formatRemoteLogContext({ taskId: record.taskId, testCaseId: record.testCaseId })} error=${formatError(error)}`,
+          );
+        });
     }
     return record;
   }
@@ -333,7 +315,10 @@ export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
     }
 
     try {
-      const resultText = await fs.readFile(path.join(record.caseDir, "outputs", "result.json"), "utf-8");
+      const resultText = await fs.readFile(
+        path.join(record.caseDir, "outputs", "result.json"),
+        "utf-8",
+      );
       res.json({
         success: true,
         taskId,
@@ -381,15 +366,7 @@ export function createCorsMiddleware() {
 }
 
 export function createApp(
-  deps: {
-    runSingleCase: typeof runSingleCase;
-    runRemoteEvaluationTask: typeof runRemoteEvaluationTask;
-    acceptRemoteEvaluationTask: typeof acceptRemoteEvaluationTask;
-    prepareRemoteEvaluationTask: typeof prepareRemoteEvaluationTask;
-    executeAcceptedRemoteEvaluationTask: typeof executeAcceptedRemoteEvaluationTask;
-  } = {
-    runSingleCase,
-    runRemoteEvaluationTask,
+  deps: AppDeps = {
     acceptRemoteEvaluationTask,
     prepareRemoteEvaluationTask,
     executeAcceptedRemoteEvaluationTask,
@@ -404,7 +381,6 @@ export function createApp(
     res.json({ ok: true });
   });
 
-  app.post(API_PATHS.scoreRun, createRunHandler(deps));
   app.post(API_PATHS.runRemoteTask, createRunRemoteTaskHandler(deps, registry));
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
 

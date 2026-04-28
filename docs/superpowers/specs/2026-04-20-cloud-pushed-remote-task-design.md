@@ -6,7 +6,6 @@
 
 ## Current State
 
-- 本地服务已支持 `POST /score/run`，请求体提供 `casePath`，执行本地 case。
 - 系统已有 `RemoteEvaluationTask`、目录清单下载、callback 上传等基础能力。
 - 当前远端执行思路依赖“本地主动拉取任务”的 `downloadUrl` 模式，这与真实场景不一致。
 - 当前 workflow 只接受 `CaseInput`，远端任务转 case 的职责不在 workflow 内，导致输入收口不统一。
@@ -19,7 +18,6 @@
 - 在 workflow 最前面增加 `remoteTaskPreparationNode`，负责将远端任务转换为 case。
 - 将转换后的 case 送入现有评分节点执行。
 - 评分结束后向 `callback` URL 上报成功或失败结果。
-- 保留本地 `POST /score/run` 能力。
 - 删除旧的 `downloadUrl` 拉取式远端入口和对应文档。
 
 ### Out of Scope
@@ -221,14 +219,6 @@ type ScoreWorkflowInput =
 
 ## API Shape
 
-### Keep
-
-- `POST /score/run`
-
-说明：
-
-- 本地 case 调试入口保留不变
-
 ### Add
 
 - `POST /score/run-remote-task`
@@ -309,7 +299,6 @@ type ScoreWorkflowInput =
 
 ### Regression
 
-- `POST /score/run`
 - 本地 CLI case 执行
 - `npm run build`
 
