@@ -56,6 +56,8 @@ export const API_PATHS = {
   runRemoteTask: "/score/run-remote-task",
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
   ruleViolationStats: "/score/rule-violation-stats",
+  humanReview: "/score/remote-tasks/:taskId/human-review",
+  humanReviewStatus: "/score/human-reviews/:reviewId",
 } as const;
 
 const successField = {
@@ -364,6 +366,111 @@ export const API_DEFINITIONS: ApiDefinition[] = [
           },
         },
       },
+    ],
+  },
+  {
+    method: "POST",
+    path: API_PATHS.humanReview,
+    description: "Accept human review results for a completed remote task and queue evidence ingestion.",
+    request: {
+      pathParams: { taskId: taskIdField },
+      body: {
+        type: "object",
+        description: "Human review submission from the remote scoring console.",
+        properties: {
+          overallDecision: {
+            type: "enum",
+            required: true,
+            values: ["accepted", "rejected", "adjust_required", "uncertain"],
+            description: "Overall human review decision for this completed task.",
+          },
+          overallComment: {
+            type: "string",
+            required: false,
+            description: "Optional overall human review comment.",
+          },
+          itemReviews: {
+            type: "array",
+            required: true,
+            description: "Per-item human review results. Must contain at least one item.",
+            items: { type: "object", description: "One human review item result." },
+          },
+        },
+      },
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Human review raw record was stored and asynchronous classification was queued.",
+        body: {
+          type: "object",
+          description: "Human review acceptance response.",
+          properties: {
+            success: successField,
+            taskId: taskIdField,
+            reviewId: {
+              type: "string",
+              required: true,
+              description: "Generated human review id.",
+            },
+            status: {
+              type: "string",
+              required: true,
+              description: "Submission acceptance status.",
+            },
+            rawPath: {
+              type: "string",
+              required: true,
+              description: "Path to the stored raw review record.",
+            },
+            classificationStatus: {
+              type: "string",
+              required: true,
+              description: "Initial asynchronous classification status.",
+            },
+            message: messageField,
+          },
+        },
+      },
+      { status: 400, description: "Invalid human review payload.", body: errorResponseBody },
+      { status: 404, description: "Task record or result file was not found.", body: errorResponseBody },
+      { status: 409, description: "Task exists but has not completed yet.", body: errorResponseBody },
+    ],
+  },
+  {
+    method: "GET",
+    path: API_PATHS.humanReviewStatus,
+    description: "Read asynchronous human review ingestion status.",
+    request: {
+      pathParams: {
+        reviewId: {
+          type: "string",
+          required: true,
+          description: "Generated human review id.",
+        },
+      },
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Human review ingestion status.",
+        body: {
+          type: "object",
+          description: "Stored human review status record.",
+          properties: {
+            success: successField,
+            reviewId: { type: "string", required: true, description: "Human review id." },
+            taskId: taskIdField,
+            status: { type: "string", required: true, description: "Ingestion status." },
+            classificationSummary: {
+              type: "object",
+              required: false,
+              description: "Classification summary when available.",
+            },
+          },
+        },
+      },
+      { status: 404, description: "Human review status was not found.", body: errorResponseBody },
     ],
   },
 ];

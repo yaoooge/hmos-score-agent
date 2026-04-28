@@ -20,7 +20,8 @@ APP_DIR="${APP_DIR:-/opt/hmos-score-agent}"
 BRANCH="${BRANCH:-main}"
 PORT="${PORT:-3000}"
 
-LOCAL_CASE_ROOT="${LOCAL_CASE_ROOT:-.local-cases}"
+LOCAL_CASE_ROOT="${LOCAL_CASE_ROOT:-/data/hmos-score-agent/local-cases}"
+HUMAN_REVIEW_EVIDENCE_ROOT="${HUMAN_REVIEW_EVIDENCE_ROOT:-/data/hmos-score-agent/human-review-evidences}"
 DEFAULT_REFERENCE_ROOT="${DEFAULT_REFERENCE_ROOT:-references/scoring}"
 HMOS_OPENCODE_HOST="${HMOS_OPENCODE_HOST:-127.0.0.1}"
 HMOS_OPENCODE_PORT="${HMOS_OPENCODE_PORT:-4096}"
@@ -71,6 +72,8 @@ check_existing_environment() {
     die "工程目录不是 git 仓库：${APP_DIR}。请先完成首次安装或确认 APP_DIR。"
   fi
 
+  mkdir -p "${LOCAL_CASE_ROOT}" "${HUMAN_REVIEW_EVIDENCE_ROOT}"
+  chown -R "${APP_USER}:${APP_USER}" "${LOCAL_CASE_ROOT}" "${HUMAN_REVIEW_EVIDENCE_ROOT}"
   chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 }
 
@@ -126,6 +129,7 @@ write_env_file() {
   cat >"${env_file}" <<EOF
 PORT=${PORT}
 LOCAL_CASE_ROOT=${LOCAL_CASE_ROOT}
+HUMAN_REVIEW_EVIDENCE_ROOT=${HUMAN_REVIEW_EVIDENCE_ROOT}
 DEFAULT_REFERENCE_ROOT=${DEFAULT_REFERENCE_ROOT}
 HMOS_OPENCODE_PORT=${HMOS_OPENCODE_PORT}
 HMOS_OPENCODE_HOST=${HMOS_OPENCODE_HOST}

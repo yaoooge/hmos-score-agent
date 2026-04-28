@@ -3,7 +3,12 @@ import path from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { API_PATHS } from "./apiDefinitions.js";
 import { getConfig } from "../config.js";
+import {
+  createGetHumanReviewStatusHandler,
+  createSubmitHumanReviewHandler,
+} from "./humanReviewHandler.js";
 import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
+import { createHumanReviewEvidenceStore } from "../humanReview/humanReviewEvidenceStore.js";
 import {
   buildRuleViolationStatsResponse,
   createRuleViolationStatsStore,
@@ -457,6 +462,7 @@ export function createApp(
   const config = getConfig();
   const registry = createRemoteTaskRegistry(config.localCaseRoot);
   const ruleViolationStatsStore = createRuleViolationStatsStore(config.localCaseRoot);
+  const humanReviewEvidenceStore = createHumanReviewEvidenceStore(config.humanReviewEvidenceRoot);
   app.use(createCorsMiddleware());
   app.use(express.json());
 
@@ -473,6 +479,14 @@ export function createApp(
     createGetRuleViolationStatsHandler(ruleViolationStatsStore),
   );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
+  app.post(
+    API_PATHS.humanReview,
+    createSubmitHumanReviewHandler({ registry, store: humanReviewEvidenceStore }),
+  );
+  app.get(
+    API_PATHS.humanReviewStatus,
+    createGetHumanReviewStatusHandler(humanReviewEvidenceStore),
+  );
 
   return app;
 }
