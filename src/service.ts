@@ -150,28 +150,13 @@ function buildRemoteCallbackPayload(input: {
   resultData?: Record<string, unknown>;
   errorMessage?: string;
 }): RemoteCallbackPayload {
-  const overview =
-    typeof input.resultData?.overview === "object" && input.resultData.overview !== null
-      ? (input.resultData.overview as { totalScore?: number; maxScore?: number })
-      : undefined;
-  const totalScore =
-    input.status === "completed"
-      ? Number(
-          overview?.totalScore ??
-            (input.resultData?.overall_conclusion as { total_score?: number } | undefined)
-              ?.total_score ??
-            0,
-        )
-      : undefined;
-
   const payload: RemoteCallbackPayload = {
     taskId: input.taskId,
     status: input.status,
   };
 
-  if (totalScore !== undefined) {
-    payload.totalScore = totalScore;
-    payload.maxScore = overview?.maxScore ?? 100;
+  if (input.status === "completed") {
+    payload.success = true;
   }
   if (input.resultData) {
     payload.resultData = input.resultData;
@@ -181,6 +166,19 @@ function buildRemoteCallbackPayload(input: {
   }
 
   return payload;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function buildCompletedRemoteResultData(input: {
+  resultJson: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    basic_info: asRecord(input.resultJson.basic_info),
+    overall_conclusion: asRecord(input.resultJson.overall_conclusion),
+  };
 }
 
 async function uploadRemoteTaskCallbackWithLog(input: {
@@ -569,7 +567,9 @@ export async function executeAcceptedRemoteEvaluationTask(
       logger,
       status: "completed",
       phase: "completed",
-      resultData: resultJson,
+      resultData: buildCompletedRemoteResultData({
+        resultJson,
+      }),
     });
     if (deps.onCompletedCallbackUploaded) {
       void deps

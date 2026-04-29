@@ -184,17 +184,17 @@ curl -X POST http://localhost:3000/score/run-remote-task \
 
 ```json
 {
+  "success": true,
   "taskId": 4,
   "status": "completed",
-  "totalScore": 85,
-  "maxScore": 100,
   "resultData": {
-    "basic_info": {
-      "rubric_version": "v1"
-    }
+    "basic_info": {},
+    "overall_conclusion": {}
   }
 }
 ```
+
+`completed` 回调的 `resultData` 只保留完整结果中的 `basic_info` 和 `overall_conclusion`；完整 `outputs/result.json` 由管理台通过结果查询接口获取。
 
 远程资源格式约定：
 

@@ -150,7 +150,8 @@ const remoteExecutionResultSchema = {
 const resultDataField = {
   type: "object",
   required: false,
-  description: "Scoring result JSON. Present for completed callbacks.",
+  description:
+    "Completed callback result subset containing only basic_info and overall_conclusion. Full scoring result JSON is available from the result API.",
 } as const satisfies ApiFieldSchema;
 
 const remoteCallbackDefinition = {
@@ -162,18 +163,13 @@ const remoteCallbackDefinition = {
     type: "object",
     description: "Remote task callback payload produced by this service.",
     properties: {
+      success: {
+        type: "boolean",
+        required: false,
+        description: "True for completed callbacks.",
+      },
       taskId: taskIdField,
       status: statusField,
-      totalScore: {
-        type: "number",
-        required: false,
-        description: "Final score. Present for completed callbacks.",
-      },
-      maxScore: {
-        type: "number",
-        required: false,
-        description: "Maximum score. Present with totalScore.",
-      },
       resultData: resultDataField,
       errorMessage: {
         type: "string",
@@ -352,7 +348,8 @@ export const API_DEFINITIONS: ApiDefinition[] = [
   {
     method: "POST",
     path: API_PATHS.humanReview,
-    description: "Accept human review results for a completed remote task and queue evidence ingestion.",
+    description:
+      "Accept human review results for a completed remote task and queue evidence ingestion.",
     request: {
       pathParams: { taskId: taskIdField },
       body: {
@@ -382,7 +379,8 @@ export const API_DEFINITIONS: ApiDefinition[] = [
     responses: [
       {
         status: 200,
-        description: "Human review raw record was stored and asynchronous classification was queued.",
+        description:
+          "Human review raw record was stored and asynchronous classification was queued.",
         body: {
           type: "object",
           description: "Human review acceptance response.",
@@ -414,8 +412,16 @@ export const API_DEFINITIONS: ApiDefinition[] = [
         },
       },
       { status: 400, description: "Invalid human review payload.", body: errorResponseBody },
-      { status: 404, description: "Task record or result file was not found.", body: errorResponseBody },
-      { status: 409, description: "Task exists but has not completed yet.", body: errorResponseBody },
+      {
+        status: 404,
+        description: "Task record or result file was not found.",
+        body: errorResponseBody,
+      },
+      {
+        status: 409,
+        description: "Task exists but has not completed yet.",
+        body: errorResponseBody,
+      },
     ],
   },
   {

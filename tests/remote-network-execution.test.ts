@@ -89,17 +89,25 @@ function createStoredResultJson(totalScore = 88): Record<string, unknown> {
 
 function assertRemoteCallbackPayloadShape(body: Record<string, unknown>) {
   assert.equal("body" in body, false, "callback payload must not be wrapped in a body field");
-  const allowedKeys = new Set([
-    "taskId",
-    "status",
-    "totalScore",
-    "maxScore",
-    "resultData",
-    "errorMessage",
-  ]);
+  const allowedKeys = new Set(["success", "taskId", "status", "resultData", "errorMessage"]);
   for (const key of Object.keys(body)) {
     assert.equal(allowedKeys.has(key), true, `unexpected callback payload key: ${key}`);
   }
+}
+
+function assertCompletedCallbackSummary(
+  body: Record<string, unknown>,
+  resultJson: Record<string, unknown>,
+) {
+  const resultData = body.resultData as Record<string, unknown>;
+  assert.equal(body.success, true);
+  assert.deepEqual(resultData, {
+    basic_info: resultJson.basic_info,
+    overall_conclusion: resultJson.overall_conclusion,
+  });
+  assert.equal("dimension_results" in resultData, false);
+  assert.equal("rule_violations" in resultData, false);
+  assert.equal("rule_audit_results" in resultData, false);
 }
 
 async function waitForAssertion(assertion: () => Promise<void>, attempts = 20): Promise<void> {
@@ -292,7 +300,7 @@ test("API definitions include unified request and response schemas", () => {
     "completed",
     "failed",
   ]);
-  assert.equal(remoteTaskCallbackProperties?.totalScore?.required, false);
+  assert.equal(remoteTaskCallbackProperties?.success?.required, false);
   assert.equal(remoteTaskCallbackProperties?.resultData?.type, "object");
 });
 
@@ -576,15 +584,12 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
   assert.equal("resultData" in callbackCalls[1].body, false);
   assert.equal("resultData" in callbackCalls[2].body, false);
   const finalCallback = callbackCalls.at(-1);
-  assert.equal(finalCallback?.body.maxScore, 100);
-  assert.equal(typeof finalCallback?.body.totalScore, "number");
   assert.equal(typeof finalCallback?.body.resultData, "object");
   const resultJson = JSON.parse(
     await fs.readFile(path.join(result.caseDir, "outputs", "result.json"), "utf-8"),
   );
-  assert.equal(finalCallback?.body.totalScore, resultJson.overall_conclusion.total_score);
   const finalResultData = finalCallback?.body.resultData as Record<string, unknown>;
-  assert.deepEqual(finalResultData, resultJson);
+  assertCompletedCallbackSummary(finalCallback?.body ?? {}, resultJson);
   assert.equal("executionLog" in finalResultData, false);
   assert.equal("resultUrl" in finalResultData, false);
   const logText = await fs.readFile(path.join(result.caseDir, "logs", "run.log"), "utf-8");
