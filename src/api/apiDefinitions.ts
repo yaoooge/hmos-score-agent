@@ -170,6 +170,16 @@ const remoteCallbackDefinition = {
       },
       taskId: taskIdField,
       status: statusField,
+      totalScore: {
+        type: "number",
+        required: false,
+        description: "Final score. Present for completed callbacks.",
+      },
+      maxScore: {
+        type: "number",
+        required: false,
+        description: "Maximum score. Present with totalScore.",
+      },
       resultData: resultDataField,
       errorMessage: {
         type: "string",

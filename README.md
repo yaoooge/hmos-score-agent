@@ -187,6 +187,8 @@ curl -X POST http://localhost:3000/score/run-remote-task \
   "success": true,
   "taskId": 4,
   "status": "completed",
+  "totalScore": 85,
+  "maxScore": 100,
   "resultData": {
     "basic_info": {},
     "overall_conclusion": {}

@@ -150,6 +150,12 @@ function buildRemoteCallbackPayload(input: {
   resultData?: Record<string, unknown>;
   errorMessage?: string;
 }): RemoteCallbackPayload {
+  const overallConclusion = asRecord(input.resultData?.overall_conclusion);
+  const totalScore =
+    input.status === "completed" ? Number(overallConclusion.total_score ?? 0) : undefined;
+  const maxScore =
+    input.status === "completed" ? Number(overallConclusion.max_score ?? 100) : undefined;
+
   const payload: RemoteCallbackPayload = {
     taskId: input.taskId,
     status: input.status,
@@ -157,6 +163,8 @@ function buildRemoteCallbackPayload(input: {
 
   if (input.status === "completed") {
     payload.success = true;
+    payload.totalScore = totalScore;
+    payload.maxScore = maxScore;
   }
   if (input.resultData) {
     payload.resultData = input.resultData;

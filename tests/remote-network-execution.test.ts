@@ -89,7 +89,15 @@ function createStoredResultJson(totalScore = 88): Record<string, unknown> {
 
 function assertRemoteCallbackPayloadShape(body: Record<string, unknown>) {
   assert.equal("body" in body, false, "callback payload must not be wrapped in a body field");
-  const allowedKeys = new Set(["success", "taskId", "status", "resultData", "errorMessage"]);
+  const allowedKeys = new Set([
+    "success",
+    "taskId",
+    "status",
+    "totalScore",
+    "maxScore",
+    "resultData",
+    "errorMessage",
+  ]);
   for (const key of Object.keys(body)) {
     assert.equal(allowedKeys.has(key), true, `unexpected callback payload key: ${key}`);
   }
@@ -100,7 +108,10 @@ function assertCompletedCallbackSummary(
   resultJson: Record<string, unknown>,
 ) {
   const resultData = body.resultData as Record<string, unknown>;
+  const overallConclusion = resultJson.overall_conclusion as Record<string, unknown>;
   assert.equal(body.success, true);
+  assert.equal(body.totalScore, overallConclusion.total_score);
+  assert.equal(body.maxScore, overallConclusion.max_score ?? 100);
   assert.deepEqual(resultData, {
     basic_info: resultJson.basic_info,
     overall_conclusion: resultJson.overall_conclusion,
@@ -301,6 +312,8 @@ test("API definitions include unified request and response schemas", () => {
     "failed",
   ]);
   assert.equal(remoteTaskCallbackProperties?.success?.required, false);
+  assert.equal(remoteTaskCallbackProperties?.totalScore?.required, false);
+  assert.equal(remoteTaskCallbackProperties?.maxScore?.required, false);
   assert.equal(remoteTaskCallbackProperties?.resultData?.type, "object");
 });
 

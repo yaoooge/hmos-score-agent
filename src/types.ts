@@ -35,6 +35,8 @@ export interface RemoteCallbackPayload {
   success?: boolean;
   taskId: number;
   status: "pending" | "running" | "completed" | "failed";
+  totalScore?: number;
+  maxScore?: number;
   resultData?: Record<string, unknown>;
   errorMessage?: string;
 }
