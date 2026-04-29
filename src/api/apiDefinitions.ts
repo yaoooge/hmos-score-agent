@@ -359,29 +359,29 @@ export const API_DEFINITIONS: ApiDefinition[] = [
     method: "POST",
     path: API_PATHS.humanReview,
     description:
-      "Accept human review results for a completed remote task and queue evidence ingestion.",
+      "Accept first-version per-item human review results for a completed remote task.",
     request: {
       pathParams: { taskId: taskIdField },
       body: {
         type: "object",
         description: "Human review submission from the remote scoring console.",
         properties: {
-          overallDecision: {
-            type: "enum",
-            required: true,
-            values: ["accepted", "rejected", "adjust_required", "uncertain"],
-            description: "Overall human review decision for this completed task.",
-          },
-          overallComment: {
-            type: "string",
-            required: false,
-            description: "Optional overall human review comment.",
-          },
           itemReviews: {
             type: "array",
-            required: true,
-            description: "Per-item human review results. Must contain at least one item.",
+            required: false,
+            description: "Optional per-item human review results. Missing or empty arrays are valid.",
             items: { type: "object", description: "One human review item result." },
+          },
+          riskReviews: {
+            type: "array",
+            required: false,
+            description:
+              "Optional per-risk review results using high, medium, low, or none levels. Missing or empty arrays are valid.",
+            items: {
+              type: "object",
+              description:
+                "One risk review with riskIndex, agreeWithResultLevel, resultLevel, and optional correctedLevel, reason, comment.",
+            },
           },
         },
       },
@@ -390,7 +390,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
       {
         status: 200,
         description:
-          "Human review raw record was stored and asynchronous classification was queued.",
+          "Human review item and risk review calibration samples were appended.",
         body: {
           type: "object",
           description: "Human review acceptance response.",
@@ -405,17 +405,13 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             status: {
               type: "string",
               required: true,
-              description: "Submission acceptance status.",
+              description: "Submission processing status. Completed for first-version synchronous handling.",
             },
-            rawPath: {
-              type: "string",
+            summary: {
+              type: "object",
               required: true,
-              description: "Path to the stored raw review record.",
-            },
-            classificationStatus: {
-              type: "string",
-              required: true,
-              description: "Initial asynchronous classification status.",
+              description:
+                "Synchronous summary with itemReviewCount, riskReviewCount, riskAgreementCount, riskDisagreementCount, and datasetItemCount.",
             },
             message: messageField,
           },
@@ -437,7 +433,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
   {
     method: "GET",
     path: API_PATHS.humanReviewStatus,
-    description: "Read asynchronous human review ingestion status.",
+    description: "Read stored human review submission status.",
     request: {
       pathParams: {
         reviewId: {
@@ -450,7 +446,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
     responses: [
       {
         status: 200,
-        description: "Human review ingestion status.",
+        description: "Human review submission status.",
         body: {
           type: "object",
           description: "Stored human review status record.",
@@ -458,11 +454,11 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             success: successField,
             reviewId: { type: "string", required: true, description: "Human review id." },
             taskId: taskIdField,
-            status: { type: "string", required: true, description: "Ingestion status." },
-            classificationSummary: {
+            status: { type: "string", required: true, description: "Submission status." },
+            summary: {
               type: "object",
-              required: false,
-              description: "Classification summary when available.",
+              required: true,
+              description: "Stored submission summary.",
             },
           },
         },

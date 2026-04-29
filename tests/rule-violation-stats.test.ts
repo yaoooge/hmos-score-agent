@@ -11,7 +11,6 @@ import {
 } from "../src/api/ruleViolationStatsStore.js";
 import { rebuildRuleViolationStatsIndex } from "../src/api/ruleViolationStatsRebuild.js";
 import { createGetRuleViolationStatsHandler, createRunRemoteTaskHandler } from "../src/api/app.js";
-import { createHumanReviewEvidenceStore } from "../src/humanReview/humanReviewEvidenceStore.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rule-violation-stats-"));
@@ -390,11 +389,10 @@ test("createRunRemoteTaskHandler writes static rule stats after completed execut
   });
 });
 
-test("createRunRemoteTaskHandler appends result risks after completed callback hook", async (t) => {
+test("createRunRemoteTaskHandler does not append result risks to human review datasets", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const statsStore = createRuleViolationStatsStore(localCaseRoot);
-  const evidenceRoot = await makeTempDir(t);
-  const evidenceStore = createHumanReviewEvidenceStore(evidenceRoot);
+  let completedCallbackUploadedHookProvided = false;
   const deps = {
     acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => ({
       taskId: Number(remoteTask.taskId),
@@ -423,11 +421,13 @@ test("createRunRemoteTaskHandler appends result risks after completed callback h
           uploadMessage: string;
         }) => Promise<void>;
       };
+      completedCallbackUploadedHookProvided =
+        typeof depsWithHook.onCompletedCallbackUploaded === "function";
       const resultJson = {
         basic_info: { task_type: "bug_fix" },
         risks: [
           {
-            level: "major",
+            level: "medium",
             title: "接口仍使用 mockData",
             description: "生成代码没有调用真实接口。",
             evidence: "entry/src/main/ets/pages/Index.ets: const mockData = []",
@@ -436,17 +436,10 @@ test("createRunRemoteTaskHandler appends result risks after completed callback h
         bound_rule_packs: [],
         rule_audit_results: [],
       };
-
-      await depsWithHook.onCompletedCallbackUploaded?.({
-        acceptedTask: task,
-        workflowResult: { caseInput: { caseId: "202" }, resultJson },
-        resultJson,
-        uploadMessage: "callback 上传成功。",
-      });
       return "callback 上传成功。";
     },
   };
-  const handler = createRunRemoteTaskHandler(deps as never, undefined, statsStore, evidenceStore);
+  const handler = createRunRemoteTaskHandler(deps as never, undefined, statsStore);
   const { response, state } = createResponse();
 
   await handler(
@@ -462,13 +455,7 @@ test("createRunRemoteTaskHandler appends result risks after completed callback h
 
   assert.equal(state.statusCode, 200);
   await waitForAssertion(async () => {
-    const dataset = await fs.readFile(
-      path.join(evidenceRoot, "datasets", "negative_diagnostics.jsonl"),
-      "utf-8",
-    );
-    const sample = JSON.parse(dataset.trim().split("\n")[0] ?? "{}");
-    assert.match(String(sample.reviewId), /^risk_\d{8}_202$/);
-    assert.equal(sample.category, "api_integration");
+    assert.equal(completedCallbackUploadedHookProvided, false);
   });
 });
 

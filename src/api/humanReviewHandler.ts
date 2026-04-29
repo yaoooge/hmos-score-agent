@@ -1,18 +1,26 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
-import { runHumanReviewIngestionNode } from "../humanReview/humanReviewIngestionNode.js";
 import type { HumanReviewEvidenceStore } from "../humanReview/humanReviewEvidenceStore.js";
-import type { HumanReviewSubmissionPayload } from "../humanReview/humanReviewTypes.js";
+import type {
+  HumanReviewSubmissionPayload,
+  HumanRiskLevel,
+} from "../humanReview/humanReviewTypes.js";
 import type { RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 
 export type SubmitHumanReviewDeps = {
   registry: RemoteTaskRegistry;
   store: HumanReviewEvidenceStore;
-  runIngestion?: typeof runHumanReviewIngestionNode;
 };
 
-const OVERALL_DECISIONS = new Set(["accepted", "rejected", "adjust_required", "uncertain"]);
+type NormalizedResultRisk = {
+  level: string;
+  title: string;
+  description: string;
+  evidence: string;
+};
+
 const HUMAN_VERDICTS = new Set([
   "confirmed_correct",
   "confirmed_issue",
@@ -21,9 +29,9 @@ const HUMAN_VERDICTS = new Set([
   "partially_correct",
   "uncertain",
 ]);
+const RISK_LEVELS = new Set(["high", "medium", "low", "none"]);
 
 export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
-  const runIngestion = deps.runIngestion ?? runHumanReviewIngestionNode;
   return async (req: Request, res: Response) => {
     const taskId = readRouteTaskId(req);
     if (taskId === undefined) {
@@ -69,56 +77,63 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       throw error;
     }
 
+    const riskValidation = validateRiskReviewsWithResult(payload, resultJson);
+    if (riskValidation) {
+      res.status(riskValidation.status).json({
+        success: false,
+        taskId,
+        message: riskValidation.message,
+      });
+      return;
+    }
+
     const receivedAt = new Date().toISOString();
-    const reviewId = buildReviewId(taskId, receivedAt, payload);
-    const rawPath = await deps.store.writeRawRecord({
-      schemaVersion: 1,
+    const reviewId = buildReviewId(taskId, receivedAt);
+    const itemDatasetCount = await appendItemReviewCalibrationSamples({
+      store: deps.store,
       reviewId,
       taskId,
       testCaseId: record.testCaseId,
-      receivedAt,
-      reviewer: payload.reviewer,
-      resultSummary: buildResultSummary(resultJson),
+      resultJson,
       payload,
     });
+    const riskDatasetCount = await appendRiskReviewCalibrationSamples({
+      store: deps.store,
+      reviewId,
+      taskId,
+      testCaseId: record.testCaseId,
+      resultJson,
+      payload,
+    });
+    const itemReviewCount = payload.itemReviews?.length ?? 0;
+    const riskReviewCount = payload.riskReviews?.length ?? 0;
+    const riskAgreementCount = (payload.riskReviews ?? []).filter(
+      (item) => item.agreeWithResultLevel,
+    ).length;
+    const riskDisagreementCount = riskReviewCount - riskAgreementCount;
+    const summary = {
+      itemReviewCount,
+      riskReviewCount,
+      riskAgreementCount,
+      riskDisagreementCount,
+      datasetItemCount: itemDatasetCount + riskDatasetCount,
+    };
     await deps.store.writeStatus({
       schemaVersion: 1,
       reviewId,
       taskId,
-      status: "queued",
+      status: "completed",
       updatedAt: receivedAt,
-    });
-
-    void runIngestion(
-      {
-        taskId,
-        reviewId,
-        submittedAt: receivedAt,
-        reviewer: payload.reviewer,
-        resultJson,
-        caseContext: {
-          caseDir: record.caseDir,
-          testCaseId: record.testCaseId,
-          caseId: readCaseId(resultJson),
-          taskType: readTaskType(resultJson),
-        },
-        reviewPayload: payload,
-      },
-      { store: deps.store },
-    ).catch((error) => {
-      console.error(
-        `human_review_ingestion_failed taskId=${String(taskId)} reviewId=${reviewId} error=${formatError(error)}`,
-      );
+      summary,
     });
 
     res.json({
       success: true,
       taskId,
       reviewId,
-      status: "accepted",
-      rawPath,
-      classificationStatus: "queued",
-      message: "人工复核结果已接收，分类入库将在后台异步完成。",
+      status: "completed",
+      summary,
+      message: "人工复核结果已接收。",
     });
   };
 }
@@ -149,13 +164,15 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
     return "Request body must be an object";
   }
   const candidate = body as Partial<HumanReviewSubmissionPayload>;
-  if (!OVERALL_DECISIONS.has(String(candidate.overallDecision))) {
-    return "overallDecision is required or invalid";
+  const itemReviews = candidate.itemReviews ?? [];
+  const riskReviews = candidate.riskReviews ?? [];
+  if (!Array.isArray(itemReviews)) {
+    return "itemReviews must be an array";
   }
-  if (!Array.isArray(candidate.itemReviews) || candidate.itemReviews.length === 0) {
-    return "itemReviews must contain at least one item";
+  if (!Array.isArray(riskReviews)) {
+    return "riskReviews must be an array";
   }
-  for (const item of candidate.itemReviews) {
+  for (const item of itemReviews) {
     if (typeof item !== "object" || item === null) {
       return "itemReviews entries must be objects";
     }
@@ -166,31 +183,184 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
       return "correctedAssessment is required";
     }
   }
-  return candidate as HumanReviewSubmissionPayload;
+  for (const [index, item] of riskReviews.entries()) {
+    if (typeof item !== "object" || item === null) {
+      return "riskReviews entries must be objects";
+    }
+    const riskReview = item as Record<string, unknown>;
+    if (!Number.isInteger(riskReview.riskIndex) || Number(riskReview.riskIndex) < 0) {
+      return `riskReviews[${String(index)}].riskIndex is required or invalid`;
+    }
+    if (typeof riskReview.agreeWithResultLevel !== "boolean") {
+      return `riskReviews[${String(index)}].agreeWithResultLevel is required or invalid`;
+    }
+    if (!isRiskLevel(riskReview.resultLevel)) {
+      return `riskReviews[${String(index)}].resultLevel is required or invalid`;
+    }
+    if (riskReview.agreeWithResultLevel === false) {
+      if (!isRiskLevel(riskReview.correctedLevel)) {
+        return `riskReviews[${String(index)}].correctedLevel is required when agreeWithResultLevel is false`;
+      }
+      if (typeof riskReview.reason !== "string" || riskReview.reason.trim().length === 0) {
+        return `riskReviews[${String(index)}].reason is required when agreeWithResultLevel is false`;
+      }
+    }
+  }
+  return {
+    reviewer: candidate.reviewer,
+    itemReviews,
+    riskReviews,
+  };
 }
 
-function buildReviewId(taskId: number, receivedAt: string, payload: HumanReviewSubmissionPayload): string {
-  const suffix = Buffer.from(`${String(taskId)}:${receivedAt}:${JSON.stringify(payload)}`)
-    .toString("base64url")
-    .slice(0, 10);
+function buildReviewId(taskId: number, receivedAt: string): string {
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
   return `hr_${receivedAt.slice(0, 10).replaceAll("-", "")}_${String(taskId)}_${suffix}`;
 }
 
-function buildResultSummary(resultJson: Record<string, unknown>) {
-  const overallConclusion =
-    typeof resultJson.overall_conclusion === "object" && resultJson.overall_conclusion !== null
-      ? (resultJson.overall_conclusion as Record<string, unknown>)
-      : {};
-  return {
-    caseId: readCaseId(resultJson),
-    taskType: readTaskType(resultJson),
-    totalScore:
-      typeof overallConclusion.total_score === "number" ? overallConclusion.total_score : undefined,
-    humanReviewItemCount: Array.isArray(resultJson.human_review_items)
-      ? resultJson.human_review_items.length
-      : 0,
-    riskCount: Array.isArray(resultJson.risks) ? resultJson.risks.length : 0,
-  };
+function validateRiskReviewsWithResult(
+  payload: HumanReviewSubmissionPayload,
+  resultJson: Record<string, unknown>,
+): { status: 400 | 409; message: string } | undefined {
+  const risks = readResultRisks(resultJson);
+  for (const [index, review] of (payload.riskReviews ?? []).entries()) {
+    const risk = risks[review.riskIndex];
+    if (!risk) {
+      return {
+        status: 400,
+        message: `riskReviews[${String(index)}].riskIndex does not match result risks`,
+      };
+    }
+    if (review.resultLevel !== risk.level) {
+      return {
+        status: 409,
+        message: `riskReviews[${String(index)}].resultLevel does not match result risk level`,
+      };
+    }
+  }
+  return undefined;
+}
+
+
+async function appendItemReviewCalibrationSamples(input: {
+  store: HumanReviewEvidenceStore;
+  reviewId: string;
+  taskId: number;
+  testCaseId?: number;
+  resultJson: Record<string, unknown>;
+  payload: HumanReviewSubmissionPayload;
+}): Promise<number> {
+  const resultItems = readResultReviewItems(input.resultJson);
+  let count = 0;
+  for (const [index, review] of (input.payload.itemReviews ?? []).entries()) {
+    await input.store.appendDatasetSample("item_review_calibration", {
+      type: "item_review_calibration",
+      reviewId: input.reviewId,
+      evidenceId: `${input.reviewId}-item-${String(index + 1)}`,
+      taskId: input.taskId,
+      testCaseId: input.testCaseId,
+      itemIndex: index,
+      taskSummary: buildTaskSummary(input.resultJson),
+      resultReviewItem: findResultReviewItem(resultItems, review.sourceItem, review.reviewItemKey, index),
+      humanReview: {
+        reviewItemKey: review.reviewItemKey,
+        sourceItem: review.sourceItem,
+        humanVerdict: review.humanVerdict,
+        correctedAssessment: review.correctedAssessment,
+        evidence: review.evidence,
+        scoreAdjustment: review.scoreAdjustment,
+        preferredFix: review.preferredFix,
+        tags: review.tags,
+      },
+    });
+    count += 1;
+  }
+  return count;
+}
+
+async function appendRiskReviewCalibrationSamples(input: {
+  store: HumanReviewEvidenceStore;
+  reviewId: string;
+  taskId: number;
+  testCaseId?: number;
+  resultJson: Record<string, unknown>;
+  payload: HumanReviewSubmissionPayload;
+}): Promise<number> {
+  const risks = readResultRisks(input.resultJson);
+  let count = 0;
+  for (const review of input.payload.riskReviews ?? []) {
+    const risk = risks[review.riskIndex];
+    if (!risk) {
+      continue;
+    }
+    await input.store.appendDatasetSample("risk_review_calibration", {
+      type: "risk_review_calibration",
+      reviewId: input.reviewId,
+      evidenceId: `${input.reviewId}-risk-${String(review.riskIndex + 1)}`,
+      taskId: input.taskId,
+      testCaseId: input.testCaseId,
+      riskIndex: review.riskIndex,
+      taskSummary: buildTaskSummary(input.resultJson),
+      resultRisk: risk,
+      humanReview: {
+        agreeWithResultLevel: review.agreeWithResultLevel,
+        correctedLevel: review.correctedLevel,
+        reason: review.reason,
+        comment: review.comment,
+      },
+    });
+    count += 1;
+  }
+  return count;
+}
+
+function readResultReviewItems(resultJson: Record<string, unknown>): Array<Record<string, unknown>> {
+  return Array.isArray(resultJson.human_review_items)
+    ? resultJson.human_review_items.map((item) =>
+        typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {},
+      )
+    : [];
+}
+
+function findResultReviewItem(
+  resultItems: Array<Record<string, unknown>>,
+  sourceItem: string | undefined,
+  reviewItemKey: string | undefined,
+  index: number,
+): Record<string, unknown> | undefined {
+  const key = reviewItemKey ?? sourceItem;
+  if (key) {
+    const matched = resultItems.find((item) => item.item === key);
+    if (matched) {
+      return matched;
+    }
+  }
+  return resultItems[index];
+}
+
+function buildTaskSummary(resultJson: Record<string, unknown>): string {
+  return [readCaseId(resultJson), readTaskType(resultJson)]
+    .filter((item): item is string => typeof item === "string" && item.length > 0)
+    .join(" | ");
+}
+
+function readResultRisks(resultJson: Record<string, unknown>): NormalizedResultRisk[] {
+  if (!Array.isArray(resultJson.risks)) {
+    return [];
+  }
+  return resultJson.risks.map((item) => {
+    const risk = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    return {
+      level: readString(risk.level) ?? "",
+      title: readString(risk.title) ?? "",
+      description: readString(risk.description) ?? "",
+      evidence: readString(risk.evidence) ?? "",
+    };
+  });
+}
+
+function isRiskLevel(value: unknown): value is HumanRiskLevel {
+  return typeof value === "string" && RISK_LEVELS.has(value);
 }
 
 function readCaseId(resultJson: Record<string, unknown>): string | undefined {
@@ -209,6 +379,6 @@ function readTaskType(resultJson: Record<string, unknown>): string | undefined {
   return typeof basicInfo.task_type === "string" ? basicInfo.task_type : undefined;
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }

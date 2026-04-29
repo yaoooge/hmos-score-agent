@@ -13,10 +13,6 @@ import {
   type HumanReviewEvidenceStore,
 } from "../humanReview/humanReviewEvidenceStore.js";
 import {
-  buildResultRiskReviewId,
-  runResultRiskIngestionNode,
-} from "../humanReview/resultRiskIngestionNode.js";
-import {
   buildRuleViolationStatsResponse,
   createRuleViolationStatsStore,
   extractRuleViolationRunSnapshot,
@@ -215,33 +211,6 @@ export function createRunRemoteTaskHandler(
                     ? (resultJson.rule_audit_results as never)
                     : [],
                 }),
-              );
-            }
-          : undefined,
-        onCompletedCallbackUploaded: humanReviewEvidenceStore
-          ? async ({ acceptedTask: completedTask, workflowResult, resultJson }) => {
-              const completedAt = new Date().toISOString();
-              await runResultRiskIngestionNode(
-                {
-                  taskId: completedTask.taskId,
-                  testCaseId: completedTask.remoteTask.testCase.id,
-                  reviewId: buildResultRiskReviewId(completedTask.taskId, completedAt),
-                  receivedAt: completedAt,
-                  resultJson,
-                  caseContext: {
-                    caseId:
-                      typeof workflowResult.caseInput === "object" &&
-                      workflowResult.caseInput !== null
-                        ? String((workflowResult.caseInput as { caseId?: unknown }).caseId ?? "")
-                        : String(completedTask.remoteTask.testCase.id),
-                    taskType:
-                      typeof resultJson.basic_info === "object" && resultJson.basic_info !== null
-                        ? String((resultJson.basic_info as { task_type?: unknown }).task_type ?? "")
-                        : undefined,
-                    prompt: completedTask.remoteTask.testCase.input,
-                  },
-                },
-                { store: humanReviewEvidenceStore },
               );
             }
           : undefined,
