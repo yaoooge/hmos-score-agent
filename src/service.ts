@@ -39,6 +39,12 @@ type ServiceOpencodeDeps = {
     workflowResult: Record<string, unknown>;
     resultJson: Record<string, unknown>;
   }) => Promise<void>;
+  onCompletedCallbackUploaded?: (input: {
+    acceptedTask: AcceptedRemoteEvaluationTask;
+    workflowResult: Record<string, unknown>;
+    resultJson: Record<string, unknown>;
+    uploadMessage: string;
+  }) => Promise<void>;
 };
 
 let sharedServiceOpencodeRunner: Promise<OpencodeRunner> | undefined;
@@ -546,19 +552,40 @@ export async function executeAcceptedRemoteEvaluationTask(
         ? (workflowResult.resultJson as Record<string, unknown>)
         : {};
 
-    await deps.onCompleted?.({
-      acceptedTask: preparedTask,
-      workflowResult,
-      resultJson,
-    });
+    try {
+      await deps.onCompleted?.({
+        acceptedTask: preparedTask,
+        workflowResult,
+        resultJson,
+      });
+    } catch (error) {
+      await logger.warn(
+        `完成后处理失败 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} error=${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
-    return await uploadRemoteTaskCallbackWithLog({
+    const uploadMessage = await uploadRemoteTaskCallbackWithLog({
       remoteTask: acceptedTask.remoteTask,
       logger,
       status: "completed",
       phase: "completed",
       resultData: resultJson,
     });
+    if (deps.onCompletedCallbackUploaded) {
+      void deps
+        .onCompletedCallbackUploaded({
+          acceptedTask: preparedTask,
+          workflowResult,
+          resultJson,
+          uploadMessage,
+        })
+        .catch((error) => {
+          void logger.warn(
+            `完成回调后处理失败 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} error=${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+    }
+    return uploadMessage;
   } catch (error) {
     workflowResult = readWorkflowStateFromError(error) ?? workflowResult;
     const message = error instanceof Error ? error.message : String(error);

@@ -12,6 +12,8 @@ import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import { getConfig } from "../src/config.js";
 import { createHumanReviewEvidenceStore } from "../src/humanReview/humanReviewEvidenceStore.js";
 import { runHumanReviewIngestionNode } from "../src/humanReview/humanReviewIngestionNode.js";
+import { runResultRiskIngestionNode } from "../src/humanReview/resultRiskIngestionNode.js";
+import { rebuildResultRiskEvidenceFromLocalCases } from "../src/humanReview/resultRiskRebuild.js";
 import {
   filterHumanReviewTrainingCandidates,
   mapHumanVerdictToPolarity,
@@ -41,7 +43,11 @@ function createResponse() {
   return { response, state };
 }
 
-function createReviewRequest(taskId: number, token: string | undefined, body: Record<string, unknown>) {
+function createReviewRequest(
+  taskId: number,
+  token: string | undefined,
+  body: Record<string, unknown>,
+) {
   return {
     params: { taskId: String(taskId) },
     body,
@@ -55,7 +61,10 @@ function createStatusRequest(reviewId: string) {
   return { params: { reviewId } };
 }
 
-async function writeCompletedTask(t: test.TestContext, options: { status?: "completed" | "running" } = {}) {
+async function writeCompletedTask(
+  t: test.TestContext,
+  options: { status?: "completed" | "running" } = {},
+) {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case");
   await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
@@ -228,22 +237,23 @@ test("human review evidence store writes raw, status, classified, datasets, and 
   );
   assert.equal(JSON.parse(await fs.readFile(classifiedPath, "utf-8")).category, "api_integration");
 
-  const datasetLines = (await fs.readFile(
-    path.join(root, "datasets", "negative_diagnostics.jsonl"),
-    "utf-8",
-  ))
+  const datasetLines = (
+    await fs.readFile(path.join(root, "datasets", "negative_diagnostics.jsonl"), "utf-8")
+  )
     .trim()
     .split("\n");
   assert.equal(datasetLines.length, 1);
   assert.equal(JSON.parse(datasetLines[0] ?? "{}").evidenceId, "hr_test_1-item-1");
 
   const index = JSON.parse(await fs.readFile(path.join(root, "index.json"), "utf-8"));
-  assert.deepEqual(index.reviews.map((item: { reviewId: string }) => item.reviewId), [
-    "hr_test_1",
-  ]);
-  assert.deepEqual(index.evidences.map((item: { evidenceId: string }) => item.evidenceId), [
-    "hr_test_1-item-1",
-  ]);
+  assert.deepEqual(
+    index.reviews.map((item: { reviewId: string }) => item.reviewId),
+    ["hr_test_1"],
+  );
+  assert.deepEqual(
+    index.evidences.map((item: { evidenceId: string }) => item.evidenceId),
+    ["hr_test_1-item-1"],
+  );
 });
 
 test("human review evidence store serializes concurrent dataset appends", async (t) => {
@@ -345,13 +355,14 @@ test("human review ingestion writes positive and negative dataset samples", asyn
     },
   );
 
-  const negativeLines = (await fs.readFile(
-    path.join(root, "datasets", "negative_diagnostics.jsonl"),
-    "utf-8",
-  ))
+  const negativeLines = (
+    await fs.readFile(path.join(root, "datasets", "negative_diagnostics.jsonl"), "utf-8")
+  )
     .trim()
     .split("\n");
-  const positiveLines = (await fs.readFile(path.join(root, "datasets", "sft_positive.jsonl"), "utf-8"))
+  const positiveLines = (
+    await fs.readFile(path.join(root, "datasets", "sft_positive.jsonl"), "utf-8")
+  )
     .trim()
     .split("\n");
 
@@ -390,6 +401,198 @@ test("human review ingestion records classifier failures without appending datas
   await assert.rejects(
     fs.readFile(path.join(root, "datasets", "negative_diagnostics.jsonl"), "utf-8"),
     /ENOENT/,
+  );
+});
+
+test("result risk ingestion appends agent-discovered risks as negative diagnostics", async (t) => {
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+
+  const output = await runResultRiskIngestionNode(
+    {
+      taskId: 88,
+      testCaseId: 188,
+      reviewId: "risk_20260428_88",
+      receivedAt: "2026-04-28T10:20:30.000Z",
+      caseContext: {
+        caseId: "case-88",
+        taskType: "bug_fix",
+        prompt: "接入真实接口并刷新列表",
+      },
+      resultJson: {
+        risks: [
+          {
+            level: "major",
+            title: "接口仍使用 mockData",
+            description: "生成代码没有调用真实接口，导致用例核心需求未实现。",
+            evidence: "entry/src/main/ets/pages/Index.ets: const mockData = []",
+          },
+        ],
+      },
+    },
+    { store },
+  );
+
+  assert.equal(output.status, "completed");
+  assert.equal(output.summary.riskCount, 1);
+  assert.equal(output.summary.datasetItemCount, 1);
+
+  const datasetLines = (
+    await fs.readFile(path.join(root, "datasets", "negative_diagnostics.jsonl"), "utf-8")
+  )
+    .trim()
+    .split("\n");
+  const sample = JSON.parse(datasetLines[0] ?? "{}");
+  assert.equal(sample.type, "negative_diagnostic");
+  assert.equal(sample.reviewId, "risk_20260428_88");
+  assert.equal(sample.evidenceId, "risk_20260428_88-risk-1");
+  assert.equal(sample.category, "api_integration");
+  assert.match(String(sample.codeGenerationLesson), /风险项指出/);
+
+  const classified = JSON.parse(
+    await fs.readFile(
+      path.join(root, "classified", "negative", "api_integration", "risk_20260428_88-risk-1.json"),
+      "utf-8",
+    ),
+  );
+  assert.equal(classified.polarity, "negative");
+  assert.deepEqual(classified.datasetTypes, ["negative_diagnostic"]);
+});
+
+test("result risk ingestion skips risks without code evidence", async (t) => {
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+
+  const output = await runResultRiskIngestionNode(
+    {
+      taskId: 89,
+      reviewId: "risk_20260428_89",
+      receivedAt: "2026-04-28T10:20:30.000Z",
+      caseContext: { caseId: "case-89", taskType: "bug_fix" },
+      resultJson: {
+        risks: [
+          {
+            level: "minor",
+            title: "证据不足风险",
+            description: "缺少可定位到代码的证据。",
+          },
+        ],
+      },
+    },
+    { store },
+  );
+
+  assert.equal(output.summary.riskCount, 1);
+  assert.equal(output.summary.eligibleRiskCount, 0);
+  assert.equal(output.summary.datasetItemCount, 0);
+  await assert.rejects(
+    fs.readFile(path.join(root, "datasets", "negative_diagnostics.jsonl"), "utf-8"),
+    /ENOENT/,
+  );
+});
+
+test("result risk rebuild ingests historical local case result risks idempotently", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const evidenceRoot = await makeTempDir(t);
+  const remoteCaseDir = path.join(localCaseRoot, "20260428T010203_bug_fix_remote154");
+  const localCaseDir = path.join(localCaseRoot, "20260428T020304_full_generation_localcase");
+
+  await fs.mkdir(path.join(remoteCaseDir, "inputs"), { recursive: true });
+  await fs.mkdir(path.join(remoteCaseDir, "outputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(remoteCaseDir, "inputs", "case-info.json"),
+    JSON.stringify({
+      remote_task_id: 154,
+      remote_test_case_id: 65,
+      case_id: "remote-task-154",
+      started_at: "2026-04-28T01:02:03.000Z",
+      original_prompt_summary: "接入真实接口",
+    }),
+  );
+  await fs.writeFile(
+    path.join(remoteCaseDir, "outputs", "result.json"),
+    JSON.stringify({
+      basic_info: { task_type: "bug_fix" },
+      report_meta: { unit_name: "remote-task-154", generated_at: "2026-04-28T01:10:00.000Z" },
+      risks: [
+        {
+          level: "major",
+          title: "接口仍使用 mockData",
+          description: "生成代码没有调用真实接口。",
+          evidence: "entry/src/main/ets/pages/Index.ets: const mockData = []",
+        },
+        {
+          level: "minor",
+          title: "缺少证据风险",
+          description: "该项缺少代码证据，不应入训练集。",
+        },
+      ],
+    }),
+  );
+
+  await fs.mkdir(path.join(localCaseDir, "inputs"), { recursive: true });
+  await fs.mkdir(path.join(localCaseDir, "outputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(localCaseDir, "inputs", "case-info.json"),
+    JSON.stringify({
+      case_id: "local-case-1",
+      started_at: "2026-04-28T02:03:04.000Z",
+      original_prompt_summary: "实现状态刷新",
+    }),
+  );
+  await fs.writeFile(
+    path.join(localCaseDir, "outputs", "result.json"),
+    JSON.stringify({
+      basic_info: { task_type: "continuation" },
+      report_meta: { unit_name: "local-case-1", generated_at: "2026-04-28T02:10:00.000Z" },
+      risks: [
+        {
+          level: "major",
+          title: "状态未刷新",
+          description: "生成代码更新普通字段，无法触发 UI 刷新。",
+          evidence: "entry/src/main/ets/pages/Index.ets: this.items = data",
+        },
+      ],
+    }),
+  );
+
+  const firstSummary = await rebuildResultRiskEvidenceFromLocalCases({
+    localCaseRoot,
+    evidenceRoot,
+  });
+  const secondSummary = await rebuildResultRiskEvidenceFromLocalCases({
+    localCaseRoot,
+    evidenceRoot,
+  });
+
+  assert.deepEqual(firstSummary, {
+    scannedResultFiles: 2,
+    rebuiltRuns: 2,
+    riskCount: 3,
+    eligibleRiskCount: 2,
+    datasetItemCount: 2,
+    skippedFiles: 0,
+  });
+  assert.equal(secondSummary.datasetItemCount, 0);
+
+  const datasetLines = (
+    await fs.readFile(path.join(evidenceRoot, "datasets", "negative_diagnostics.jsonl"), "utf-8")
+  )
+    .trim()
+    .split("\n")
+    .map(
+      (line) => JSON.parse(line) as { reviewId?: string; evidenceId?: string; category?: string },
+    );
+
+  assert.equal(datasetLines.length, 2);
+  assert.deepEqual(
+    datasetLines.map((item) => item.reviewId),
+    ["risk_20260428_154", datasetLines[1]?.reviewId],
+  );
+  assert.match(String(datasetLines[1]?.reviewId), /^risk_20260428_\d+$/);
+  assert.deepEqual(
+    datasetLines.map((item) => item.category),
+    ["api_integration", "arkui_state_management"],
   );
 });
 
@@ -462,19 +665,28 @@ test("submit human review handler rejects missing, running, and invalid requests
   const handler = createSubmitHumanReviewHandler({ registry, store });
 
   const invalid = createResponse();
-  await handler(createReviewRequest(88, undefined, { itemReviews: [] }) as never, invalid.response as never);
+  await handler(
+    createReviewRequest(88, undefined, { itemReviews: [] }) as never,
+    invalid.response as never,
+  );
   assert.equal(invalid.state.statusCode, 400);
 
   const running = createResponse();
   await handler(
-    createReviewRequest(88, undefined, { overallDecision: "accepted", itemReviews: [review({})] }) as never,
+    createReviewRequest(88, undefined, {
+      overallDecision: "accepted",
+      itemReviews: [review({})],
+    }) as never,
     running.response as never,
   );
   assert.equal(running.state.statusCode, 409);
 
   const missing = createResponse();
   await handler(
-    createReviewRequest(999, undefined, { overallDecision: "accepted", itemReviews: [review({})] }) as never,
+    createReviewRequest(999, undefined, {
+      overallDecision: "accepted",
+      itemReviews: [review({})],
+    }) as never,
     missing.response as never,
   );
   assert.equal(missing.state.statusCode, 404);
@@ -510,6 +722,25 @@ test("human review status handler returns stored status", async (t) => {
   assert.equal(state.body?.status, "completed");
 });
 
+test("human review config defaults evidence root outside project directory", () => {
+  const previous = process.env.HUMAN_REVIEW_EVIDENCE_ROOT;
+  try {
+    delete process.env.HUMAN_REVIEW_EVIDENCE_ROOT;
+    const evidenceRoot = getConfig().humanReviewEvidenceRoot;
+    assert.equal(
+      evidenceRoot,
+      path.resolve(os.homedir(), ".hmos-score-agent", "human-review-evidences"),
+    );
+    assert.equal(path.relative(process.cwd(), evidenceRoot).startsWith(".."), true);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.HUMAN_REVIEW_EVIDENCE_ROOT;
+    } else {
+      process.env.HUMAN_REVIEW_EVIDENCE_ROOT = previous;
+    }
+  }
+});
+
 test("human review config reads persistent evidence root from environment", () => {
   const previous = process.env.HUMAN_REVIEW_EVIDENCE_ROOT;
   process.env.HUMAN_REVIEW_EVIDENCE_ROOT = "/data/hmos-score-agent/human-review-evidences";
@@ -530,7 +761,10 @@ test("human review config reads persistent evidence root from environment", () =
 test("aliyun deployment script writes persistent human review environment", async () => {
   const script = await fs.readFile("scripts/aliyun-single-instance-deploy.sh", "utf-8");
 
-  assert.match(script, /LOCAL_CASE_ROOT="\$\{LOCAL_CASE_ROOT:-\/data\/hmos-score-agent\/local-cases\}"/);
+  assert.match(
+    script,
+    /LOCAL_CASE_ROOT="\$\{LOCAL_CASE_ROOT:-\/data\/hmos-score-agent\/local-cases\}"/,
+  );
   assert.match(
     script,
     /HUMAN_REVIEW_EVIDENCE_ROOT="\$\{HUMAN_REVIEW_EVIDENCE_ROOT:-\/data\/hmos-score-agent\/human-review-evidences\}"/,
@@ -552,7 +786,8 @@ test("api definitions document human review submission and status endpoints", ()
   );
   assert.equal(
     API_DEFINITIONS.some(
-      (definition) => definition.method === "GET" && definition.path === API_PATHS.humanReviewStatus,
+      (definition) =>
+        definition.method === "GET" && definition.path === API_PATHS.humanReviewStatus,
     ),
     true,
   );

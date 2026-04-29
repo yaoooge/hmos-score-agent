@@ -8,7 +8,14 @@ import {
   createSubmitHumanReviewHandler,
 } from "./humanReviewHandler.js";
 import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
-import { createHumanReviewEvidenceStore } from "../humanReview/humanReviewEvidenceStore.js";
+import {
+  createHumanReviewEvidenceStore,
+  type HumanReviewEvidenceStore,
+} from "../humanReview/humanReviewEvidenceStore.js";
+import {
+  buildResultRiskReviewId,
+  runResultRiskIngestionNode,
+} from "../humanReview/resultRiskIngestionNode.js";
 import {
   buildRuleViolationStatsResponse,
   createRuleViolationStatsStore,
@@ -118,6 +125,7 @@ export function createRunRemoteTaskHandler(
   deps: AppDeps,
   registry?: RemoteTaskRegistry,
   ruleViolationStatsStore?: RuleViolationStatsStore,
+  humanReviewEvidenceStore?: HumanReviewEvidenceStore,
 ) {
   const runningTaskIds = new Set<number>();
   const queuedTaskIds = new Set<number>();
@@ -207,6 +215,33 @@ export function createRunRemoteTaskHandler(
                     ? (resultJson.rule_audit_results as never)
                     : [],
                 }),
+              );
+            }
+          : undefined,
+        onCompletedCallbackUploaded: humanReviewEvidenceStore
+          ? async ({ acceptedTask: completedTask, workflowResult, resultJson }) => {
+              const completedAt = new Date().toISOString();
+              await runResultRiskIngestionNode(
+                {
+                  taskId: completedTask.taskId,
+                  testCaseId: completedTask.remoteTask.testCase.id,
+                  reviewId: buildResultRiskReviewId(completedTask.taskId, completedAt),
+                  receivedAt: completedAt,
+                  resultJson,
+                  caseContext: {
+                    caseId:
+                      typeof workflowResult.caseInput === "object" &&
+                      workflowResult.caseInput !== null
+                        ? String((workflowResult.caseInput as { caseId?: unknown }).caseId ?? "")
+                        : String(completedTask.remoteTask.testCase.id),
+                    taskType:
+                      typeof resultJson.basic_info === "object" && resultJson.basic_info !== null
+                        ? String((resultJson.basic_info as { task_type?: unknown }).task_type ?? "")
+                        : undefined,
+                    prompt: completedTask.remoteTask.testCase.input,
+                  },
+                },
+                { store: humanReviewEvidenceStore },
               );
             }
           : undefined,
@@ -400,11 +435,12 @@ export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
         path.join(record.caseDir, "outputs", "result.json"),
         "utf-8",
       );
+      const resultData = JSON.parse(resultText) as Record<string, unknown>;
       res.json({
         success: true,
         taskId,
         status: record.status,
-        resultData: JSON.parse(resultText) as Record<string, unknown>,
+        resultData,
       });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -467,7 +503,7 @@ export function createApp(
 
   app.post(
     API_PATHS.runRemoteTask,
-    createRunRemoteTaskHandler(deps, registry, ruleViolationStatsStore),
+    createRunRemoteTaskHandler(deps, registry, ruleViolationStatsStore, humanReviewEvidenceStore),
   );
   app.get(
     API_PATHS.ruleViolationStats,
@@ -478,10 +514,7 @@ export function createApp(
     API_PATHS.humanReview,
     createSubmitHumanReviewHandler({ registry, store: humanReviewEvidenceStore }),
   );
-  app.get(
-    API_PATHS.humanReviewStatus,
-    createGetHumanReviewStatusHandler(humanReviewEvidenceStore),
-  );
+  app.get(API_PATHS.humanReviewStatus, createGetHumanReviewStatusHandler(humanReviewEvidenceStore));
 
   return app;
 }

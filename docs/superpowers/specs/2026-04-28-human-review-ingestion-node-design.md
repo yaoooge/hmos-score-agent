@@ -572,10 +572,10 @@ path.resolve("/data/hmos-score-agent/human-review-evidences")
 本地开发兜底值：
 
 ```ts
-path.resolve(process.cwd(), "references/human-review-evidences")
+path.resolve(os.homedir(), ".hmos-score-agent", "human-review-evidences")
 ```
 
-服务启动时应区分生产和本地开发：生产环境缺少 `HUMAN_REVIEW_EVIDENCE_ROOT` 应视为配置错误；本地开发可以使用工程内兜底目录，并确保该目录加入 `.gitignore`。
+服务启动时应区分生产和本地开发：生产环境缺少 `HUMAN_REVIEW_EVIDENCE_ROOT` 应视为配置错误；本地开发兜底目录也必须位于工程目录之外，避免评测集随工程版本更新、清理脚本或代码回滚受到影响。
 
 同时需要修改 `scripts/aliyun-single-instance-deploy.sh` 等部署脚本，在生成 `.env` 时写入生产推荐路径：
 

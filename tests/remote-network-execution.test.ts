@@ -321,6 +321,10 @@ test("createGetRemoteTaskResultHandler returns completed resultData without toke
   assert.equal(responseState.body?.taskId, 701);
   assert.equal(responseState.body?.status, "completed");
   assert.deepEqual(responseState.body?.resultData, resultJson);
+  assert.equal(
+    "executionLog" in (responseState.body?.resultData as Record<string, unknown>),
+    false,
+  );
 });
 
 test("createGetRemoteTaskResultHandler ignores invalid token", async (t) => {
@@ -455,10 +459,7 @@ test("createRunRemoteTaskHandler persists completed task for result handler", as
     const resultHandler = createGetRemoteTaskResultHandler(createRemoteTaskRegistry(localCaseRoot));
     const resultResponse = createResponse();
 
-    await resultHandler(
-      createResultRequest(806) as never,
-      resultResponse.response as never,
-    );
+    await resultHandler(createResultRequest(806) as never, resultResponse.response as never);
 
     assert.equal(resultResponse.responseState.statusCode, 200);
     assert.deepEqual(resultResponse.responseState.body?.resultData, resultJson);
@@ -584,6 +585,7 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
   assert.equal(finalCallback?.body.totalScore, resultJson.overall_conclusion.total_score);
   const finalResultData = finalCallback?.body.resultData as Record<string, unknown>;
   assert.deepEqual(finalResultData, resultJson);
+  assert.equal("executionLog" in finalResultData, false);
   assert.equal("resultUrl" in finalResultData, false);
   const logText = await fs.readFile(path.join(result.caseDir, "logs", "run.log"), "utf-8");
   assert.match(
@@ -727,6 +729,215 @@ test("prepareRemoteEvaluationTask accepts a pushed task before executeAcceptedRe
   assert.equal("resultData" in callbackCalls[0].body, false);
   assert.equal("resultData" in callbackCalls[1].body, false);
   assert.equal("resultData" in callbackCalls[2].body, false);
+});
+
+test("executeAcceptedRemoteEvaluationTask runs post-completed hook after completed callback without blocking return", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
+
+  const originalUrl = "https://remote.example.com/assets/post-hook-original.json";
+  const workspaceUrl = "https://remote.example.com/assets/post-hook-workspace.json";
+  const callbackUrl = "https://remote.example.com/api/evaluation-tasks/post-hook-callback";
+  const callbackCalls: Array<{ body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url === originalUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === callbackUrl) {
+      callbackCalls.push({
+        body: JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
+          string,
+          unknown
+        >,
+      });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+    if (originalReferenceRoot === undefined) {
+      delete process.env.DEFAULT_REFERENCE_ROOT;
+    } else {
+      process.env.DEFAULT_REFERENCE_ROOT = originalReferenceRoot;
+    }
+  });
+
+  const accepted = await prepareRemoteEvaluationTask(
+    {
+      taskId: 6,
+      testCase: {
+        id: 10,
+        name: "remote-case-post-completed-hook",
+        type: "requirement",
+        description: "新增页面",
+        input: "请实现登录页",
+        expectedOutput: "实现登录页",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+      },
+      token: "remote-token",
+      callback: callbackUrl,
+    },
+    { opencodeRunner: createOpencodeRunnerMock() },
+  );
+
+  let releasePostHook: (() => void) | undefined;
+  let postHookCallbackCount = 0;
+  const uploadPromise = executeAcceptedRemoteEvaluationTask(accepted, {
+    onCompletedCallbackUploaded: async () => {
+      postHookCallbackCount = callbackCalls.length;
+      await new Promise<void>((resolve) => {
+        releasePostHook = resolve;
+      });
+    },
+  });
+
+  await waitForAssertion(async () => {
+    assert.equal(callbackCalls.length, 4);
+  });
+  const raceResult = await Promise.race([
+    uploadPromise.then((message) => ({ kind: "returned", message })),
+    new Promise<{ kind: "timeout" }>((resolve) =>
+      setTimeout(() => resolve({ kind: "timeout" }), 50),
+    ),
+  ]);
+
+  assert.deepEqual(
+    callbackCalls.map((call) => call.body.status),
+    ["pending", "running", "running", "completed"],
+  );
+  assert.deepEqual(raceResult, { kind: "returned", message: "callback 上传成功。" });
+  await waitForAssertion(async () => {
+    assert.equal(postHookCallbackCount, 4);
+  });
+  releasePostHook?.();
+});
+
+test("executeAcceptedRemoteEvaluationTask still uploads completed callback when completion hook fails", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
+
+  const originalUrl = "https://remote.example.com/assets/hook-original.json";
+  const workspaceUrl = "https://remote.example.com/assets/hook-workspace.json";
+  const callbackUrl = "https://remote.example.com/api/evaluation-tasks/hook-callback";
+  const callbackCalls: Array<{ body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url === originalUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === callbackUrl) {
+      callbackCalls.push({
+        body: JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
+          string,
+          unknown
+        >,
+      });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+    if (originalReferenceRoot === undefined) {
+      delete process.env.DEFAULT_REFERENCE_ROOT;
+    } else {
+      process.env.DEFAULT_REFERENCE_ROOT = originalReferenceRoot;
+    }
+  });
+
+  const accepted = await prepareRemoteEvaluationTask(
+    {
+      taskId: 7,
+      testCase: {
+        id: 11,
+        name: "remote-case-hook-failure",
+        type: "requirement",
+        description: "新增页面",
+        input: "请实现登录页",
+        expectedOutput: "实现登录页",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+      },
+      token: "remote-token",
+      callback: callbackUrl,
+    },
+    { opencodeRunner: createOpencodeRunnerMock() },
+  );
+
+  const uploadMessage = await executeAcceptedRemoteEvaluationTask(accepted, {
+    onCompleted: async () => {
+      throw new Error("stats store unavailable");
+    },
+  });
+
+  assert.equal(uploadMessage, "callback 上传成功。");
+  assert.deepEqual(
+    callbackCalls.map((call) => call.body.status),
+    ["pending", "running", "running", "completed"],
+  );
 });
 
 test("executeAcceptedRemoteEvaluationTask uploads failed callback when workflow execution fails", async (t) => {

@@ -11,6 +11,7 @@ import {
 } from "../src/api/ruleViolationStatsStore.js";
 import { rebuildRuleViolationStatsIndex } from "../src/api/ruleViolationStatsRebuild.js";
 import { createGetRuleViolationStatsHandler, createRunRemoteTaskHandler } from "../src/api/app.js";
+import { createHumanReviewEvidenceStore } from "../src/humanReview/humanReviewEvidenceStore.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rule-violation-stats-"));
@@ -386,6 +387,88 @@ test("createRunRemoteTaskHandler writes static rule stats after completed execut
       stats.rules.map((rule) => rule.rule_id),
       ["ARKTS-MUST-001"],
     );
+  });
+});
+
+test("createRunRemoteTaskHandler appends result risks after completed callback hook", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const statsStore = createRuleViolationStatsStore(localCaseRoot);
+  const evidenceRoot = await makeTempDir(t);
+  const evidenceStore = createHumanReviewEvidenceStore(evidenceRoot);
+  const deps = {
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => ({
+      taskId: Number(remoteTask.taskId),
+      caseDir: path.join(localCaseRoot, "remote-case-202"),
+      message: "任务接收成功，结果将通过 callback 返回",
+      remoteTask: {
+        ...remoteTask,
+        token: "remote-token",
+        testCase: { id: 202, name: "远端风险入库用例", input: "接入真实接口" },
+      },
+      workflowState: { stage: "accepted", caseDir: path.join(localCaseRoot, "remote-case-202") },
+    }),
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+    executeAcceptedRemoteEvaluationTask: async (acceptedTask: never, executionDeps: never) => {
+      const task = acceptedTask as {
+        taskId: number;
+        remoteTask: { testCase: { id: number; name: string; input: string } };
+      };
+      const depsWithHook = executionDeps as {
+        onCompletedCallbackUploaded?: (input: {
+          acceptedTask: typeof task;
+          workflowResult: Record<string, unknown>;
+          resultJson: Record<string, unknown>;
+          uploadMessage: string;
+        }) => Promise<void>;
+      };
+      const resultJson = {
+        basic_info: { task_type: "bug_fix" },
+        risks: [
+          {
+            level: "major",
+            title: "接口仍使用 mockData",
+            description: "生成代码没有调用真实接口。",
+            evidence: "entry/src/main/ets/pages/Index.ets: const mockData = []",
+          },
+        ],
+        bound_rule_packs: [],
+        rule_audit_results: [],
+      };
+
+      await depsWithHook.onCompletedCallbackUploaded?.({
+        acceptedTask: task,
+        workflowResult: { caseInput: { caseId: "202" }, resultJson },
+        resultJson,
+        uploadMessage: "callback 上传成功。",
+      });
+      return "callback 上传成功。";
+    },
+  };
+  const handler = createRunRemoteTaskHandler(deps as never, undefined, statsStore, evidenceStore);
+  const { response, state } = createResponse();
+
+  await handler(
+    {
+      body: {
+        taskId: 202,
+        token: "remote-token",
+        testCase: { id: 202, name: "远端风险入库用例", input: "接入真实接口" },
+      },
+    } as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  await waitForAssertion(async () => {
+    const dataset = await fs.readFile(
+      path.join(evidenceRoot, "datasets", "negative_diagnostics.jsonl"),
+      "utf-8",
+    );
+    const sample = JSON.parse(dataset.trim().split("\n")[0] ?? "{}");
+    assert.match(String(sample.reviewId), /^risk_\d{8}_202$/);
+    assert.equal(sample.category, "api_integration");
   });
 });
 
