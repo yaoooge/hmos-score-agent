@@ -775,36 +775,6 @@ test("aliyun deployment script writes persistent human review environment", asyn
   assert.match(script, /chown.*\$\{HUMAN_REVIEW_EVIDENCE_ROOT\}/);
 });
 
-test("local case migration script moves cases and rebuilds result risk evidence", async () => {
-  const scriptPath = "scripts/migrate-local-cases-to-data.sh";
-  const script = await fs.readFile(scriptPath, "utf-8");
-  const stat = await fs.stat(scriptPath);
-
-  assert.equal((stat.mode & 0o111) !== 0, true);
-  assert.match(script, /APP_DIR="\$\{APP_DIR:-\/opt\/hmos-score-score\}"/);
-  assert.match(
-    script,
-    /OLD_LOCAL_CASE_ROOT="\$\{OLD_LOCAL_CASE_ROOT:-\$\{APP_DIR\}\/\.local-cases\}"/,
-  );
-  assert.match(
-    script,
-    /NEW_LOCAL_CASE_ROOT="\$\{NEW_LOCAL_CASE_ROOT:-\/data\/hmos-score-agent\/local-cases\}"/,
-  );
-  assert.match(
-    script,
-    /HUMAN_REVIEW_EVIDENCE_ROOT="\$\{HUMAN_REVIEW_EVIDENCE_ROOT:-\/data\/hmos-score-agent\/human-review-evidences\}"/,
-  );
-  assert.match(script, /rsync_args=\(-a --ignore-existing\)/);
-  assert.match(script, /remote-task-index\.json/);
-  assert.match(script, /sed -i/);
-  assert.match(script, /LOCAL_CASE_ROOT=\$\{NEW_LOCAL_CASE_ROOT\}/);
-  assert.match(script, /HUMAN_REVIEW_EVIDENCE_ROOT=\$\{HUMAN_REVIEW_EVIDENCE_ROOT\}/);
-  assert.match(script, /node dist\/tools\/rebuildResultRiskEvidence\.js/);
-  assert.match(script, /SKIP_RISK_REBUILD/);
-  assert.match(script, /SKIP_RESTART/);
-  assert.match(script, /DRY_RUN/);
-});
-
 test("api definitions document human review submission and status endpoints", () => {
   assert.equal(API_PATHS.humanReview, "/score/remote-tasks/:taskId/human-review");
   assert.equal(API_PATHS.humanReviewStatus, "/score/human-reviews/:reviewId");

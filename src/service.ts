@@ -260,6 +260,14 @@ function formatRemoteTaskLogContext(remoteTask: RemoteEvaluationTask): string {
   return `taskId=${String(remoteTask.taskId)} testCaseId=${String(remoteTask.testCase.id)}`;
 }
 
+function formatElapsedDuration(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}min${String(seconds).padStart(2, "0")}s`;
+}
+
 function buildRemoteCaseInfoBase(
   remoteTask: RemoteEvaluationTask,
   caseDir: string,
@@ -506,6 +514,7 @@ export async function executeAcceptedRemoteEvaluationTask(
   );
   let workflowResult: Record<string, unknown> = { ...acceptedTask.workflowState };
   let preparedTask = acceptedTask;
+  const evaluationStartedAt = Date.now();
 
   try {
     await logger.info(`异步评分执行开始 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)}`);
@@ -579,6 +588,7 @@ export async function executeAcceptedRemoteEvaluationTask(
         resultJson,
       }),
     });
+    await logger.info(`本次用例评分耗时=${formatElapsedDuration(Date.now() - evaluationStartedAt)}`);
     if (deps.onCompletedCallbackUploaded) {
       void deps
         .onCompletedCallbackUploaded({

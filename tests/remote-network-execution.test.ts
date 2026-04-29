@@ -622,6 +622,7 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
     logText,
     /回调结果 .*status=completed phase=completed .*message=callback 上传成功。/,
   );
+  assert.match(logText, /本次用例评分耗时=\d{2}min\d{2}s/);
 });
 
 test("prepareRemoteEvaluationTask accepts a pushed task before executeAcceptedRemoteEvaluationTask uploads callback payload", async (t) => {
