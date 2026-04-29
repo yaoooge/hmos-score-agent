@@ -815,6 +815,14 @@ test("runRuleEngine keeps unsupported no-evidence rules in agent candidates", as
     result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-001"),
     true,
   );
+  const unsupportedCandidates = result.assistedRuleCandidates.filter((item) => !item.is_case_rule);
+  assert.equal(unsupportedCandidates.length > 1, true);
+  assert.equal(
+    unsupportedCandidates.every(
+      (item) => item.local_preliminary_signal === "未接入静态判定器，需要agent辅助判定",
+    ),
+    true,
+  );
 });
 
 test("runTextPatternRule marks rules as 不涉及 when applicability patterns do not match", async (t) => {

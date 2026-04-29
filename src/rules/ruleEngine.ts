@@ -133,7 +133,8 @@ export async function runRuleEngine(input: {
         rule_source: rule.rule_source,
         why_uncertain: rule.conclusion,
         local_preliminary_signal:
-          staticPrecheck?.signal_status ?? (runtimeRule?.is_case_rule ? "unknown" : "未接入判定器"),
+          staticPrecheck?.signal_status ??
+          (runtimeRule?.is_case_rule ? "unknown" : "未接入静态判定器，需要agent辅助判定"),
         evidence_files: ruleEvidenceIndex[rule.rule_id]?.evidenceFiles ?? [],
         evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
         rule_name: runtimeRule?.rule_name,
