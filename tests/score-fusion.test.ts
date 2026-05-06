@@ -317,4 +317,28 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
   );
   assert.equal(riskDimension?.score, 5);
   assert.ok(Number.isInteger(riskDimension?.score));
+
+  const forbiddenRisk = result.risks.find((risk) => risk.title === "规则违规：ARKTS-FORBID-001") as
+    | (typeof result.risks[number] & { score_effect?: Record<string, unknown> })
+    | undefined;
+  assert.ok(forbiddenRisk?.score_effect);
+  assert.equal(forbiddenRisk.score_effect.type, "risk_level_rule_impact");
+  assert.equal(forbiddenRisk.score_effect.rule_id, "ARKTS-FORBID-001");
+  assert.deepEqual(forbiddenRisk.score_effect.level_weights, {
+    high: 1,
+    medium: 0.6,
+    low: 0.3,
+    none: 0,
+  });
+  assert.deepEqual(forbiddenRisk.score_effect.hard_gate_ids, ["G3"]);
+  assert.ok(Array.isArray(forbiddenRisk.score_effect.impacts));
+
+  const hardGateReview = result.humanReviewItems.find((item) => item.item === "硬门槛复核") as
+    | (typeof result.humanReviewItems[number] & { score_effect?: Record<string, unknown> })
+    | undefined;
+  assert.deepEqual(hardGateReview?.score_effect, {
+    type: "hard_gate",
+    gate_ids: ["G3"],
+    gate_caps: { G3: 79 },
+  });
 });

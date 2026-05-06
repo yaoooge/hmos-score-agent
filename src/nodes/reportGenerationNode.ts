@@ -143,6 +143,9 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
             final_score: detail?.score ?? 0,
             fusion_logic: "缺少评分融合明细，需人工复核该评分项。",
           },
+          score_recalculation: {
+            scoring_bands: itemSummary.scoring_bands,
+          },
         };
       }),
     };

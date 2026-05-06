@@ -362,6 +362,34 @@
                     "fusion_logic"
                   ],
                   "additionalProperties": false
+                },
+                "score_recalculation": {
+                  "type": "object",
+                  "properties": {
+                    "scoring_bands": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "score": {
+                            "type": "number"
+                          },
+                          "criteria": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "score",
+                          "criteria"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "scoring_bands"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -521,6 +549,99 @@
           },
           "evidence": {
             "type": "string"
+          },
+          "score_effect": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "risk_level_rule_impact"
+                ]
+              },
+              "rule_id": {
+                "type": "string"
+              },
+              "original_level": {
+                "type": "string"
+              },
+              "level_weights": {
+                "type": "object",
+                "properties": {
+                  "high": {
+                    "type": "number"
+                  },
+                  "medium": {
+                    "type": "number"
+                  },
+                  "low": {
+                    "type": "number"
+                  },
+                  "none": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "high",
+                  "medium",
+                  "low",
+                  "none"
+                ],
+                "additionalProperties": false
+              },
+              "hard_gate_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hard_gate_active_levels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gate_caps": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "impacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "dimension_name": {
+                      "type": "string"
+                    },
+                    "item_name": {
+                      "type": "string"
+                    },
+                    "original_score_delta": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "dimension_name",
+                    "item_name",
+                    "original_score_delta"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "type",
+              "rule_id",
+              "original_level",
+              "level_weights",
+              "hard_gate_ids",
+              "hard_gate_active_levels",
+              "gate_caps",
+              "impacts"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -564,6 +685,47 @@
           },
           "suggested_focus": {
             "type": "string"
+          },
+          "score_effect": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hard_gate",
+                  "rule_result"
+                ]
+              },
+              "gate_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rule_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hard_gate_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "gate_caps": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "gate_caps"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -650,6 +812,141 @@
         "result_json_file_name",
         "unit_name",
         "generated_at"
+      ],
+      "additionalProperties": false
+    },
+    "human_review_revision": {
+      "type": "object",
+      "properties": {
+        "applied": {
+          "type": "boolean"
+        },
+        "reviewed_at": {
+          "type": "string"
+        },
+        "reviewer": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "score_recalculation": {
+          "type": "object",
+          "properties": {
+            "original_total_score": {
+              "type": "number"
+            },
+            "revised_total_score": {
+              "type": "number"
+            },
+            "original_hard_gate_triggered": {
+              "type": "boolean"
+            },
+            "revised_hard_gate_triggered": {
+              "type": "boolean"
+            },
+            "changed_item_count": {
+              "type": "number"
+            },
+            "changed_risk_count": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "original_total_score",
+            "revised_total_score",
+            "original_hard_gate_triggered",
+            "revised_hard_gate_triggered",
+            "changed_item_count",
+            "changed_risk_count"
+          ],
+          "additionalProperties": false
+        },
+        "item_reviews": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": {
+                "type": "number"
+              },
+              "agreeWithResultAssessment": {
+                "type": "boolean"
+              },
+              "resultAssessment": {
+                "type": "string"
+              },
+              "correctedAssessment": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "comment": {
+                "type": "string"
+              },
+              "score_effect_applied": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "itemId",
+              "agreeWithResultAssessment",
+              "resultAssessment",
+              "score_effect_applied"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "risk_reviews": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "riskId": {
+                "type": "number"
+              },
+              "agreeWithResultLevel": {
+                "type": "boolean"
+              },
+              "resultLevel": {
+                "type": "string"
+              },
+              "correctedLevel": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "comment": {
+                "type": "string"
+              },
+              "score_effect_applied": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "riskId",
+              "agreeWithResultLevel",
+              "resultLevel",
+              "score_effect_applied"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "applied",
+        "reviewed_at",
+        "score_recalculation",
+        "item_reviews",
+        "risk_reviews"
       ],
       "additionalProperties": false
     }

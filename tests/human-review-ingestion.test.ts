@@ -97,6 +97,133 @@ async function writeCompletedTask(
   return { localCaseRoot, caseDir, registry };
 }
 
+async function writeRecalculableCompletedTask(t: test.TestContext) {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case");
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "outputs", "result.json"),
+    JSON.stringify({
+      basic_info: { task_type: "bug_fix" },
+      overall_conclusion: {
+        total_score: 70,
+        hard_gate_triggered: true,
+        summary: "自动评分命中 G3，应用 70 分 cap。",
+      },
+      dimension_results: [
+        {
+          dimension_name: "可靠性",
+          dimension_intent: "稳定性风险",
+          score: 80,
+          max_score: 100,
+          comment: "包含规则修正项。",
+          rule_violation_summary: {
+            violated_rule_count: 1,
+            affected_item_count: 1,
+            total_rule_delta: -20,
+            summary: "规则扣分 -20。",
+          },
+          item_results: [
+            {
+              item_name: "稳定性风险",
+              item_weight: 100,
+              score: 80,
+              matched_band: { score: 80, criteria: "存在一般稳定性风险。" },
+              confidence: "high",
+              review_required: false,
+              agent_evaluation: {
+                base_score: 100,
+                matched_band_score: 100,
+                matched_criteria: "100分：无风险 / 90分：轻微风险 / 80分：一般风险 / 0分：严重风险",
+                logic: "基础分 100。",
+                evidence_used: [],
+                deduction_trace: null,
+                confidence: "high",
+              },
+              rule_impacts: [
+                {
+                  rule_id: "ARKTS-FORBID-026",
+                  rule_source: "forbidden_pattern",
+                  result: "不满足",
+                  severity: "heavy",
+                  score_delta: -20,
+                  reason: "finally 中 return。",
+                  evidence: "Index.ets",
+                  agent_assisted: false,
+                  needs_human_review: false,
+                },
+              ],
+              score_fusion: {
+                base_score: 100,
+                rule_delta: -20,
+                final_score: 80,
+                fusion_logic: "基础分 100，规则修正 -20，最终 80。",
+              },
+              score_recalculation: {
+                scoring_bands: [
+                  { score: 100, criteria: "无风险。" },
+                  { score: 90, criteria: "轻微风险。" },
+                  { score: 80, criteria: "一般风险。" },
+                  { score: 0, criteria: "严重风险。" },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+      risks: [
+        {
+          id: 1,
+          level: "high",
+          title: "规则违规：ARKTS-FORBID-026",
+          description: "finally 中 return。",
+          evidence: "Index.ets",
+          score_effect: {
+            type: "risk_level_rule_impact",
+            rule_id: "ARKTS-FORBID-026",
+            original_level: "high",
+            level_weights: { high: 1, medium: 0.6, low: 0.3, none: 0 },
+            hard_gate_ids: ["G3"],
+            hard_gate_active_levels: ["high"],
+            gate_caps: { G3: 70 },
+            impacts: [
+              {
+                dimension_name: "可靠性",
+                item_name: "稳定性风险",
+                original_score_delta: -20,
+              },
+            ],
+          },
+        },
+      ],
+      human_review_items: [
+        {
+          id: 1,
+          item: "硬门槛复核",
+          current_assessment: "G3",
+          uncertainty_reason: "规则分支触发了 G3。",
+          suggested_focus: "确认 G3 是否成立。",
+          score_effect: {
+            type: "hard_gate",
+            gate_ids: ["G3"],
+            gate_caps: { G3: 70 },
+          },
+        },
+      ],
+      report_meta: { unit_name: "case-88" },
+    }),
+  );
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 88,
+    status: "completed",
+    caseDir,
+    token: "remote-token",
+    testCaseId: 188,
+  });
+  return { localCaseRoot, caseDir, registry };
+}
+
 test("human review evidence store writes datasets without extra sample ids", async (t) => {
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
@@ -308,7 +435,103 @@ test("submit human review handler writes simplified item review calibration samp
   await assert.rejects(fs.stat(path.join(root, "raw")), /ENOENT/);
 });
 
-test("submit human review handler maps legacy result review ids from array position", async (t) => {
+test("submit human review handler recalculates scores from risk level review", async (t) => {
+  const { registry, caseDir } = await writeRecalculableCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      riskReviews: [
+        {
+          riskId: 1,
+          agreeWithResultLevel: false,
+          resultLevel: "high",
+          correctedLevel: "medium",
+          reason: "风险存在，但影响范围低于 high。",
+        },
+      ],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  assert.equal(state.body?.success, true);
+  assert.equal((state.body?.summary as Record<string, unknown>).scoreRecalculationApplied, true);
+  assert.equal((state.body?.summary as Record<string, unknown>).originalTotalScore, 70);
+  assert.equal((state.body?.summary as Record<string, unknown>).revisedTotalScore, 90);
+
+  const resultJson = JSON.parse(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  const risks = resultJson.risks as Array<Record<string, unknown>>;
+  const dimension = (resultJson.dimension_results as Array<Record<string, unknown>>)[0];
+  const item = (dimension?.item_results as Array<Record<string, unknown>>)[0];
+  const ruleImpact = (item?.rule_impacts as Array<Record<string, unknown>>)[0];
+
+  assert.equal(risks[0]?.level, "medium");
+  assert.equal(ruleImpact?.score_delta, -12);
+  assert.equal(item?.score, 90);
+  assert.equal((item?.score_fusion as Record<string, unknown>).rule_delta, -12);
+  assert.equal((item?.score_fusion as Record<string, unknown>).final_score, 90);
+  assert.equal(dimension?.score, 90);
+  assert.deepEqual(resultJson.overall_conclusion, {
+    total_score: 90,
+    hard_gate_triggered: false,
+    summary: "已根据人工逐条复核重新计分：70 -> 90。",
+  });
+  assert.equal(
+    ((resultJson.human_review_revision as Record<string, unknown>).score_recalculation as Record<
+      string,
+      unknown
+    >).revised_total_score,
+    90,
+  );
+});
+
+test("submit human review handler recalculates score cap from hard gate item review", async (t) => {
+  const { registry, caseDir } = await writeRecalculableCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      itemReviews: [
+        {
+          itemId: 1,
+          agreeWithResultAssessment: false,
+          resultAssessment: "G3",
+          correctedAssessment: "none",
+          reason: "该 forbidden_pattern 证据不足，不应触发 G3。",
+        },
+      ],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  assert.equal((state.body?.summary as Record<string, unknown>).scoreRecalculationApplied, true);
+  assert.equal((state.body?.summary as Record<string, unknown>).originalTotalScore, 70);
+  assert.equal((state.body?.summary as Record<string, unknown>).revisedTotalScore, 80);
+
+  const resultJson = JSON.parse(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  assert.deepEqual(resultJson.overall_conclusion, {
+    total_score: 80,
+    hard_gate_triggered: false,
+    summary: "已根据人工逐条复核重新计分：70 -> 80。",
+  });
+  const revision = resultJson.human_review_revision as Record<string, unknown>;
+  const itemReviews = revision.item_reviews as Array<Record<string, unknown>>;
+  assert.equal(itemReviews[0]?.score_effect_applied, true);
+});
+
+test("submit human review handler maps result review ids from array position when ids are absent", async (t) => {
   const { registry } = await writeCompletedTask(t, { omitResultIds: true });
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);

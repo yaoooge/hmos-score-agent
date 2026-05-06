@@ -1599,6 +1599,12 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.equal(resultJson.basic_info.task_type, "bug_fix");
   assert.ok(resultJson.dimension_results.length > 0);
   assert.ok(resultJson.dimension_results[0].item_results.length > 0);
+  assert.ok(resultJson.dimension_results[0].item_results[0].score_recalculation);
+  assert.ok(
+    resultJson.risks
+      .filter((risk: { title?: string }) => risk.title?.startsWith("规则违规："))
+      .every((risk: { score_effect?: unknown }) => typeof risk.score_effect === "object"),
+  );
   assert.equal("submetric_details" in resultJson, false);
   assert.ok(resultJson.overall_conclusion.total_score >= 70);
   assert.ok(resultJson.overall_conclusion.total_score <= 79);

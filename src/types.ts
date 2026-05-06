@@ -159,6 +159,7 @@ export interface RiskItem {
   title: string;
   description: string;
   evidence: string;
+  score_effect?: Record<string, unknown>;
 }
 
 export interface HumanReviewItem {
@@ -167,6 +168,7 @@ export interface HumanReviewItem {
   current_assessment: string;
   uncertainty_reason: string;
   suggested_focus: string;
+  score_effect?: Record<string, unknown>;
 }
 
 export interface EvidenceSummary {

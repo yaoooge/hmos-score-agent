@@ -358,7 +358,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
     method: "POST",
     path: API_PATHS.humanReview,
     description:
-      "Accept first-version per-item human review results for a completed remote task.",
+      "Accept first-version per-item human review results for a completed remote task and recalculate scores from review decisions.",
     request: {
       pathParams: { taskId: taskIdField },
       body: {
@@ -393,7 +393,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
       {
         status: 200,
         description:
-          "Human review item and risk review calibration samples were appended.",
+          "Human review item and risk review calibration samples were appended; score fields are recalculated when reviewed entries have score_effect metadata.",
         body: {
           type: "object",
           description: "Human review acceptance response.",
@@ -409,7 +409,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
               type: "object",
               required: true,
               description:
-                "Synchronous summary with itemReviewCount, riskReviewCount, riskAgreementCount, riskDisagreementCount, and datasetItemCount.",
+                "Synchronous summary with review counts, datasetItemCount, and score recalculation fields when score changes are applied.",
             },
             message: messageField,
           },

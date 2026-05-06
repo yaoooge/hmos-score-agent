@@ -4,6 +4,7 @@ import type {
   CaseRuleDefinition,
   DimensionScore,
   EvidenceSummary,
+  HumanReviewItem,
   LoadedRubricSnapshot,
   RiskItem,
   RuleAuditResult,
@@ -308,6 +309,86 @@ function selectTriggeredGateIds(
   return Array.from(triggered);
 }
 
+function selectRuleTriggeredGateIds(
+  input: FuseRubricScoreWithRulesInput,
+  rule: RuleAuditResult,
+): Array<"G1" | "G2" | "G3" | "G4"> {
+  const violatedRules = input.ruleAuditResults.filter((item) => item.result === "不满足");
+  const mustViolations = violatedRules.filter((item) => item.rule_source === "must_rule");
+  const caseMustRuleIds = new Set(
+    (input.caseRuleDefinitions ?? [])
+      .filter((item) => item.priority === "P0")
+      .map((item) => item.rule_id),
+  );
+  const gateIds = new Set<"G1" | "G2" | "G3" | "G4">();
+
+  if (caseMustRuleIds.has(rule.rule_id)) {
+    gateIds.add("G1");
+  }
+  if (rule.rule_source === "must_rule" && mustViolations.length >= 2) {
+    gateIds.add("G1");
+  }
+  if (
+    rule.rule_source === "must_rule" &&
+    ["ARKTS-FORBID-003", "ARKTS-FORBID-004", "ARKTS-FORBID-005"].includes(rule.rule_id)
+  ) {
+    gateIds.add("G2");
+  }
+  if (rule.rule_source === "forbidden_pattern") {
+    gateIds.add("G3");
+  }
+
+  return Array.from(gateIds);
+}
+
+function buildGateCaps(
+  input: FuseRubricScoreWithRulesInput,
+  gateIds: string[],
+): Record<string, number> {
+  return Object.fromEntries(
+    gateIds.flatMap((gateId) => {
+      const scoreCap = input.rubric.hardGates.find((gate) => gate.id === gateId)?.scoreCap;
+      return typeof scoreCap === "number" ? [[gateId, scoreCap] as const] : [];
+    }),
+  );
+}
+
+function buildRiskScoreEffect(input: {
+  scoringInput: FuseRubricScoreWithRulesInput;
+  rule: RuleAuditResult;
+  level: string;
+  gateIds: string[];
+  detailsByKey: Map<string, ScoreFusionDetail>;
+}): Record<string, unknown> | undefined {
+  const impacts = Array.from(input.detailsByKey.values()).flatMap((detail) =>
+    detail.rule_impacts
+      .filter((impact) => impact.rule_id === input.rule.rule_id && impact.score_delta !== 0)
+      .map((impact) => ({
+        dimension_name: detail.dimension_name,
+        item_name: detail.item_name,
+        original_score_delta: impact.score_delta,
+      })),
+  );
+  if (impacts.length === 0 && input.gateIds.length === 0) {
+    return undefined;
+  }
+  return {
+    type: "risk_level_rule_impact",
+    rule_id: input.rule.rule_id,
+    original_level: input.level,
+    level_weights: {
+      high: 1,
+      medium: 0.6,
+      low: 0.3,
+      none: 0,
+    },
+    hard_gate_ids: input.gateIds,
+    hard_gate_active_levels: input.gateIds.length > 0 ? [input.level] : [],
+    gate_caps: buildGateCaps(input.scoringInput, input.gateIds),
+    impacts,
+  };
+}
+
 export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): ScoreComputation {
   const criteriaByMetric = buildCriteriaByMetric(input.rubricSnapshot);
   const scoringBandsByMetric = buildScoringBandsByMetric(input.rubricSnapshot);
@@ -375,12 +456,21 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     }
 
     if (rule.result === "不满足") {
+      const level = rule.rule_source === "forbidden_pattern" ? "high" : "medium";
+      const gateIds = selectRuleTriggeredGateIds(input, rule);
       risks.push({
         id: risks.length + 1,
-        level: rule.rule_source === "forbidden_pattern" ? "high" : "medium",
+        level,
         title: `规则违规：${rule.rule_id}`,
         description: rule.conclusion,
         evidence: rule.conclusion,
+        score_effect: buildRiskScoreEffect({
+          scoringInput: input,
+          rule,
+          level,
+          gateIds,
+          detailsByKey,
+        }),
       });
     }
   }
@@ -451,7 +541,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
       undefined,
     );
   const totalScore = scoreCap === undefined ? rawTotalScore : Math.min(rawTotalScore, scoreCap);
-  const humanReviewItems =
+  const humanReviewItems: HumanReviewItem[] =
     input.rubricAgentRunStatus === "success"
       ? []
       : [
@@ -470,6 +560,11 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
       current_assessment: triggeredGateIds.join(", "),
       uncertainty_reason: "规则分支触发了 rubric hard gate 候选条件。",
       suggested_focus: "确认规则违规是否真实构成硬门槛风险。",
+      score_effect: {
+        type: "hard_gate",
+        gate_ids: triggeredGateIds,
+        gate_caps: buildGateCaps(input, triggeredGateIds),
+      },
     });
   }
 

@@ -8,6 +8,7 @@ import type {
   HumanRiskLevel,
   HumanRiskReview,
 } from "../humanReview/humanReviewTypes.js";
+import { applyHumanReviewRecalculation } from "../humanReview/applyHumanReviewRecalculation.js";
 import type { RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 
 export type SubmitHumanReviewDeps = {
@@ -89,6 +90,36 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       return;
     }
 
+    const hasReviewItems =
+      (payload.itemReviews?.length ?? 0) > 0 || (payload.riskReviews?.length ?? 0) > 0;
+    let recalculatedResultJson: Record<string, unknown> | undefined;
+    let recalculationSummary:
+      | {
+          scoreRecalculationApplied: boolean;
+          originalTotalScore: number;
+          revisedTotalScore: number;
+          changedItemScoreCount: number;
+          changedDimensionScoreCount: number;
+        }
+      | undefined;
+    if (hasReviewItems) {
+      const recalculation = applyHumanReviewRecalculation({
+        resultJson,
+        payload,
+        reviewedAt: new Date().toISOString(),
+      });
+      if ("status" in recalculation) {
+        res.status(recalculation.status).json({
+          success: false,
+          taskId,
+          message: recalculation.message,
+        });
+        return;
+      }
+      recalculatedResultJson = recalculation.resultJson;
+      recalculationSummary = recalculation.summary;
+    }
+
     const itemDatasetCount = await appendItemReviewCalibrationSamples({
       store: deps.store,
       taskId,
@@ -103,6 +134,9 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       resultJson,
       payload,
     });
+    if (recalculatedResultJson) {
+      await writeResultJsonAtomically(record.caseDir, recalculatedResultJson);
+    }
     const itemReviewCount = payload.itemReviews?.length ?? 0;
     const riskReviewCount = payload.riskReviews?.length ?? 0;
     const riskAgreementCount = (payload.riskReviews ?? []).filter(
@@ -115,6 +149,7 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       riskAgreementCount,
       riskDisagreementCount,
       datasetItemCount: itemDatasetCount + riskDatasetCount,
+      ...(recalculationSummary?.scoreRecalculationApplied ? recalculationSummary : {}),
     };
 
     res.json({
@@ -122,7 +157,9 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       taskId,
       status: "completed",
       summary,
-      message: "人工复核结果已接收。",
+      message: recalculationSummary?.scoreRecalculationApplied
+        ? "人工复核结果已接收，结果分数已重新计算。"
+        : "人工复核结果已接收。",
     });
   };
 }
@@ -130,6 +167,16 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
 function readRouteTaskId(req: Request): number | undefined {
   const taskId = Number(req.params.taskId);
   return Number.isFinite(taskId) ? taskId : undefined;
+}
+
+async function writeResultJsonAtomically(
+  caseDir: string,
+  resultJson: Record<string, unknown>,
+): Promise<void> {
+  const resultPath = path.join(caseDir, "outputs", "result.json");
+  const tempPath = path.join(caseDir, "outputs", "result.json.tmp");
+  await fs.writeFile(tempPath, `${JSON.stringify(resultJson, null, 2)}\n`);
+  await fs.rename(tempPath, resultPath);
 }
 
 function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | string {
