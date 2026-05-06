@@ -21,6 +21,8 @@ export interface OpencodeServeManager {
 
 type SpawnedProcess = Pick<ChildProcess, "stdout" | "stderr" | "on" | "kill">;
 
+type KillSignal = "SIGTERM" | "SIGKILL";
+
 type ServeManagerDeps = {
   checkHealth?: (serverUrl: string) => Promise<boolean>;
   spawnProcess?: (
@@ -29,6 +31,8 @@ type ServeManagerDeps = {
     options: { env: NodeJS.ProcessEnv; stdio: ["ignore", "pipe", "pipe"] },
   ) => SpawnedProcess;
   terminateExistingServer?: (config: OpencodeRuntimeConfig) => Promise<void>;
+  collectListeningPids?: (port: number) => Promise<number[]>;
+  killProcess?: (pid: number, signal: KillSignal) => void;
   sleep?: (ms: number) => Promise<void>;
 };
 
@@ -101,17 +105,66 @@ async function collectListeningPids(port: number): Promise<number[]> {
   });
 }
 
-async function defaultTerminateExistingServer(config: OpencodeRuntimeConfig): Promise<void> {
-  const pids = await collectListeningPids(config.port);
+function defaultKillProcess(pid: number, signal: KillSignal): void {
+  process.kill(pid, signal);
+}
+
+async function waitForPortRelease(input: {
+  port: number;
+  collectListeningPids: (port: number) => Promise<number[]>;
+  sleep: (ms: number) => Promise<void>;
+  timeoutMs: number;
+}): Promise<number[]> {
+  const startedAt = Date.now();
+  let pids = await input.collectListeningPids(input.port);
+  while (pids.length > 0 && Date.now() - startedAt < input.timeoutMs) {
+    await input.sleep(100);
+    pids = await input.collectListeningPids(input.port);
+  }
+  return pids;
+}
+
+async function defaultTerminateExistingServer(
+  config: OpencodeRuntimeConfig,
+  deps: {
+    collectListeningPids?: (port: number) => Promise<number[]>;
+    killProcess?: (pid: number, signal: KillSignal) => void;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<void> {
+  const collectPids = deps.collectListeningPids ?? collectListeningPids;
+  const killProcess = deps.killProcess ?? defaultKillProcess;
+  const sleep = deps.sleep ?? sleepTimer;
+  const pids = await collectPids(config.port);
   for (const pid of pids) {
     try {
-      process.kill(pid, "SIGTERM");
+      killProcess(pid, "SIGTERM");
     } catch {
       // Process may have exited between discovery and termination.
     }
   }
   if (pids.length > 0) {
-    await sleepTimer(500);
+    const remainingPids = await waitForPortRelease({
+      port: config.port,
+      collectListeningPids: collectPids,
+      sleep,
+      timeoutMs: 1000,
+    });
+    for (const pid of remainingPids) {
+      try {
+        killProcess(pid, "SIGKILL");
+      } catch {
+        // Process may have exited after the final poll.
+      }
+    }
+    if (remainingPids.length > 0) {
+      await waitForPortRelease({
+        port: config.port,
+        collectListeningPids: collectPids,
+        sleep,
+        timeoutMs: 1000,
+      });
+    }
   }
 }
 
@@ -121,12 +174,46 @@ export function createOpencodeServeManager(
 ): OpencodeServeManager {
   const checkHealth = deps.checkHealth ?? defaultCheckHealth;
   const spawnProcess = deps.spawnProcess ?? defaultSpawnProcess;
-  const terminateExistingServer = deps.terminateExistingServer ?? defaultTerminateExistingServer;
+  const terminateExistingServer =
+    deps.terminateExistingServer ??
+    ((runtimeConfig: OpencodeRuntimeConfig) =>
+      defaultTerminateExistingServer(runtimeConfig, {
+        collectListeningPids: deps.collectListeningPids,
+        killProcess: deps.killProcess,
+        sleep: deps.sleep,
+      }));
+  const collectPids = deps.collectListeningPids ?? collectListeningPids;
   const sleep = deps.sleep ?? sleepTimer;
   let child: SpawnedProcess | undefined;
 
   async function health(): Promise<boolean> {
     return checkHealth(config.serverUrl);
+  }
+
+  async function stopOwnedChild(): Promise<void> {
+    if (!child) {
+      return;
+    }
+
+    const ownedChild = child;
+    child = undefined;
+    ownedChild.kill("SIGTERM");
+    const remainingPids = await waitForPortRelease({
+      port: config.port,
+      collectListeningPids: collectPids,
+      sleep,
+      timeoutMs: 1000,
+    });
+    if (remainingPids.length > 0) {
+      ownedChild.kill("SIGKILL");
+      await waitForPortRelease({
+        port: config.port,
+        collectListeningPids: collectPids,
+        sleep,
+        timeoutMs: 1000,
+      });
+    }
+    await terminateExistingServer(config);
   }
 
   async function waitForHealthy(shouldStop: () => boolean = () => false): Promise<void> {
@@ -170,8 +257,7 @@ export function createOpencodeServeManager(
       }
 
       if (child) {
-        child.kill("SIGTERM");
-        child = undefined;
+        await stopOwnedChild();
       }
       await terminateExistingServer(config);
 
@@ -219,10 +305,7 @@ export function createOpencodeServeManager(
     },
 
     async stop(): Promise<void> {
-      if (child) {
-        child.kill("SIGTERM");
-        child = undefined;
-      }
+      await stopOwnedChild();
     },
 
     health,

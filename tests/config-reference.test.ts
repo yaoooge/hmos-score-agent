@@ -39,7 +39,6 @@ test("app config no longer exposes direct model provider settings", () => {
 test("repo-maintained runtime files no longer use direct model provider naming", async () => {
   const files = [
     "src/config.ts",
-    "src/tools/runInteractiveScore.ts",
     "src/workflow/scoreWorkflow.ts",
   ];
 

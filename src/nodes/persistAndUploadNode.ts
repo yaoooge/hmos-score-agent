@@ -10,20 +10,10 @@ export async function persistAndUploadNode(
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("persistAndUploadNode");
   try {
-    await deps.artifactStore.writeText(
-      state.caseDir,
-      "inputs/rubric-scoring-prompt.txt",
-      state.rubricScoringPromptText ?? "",
-    );
     await deps.artifactStore.writeJson(
       state.caseDir,
       "inputs/rubric-scoring-payload.json",
       state.rubricScoringPayload ?? {},
-    );
-    await deps.artifactStore.writeText(
-      state.caseDir,
-      "inputs/rule-agent-prompt.txt",
-      state.ruleAgentPromptText ?? "",
     );
     await deps.artifactStore.writeJson(
       state.caseDir,

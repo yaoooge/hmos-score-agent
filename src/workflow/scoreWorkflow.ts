@@ -38,6 +38,8 @@ type OpencodeWorkflowRuntime = {
   serveManager: OpencodeServeManager;
 };
 
+export type OpencodeRuntimeLifecycle = "shared" | "ephemeral";
+
 export type OpencodeRunner = {
   runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
 };
@@ -52,6 +54,7 @@ type LocalWorkflowInput = {
   artifactStore: ArtifactStore;
   opencodeRuntime?: OpencodeRuntimeConfig;
   opencodeServeManager?: OpencodeServeManager;
+  opencodeRuntimeLifecycle?: OpencodeRuntimeLifecycle;
   opencodeRunner?: OpencodeRunner;
 };
 
@@ -62,6 +65,7 @@ type RemoteWorkflowInput = {
   artifactStore: ArtifactStore;
   opencodeRuntime?: OpencodeRuntimeConfig;
   opencodeServeManager?: OpencodeServeManager;
+  opencodeRuntimeLifecycle?: OpencodeRuntimeLifecycle;
   opencodeRunner?: OpencodeRunner;
 };
 
@@ -86,6 +90,7 @@ type PreparedWorkflowInput = {
   artifactStore: ArtifactStore;
   opencodeRuntime?: OpencodeRuntimeConfig;
   opencodeServeManager?: OpencodeServeManager;
+  opencodeRuntimeLifecycle?: OpencodeRuntimeLifecycle;
   opencodeRunner?: OpencodeRunner;
 };
 
@@ -95,6 +100,7 @@ type WorkflowCommonInput = {
   artifactStore: ArtifactStore;
   opencodeRuntime?: OpencodeRuntimeConfig;
   opencodeServeManager?: OpencodeServeManager;
+  opencodeRuntimeLifecycle?: OpencodeRuntimeLifecycle;
   opencodeRunner?: OpencodeRunner;
 };
 
@@ -124,9 +130,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
     return {
       logger,
       graph: new StateGraph(ScoreState)
-        .addNode("opencodeSandboxPreparationNode", (s) =>
-          opencodeSandboxPreparationNode(s, { referenceRoot: input.referenceRoot }),
-        )
+        .addNode("opencodeSandboxPreparationNode", (s) => opencodeSandboxPreparationNode(s))
         .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
         .addNode("rubricPreparationNode", (s) =>
           rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
@@ -178,7 +182,6 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
           s,
           {
             opencode,
-            referenceRoot: input.referenceRoot,
             artifactStore: input.artifactStore,
             logger,
           },
@@ -230,7 +233,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
   };
 }
 
-async function createSharedOpencodeRuntime(): Promise<OpencodeWorkflowRuntime> {
+async function createOpencodeWorkflowRuntime(): Promise<OpencodeWorkflowRuntime> {
   await ensureOpencodeCliAvailable();
   const runtime = await createOpencodeRuntimeConfig({ repoRoot: process.cwd() });
   const serveManager = createOpencodeServeManager(runtime);
@@ -250,7 +253,16 @@ async function prepareOpencodeRuntime(input: WorkflowCommonInput): Promise<Workf
     return input;
   }
 
-  sharedOpencodeRuntime ??= createSharedOpencodeRuntime();
+  if (input.opencodeRuntimeLifecycle === "ephemeral") {
+    const ephemeral = await createOpencodeWorkflowRuntime();
+    return {
+      ...input,
+      opencodeRuntime: ephemeral.runtime,
+      opencodeServeManager: ephemeral.serveManager,
+    };
+  }
+
+  sharedOpencodeRuntime ??= createOpencodeWorkflowRuntime();
   const shared = await sharedOpencodeRuntime;
   return {
     ...input,
@@ -294,36 +306,52 @@ async function runCompiledScoreGraph(
   return finalState;
 }
 
+async function runWithOpencodeRuntimeLifecycle(
+  input: WorkflowCommonInput,
+  run: (preparedInput: WorkflowCommonInput) => Promise<Record<string, unknown>>,
+): Promise<Record<string, unknown>> {
+  const preparedInput = await prepareOpencodeRuntime(input);
+  try {
+    return await run(preparedInput);
+  } finally {
+    if (preparedInput.opencodeRuntimeLifecycle === "ephemeral") {
+      await preparedInput.opencodeServeManager?.stop();
+    }
+  }
+}
+
 export async function runScoreWorkflow(
   input: LocalWorkflowInput | RemoteWorkflowInput,
 ): Promise<Record<string, unknown>> {
-  const preparedInput = await prepareOpencodeRuntime(input);
-  const { logger, graph } = createCompiledScoreGraph(preparedInput, false);
-  const initialState = (() => {
-    if ("remoteTask" in input) {
+  return runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
+    const { logger, graph } = createCompiledScoreGraph(preparedInput, false);
+    const initialState = (() => {
+      if ("remoteTask" in input) {
+        return {
+          remoteTask: input.remoteTask,
+          caseDir: input.caseDir,
+        };
+      }
+
       return {
-        remoteTask: input.remoteTask,
+        caseInput: input.caseInput,
+        sourceCasePath: input.sourceCasePath,
         caseDir: input.caseDir,
       };
-    }
+    })();
 
-    return {
-      caseInput: input.caseInput,
-      sourceCasePath: input.sourceCasePath,
-      caseDir: input.caseDir,
-    };
-  })();
-
-  return runCompiledScoreGraph(logger, graph as never, initialState);
+    return runCompiledScoreGraph(logger, graph as never, initialState);
+  });
 }
 
 export async function runPreparedScoreWorkflow(
   input: PreparedWorkflowInput,
 ): Promise<Record<string, unknown>> {
-  const preparedInput = await prepareOpencodeRuntime(input);
-  const { logger, graph } = createCompiledScoreGraph(preparedInput, true);
-  return runCompiledScoreGraph(logger, graph as never, {
-    ...input.preparedState,
-    caseDir: input.caseDir,
+  return runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
+    const { logger, graph } = createCompiledScoreGraph(preparedInput, true);
+    return runCompiledScoreGraph(logger, graph as never, {
+      ...input.preparedState,
+      caseDir: input.caseDir,
+    });
   });
 }

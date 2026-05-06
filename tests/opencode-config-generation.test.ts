@@ -37,6 +37,11 @@ async function copyOpencodeTemplate(repoRoot: string): Promise<void> {
     path.join(repoRoot, ".opencode", "formatters"),
     { recursive: true },
   );
+  await fs.cp(
+    path.join(sourceRoot, ".opencode", "skills"),
+    path.join(repoRoot, ".opencode", "skills"),
+    { recursive: true },
+  );
 }
 
 test("createOpencodeRuntimeConfig reports missing required environment variables", async () => {
@@ -143,15 +148,15 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
 
   assert.match(
     await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-understanding-system.md"), "utf-8"),
-    /正确输出格式/,
+    /必须使用 hmos-understanding skill/,
   );
   assert.match(
     await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rubric-scoring-system.md"), "utf-8"),
-    /正确输出格式/,
+    /必须使用 hmos-rubric-scoring skill/,
   );
   assert.match(
     await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rule-assessment-system.md"), "utf-8"),
-    /正确输出格式/,
+    /必须使用 hmos-rule-assessment skill/,
   );
   assert.match(
     await fs.readFile(
@@ -163,10 +168,10 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
         "opencode",
         "prompts",
         "hmos-understanding-system.md",
-      ),
-      "utf-8",
     ),
-    /正确输出格式/,
+    "utf-8",
+  ),
+    /必须使用 hmos-understanding skill/,
   );
   assert.match(
     await fs.readFile(
@@ -178,10 +183,10 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
         "opencode",
         "prompts",
         "hmos-rubric-scoring-system.md",
-      ),
-      "utf-8",
     ),
-    /正确输出格式/,
+    "utf-8",
+  ),
+    /必须使用 hmos-rubric-scoring skill/,
   );
   assert.match(
     await fs.readFile(
@@ -193,10 +198,10 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
         "opencode",
         "prompts",
         "hmos-rule-assessment-system.md",
-      ),
-      "utf-8",
     ),
-    /正确输出格式/,
+    "utf-8",
+  ),
+    /必须使用 hmos-rule-assessment skill/,
   );
 
   assert.match(
@@ -219,6 +224,69 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
     /JSON\.stringify/,
   );
 
+  assert.match(
+    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-understanding", "SKILL.md"), "utf-8"),
+    /metadata\/agent-output\/task-understanding\.json/,
+  );
+  assert.match(
+    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-rubric-scoring", "SKILL.md"), "utf-8"),
+    /metadata\/agent-output\/rubric-scoring\.json/,
+  );
+  assert.match(
+    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-rule-assessment", "SKILL.md"), "utf-8"),
+    /metadata\/agent-output\/rule-assessment\.json/,
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "xdg-config",
+        "opencode",
+        "skills",
+        "hmos-rule-assessment",
+        "references",
+        "rules",
+        "arkts-language.yaml",
+      ),
+      "utf-8",
+    ),
+    /arkts-language/,
+  );
+  await assert.rejects(
+    () =>
+      fs.access(
+        path.join(
+          repoRoot,
+          ".opencode",
+          "runtime",
+          "xdg-config",
+          "opencode",
+          "skills",
+          "hmos-rubric-scoring",
+          "references",
+        ),
+      ),
+    /ENOENT/,
+  );
+
   assert.equal(runtime.env.OPENCODE_CONFIG, runtime.configPath);
   assert.equal(runtime.env.OPENCODE_CONFIG_DIR, runtime.configDir);
+});
+
+test("createOpencodeRuntimeConfig requires project skill files when configured", async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-config-missing-skill-"));
+  await copyOpencodeTemplate(repoRoot);
+  await fs.rm(path.join(repoRoot, ".opencode", "skills", "hmos-rule-assessment", "SKILL.md"));
+
+  await assert.rejects(
+    () => createOpencodeRuntimeConfig({ repoRoot, env: requiredEnv }),
+    (error: unknown) => {
+      assert.ok(error instanceof OpencodeConfigError);
+      assert.match(error.message, /hmos-rule-assessment/);
+      assert.match(error.message, /SKILL\.md/);
+      return true;
+    },
+  );
 });

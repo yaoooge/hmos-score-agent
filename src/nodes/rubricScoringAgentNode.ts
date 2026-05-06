@@ -28,8 +28,8 @@ export async function rubricScoringAgentNode(
       rubricAgentRunnerResult: undefined,
     };
   }
-  if (!state.rubricScoringPromptText || !state.rubricScoringPayload) {
-    await deps.logger?.warn("rubric agent 评分跳过 reason=缺少 rubric prompt");
+  if (!state.rubricScoringPayload) {
+    await deps.logger?.warn("rubric agent 评分跳过 reason=缺少 rubric payload");
     return {
       rubricAgentRunnerMode: "opencode",
       rubricAgentRunStatus: "skipped",

@@ -22,7 +22,6 @@ type TaskUnderstandingDeps = {
   opencode?: {
     runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
   };
-  referenceRoot?: string;
   artifactStore?: ArtifactStore;
   logger?: {
     info(message: string): Promise<void>;
@@ -57,7 +56,7 @@ function isDeps(
   if (!value || typeof value !== "object") {
     return false;
   }
-  return "opencode" in value || "referenceRoot" in value || "artifactStore" in value || "logger" in value;
+  return "opencode" in value || "artifactStore" in value || "logger" in value;
 }
 
 function normalizeRelativePath(filePath: string): string {
@@ -396,14 +395,13 @@ export async function taskUnderstandingNode(
     const patchSummary = await readPatchSummary(effectivePatchPath);
     const caseRuleDefinitions = await loadCaseConstraintRules(state.caseInput);
     const opencodeSandbox =
-      deps.opencode && deps.referenceRoot && state.caseDir
+      deps.opencode && state.caseDir
         ? await buildOpencodeSandbox({
             caseDir: state.caseDir,
             generatedProjectPath: state.caseInput.generatedProjectPath,
             originalProjectPath: state.caseInput.originalProjectPath,
             originalProjectProvided: state.caseInput.originalProjectProvided,
             effectivePatchPath,
-            referenceRoot: deps.referenceRoot,
             metadata: {
               case_id: state.caseInput.caseId,
               prompt_text: state.caseInput.promptText,

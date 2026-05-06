@@ -21,6 +21,8 @@ import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
 import { scoreFusionOrchestrationNode } from "../src/nodes/scoreFusionOrchestrationNode.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import { runScoreWorkflow as runScoreWorkflowBase } from "../src/workflow/scoreWorkflow.js";
+import type { OpencodeRuntimeConfig } from "../src/opencode/opencodeConfig.js";
+import type { OpencodeServeManager } from "../src/opencode/opencodeServeManager.js";
 import type { CaseInput } from "../src/types.js";
 
 const fixtureRoot = path.resolve(process.cwd(), "tests/fixtures");
@@ -210,6 +212,20 @@ async function runScoreWorkflow(input: Parameters<typeof runScoreWorkflowBase>[0
   });
 }
 
+function fakeRuntimeConfig(): OpencodeRuntimeConfig {
+  return {
+    host: "127.0.0.1",
+    port: 4096,
+    serverUrl: "http://127.0.0.1:4096",
+    configPath: "/tmp/opencode.json",
+    configDir: "/tmp",
+    runtimeDir: "/tmp",
+    env: {},
+    timeoutMs: 30000,
+    maxOutputBytes: 1024 * 1024,
+  };
+}
+
 test("loadCaseFromPath loads prompt and optional patch path", async (t) => {
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {
@@ -348,7 +364,7 @@ test("explicit rubric and rule agent nodes are exported", () => {
   assert.equal(typeof ruleAssessmentAgentNode, "function");
 });
 
-test("rubricScoringPromptBuilderNode builds opencode rubric scoring prompt", async (t) => {
+test("rubricScoringPromptBuilderNode builds opencode rubric scoring payload", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const result = await rubricScoringPromptBuilderNode(
@@ -381,17 +397,13 @@ test("rubricScoringPromptBuilderNode builds opencode rubric scoring prompt", asy
     { logger: undefined },
   );
 
-  assert.ok(result.rubricScoringPromptText?.includes("opencode"));
-  assert.equal(result.rubricScoringPromptText?.includes("tool" + "_call"), false);
   assert.equal(result.rubricScoringPayload?.case_context.task_type, "bug_fix");
-  assert.deepEqual(result.rubricScoringPayload?.initial_target_files, [
-    "generated/entry/src/main/ets/pages/Index.ets",
-    "generated/entry/src/main/ets/components/Card.ets",
-  ]);
+  assert.equal("initial_target_files" in (result.rubricScoringPayload ?? {}), false);
+  assert.equal("rubricScoringPromptText" in result, false);
   assert.equal(result.rubricScoringPayload?.response_contract.output_language, "zh-CN");
 });
 
-test("rubricScoringPromptBuilderNode adds workspace directory summary when changed files exceed initial target limit", async (t) => {
+test("rubricScoringPromptBuilderNode adds workspace directory summary when changed files are broad", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const changedFiles = Array.from(
@@ -434,21 +446,17 @@ test("rubricScoringPromptBuilderNode adds workspace directory summary when chang
     { logger: undefined },
   );
 
-  assert.equal(result.rubricScoringPayload?.initial_target_files?.length, 20);
   assert.equal(result.rubricScoringPayload?.workspace_project_structure?.modulePaths[0], "entry");
   assert.match(
     result.rubricScoringPayload?.workspace_project_structure_note ?? "",
-    /changedFiles 共 21 个，已超过 initial_target_files 上限 20/,
+    /当前 changedFiles 共 21 个。请先优先检查 effective_patch_path/,
   );
-  assert.match(result.rubricScoringPromptText ?? "", /workspace_project_structure/);
-  assert.match(result.rubricScoringPromptText ?? "", /effective_patch_path/);
+  assert.equal("rubricScoringPromptText" in result, false);
 });
 
 test("rubricScoringAgentNode skips when opencode runtime is missing", async () => {
   const skipped = await rubricScoringAgentNode(
-    {
-      rubricScoringPromptText: "请逐项输出 rubric item 的评分",
-    } as never,
+    {} as never,
     { logger: undefined },
   );
 
@@ -469,7 +477,6 @@ test("rubricScoringAgentNode runs opencode rubric scoring", async (t) => {
         generatedProjectPath: path.join(caseRoot, "workspace"),
       }).caseInput,
       sourceCasePath: caseRoot,
-      rubricScoringPromptText: "rubric opencode prompt",
       rubricScoringPayload: {
         case_context: {
           case_id: "case-1",
@@ -486,7 +493,6 @@ test("rubricScoringAgentNode runs opencode rubric scoring", async (t) => {
           classificationHints: ["bug_fix"],
         },
         rubric_summary: rubricSnapshot,
-        initial_target_files: ["generated/entry/src/main/ets/Index.ets"],
         response_contract: {
           output_language: "zh-CN",
           json_only: true,
@@ -544,7 +550,6 @@ test("rubricScoringAgentNode fails when opencode final answer is incomplete", as
             generatedProjectPath: path.join(caseRoot, "workspace"),
           }).caseInput,
           sourceCasePath: caseRoot,
-          rubricScoringPromptText: "请逐项输出 rubric item 的评分",
           rubricScoringPayload: {
             case_context: {
               case_id: "case-1",
@@ -561,7 +566,6 @@ test("rubricScoringAgentNode fails when opencode final answer is incomplete", as
               classificationHints: ["bug_fix"],
             },
             rubric_summary: rubricSnapshot,
-            initial_target_files: [],
             response_contract: {
               output_language: "zh-CN",
               json_only: true,
@@ -1512,9 +1516,7 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
         originalProjectPath: "/tmp/original",
         generatedProjectPath: "/tmp/workspace",
       },
-      rubricScoringPromptText: "",
       rubricScoringPayload: {},
-      ruleAgentPromptText: "",
       ruleAgentBootstrapPayload: {},
       constraintSummary: {
         explicitConstraints: [],
@@ -1558,9 +1560,11 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
     fs.readFile(path.join(caseDir, "intermediate", "rubric-agent-tool-trace.json"), "utf-8"),
   );
   await assert.rejects(fs.readFile(path.join(caseDir, "inputs", "original-prompt.txt"), "utf-8"));
-  assert.equal(
-    await fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"),
-    "",
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "inputs", "rubric-scoring-prompt.txt"), "utf-8"),
+  );
+  await assert.rejects(
+    fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"),
   );
 });
 
@@ -1614,6 +1618,44 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.match(reportHtml, /维度得分概览/);
   assert.match(reportHtml, /规则审计结果/);
   assert.doesNotMatch(reportHtml, /<pre>\s*\{/);
+});
+
+test("runScoreWorkflow stops ephemeral opencode runtime after a single local case", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-ephemeral");
+  const caseRootDir = await makeTempDir(t);
+  const fixtureCaseDir = await writeCaseFixture(caseRootDir, {
+    promptText: "请修复餐厅列表页中的 bug",
+    withPatch: true,
+    workspaceContent: "let x: any = 1;\n",
+  });
+  const caseInput = await loadCaseFromPath(fixtureCaseDir);
+  const lifecycleCalls: string[] = [];
+  const serveManager: OpencodeServeManager = {
+    start: async () => {
+      lifecycleCalls.push("start");
+    },
+    stop: async () => {
+      lifecycleCalls.push("stop");
+    },
+    health: async () => true,
+    serverUrl: () => "http://127.0.0.1:4096",
+  };
+
+  await runScoreWorkflowBase({
+    caseInput: { ...caseInput, caseId: "case-ephemeral" },
+    caseDir,
+    referenceRoot,
+    artifactStore,
+    opencodeRunner: createOpencodeRunnerMock(),
+    opencodeRuntime: fakeRuntimeConfig(),
+    opencodeServeManager: serveManager,
+    opencodeRuntimeLifecycle: "ephemeral",
+  });
+
+  assert.deepEqual(lifecycleCalls, ["start", "stop"]);
 });
 
 test("runScoreWorkflow includes case_rule_results and generated patch output", async (t) => {

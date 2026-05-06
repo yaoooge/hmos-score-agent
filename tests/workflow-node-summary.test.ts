@@ -94,9 +94,13 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
 
   assert.equal(
     summarizeNodeUpdate("rubricScoringPromptBuilderNode", {
-      rubricScoringPromptText: "逐项输出 rubric item",
+      rubricScoringPayload: {
+        rubric_summary: {
+          dimension_summaries: [{ name: "A" }, { name: "B" }],
+        },
+      },
     }),
-    "promptLength=16",
+    "dimensions=2",
   );
 
   assert.equal(
@@ -113,9 +117,8 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
     summarizeNodeUpdate("ruleAgentPromptBuilderNode", {
       deterministicRuleResults: [{ rule_id: "R1" }],
       assistedRuleCandidates: [{ rule_id: "R2" }, { rule_id: "R3" }],
-      ruleAgentPromptText: "请输出 JSON",
     }),
-    "deterministic=1 candidates=2 promptLength=8",
+    "deterministic=1 candidates=2",
   );
 
   assert.equal(

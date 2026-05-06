@@ -101,6 +101,8 @@ function renderRuleAssessmentRetryPrompt(input: {
 }): string {
   return [
     "你是评分流程中的规则判定 agent。本次是重试，只修正最终 JSON 输出格式。",
+    "本次是重试。仍必须使用 hmos-rule-assessment skill，但只修复 listed protocol errors，不重新判定。",
+    "该 skill 中的输出契约和自检清单是本次输出的强制要求。",
     `上一次失败原因: ${summarizeRetryFailureReason(input.retryContext.failureReason)}`,
     "",
     "输入边界（必须遵守）:",
@@ -145,6 +147,7 @@ function renderRuleAssessmentPrompt(input: {
   }
   return [
     "你是评分流程中的规则判定 agent。只能阅读当前 sandbox 目录内的文件，不能修改文件，不能运行命令，不能访问网络。",
+    "执行任务前必须使用 hmos-rule-assessment skill。该 skill 中的输出契约和自检清单是本次输出的强制要求。",
     "",
     `Sandbox 根目录: ${input.sandboxRoot}`,
     "可阅读目录约定:",
@@ -152,14 +155,13 @@ function renderRuleAssessmentPrompt(input: {
     "- original/: 原始工程代码；如果不存在，说明本用例没有提供原始工程。",
     "- patch/: 生成结果相对原始工程的补丁，优先查看 patch/effective.patch。",
     "- metadata/: 用例元数据。",
-    "- references/: 评分参考材料。",
     "",
     "任务:",
-    "1. 阅读 bootstrap_payload 中的候选规则、任务理解、rubric 摘要和目标文件。",
-    "2. 只基于 patch/effective.patch 内可见文件完成每条候选规则的判定，generated/ 仅用于相关上下文辅助。",
+    "1. 阅读 bootstrap_payload 中的候选规则、任务理解和 rubric 摘要。",
+    "2. 优先阅读 patch/effective.patch，只基于 patch 内可见文件完成每条候选规则的判定；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文辅助理解。",
     "3. 必须覆盖 assisted_rule_candidates 中的每一个 rule_id，不能新增、遗漏或重复 rule_id。",
     "4. 无法确认时使用 decision=\"uncertain\"，并设置 needs_human_review=true。",
-    "5. evidence_used 只能填写 sandbox 内相对路径，例如 generated/、original/、patch/、metadata/、references/ 下的路径。",
+    "5. evidence_used 只能填写 sandbox 内相对路径，例如 generated/、original/、patch/、metadata/ 下的路径。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",
@@ -179,7 +181,6 @@ function renderRuleAssessmentPrompt(input: {
       task_understanding: payload.task_understanding,
       rubric_summary: payload.rubric_summary,
       assisted_rule_candidates: payload.assisted_rule_candidates,
-      initial_target_files: payload.initial_target_files,
     }),
   ].join("\n");
 }

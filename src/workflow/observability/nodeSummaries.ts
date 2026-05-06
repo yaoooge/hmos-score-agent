@@ -45,13 +45,16 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
       return `dimensions=${lengthOf(rubricSnapshot?.dimension_summaries)} hardGates=${lengthOf(rubricSnapshot?.hard_gates)} reviewRules=${lengthOf(rubricSnapshot?.review_rule_summary)}`;
     }
     case "rubricScoringPromptBuilderNode":
-      return `promptLength=${String(String(update.rubricScoringPromptText ?? "").length)}`;
+      return `dimensions=${lengthOf(
+        (update.rubricScoringPayload as { rubric_summary?: { dimension_summaries?: unknown[] } })
+          ?.rubric_summary?.dimension_summaries,
+      )}`;
     case "rubricScoringAgentNode": {
       const result = update.rubricScoringResult as { item_scores?: unknown[] } | undefined;
       return `status=${String(update.rubricAgentRunStatus ?? "")} items=${lengthOf(result?.item_scores)}`;
     }
     case "ruleAgentPromptBuilderNode":
-      return `deterministic=${lengthOf(update.deterministicRuleResults)} candidates=${lengthOf(update.assistedRuleCandidates)} promptLength=${String(String(update.ruleAgentPromptText ?? "").length)}`;
+      return `deterministic=${lengthOf(update.deterministicRuleResults)} candidates=${lengthOf(update.assistedRuleCandidates)}`;
     case "ruleAssessmentAgentNode": {
       const runnerResult = update.ruleAgentRunnerResult as
         | {

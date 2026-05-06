@@ -223,7 +223,6 @@ curl -X POST http://localhost:3000/score/run-remote-task \
 - `npm test`：运行全部 node:test 测试
 - `npm run dev:cli -- --case <path>`：命令行运行单用例
 - `npm run dev:api`：本地 HTTP 服务调试
-- `npm run launch:score -- --case <path>`：交互式选择或指定用例并启动评分
 - `npm run score -- --case <path>`：与 `dev:cli` 等价
 
 ### Patch 生成说明

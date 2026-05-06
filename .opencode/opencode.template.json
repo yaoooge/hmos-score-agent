@@ -53,7 +53,10 @@
         },
         "bash": "deny",
         "task": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "hmos-understanding": "allow"
+        },
         "lsp": "deny",
         "webfetch": "deny",
         "websearch": "deny",
@@ -81,7 +84,10 @@
         },
         "bash": "deny",
         "task": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "hmos-rubric-scoring": "allow"
+        },
         "lsp": "deny",
         "webfetch": "deny",
         "websearch": "deny",
@@ -109,7 +115,10 @@
         },
         "bash": "deny",
         "task": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "hmos-rule-assessment": "allow"
+        },
         "lsp": "deny",
         "webfetch": "deny",
         "websearch": "deny",

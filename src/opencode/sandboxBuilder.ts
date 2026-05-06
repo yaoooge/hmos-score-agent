@@ -8,7 +8,6 @@ export interface OpencodeSandbox {
   originalRoot?: string;
   patchPath?: string;
   metadataRoot: string;
-  referencesRoot: string;
 }
 
 const IGNORED_ENTRY_NAMES = new Set([
@@ -96,7 +95,6 @@ export async function buildOpencodeSandbox(input: {
   originalProjectPath?: string;
   originalProjectProvided?: boolean;
   effectivePatchPath?: string;
-  referenceRoot: string;
   metadata: Record<string, unknown>;
 }): Promise<OpencodeSandbox> {
   const root = path.join(input.caseDir, "opencode-sandbox");
@@ -104,13 +102,11 @@ export async function buildOpencodeSandbox(input: {
   const originalRoot = path.join(root, "original");
   const patchRoot = path.join(root, "patch");
   const metadataRoot = path.join(root, "metadata");
-  const referencesRoot = path.join(root, "references");
 
   await fs.rm(root, { recursive: true, force: true });
   await fs.mkdir(root, { recursive: true });
 
   await copyTree({ sourceRoot: input.generatedProjectPath, targetRoot: generatedRoot });
-  await copyTree({ sourceRoot: input.referenceRoot, targetRoot: referencesRoot });
 
   let copiedOriginalRoot: string | undefined;
   if (
@@ -142,6 +138,5 @@ export async function buildOpencodeSandbox(input: {
     originalRoot: copiedOriginalRoot,
     patchPath: copiedPatchPath,
     metadataRoot,
-    referencesRoot,
   };
 }

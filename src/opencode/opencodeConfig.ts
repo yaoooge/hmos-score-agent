@@ -90,6 +90,8 @@ async function ensureRuntimeDirectories(runtimeDir: string): Promise<void> {
       path.join(runtimeDir, "xdg-cache"),
       path.join(runtimeDir, "prompts"),
       path.join(runtimeDir, "formatters"),
+      path.join(runtimeDir, "skills"),
+      path.join(runtimeDir, "xdg-config", "opencode", "skills"),
     ].map((dirPath) => fs.mkdir(dirPath, { recursive: true })),
   );
 }
@@ -115,6 +117,37 @@ async function copyFilesFromDirectory(input: {
         await fs.copyFile(sourcePath, targetPath);
       }),
   );
+}
+
+const REQUIRED_SKILL_NAMES = [
+  "hmos-understanding",
+  "hmos-rubric-scoring",
+  "hmos-rule-assessment",
+] as const;
+
+async function ensureRequiredSkillFiles(skillsDir: string): Promise<void> {
+  for (const skillName of REQUIRED_SKILL_NAMES) {
+    const skillPath = path.join(skillsDir, skillName, "SKILL.md");
+    await fs.access(skillPath).catch((error: unknown) => {
+      throw new OpencodeConfigError(
+        `缺少 opencode skill 文件：${skillName}/SKILL.md (${error instanceof Error ? error.message : String(error)})`,
+      );
+    });
+  }
+}
+
+async function copySkillDirectory(input: {
+  sourceDir: string;
+  targetDir: string;
+}): Promise<void> {
+  await ensureRequiredSkillFiles(input.sourceDir);
+  await fs.rm(input.targetDir, { recursive: true, force: true });
+  await fs.mkdir(input.targetDir, { recursive: true });
+  await fs.cp(input.sourceDir, input.targetDir, {
+    recursive: true,
+    filter: (sourcePath) => path.basename(sourcePath) !== ".DS_Store",
+  });
+  await ensureRequiredSkillFiles(input.targetDir);
 }
 
 export async function createOpencodeRuntimeConfig(input: {
@@ -143,6 +176,7 @@ export async function createOpencodeRuntimeConfig(input: {
   const templatePath = path.join(configDir, "opencode.template.json");
   const promptsDir = path.join(configDir, "prompts");
   const formattersDir = path.join(configDir, "formatters");
+  const skillsDir = path.join(configDir, "skills");
 
   const template = await fs.readFile(templatePath, "utf-8").catch((error: unknown) => {
     throw new OpencodeConfigError(
@@ -179,6 +213,14 @@ export async function createOpencodeRuntimeConfig(input: {
     sourceDir: formattersDir,
     targetDir: path.join(runtimeDir, "xdg-config", "opencode", "formatters"),
     label: "formatter",
+  });
+  await copySkillDirectory({
+    sourceDir: skillsDir,
+    targetDir: path.join(runtimeDir, "skills"),
+  });
+  await copySkillDirectory({
+    sourceDir: skillsDir,
+    targetDir: path.join(runtimeDir, "xdg-config", "opencode", "skills"),
   });
   const generatedConfigText = `${generatedText.trim()}\n`;
   await fs.writeFile(configPath, generatedConfigText, "utf-8");

@@ -69,6 +69,8 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   });
 
   assert.equal(prompt.includes("tool" + "_call"), false);
+  assert.match(prompt, /执行任务前必须使用 hmos-understanding skill/);
+  assert.match(prompt, /该 skill 中的输出契约和自检清单是本次输出的强制要求/);
   assert.match(prompt, /任务理解阶段只能读取用户消息指定的 prompt 文件/);
   assert.match(prompt, /只能基于本 prompt 中的 agent_input/);
   assert.match(prompt, /不要调用 glob、grep、list 或任何用于探索工程文件的工具/);
@@ -138,6 +140,8 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.equal(calls[1]?.requestTag, "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /上一次任务理解输出无效/);
+  assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-understanding skill/);
+  assert.match(calls[1]?.prompt ?? "", /只修正最终输出格式/);
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /最终答案的第一个非空字符必须是 \{/);
@@ -214,6 +218,7 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.equal(calls[1]?.requestTag, "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /上一次任务理解输出无效/);
+  assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-understanding skill/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.match(calls[1]?.prompt ?? "", /本次重试禁止读取任何业务文件/);

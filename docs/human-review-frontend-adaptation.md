@@ -14,10 +14,19 @@
   -> 展示复核后的最新评分结果
 ```
 
-前端只需要适配两个接口：
+前端需要适配三个接口：
 
 - `GET /score/remote-tasks/:taskId/result`
+- `GET /score/rule-violation-stats`
 - `POST /score/remote-tasks/:taskId/human-review`
+
+接口概览：
+
+| 接口 | 输入 | 输出 | 功能 |
+| --- | --- | --- | --- |
+| `GET /score/remote-tasks/:taskId/result` | 路径参数：`taskId` | `success`、`taskId`、`status`、`resultData` | 读取单个远端任务的完整评分结果，供前端展示总分、维度分、待复核项、风险项和复核后修订信息。 |
+| `GET /score/rule-violation-stats` | 可选查询参数：`caseId`、`testCaseId`、`packId`、`from`、`to` | `success`、`filters`、`summary`、`rules` | 读取静态规则不满足项的聚合统计，供前端展示规则违反次数、影响用例、影响任务和最近触发时间。 |
+| `POST /score/remote-tasks/:taskId/human-review` | 路径参数：`taskId`；请求体：`reviewer`、`itemReviews`、`riskReviews` | `success`、`taskId`、`status`、`summary`、`message` | 提交逐条人工复核结论，后端接收后写入复核数据，并按复核结果重新计算分数。 |
 
 ## 2. 读取评分结果
 
@@ -462,3 +471,106 @@ const canReview = response.status === "completed" && !reviewApplied;
 - 不同意风险项时，`correctedLevel` 和 `reason` 非空。
 - `correctedLevel` 只允许 `high | medium | low | none`。
 - 不提交任何分数。
+
+## 12. 规则违规统计接口
+
+该接口用于管理台查看静态规则不满足项的全局聚合统计，不依赖某个具体任务结果页。接口只统计静态规则，不返回用例规则包的统计，也不返回 `cases` 明细列表。
+
+### 接口
+
+```http
+GET /score/rule-violation-stats
+```
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `caseId` | `string` | 否 | 按本地评分用例 ID 过滤。 |
+| `testCaseId` | `number` | 否 | 按远端测试用例 ID 过滤。 |
+| `packId` | `string` | 否 | 按静态规则包 ID 过滤。如果传入用例规则包 ID，返回空统计。 |
+| `from` | ISO 时间字符串 | 否 | 只统计该时间之后完成的执行。 |
+| `to` | ISO 时间字符串 | 否 | 只统计该时间之前完成的执行。 |
+
+### 成功响应
+
+```json
+{
+  "success": true,
+  "filters": {
+    "caseId": "004",
+    "testCaseId": 4,
+    "packId": "arkts-language",
+    "from": "2026-04-01T00:00:00.000Z",
+    "to": "2026-04-28T23:59:59.999Z"
+  },
+  "summary": {
+    "totalRuns": 5,
+    "caseCount": 1,
+    "violatedRuleCount": 2,
+    "totalViolationEvents": 4
+  },
+  "rules": [
+    {
+      "pack_id": "arkts-language",
+      "rule_id": "ARKTS-MUST-001",
+      "rule_summary": "必须遵循 ArkTS 语言约束",
+      "rule_source": "must_rule",
+      "violationCount": 3,
+      "affectedCaseCount": 1,
+      "affectedRunCount": 3,
+      "affectedCaseIds": ["004"],
+      "affectedTaskIds": [101, 108, 116],
+      "lastViolatedAt": "2026-04-28T10:20:30.000Z"
+    }
+  ]
+}
+```
+
+### 前端字段说明
+
+- `filters`：后端实际应用的查询条件，可用于回显当前筛选状态。
+- `summary.totalRuns`：过滤后纳入统计的完成执行次数。
+- `summary.caseCount`：过滤后出现过的用例数量。
+- `summary.violatedRuleCount`：过滤后至少违反过一次的唯一静态规则数量。
+- `summary.totalViolationEvents`：过滤后所有静态规则不满足事件总数。
+- `rules[]`：按 `violationCount` 降序排列的静态规则聚合行。
+- `rules[].pack_id`：规则包 ID。
+- `rules[].rule_id`：规则 ID。
+- `rules[].rule_summary`：规则摘要。
+- `rules[].rule_source`：规则来源，枚举为 `must_rule | should_rule | forbidden_pattern`。
+- `rules[].violationCount`：该规则违反次数。
+- `rules[].affectedCaseCount`：受影响用例数量。
+- `rules[].affectedRunCount`：受影响执行次数。
+- `rules[].affectedCaseIds`：受影响用例 ID 去重列表。
+- `rules[].affectedTaskIds`：受影响任务 ID 去重列表。
+- `rules[].lastViolatedAt`：最近一次触发该规则不满足的时间。
+
+### 页面展示建议
+
+- 顶部展示 `summary.totalRuns`、`summary.caseCount`、`summary.violatedRuleCount`、`summary.totalViolationEvents` 四个统计值。
+- 提供 `caseId`、`testCaseId`、`packId`、`from`、`to` 筛选控件；筛选变化后重新请求该接口。
+- 列表主字段建议展示 `pack_id`、`rule_id`、`rule_summary`、`violationCount`、`affectedCaseCount`、`affectedRunCount`、`lastViolatedAt`。
+- `affectedCaseIds` 和 `affectedTaskIds` 数量较多时，可折叠展示或放在详情抽屉中。
+- `rules=[]` 时展示空状态，表示当前筛选条件下没有静态规则不满足统计。
+
+### 错误响应
+
+- `400`：查询参数不合法。常见原因是 `testCaseId` 不是数字，或 `from` / `to` 不是 ISO 时间字符串。
+- `500`：统计索引读取失败。前端展示后端返回的 `message` 即可。
+
+统计索引不存在时不是错误，接口会返回空统计：
+
+```json
+{
+  "success": true,
+  "filters": {},
+  "summary": {
+    "totalRuns": 0,
+    "caseCount": 0,
+    "violatedRuleCount": 0,
+    "totalViolationEvents": 0
+  },
+  "rules": []
+}
+```

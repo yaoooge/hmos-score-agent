@@ -26,18 +26,22 @@ function createFakeChild(): EventEmitter & {
   stdout: EventEmitter;
   stderr: EventEmitter;
   killedWith?: NodeJS.Signals | number;
+  killedSignals: Array<NodeJS.Signals | number>;
   kill(signal?: NodeJS.Signals | number): boolean;
 } {
   const child = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter;
     stderr: EventEmitter;
     killedWith?: NodeJS.Signals | number;
+    killedSignals: Array<NodeJS.Signals | number>;
     kill(signal?: NodeJS.Signals | number): boolean;
   };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  child.killedSignals = [];
   child.kill = (signal?: NodeJS.Signals | number) => {
     child.killedWith = signal ?? "SIGTERM";
+    child.killedSignals.push(child.killedWith);
     return true;
   };
   return child;
@@ -174,14 +178,84 @@ test("serve manager reports early opencode serve exit with stderr", async () => 
 test("serve manager stop kills only the child process it started", async () => {
   const child = createFakeChild();
   const healthResults = [false, true];
+  let terminateCount = 0;
   const manager = createOpencodeServeManager(runtimeConfig(), {
     checkHealth: async () => healthResults.shift() ?? true,
     spawnProcess: () => child,
+    terminateExistingServer: async () => {
+      terminateCount += 1;
+    },
+    collectListeningPids: async () => [],
+    sleep: async () => undefined,
+  });
+
+  await manager.start();
+  terminateCount = 0;
+  await manager.stop();
+
+  assert.equal(child.killedWith, "SIGTERM");
+  assert.equal(terminateCount, 1);
+});
+
+test("serve manager stop leaves a reused healthy server running", async () => {
+  let terminateCount = 0;
+  const manager = createOpencodeServeManager(runtimeConfig(), {
+    checkHealth: async () => true,
+    terminateExistingServer: async () => {
+      terminateCount += 1;
+    },
+  });
+
+  await manager.start();
+  await manager.stop();
+
+  assert.equal(terminateCount, 0);
+});
+
+test("serve manager escalates the owned child when stop cannot release the port", async () => {
+  const child = createFakeChild();
+  const healthResults = [false, true];
+  const manager = createOpencodeServeManager(runtimeConfig(), {
+    checkHealth: async () => healthResults.shift() ?? true,
+    spawnProcess: () => child,
+    terminateExistingServer: async () => undefined,
+    collectListeningPids: async () =>
+      child.killedSignals.includes("SIGKILL") ? [] : [runtimeConfig().port],
     sleep: async () => undefined,
   });
 
   await manager.start();
   await manager.stop();
 
-  assert.equal(child.killedWith, "SIGTERM");
+  assert.deepEqual(child.killedSignals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("serve manager escalates an unhealthy existing listener before spawning replacement", async () => {
+  const healthResults = [false, false, true];
+  const killed: Array<{ pid: number; signal: NodeJS.Signals }> = [];
+  let collectCount = 0;
+  let spawnCount = 0;
+  const manager = createOpencodeServeManager(runtimeConfig(), {
+    checkHealth: async () => healthResults.shift() ?? true,
+    collectListeningPids: async () => {
+      collectCount += 1;
+      return killed.some((item) => item.signal === "SIGKILL") ? [] : [44454];
+    },
+    killProcess: (pid, signal) => {
+      killed.push({ pid, signal });
+    },
+    spawnProcess: () => {
+      spawnCount += 1;
+      return createFakeChild();
+    },
+    sleep: async () => undefined,
+  });
+
+  await manager.start();
+
+  assert.deepEqual(killed, [
+    { pid: 44454, signal: "SIGTERM" },
+    { pid: 44454, signal: "SIGKILL" },
+  ]);
+  assert.equal(spawnCount, 1);
 });

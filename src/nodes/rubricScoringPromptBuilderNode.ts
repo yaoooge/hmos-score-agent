@@ -1,22 +1,8 @@
 import path from "node:path";
-import {
-  buildOpencodeRubricPayload,
-  renderOpencodeRubricPrompt,
-} from "../agent/opencodeRubricPrompt.js";
+import { buildOpencodeRubricPayload } from "../agent/opencodeRubricPrompt.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 import type { ProjectStructureSummary } from "../types.js";
-
-function buildInitialTargetFiles(state: ScoreGraphState): string[] {
-  const changedFiles = state.evidenceSummary?.changedFiles ?? [];
-  const normalized = changedFiles
-    .filter((filePath) => typeof filePath === "string" && filePath.trim().length > 0)
-    .map((filePath) =>
-      filePath.startsWith("generated/") ? filePath : path.posix.join("generated", filePath),
-    );
-
-  return Array.from(new Set(normalized)).slice(0, 20);
-}
 
 function buildWorkspaceProjectStructureContext(state: ScoreGraphState): {
   workspaceProjectStructure?: ProjectStructureSummary;
@@ -38,7 +24,7 @@ function buildWorkspaceProjectStructureContext(state: ScoreGraphState): {
       representativeFiles: workspaceProjectStructure.representativeFiles.slice(0, 30),
       implementationHints: workspaceProjectStructure.implementationHints.slice(0, 10),
     },
-    workspaceProjectStructureNote: `当前 changedFiles 共 ${changedFileCount} 个，已超过 initial_target_files 上限 20。请先优先检查 effective_patch_path 和 initial_target_files，再结合 workspace_project_structure 选择代表性目录或文件继续取证。`,
+    workspaceProjectStructureNote: `当前 changedFiles 共 ${changedFileCount} 个。请先优先检查 effective_patch_path，再根据 patch 中出现的文件路径阅读相关 generated/ 或 original/ 上下文；必要时结合 workspace_project_structure 选择代表性目录或文件辅助理解。`,
   };
 }
 
@@ -58,17 +44,14 @@ export async function rubricScoringPromptBuilderNode(
       taskType: state.taskType,
       constraintSummary: state.constraintSummary,
       rubricSnapshot: state.rubricSnapshot,
-      initialTargetFiles: buildInitialTargetFiles(state),
       ...buildWorkspaceProjectStructureContext(state),
     });
-    const prompt = renderOpencodeRubricPrompt(payload);
     await deps.logger?.info(
-      `rubric scoring prompt 组装完成 dimensions=${payload.rubric_summary.dimension_summaries.length} promptLength=${prompt.length}`,
+      `rubric scoring payload 组装完成 dimensions=${payload.rubric_summary.dimension_summaries.length}`,
     );
 
     return {
       rubricScoringPayload: payload,
-      rubricScoringPromptText: prompt,
     };
   } catch (error) {
     emitNodeFailed("rubricScoringPromptBuilderNode", error);

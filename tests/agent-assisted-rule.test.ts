@@ -4,7 +4,6 @@ import {
   buildAgentBootstrapPayload,
   buildRubricSnapshot,
   mergeRuleAuditResults,
-  renderAgentBootstrapPrompt,
   selectAssistedRuleCandidates,
 } from "../src/agent/ruleAssistance.js";
 import type {
@@ -228,7 +227,6 @@ test("buildAgentBootstrapPayload emits opencode sandbox context instead of inlin
         evidence_snippets: ["Text(this.message)"],
       },
     ],
-    initialTargetFiles: ["entry/src/main/ets/home/viewmodels/HomePageVM.ets"],
   });
 
   assert.equal(payload.case_context.case_root, "/tmp/case-root");
@@ -236,49 +234,11 @@ test("buildAgentBootstrapPayload emits opencode sandbox context instead of inlin
     payload.case_context.effective_patch_path,
     "/tmp/case-root/intermediate/effective.patch",
   );
-  assert.equal(
-    payload.initial_target_files[0],
-    "generated/entry/src/main/ets/home/viewmodels/HomePageVM.ets",
-  );
+  assert.equal("initial_target_files" in payload, false);
   assert.equal(
     payload.assisted_rule_candidates[0]?.evidence_files[0],
     "generated/entry/src/main/ets/pages/Index.ets",
   );
-});
-
-test("renderAgentBootstrapPrompt records opencode rule context without legacy tool protocol", () => {
-  const payload = buildAgentBootstrapPayload({
-    caseInput: {
-      caseId: "case-1",
-      promptText: "修复列表页渲染异常",
-      originalProjectPath: "/tmp/original",
-      generatedProjectPath: "/tmp/workspace",
-      patchPath: "/tmp/effective.patch",
-    },
-    caseRoot: "/tmp/case-root",
-    effectivePatchPath: "/tmp/case-root/intermediate/effective.patch",
-    taskType: "continuation",
-    constraintSummary,
-    rubricSnapshot,
-    assistedRuleCandidates: [
-      {
-        rule_id: "ARKTS-SHOULD-001",
-        rule_source: "should_rule",
-        why_uncertain: "需要结合上下文判断",
-        local_preliminary_signal: "possible_violation",
-        evidence_files: ["entry/src/main/ets/pages/Index.ets"],
-        evidence_snippets: ["Text(this.message)"],
-      },
-    ],
-    initialTargetFiles: ["entry/src/main/ets/home/viewmodels/HomePageVM.ets"],
-  });
-
-  const bootstrapPrompt = renderAgentBootstrapPrompt(payload);
-  assert.match(bootstrapPrompt, /当前判定上下文如下/);
-  assert.match(bootstrapPrompt, /本次必须覆盖的 rule_id: ARKTS-SHOULD-001/);
-  assert.match(bootstrapPrompt, /opencode sandbox/);
-  assert.doesNotMatch(bootstrapPrompt, new RegExp("tool" + "_call"));
-  assert.doesNotMatch(bootstrapPrompt, new RegExp("action" + "_enum"));
 });
 
 test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates", () => {
@@ -319,7 +279,6 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
     constraintSummary,
     rubricSnapshot,
     assistedRuleCandidates,
-    initialTargetFiles: ["entry/src/main/module.json5"],
   });
 
   assert.equal(payload.assisted_rule_candidates[0]?.rule_name, "module.json5 需配置 Client ID");

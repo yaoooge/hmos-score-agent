@@ -258,7 +258,6 @@ export interface AgentBootstrapPayload {
   task_understanding: ConstraintSummary;
   rubric_summary: LoadedRubricSnapshot;
   assisted_rule_candidates: AssistedRuleCandidate[];
-  initial_target_files: string[];
 }
 
 export interface RubricScoringPayload {
@@ -273,7 +272,6 @@ export interface RubricScoringPayload {
   };
   task_understanding: ConstraintSummary;
   rubric_summary: LoadedRubricSnapshot;
-  initial_target_files?: string[];
   workspace_project_structure?: ProjectStructureSummary;
   workspace_project_structure_note?: string;
   response_contract: {

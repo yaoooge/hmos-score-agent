@@ -28,6 +28,7 @@ import {
 import {
   runPreparedScoreWorkflow,
   runScoreWorkflow,
+  type OpencodeRuntimeLifecycle,
   type OpencodeRunner,
 } from "./workflow/scoreWorkflow.js";
 import type { ScoreGraphState } from "./workflow/state.js";
@@ -71,6 +72,7 @@ async function resolveServiceOpencodeRunner(deps: ServiceOpencodeDeps): Promise<
 async function runCaseInput(input: {
   caseInput: CaseInput;
   sourceCasePath: string;
+  opencodeRuntimeLifecycle?: OpencodeRuntimeLifecycle;
 }): Promise<{ caseDir: string; uploadMessage?: string; resultJson?: Record<string, unknown> }> {
   const config = getConfig();
   const artifactStore = new ArtifactStore(config.localCaseRoot);
@@ -92,9 +94,7 @@ async function runCaseInput(input: {
     generated_project_path: caseInput.generatedProjectPath,
     patch_path: caseInput.patchPath ?? null,
     started_at: new Date().toISOString(),
-    rubric_scoring_prompt_file: "inputs/rubric-scoring-prompt.txt",
     rubric_scoring_payload_file: "inputs/rubric-scoring-payload.json",
-    rule_agent_prompt_file: "inputs/rule-agent-prompt.txt",
     rule_agent_bootstrap_payload_file: "inputs/rule-agent-bootstrap-payload.json",
     agent_runtime: "opencode",
   };
@@ -117,6 +117,7 @@ async function runCaseInput(input: {
       caseDir,
       referenceRoot: config.referenceRoot,
       artifactStore,
+      opencodeRuntimeLifecycle: input.opencodeRuntimeLifecycle,
     });
     await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
       ...caseInfoBase,
@@ -281,9 +282,7 @@ function buildRemoteCaseInfoBase(
     generated_project_path: null,
     patch_path: null,
     started_at: new Date().toISOString(),
-    rubric_scoring_prompt_file: "inputs/rubric-scoring-prompt.txt",
     rubric_scoring_payload_file: "inputs/rubric-scoring-payload.json",
-    rule_agent_prompt_file: "inputs/rule-agent-prompt.txt",
     rule_agent_bootstrap_payload_file: "inputs/rule-agent-bootstrap-payload.json",
     agent_runtime: "opencode",
     input_mode: "remote_task",
@@ -383,6 +382,7 @@ export async function runSingleCase(casePath: string): Promise<{ caseDir: string
   const result = await runCaseInput({
     caseInput,
     sourceCasePath: casePath,
+    opencodeRuntimeLifecycle: "ephemeral",
   });
 
   return {
@@ -456,7 +456,6 @@ async function prepareAcceptedRemoteEvaluationTask(
       preparedState,
       await taskUnderstandingNode(preparedState as ScoreGraphState, {
         opencode: opencodeRunner,
-        referenceRoot: config.referenceRoot,
         artifactStore,
         logger,
       }),

@@ -101,6 +101,8 @@ function renderRetryTaskUnderstandingPrompt(input: {
   const draft = buildRetryConstraintDraft(input.agentInput);
   return [
     "你是评分工作流中的任务理解 agent。任务理解阶段只能读取用户消息指定的 prompt 文件，不能修改既有文件，不能运行命令，不能访问网络。",
+    "本次是重试。仍必须使用 hmos-understanding skill。只修正最终输出格式。",
+    "该 skill 中的输出契约和自检清单是本次输出的强制要求。",
     "",
     "上一次任务理解输出无效。不要继续分析原始输入，只修正最终输出格式。",
     `上一次失败原因: ${summarizeRetryFailureReason(input.retryContext.failureReason)}`,
@@ -141,6 +143,7 @@ function renderTaskUnderstandingPrompt(input: {
   }
   return [
     "你是评分工作流中的任务理解 agent。任务理解阶段只能读取用户消息指定的 prompt 文件，不能修改既有文件，不能运行命令，不能访问网络。",
+    "执行任务前必须使用 hmos-understanding skill。该 skill 中的输出契约和自检清单是本次输出的强制要求。",
     "",
     `Sandbox 根目录: ${input.sandboxRoot}`,
     "输入边界（必须遵守）:",

@@ -9,4 +9,3 @@ dist/
 .opencode/runtime/
 package-lock.json
 cases/
-docs/superpowers/

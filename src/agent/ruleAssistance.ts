@@ -39,7 +39,6 @@ type BuildAgentPromptPayloadInput = {
   constraintSummary: ConstraintSummary;
   rubricSnapshot: LoadedRubricSnapshot;
   assistedRuleCandidates: AssistedRuleCandidate[];
-  initialTargetFiles: string[];
 };
 
 type MergeRuleAuditResultsInput = {
@@ -53,11 +52,6 @@ type MergeRuleAuditResultsOutput = {
   ruleAgentAssessmentResult: AgentAssistedRuleResult | null;
   mergedRuleAuditResults: RuleAuditResult[];
 };
-
-type AgentInteractionPayload = Pick<
-  AgentBootstrapPayload,
-  "case_context" | "task_understanding" | "assisted_rule_candidates" | "initial_target_files"
->;
 
 function toPosixPath(filePath: string): string {
   return filePath.replaceAll("\\", "/");
@@ -112,17 +106,6 @@ function normalizeAssistedRuleCandidatePaths(
           ),
         }
       : undefined,
-  };
-}
-
-export function buildAgentInteractionPayload(
-  payload: AgentBootstrapPayload,
-): AgentInteractionPayload {
-  return {
-    case_context: payload.case_context,
-    task_understanding: payload.task_understanding,
-    assisted_rule_candidates: payload.assisted_rule_candidates,
-    initial_target_files: payload.initial_target_files,
   };
 }
 
@@ -209,9 +192,6 @@ export function buildAgentBootstrapPayload(
   const assistedRuleCandidates = input.assistedRuleCandidates.map((candidate) =>
     normalizeAssistedRuleCandidatePaths(candidate, input),
   );
-  const initialTargetFiles = input.initialTargetFiles.map((filePath) =>
-    normalizeGeneratedProjectPathForTools(filePath, input),
-  );
 
   return {
     case_context: {
@@ -226,24 +206,7 @@ export function buildAgentBootstrapPayload(
     task_understanding: input.constraintSummary,
     rubric_summary: input.rubricSnapshot,
     assisted_rule_candidates: assistedRuleCandidates,
-    initial_target_files: initialTargetFiles,
   };
-}
-
-export function renderAgentBootstrapPrompt(payload: AgentBootstrapPayload): string {
-  const candidateRuleIds = payload.assisted_rule_candidates.map((candidate) => candidate.rule_id);
-  const interactionPayload = buildAgentInteractionPayload(payload);
-
-  return [
-    "请基于 opencode sandbox 完成本次候选规则判定。",
-    `本次共有 ${candidateRuleIds.length} 条 assisted_rule_candidates；rule_assessments 必须逐条覆盖 assisted_rule_candidates 中的每个 rule_id，禁止只输出 summary 或空数组。`,
-    candidateRuleIds.length > 0
-      ? `本次必须覆盖的 rule_id: ${candidateRuleIds.join(", ")}。`
-      : "当前没有 assisted_rule_candidates，只有在上游误调用时才可能看到本提示。",
-    "",
-    "当前判定上下文如下：",
-    JSON.stringify(interactionPayload, null, 2),
-  ].join("\n");
 }
 
 function formatAgentSummaryForFallback(

@@ -3,9 +3,6 @@ import { ScoreGraphState } from "../workflow/state.js";
 
 export async function opencodeSandboxPreparationNode(
   state: ScoreGraphState,
-  deps: {
-    referenceRoot: string;
-  },
 ): Promise<Partial<ScoreGraphState>> {
   if (state.opencodeSandboxRoot) {
     return {};
@@ -17,7 +14,6 @@ export async function opencodeSandboxPreparationNode(
     originalProjectPath: state.caseInput.originalProjectPath,
     originalProjectProvided: state.caseInput.originalProjectProvided,
     effectivePatchPath: state.effectivePatchPath ?? state.caseInput.patchPath,
-    referenceRoot: deps.referenceRoot,
     metadata: {
       case_id: state.caseInput.caseId,
       prompt_text: state.caseInput.promptText,

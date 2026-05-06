@@ -42,7 +42,6 @@ function payload(): AgentBootstrapPayload {
         evidence_snippets: [],
       },
     ],
-    initial_target_files: ["generated/entry/src/main.ets"],
   };
 }
 
@@ -91,9 +90,15 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   });
 
   assert.equal(prompt.includes("tool" + "_call"), false);
+  assert.match(prompt, /执行任务前必须使用 hmos-rule-assessment skill/);
+  assert.match(prompt, /该 skill 中的输出契约和自检清单是本次输出的强制要求/);
   assert.match(prompt, /generated\//);
   assert.match(prompt, /original\//);
   assert.match(prompt, /patch\//);
+  assert.doesNotMatch(prompt, /references\//);
+  assert.match(prompt, /优先阅读 patch\/effective\.patch/);
+  assert.match(prompt, /根据 patch 中出现的文件路径继续阅读相关 generated\/ 或 original\/ 上下文/);
+  assert.doesNotMatch(prompt, /initial_target_files/);
   assert.match(prompt, /output_file: metadata\/agent-output\/rule-assessment\.json/);
   assert.match(prompt, /严格遵守 system prompt 中的正确输出格式/);
   assert.doesNotMatch(prompt, /正确输出格式:/);
@@ -136,6 +141,8 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after p
   assert.equal(calls[1]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试/);
+  assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rule-assessment skill/);
+  assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.match(calls[1]?.prompt ?? "", /candidate_rule_ids/);
@@ -172,6 +179,8 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after r
   assert.equal(calls[1]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试/);
+  assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rule-assessment skill/);
+  assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.match(calls[1]?.prompt ?? "", /candidate_rule_ids/);
