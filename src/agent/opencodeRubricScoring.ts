@@ -352,6 +352,10 @@ function normalizeRubricResult(
   return {
     ...finalAnswer,
     item_scores: normalizedItems,
+    risks: finalAnswer.risks.map((risk, index) => ({
+      id: index + 1,
+      ...risk,
+    })),
   };
 }
 

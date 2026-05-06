@@ -816,6 +816,15 @@ test("scoring and report nodes fall back to deterministic results when merge out
     true,
   );
 
+  assert.deepEqual(
+    scoringResult.scoreComputation?.risks.map((risk) => risk.id),
+    [1],
+  );
+  assert.deepEqual(
+    scoringResult.scoreComputation?.humanReviewItems.map((item) => item.id),
+    [1, 2],
+  );
+
   const reportResult = await reportGenerationNode(
     {
       taskType: "bug_fix",

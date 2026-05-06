@@ -3,10 +3,7 @@ import path from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { API_PATHS } from "./apiDefinitions.js";
 import { getConfig } from "../config.js";
-import {
-  createGetHumanReviewStatusHandler,
-  createSubmitHumanReviewHandler,
-} from "./humanReviewHandler.js";
+import { createSubmitHumanReviewHandler } from "./humanReviewHandler.js";
 import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 import {
   createHumanReviewEvidenceStore,
@@ -483,7 +480,5 @@ export function createApp(
     API_PATHS.humanReview,
     createSubmitHumanReviewHandler({ registry, store: humanReviewEvidenceStore }),
   );
-  app.get(API_PATHS.humanReviewStatus, createGetHumanReviewStatusHandler(humanReviewEvidenceStore));
-
   return app;
 }

@@ -57,7 +57,6 @@ export const API_PATHS = {
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
   ruleViolationStats: "/score/rule-violation-stats",
   humanReview: "/score/remote-tasks/:taskId/human-review",
-  humanReviewStatus: "/score/human-reviews/:reviewId",
 } as const;
 
 const successField = {
@@ -370,7 +369,11 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             type: "array",
             required: false,
             description: "Optional per-item human review results. Missing or empty arrays are valid.",
-            items: { type: "object", description: "One human review item result." },
+            items: {
+              type: "object",
+              description:
+                "One item review with itemId, agreeWithResultAssessment, resultAssessment, and optional correctedAssessment, reason, comment.",
+            },
           },
           riskReviews: {
             type: "array",
@@ -380,7 +383,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             items: {
               type: "object",
               description:
-                "One risk review with riskIndex, agreeWithResultLevel, resultLevel, and optional correctedLevel, reason, comment.",
+                "One risk review with riskId, agreeWithResultLevel, resultLevel, and optional correctedLevel, reason, comment.",
             },
           },
         },
@@ -397,11 +400,6 @@ export const API_DEFINITIONS: ApiDefinition[] = [
           properties: {
             success: successField,
             taskId: taskIdField,
-            reviewId: {
-              type: "string",
-              required: true,
-              description: "Generated human review id.",
-            },
             status: {
               type: "string",
               required: true,
@@ -428,42 +426,6 @@ export const API_DEFINITIONS: ApiDefinition[] = [
         description: "Task exists but has not completed yet.",
         body: errorResponseBody,
       },
-    ],
-  },
-  {
-    method: "GET",
-    path: API_PATHS.humanReviewStatus,
-    description: "Read stored human review submission status.",
-    request: {
-      pathParams: {
-        reviewId: {
-          type: "string",
-          required: true,
-          description: "Generated human review id.",
-        },
-      },
-    },
-    responses: [
-      {
-        status: 200,
-        description: "Human review submission status.",
-        body: {
-          type: "object",
-          description: "Stored human review status record.",
-          properties: {
-            success: successField,
-            reviewId: { type: "string", required: true, description: "Human review id." },
-            taskId: taskIdField,
-            status: { type: "string", required: true, description: "Submission status." },
-            summary: {
-              type: "object",
-              required: true,
-              description: "Stored submission summary.",
-            },
-          },
-        },
-      },
-      { status: 404, description: "Human review status was not found.", body: errorResponseBody },
     ],
   },
 ];

@@ -406,6 +406,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     }
 
     risks.push({
+      id: risks.length + 1,
       level: rule.rule_source === "forbidden_pattern" ? "high" : "medium",
       title: `规则违规：${rule.rule_id}`,
       description: rule.conclusion,
@@ -465,6 +466,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
 
   if (triggeredGates.length > 0) {
     humanReviewItems.push({
+      id: humanReviewItems.length + 1,
       item: "硬门槛复核",
       current_assessment: triggeredGates.map((gate) => gate.id).join(", "),
       uncertainty_reason: triggeredGates.map((gate) => gate.reason).join(" "),
@@ -474,6 +476,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
 
   if (!input.evidenceSummary.hasPatch && input.taskType !== "full_generation") {
     humanReviewItems.push({
+      id: humanReviewItems.length + 1,
       item: "Patch 上下文缺失",
       current_assessment: "当前 continuation 或 bug_fix 评分时缺少 patch 文件。",
       uncertainty_reason: "变更范围证据不完整。",
@@ -486,6 +489,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     shouldForceReview(totalScore, input.rubric.reviewRules.scoreBands)
   ) {
     humanReviewItems.push({
+      id: humanReviewItems.length + 1,
       item: "置信度复核",
       current_assessment: `当前总分为 ${totalScore}。`,
       uncertainty_reason: "存在低置信度指标，或分数落在需要人工确认的关键分段。",

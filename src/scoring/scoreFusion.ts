@@ -338,7 +338,10 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     });
   }
 
-  const risks: RiskItem[] = [...(input.rubricScoringResult?.risks ?? [])];
+  const risks: RiskItem[] = (input.rubricScoringResult?.risks ?? []).map((risk, index) => ({
+    ...risk,
+    id: index + 1,
+  }));
 
   for (const rule of input.ruleAuditResults) {
     if (rule.result !== "不满足" && rule.result !== "待人工复核") {
@@ -373,6 +376,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
 
     if (rule.result === "不满足") {
       risks.push({
+        id: risks.length + 1,
         level: rule.rule_source === "forbidden_pattern" ? "high" : "medium",
         title: `规则违规：${rule.rule_id}`,
         description: rule.conclusion,
@@ -452,6 +456,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
       ? []
       : [
           {
+            id: 1,
             item: "Rubric Agent 降级",
             current_assessment: "rubric agent 未产出可信扣分依据，当前按满分保留。",
             uncertainty_reason: `rubricAgentRunStatus=${input.rubricAgentRunStatus}`,
@@ -460,6 +465,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         ];
   if (triggeredGateIds.length > 0) {
     humanReviewItems.push({
+      id: humanReviewItems.length + 1,
       item: "硬门槛复核",
       current_assessment: triggeredGateIds.join(", "),
       uncertainty_reason: "规则分支触发了 rubric hard gate 候选条件。",

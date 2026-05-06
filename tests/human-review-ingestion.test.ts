@@ -3,15 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import {
-  createGetHumanReviewStatusHandler,
-  createSubmitHumanReviewHandler,
-} from "../src/api/humanReviewHandler.js";
+import { createSubmitHumanReviewHandler } from "../src/api/humanReviewHandler.js";
 import { API_DEFINITIONS, API_PATHS } from "../src/api/apiDefinitions.js";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import { getConfig } from "../src/config.js";
 import { createHumanReviewEvidenceStore } from "../src/humanReview/humanReviewEvidenceStore.js";
-import type { HumanReviewItemReview } from "../src/humanReview/humanReviewTypes.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "human-review-"));
@@ -50,13 +46,9 @@ function createReviewRequest(
   };
 }
 
-function createStatusRequest(reviewId: string) {
-  return { params: { reviewId } };
-}
-
 async function writeCompletedTask(
   t: test.TestContext,
-  options: { status?: "completed" | "running" } = {},
+  options: { status?: "completed" | "running"; omitResultIds?: boolean } = {},
 ) {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case");
@@ -68,19 +60,29 @@ async function writeCompletedTask(
       overall_conclusion: { total_score: 60 },
       risks: [
         {
+          ...(options.omitResultIds ? {} : { id: 1 }),
           level: "medium",
           title: "接口风险",
           description: "接口失败时缺少明确错误提示。",
           evidence: "entry/src/main/ets/pages/Index.ets: console.error(error)",
         },
         {
+          ...(options.omitResultIds ? {} : { id: 2 }),
           level: "high",
           title: "主流程阻断",
           description: "核心列表无法加载。",
           evidence: "entry/src/main/ets/pages/Index.ets: return []",
         },
       ],
-      human_review_items: [{ item: "接口接入复核" }],
+      human_review_items: [
+        {
+          ...(options.omitResultIds ? {} : { id: 1 }),
+          item: "接口接入复核",
+          current_assessment: "需要确认是否使用真实接口。",
+          uncertainty_reason: "规则提示接口接入风险。",
+          suggested_focus: "检查是否仍依赖 mockData。",
+        },
+      ],
       report_meta: { unit_name: "case-88" },
     }),
   );
@@ -95,37 +97,15 @@ async function writeCompletedTask(
   return { localCaseRoot, caseDir, registry };
 }
 
-function review(patch: Partial<HumanReviewItemReview>): HumanReviewItemReview {
-  return {
-    sourceItem: "代码实现复核",
-    humanVerdict: "confirmed_issue",
-    correctedAssessment: "生成代码使用本地 mockData 替代真实接口请求。",
-    evidence: {
-      files: ["entry/src/main/ets/pages/Index.ets"],
-      snippets: ["const mockData = []"],
-      comment: "prompt 要求接入真实接口。",
-    },
-    ...patch,
-  };
-}
-
-test("human review evidence store writes status and datasets", async (t) => {
+test("human review evidence store writes datasets without extra sample ids", async (t) => {
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
 
-  await store.writeStatus({
-    schemaVersion: 1,
-    reviewId: "hr_test_1",
-    taskId: 88,
-    status: "completed",
-    updatedAt: "2026-04-28T10:20:31.000Z",
-  });
-  assert.equal((await store.readStatus("hr_test_1"))?.status, "completed");
-
   await store.appendDatasetSample("item_review_calibration", {
     type: "item_review_calibration",
-    reviewId: "hr_test_1",
-    evidenceId: "hr_test_1-item-1",
+    taskId: 88,
+    testCaseId: 188,
+    itemId: 1,
     humanReview: { correctedAssessment: "不要用 mockData 替代真实接口。" },
   });
 
@@ -134,8 +114,12 @@ test("human review evidence store writes status and datasets", async (t) => {
   )
     .trim()
     .split("\n");
+  const sample = JSON.parse(datasetLines[0] ?? "{}") as Record<string, unknown>;
   assert.equal(datasetLines.length, 1);
-  assert.equal(JSON.parse(datasetLines[0] ?? "{}").evidenceId, "hr_test_1-item-1");
+  assert.equal(sample.taskId, 88);
+  assert.equal(sample.itemId, 1);
+  assert.equal(Object.hasOwn(sample, "reviewId"), false);
+  assert.equal(Object.hasOwn(sample, "evidenceId"), false);
 });
 
 test("human review evidence store serializes concurrent dataset appends", async (t) => {
@@ -146,8 +130,8 @@ test("human review evidence store serializes concurrent dataset appends", async 
     Array.from({ length: 5 }, async (_, index) =>
       store.appendDatasetSample("item_review_calibration", {
         type: "item_review_calibration",
-        reviewId: "hr_parallel",
-        evidenceId: `evidence-${String(index)}`,
+        taskId: 88,
+        itemId: index + 1,
       }),
     ),
   );
@@ -172,6 +156,7 @@ test("submit human review handler accepts empty first-version payload", async (t
   assert.equal(state.statusCode, 200);
   assert.equal(state.body?.success, true);
   assert.equal(state.body?.status, "completed");
+  assert.equal(Object.hasOwn(state.body ?? {}, "reviewId"), false);
   assert.deepEqual(state.body?.summary, {
     itemReviewCount: 0,
     riskReviewCount: 0,
@@ -179,14 +164,13 @@ test("submit human review handler accepts empty first-version payload", async (t
     riskDisagreementCount: 0,
     datasetItemCount: 0,
   });
-  assert.equal((await store.readStatus(String(state.body?.reviewId)))?.status, "completed");
   await assert.rejects(
     fs.readFile(path.join(root, "datasets", "risk_review_calibrations.jsonl"), "utf-8"),
     /ENOENT/,
   );
 });
 
-test("submit human review handler writes manual risk review calibration samples", async (t) => {
+test("submit human review handler writes manual risk review calibration samples by risk id", async (t) => {
   const { registry } = await writeCompletedTask(t);
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
@@ -197,7 +181,7 @@ test("submit human review handler writes manual risk review calibration samples"
     createReviewRequest(88, undefined, {
       riskReviews: [
         {
-          riskIndex: 0,
+          riskId: 1,
           agreeWithResultLevel: false,
           resultLevel: "medium",
           correctedLevel: "low",
@@ -205,7 +189,7 @@ test("submit human review handler writes manual risk review calibration samples"
           comment: "边界体验问题。",
         },
         {
-          riskIndex: 1,
+          riskId: 2,
           agreeWithResultLevel: true,
           resultLevel: "high",
         },
@@ -216,6 +200,7 @@ test("submit human review handler writes manual risk review calibration samples"
 
   assert.equal(state.statusCode, 200);
   assert.equal(state.body?.status, "completed");
+  assert.equal(Object.hasOwn(state.body ?? {}, "reviewId"), false);
   assert.deepEqual(state.body?.summary, {
     itemReviewCount: 0,
     riskReviewCount: 2,
@@ -233,8 +218,13 @@ test("submit human review handler writes manual risk review calibration samples"
 
   assert.equal(samples.length, 2);
   assert.equal(samples[0]?.type, "risk_review_calibration");
-  assert.equal(samples[0]?.riskIndex, 0);
+  assert.equal(samples[0]?.taskId, 88);
+  assert.equal(samples[0]?.testCaseId, 188);
+  assert.equal(samples[0]?.riskId, 1);
+  assert.equal(Object.hasOwn(samples[0] ?? {}, "reviewId"), false);
+  assert.equal(Object.hasOwn(samples[0] ?? {}, "evidenceId"), false);
   assert.deepEqual(samples[0]?.resultRisk, {
+    id: 1,
     level: "medium",
     title: "接口风险",
     description: "接口失败时缺少明确错误提示。",
@@ -252,7 +242,7 @@ test("submit human review handler writes manual risk review calibration samples"
   );
 });
 
-test("submit human review handler writes item review calibration samples without raw payload", async (t) => {
+test("submit human review handler writes simplified item review calibration samples by item id", async (t) => {
   const { registry } = await writeCompletedTask(t);
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
@@ -261,7 +251,16 @@ test("submit human review handler writes item review calibration samples without
 
   await handler(
     createReviewRequest(88, "remote-token", {
-      itemReviews: [review({ sourceItem: "接口接入复核", tags: ["api_integration"] })],
+      itemReviews: [
+        {
+          itemId: 1,
+          agreeWithResultAssessment: false,
+          resultAssessment: "需要确认是否使用真实接口。",
+          correctedAssessment: "确认使用 mockData 替代真实接口。",
+          reason: "代码中存在 const mockData = []。",
+          comment: "接口接入问题成立。",
+        },
+      ],
     }) as never,
     response as never,
   );
@@ -270,7 +269,7 @@ test("submit human review handler writes item review calibration samples without
   assert.equal(state.body?.success, true);
   assert.equal(state.body?.taskId, 88);
   assert.equal(state.body?.status, "completed");
-  assert.equal(typeof state.body?.reviewId, "string");
+  assert.equal(Object.hasOwn(state.body ?? {}, "reviewId"), false);
   assert.deepEqual(state.body?.summary, {
     itemReviewCount: 1,
     riskReviewCount: 0,
@@ -278,7 +277,6 @@ test("submit human review handler writes item review calibration samples without
     riskDisagreementCount: 0,
     datasetItemCount: 1,
   });
-  assert.equal((await store.readStatus(String(state.body?.reviewId)))?.status, "completed");
 
   const samples = (
     await fs.readFile(path.join(root, "datasets", "item_review_calibrations.jsonl"), "utf-8")
@@ -289,48 +287,29 @@ test("submit human review handler writes item review calibration samples without
 
   assert.equal(samples.length, 1);
   assert.equal(samples[0]?.type, "item_review_calibration");
-  assert.equal(samples[0]?.itemIndex, 0);
-  assert.deepEqual(samples[0]?.resultReviewItem, { item: "接口接入复核" });
+  assert.equal(samples[0]?.taskId, 88);
+  assert.equal(samples[0]?.testCaseId, 188);
+  assert.equal(samples[0]?.itemId, 1);
+  assert.equal(Object.hasOwn(samples[0] ?? {}, "reviewId"), false);
+  assert.equal(Object.hasOwn(samples[0] ?? {}, "evidenceId"), false);
+  assert.deepEqual(samples[0]?.resultReviewItem, {
+    id: 1,
+    item: "接口接入复核",
+    current_assessment: "需要确认是否使用真实接口。",
+    uncertainty_reason: "规则提示接口接入风险。",
+    suggested_focus: "检查是否仍依赖 mockData。",
+  });
   assert.deepEqual(samples[0]?.humanReview, {
-    sourceItem: "接口接入复核",
-    humanVerdict: "confirmed_issue",
-    correctedAssessment: "生成代码使用本地 mockData 替代真实接口请求。",
-    evidence: {
-      files: ["entry/src/main/ets/pages/Index.ets"],
-      snippets: ["const mockData = []"],
-      comment: "prompt 要求接入真实接口。",
-    },
-    tags: ["api_integration"],
+    agreeWithResultAssessment: false,
+    correctedAssessment: "确认使用 mockData 替代真实接口。",
+    reason: "代码中存在 const mockData = []。",
+    comment: "接口接入问题成立。",
   });
   await assert.rejects(fs.stat(path.join(root, "raw")), /ENOENT/);
 });
 
-test("submit human review handler creates distinct review ids for repeated task submissions", async (t) => {
-  const { registry } = await writeCompletedTask(t);
-  const root = await makeTempDir(t);
-  const store = createHumanReviewEvidenceStore(root);
-  const handler = createSubmitHumanReviewHandler({ registry, store });
-
-  const first = createResponse();
-  await handler(createReviewRequest(88, undefined, {}) as never, first.response as never);
-
-  const second = createResponse();
-  await handler(
-    createReviewRequest(88, undefined, {
-      itemReviews: [review({ sourceItem: "接口接入复核", tags: ["api_integration"] })],
-    }) as never,
-    second.response as never,
-  );
-
-  assert.equal(first.state.statusCode, 200);
-  assert.equal(second.state.statusCode, 200);
-  assert.notEqual(first.state.body?.reviewId, second.state.body?.reviewId);
-  assert.equal((await store.readStatus(String(first.state.body?.reviewId)))?.status, "completed");
-  assert.equal((await store.readStatus(String(second.state.body?.reviewId)))?.status, "completed");
-});
-
-test("submit human review handler does not require token authentication", async (t) => {
-  const { registry } = await writeCompletedTask(t);
+test("submit human review handler maps legacy result review ids from array position", async (t) => {
+  const { registry } = await writeCompletedTask(t, { omitResultIds: true });
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
   const handler = createSubmitHumanReviewHandler({ registry, store });
@@ -338,35 +317,147 @@ test("submit human review handler does not require token authentication", async 
 
   await handler(
     createReviewRequest(88, undefined, {
-      itemReviews: [review({ sourceItem: "接口接入复核", tags: ["api_integration"] })],
+      itemReviews: [
+        {
+          itemId: 1,
+          agreeWithResultAssessment: true,
+          resultAssessment: "需要确认是否使用真实接口。",
+        },
+      ],
+      riskReviews: [
+        {
+          riskId: 1,
+          agreeWithResultLevel: true,
+          resultLevel: "medium",
+        },
+      ],
     }) as never,
     response as never,
   );
 
   assert.equal(state.statusCode, 200);
-  assert.equal(state.body?.success, true);
-  assert.equal(state.body?.taskId, 88);
+  assert.deepEqual(state.body?.summary, {
+    itemReviewCount: 1,
+    riskReviewCount: 1,
+    riskAgreementCount: 1,
+    riskDisagreementCount: 0,
+    datasetItemCount: 2,
+  });
+
+  const itemSamples = (
+    await fs.readFile(path.join(root, "datasets", "item_review_calibrations.jsonl"), "utf-8")
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const riskSamples = (
+    await fs.readFile(path.join(root, "datasets", "risk_review_calibrations.jsonl"), "utf-8")
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  assert.equal(itemSamples[0]?.itemId, 1);
+  assert.deepEqual(itemSamples[0]?.resultReviewItem, {
+    id: 1,
+    item: "接口接入复核",
+    current_assessment: "需要确认是否使用真实接口。",
+    uncertainty_reason: "规则提示接口接入风险。",
+    suggested_focus: "检查是否仍依赖 mockData。",
+  });
+  assert.equal(riskSamples[0]?.riskId, 1);
+  assert.deepEqual(riskSamples[0]?.resultRisk, {
+    id: 1,
+    level: "medium",
+    title: "接口风险",
+    description: "接口失败时缺少明确错误提示。",
+    evidence: "entry/src/main/ets/pages/Index.ets: console.error(error)",
+  });
 });
 
-test("submit human review handler rejects running, missing, and invalid risk requests", async (t) => {
+test("submit human review handler rejects duplicate ids and stale result values", async (t) => {
+  const { registry } = await writeCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+
+  const duplicateItem = createResponse();
+  await handler(
+    createReviewRequest(88, undefined, {
+      itemReviews: [
+        { itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" },
+        { itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" },
+      ],
+    }) as never,
+    duplicateItem.response as never,
+  );
+  assert.equal(duplicateItem.state.statusCode, 400);
+
+  const duplicateRisk = createResponse();
+  await handler(
+    createReviewRequest(88, undefined, {
+      riskReviews: [
+        { riskId: 1, agreeWithResultLevel: true, resultLevel: "medium" },
+        { riskId: 1, agreeWithResultLevel: true, resultLevel: "medium" },
+      ],
+    }) as never,
+    duplicateRisk.response as never,
+  );
+  assert.equal(duplicateRisk.state.statusCode, 400);
+
+  const staleItem = createResponse();
+  await handler(
+    createReviewRequest(88, undefined, {
+      itemReviews: [{ itemId: 1, agreeWithResultAssessment: true, resultAssessment: "过期判断" }],
+    }) as never,
+    staleItem.response as never,
+  );
+  assert.equal(staleItem.state.statusCode, 409);
+
+  const staleRisk = createResponse();
+  await handler(
+    createReviewRequest(88, undefined, {
+      riskReviews: [{ riskId: 1, agreeWithResultLevel: true, resultLevel: "high" }],
+    }) as never,
+    staleRisk.response as never,
+  );
+  assert.equal(staleRisk.state.statusCode, 409);
+});
+
+test("submit human review handler rejects running, missing, and invalid review requests", async (t) => {
   const { registry } = await writeCompletedTask(t, { status: "running" });
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
   const handler = createSubmitHumanReviewHandler({ registry, store });
 
-  const invalid = createResponse();
+  const invalidRisk = createResponse();
   await handler(
     createReviewRequest(88, undefined, {
-      riskReviews: [{ riskIndex: 0, agreeWithResultLevel: false, resultLevel: "medium" }],
+      riskReviews: [{ riskId: 1, agreeWithResultLevel: false, resultLevel: "medium" }],
     }) as never,
-    invalid.response as never,
+    invalidRisk.response as never,
   );
-  assert.equal(invalid.state.statusCode, 400);
+  assert.equal(invalidRisk.state.statusCode, 400);
+
+  const invalidItem = createResponse();
+  await handler(
+    createReviewRequest(88, undefined, {
+      itemReviews: [
+        {
+          itemId: 1,
+          agreeWithResultAssessment: false,
+          resultAssessment: "需要确认是否使用真实接口。",
+        },
+      ],
+    }) as never,
+    invalidItem.response as never,
+  );
+  assert.equal(invalidItem.state.statusCode, 400);
 
   const running = createResponse();
   await handler(
     createReviewRequest(88, undefined, {
-      itemReviews: [review({})],
+      itemReviews: [{ itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" }],
     }) as never,
     running.response as never,
   );
@@ -375,39 +466,11 @@ test("submit human review handler rejects running, missing, and invalid risk req
   const missing = createResponse();
   await handler(
     createReviewRequest(999, undefined, {
-      itemReviews: [review({})],
+      itemReviews: [{ itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" }],
     }) as never,
     missing.response as never,
   );
   assert.equal(missing.state.statusCode, 404);
-});
-
-test("human review status handler returns stored status", async (t) => {
-  const root = await makeTempDir(t);
-  const store = createHumanReviewEvidenceStore(root);
-  await store.writeStatus({
-    schemaVersion: 1,
-    reviewId: "hr_status",
-    taskId: 88,
-    status: "completed",
-    updatedAt: "2026-04-28T10:20:31.000Z",
-    summary: {
-      itemReviewCount: 1,
-      riskReviewCount: 0,
-      riskAgreementCount: 0,
-      riskDisagreementCount: 0,
-      datasetItemCount: 1,
-    },
-  });
-  const handler = createGetHumanReviewStatusHandler(store);
-  const { response, state } = createResponse();
-
-  await handler(createStatusRequest("hr_status") as never, response as never);
-
-  assert.equal(state.statusCode, 200);
-  assert.equal(state.body?.success, true);
-  assert.equal(state.body?.reviewId, "hr_status");
-  assert.equal(state.body?.status, "completed");
 });
 
 test("human review config defaults evidence root outside project directory", () => {
@@ -463,9 +526,8 @@ test("aliyun deployment script writes persistent human review environment", asyn
   assert.match(script, /chown.*\$\{HUMAN_REVIEW_EVIDENCE_ROOT\}/);
 });
 
-test("api definitions document human review submission and status endpoints", () => {
+test("api definitions document human review submission endpoint", () => {
   assert.equal(API_PATHS.humanReview, "/score/remote-tasks/:taskId/human-review");
-  assert.equal(API_PATHS.humanReviewStatus, "/score/human-reviews/:reviewId");
   assert.equal(
     API_DEFINITIONS.some(
       (definition) => definition.method === "POST" && definition.path === API_PATHS.humanReview,
@@ -474,10 +536,9 @@ test("api definitions document human review submission and status endpoints", ()
   );
   assert.equal(
     API_DEFINITIONS.some(
-      (definition) =>
-        definition.method === "GET" && definition.path === API_PATHS.humanReviewStatus,
+      (definition) => definition.path === "/score/human-reviews/:reviewId",
     ),
-    true,
+    false,
   );
   const humanReviewDefinition = API_DEFINITIONS.find(
     (definition) => definition.method === "POST" && definition.path === API_PATHS.humanReview,
@@ -494,5 +555,9 @@ test("api definitions document human review submission and status endpoints", ()
   assert.equal(
     Object.hasOwn(humanReviewDefinition.responses[0]?.body.properties ?? {}, "summary"),
     true,
+  );
+  assert.equal(
+    Object.hasOwn(humanReviewDefinition.responses[0]?.body.properties ?? {}, "reviewId"),
+    false,
   );
 });

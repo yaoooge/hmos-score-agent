@@ -154,6 +154,7 @@ export interface SubmetricDetail {
 }
 
 export interface RiskItem {
+  id: number;
   level: string;
   title: string;
   description: string;
@@ -161,6 +162,7 @@ export interface RiskItem {
 }
 
 export interface HumanReviewItem {
+  id: number;
   item: string;
   current_assessment: string;
   uncertainty_reason: string;
