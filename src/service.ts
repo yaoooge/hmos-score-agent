@@ -6,6 +6,7 @@ import { getConfig } from "./config.js";
 import { ArtifactStore } from "./io/artifactStore.js";
 import { loadCaseFromPath } from "./io/caseLoader.js";
 import { CaseLogger } from "./io/caseLogger.js";
+import { formatElapsedDuration } from "./io/duration.js";
 import { uploadTaskCallback } from "./io/uploader.js";
 import { createOpencodeRuntimeConfig } from "./opencode/opencodeConfig.js";
 import { runOpencodePrompt } from "./opencode/opencodeCliRunner.js";
@@ -259,14 +260,6 @@ const REMOTE_TASK_ACCEPTED_MESSAGE = "任务接收成功，结果将通过 callb
 
 function formatRemoteTaskLogContext(remoteTask: RemoteEvaluationTask): string {
   return `taskId=${String(remoteTask.taskId)} testCaseId=${String(remoteTask.testCase.id)}`;
-}
-
-function formatElapsedDuration(elapsedMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${String(minutes).padStart(2, "0")}min${String(seconds).padStart(2, "0")}s`;
 }
 
 function buildRemoteCaseInfoBase(

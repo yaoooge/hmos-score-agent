@@ -55,9 +55,6 @@ function buildRetryConstraintDraft(input: TaskUnderstandingAgentInput): Constrai
           ? `模块: ${input.projectStructure.modulePaths.join(", ")}`
           : "模块: 未从工程结构中识别到 HarmonyOS 模块",
         ...input.projectStructure.implementationHints,
-        input.projectStructure.representativeFiles.length > 0
-          ? `代表文件: ${input.projectStructure.representativeFiles.slice(0, 8).join(", ")}`
-          : "代表文件: 未提供",
       ],
       16,
     ),
@@ -160,7 +157,7 @@ function renderTaskUnderstandingPrompt(input: {
     "任务:",
     "1. 结合 agent_input 中的 promptText、工程结构和补丁摘要，提取任务约束摘要。",
     "2. explicitConstraints: 从 prompt 提取任务类型、场景、目标和明确要求。",
-    "3. contextualConstraints: 从 projectStructure、implementationHints、modulePaths、representativeFiles 提取模块、分层、技术栈和实现边界。",
+    "3. contextualConstraints: 从 projectStructure、implementationHints、modulePaths 提取模块、分层、技术栈和实现边界。",
     "4. implicitConstraints: 从 patchSummary 提取修改范围、侵入程度、改动类型和隐含风险。",
     "5. classificationHints: 给后续任务分类使用的短标签，例如 full_generation、continuation、bug_fix、has_patch。",
     "",

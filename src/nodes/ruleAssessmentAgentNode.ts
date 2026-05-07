@@ -28,12 +28,9 @@ export async function ruleAssessmentAgentNode(
   }
 
   if (!deps.opencode) {
-    await deps.logger?.warn("rule agent 判定跳过 reason=未配置 opencode runtime");
-    return {
-      ruleAgentRunnerMode: "opencode",
-      ruleAgentRunStatus: "skipped",
-      ruleAgentRunnerResult: undefined,
-    };
+    const message = "rule agent 调用失败，请重新执行用例。reason=未配置 opencode runtime";
+    await deps.logger?.error(message);
+    throw new Error(message);
   }
 
   try {
@@ -45,7 +42,7 @@ export async function ruleAssessmentAgentNode(
     });
     if (!runnerResult.final_answer) {
       throw new Error(
-        `rule opencode 输出无效 outcome=${runnerResult.outcome} reason=${runnerResult.failure_reason ?? ""}`,
+        `rule agent 调用失败，请重新执行用例。outcome=${runnerResult.outcome} reason=${runnerResult.failure_reason ?? ""}`,
       );
     }
 

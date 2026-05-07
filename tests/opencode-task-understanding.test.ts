@@ -14,7 +14,6 @@ function input(): TaskUnderstandingAgentInput {
       rootPath: "/case/generated",
       topLevelEntries: ["entry"],
       modulePaths: ["entry"],
-      representativeFiles: ["entry/src/main.ets"],
       implementationHints: ["技术栈: ArkTS/ETS 页面与组件实现"],
       omittedFileCount: 0,
     },
@@ -78,6 +77,8 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   assert.match(prompt, /不要读取 original\//);
   assert.match(prompt, /不要读取 patch\//);
   assert.match(prompt, /不要读取 references\//);
+  assert.doesNotMatch(prompt, /representativeFiles/);
+  assert.doesNotMatch(prompt, /代表文件/);
   assert.match(prompt, /output_file: metadata\/agent-output\/task-understanding\.json/);
   assert.doesNotMatch(prompt, /第一步只读取 patch\/effective\.patch/);
   assert.doesNotMatch(prompt, /第二步只按 patch 和 metadata 指向的相关文件读取上下文/);
@@ -151,6 +152,8 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.match(calls[1]?.prompt ?? "", /只根据 constraint_draft 输出最终 JSON/);
   assert.match(calls[1]?.prompt ?? "", /explicitConstraints/);
   assert.match(calls[1]?.prompt ?? "", /classificationHints/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /representativeFiles/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /代表文件/);
 });
 
 test("runOpencodeTaskUnderstanding retry prompt omits raw agent input", async () => {
@@ -225,4 +228,54 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.match(calls[1]?.prompt ?? "", /禁止调用 glob、grep、list 或任何用于探索工程文件的工具/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /禁止调用 read、glob、grep、find 或任何工具/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /agent_input:/);
+});
+
+test("runOpencodeTaskUnderstanding retries once after initial opencode timeout", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeTaskUnderstanding({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    agentInput: input(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      if (calls.length === 1) {
+        throw new Error(`opencode 调用超时 request=${request.requestTag}`);
+      }
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "{}\n",
+        rawText: JSON.stringify({
+          explicitConstraints: ["修复登录按钮无响应问题"],
+          contextualConstraints: ["ArkTS 页面实现"],
+          implicitConstraints: ["低侵入修改"],
+          classificationHints: ["bug_fix", "has_patch"],
+        }),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.deepEqual(calls, [
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  ]);
+});
+
+test("runOpencodeTaskUnderstanding fails when retry also times out", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeTaskUnderstanding({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    agentInput: input(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      throw new Error(`opencode 调用超时 request=${request.requestTag}`);
+    },
+  });
+
+  assert.equal(result.outcome, "request_failed");
+  assert.match(result.failure_reason ?? "", /opencode 调用超时/);
+  assert.deepEqual(calls, [
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  ]);
 });

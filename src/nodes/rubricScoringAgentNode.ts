@@ -18,16 +18,6 @@ export async function rubricScoringAgentNode(
   },
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("rubricScoringAgentNode");
-  if (!deps.opencode) {
-    await deps.logger?.warn("rubric agent 评分跳过 reason=未配置 opencode runtime");
-    return {
-      rubricAgentRunnerMode: "opencode",
-      rubricAgentRunStatus: "skipped",
-      rubricAgentRawText: "",
-      rubricScoringResult: undefined,
-      rubricAgentRunnerResult: undefined,
-    };
-  }
   if (!state.rubricScoringPayload) {
     await deps.logger?.warn("rubric agent 评分跳过 reason=缺少 rubric payload");
     return {
@@ -37,6 +27,11 @@ export async function rubricScoringAgentNode(
       rubricScoringResult: undefined,
       rubricAgentRunnerResult: undefined,
     };
+  }
+  if (!deps.opencode) {
+    const message = "rubric agent 调用失败，请重新执行用例。reason=未配置 opencode runtime";
+    await deps.logger?.error(message);
+    throw new Error(message);
   }
 
   try {
@@ -48,7 +43,7 @@ export async function rubricScoringAgentNode(
     });
     if (!runnerResult.final_answer) {
       throw new Error(
-        `rubric opencode 输出无效 outcome=${runnerResult.outcome} reason=${runnerResult.failure_reason ?? ""}`,
+        `rubric agent 调用失败，请重新执行用例。outcome=${runnerResult.outcome} reason=${runnerResult.failure_reason ?? ""}`,
       );
     }
 

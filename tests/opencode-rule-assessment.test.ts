@@ -189,6 +189,51 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after r
   assert.doesNotMatch(calls[1]?.prompt ?? "", /bootstrap_payload:/);
 });
 
+test("runOpencodeRuleAssessment retries once after initial opencode timeout", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    bootstrapPayload: payload(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      if (calls.length === 1) {
+        throw new Error(`opencode 调用超时 request=${request.requestTag}`);
+      }
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "{}\n",
+        rawText: JSON.stringify(finalAnswer()),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.deepEqual(calls, [
+    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  ]);
+});
+
+test("runOpencodeRuleAssessment fails when retry also times out", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    bootstrapPayload: payload(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      throw new Error(`opencode 调用超时 request=${request.requestTag}`);
+    },
+  });
+
+  assert.equal(result.outcome, "request_failed");
+  assert.match(result.failure_reason ?? "", /opencode 调用超时/);
+  assert.deepEqual(calls, [
+    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  ]);
+});
+
 test("runOpencodeRuleAssessment fills incomplete rule coverage from the local skeleton", async () => {
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/sandbox/case",

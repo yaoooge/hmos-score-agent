@@ -224,6 +224,51 @@ test("runOpencodeRubricScoring retries once with strict format guidance after re
   assert.doesNotMatch(calls[1]?.prompt ?? "", /scoring_payload:/);
 });
 
+test("runOpencodeRubricScoring retries once after initial opencode timeout", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    scoringPayload: payload(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      if (calls.length === 1) {
+        throw new Error(`opencode 调用超时 request=${request.requestTag}`);
+      }
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "{}\n",
+        rawText: JSON.stringify(finalAnswer()),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.deepEqual(calls, [
+    "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  ]);
+});
+
+test("runOpencodeRubricScoring fails when retry also times out", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    scoringPayload: payload(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      throw new Error(`opencode 调用超时 request=${request.requestTag}`);
+    },
+  });
+
+  assert.equal(result.outcome, "request_failed");
+  assert.match(result.failure_reason ?? "", /opencode 调用超时/);
+  assert.deepEqual(calls, [
+    "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  ]);
+});
+
 test("runOpencodeRubricScoring rejects incomplete rubric item coverage", async () => {
   const answer = finalAnswer();
   answer.item_scores = [];

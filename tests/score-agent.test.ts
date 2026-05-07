@@ -437,7 +437,6 @@ test("rubricScoringPromptBuilderNode adds workspace directory summary when chang
         rootPath: "/tmp/case-1/workspace",
         topLevelEntries: ["AppScope", "entry"],
         modulePaths: ["entry"],
-        representativeFiles: ["entry/src/main/ets/pages/Index.ets"],
         implementationHints: ["HarmonyOS 模块: entry"],
         omittedFileCount: 5,
       },
@@ -454,13 +453,42 @@ test("rubricScoringPromptBuilderNode adds workspace directory summary when chang
   assert.equal("rubricScoringPromptText" in result, false);
 });
 
-test("rubricScoringAgentNode skips when opencode runtime is missing", async () => {
-  const skipped = await rubricScoringAgentNode(
-    {} as never,
-    { logger: undefined },
-  );
+test("rubricScoringAgentNode fails when opencode runtime is missing", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const rubricSnapshot = buildRubricSnapshot(rubric);
+  const caseRoot = await makeTempDir(t);
 
-  assert.equal(skipped.rubricAgentRunStatus, "skipped");
+  await assert.rejects(
+    () =>
+      rubricScoringAgentNode(
+        {
+          rubricScoringPayload: {
+            case_context: {
+              case_id: "case-1",
+              case_root: caseRoot,
+              task_type: "bug_fix",
+              original_prompt_summary: "修复页面 bug",
+              original_project_path: path.join(caseRoot, "original"),
+              generated_project_path: path.join(caseRoot, "workspace"),
+            },
+            task_understanding: {
+              explicitConstraints: ["修复页面 bug"],
+              contextualConstraints: ["保持工程结构"],
+              implicitConstraints: [],
+              classificationHints: ["bug_fix"],
+            },
+            rubric_summary: rubricSnapshot,
+            response_contract: {
+              output_language: "zh-CN",
+              json_only: true,
+            },
+          },
+        } as never,
+        { logger: undefined },
+      ),
+    /rubric agent 调用失败，请重新执行用例/,
+  );
 });
 
 test("rubricScoringAgentNode runs opencode rubric scoring", async (t) => {
@@ -592,7 +620,7 @@ test("rubricScoringAgentNode fails when opencode final answer is incomplete", as
           },
         },
       ),
-    /rubric opencode 输出无效/,
+    /rubric agent 调用失败，请重新执行用例/,
   );
 });
 test("ruleAuditNode emits one ledger item per rule and preserves source ordering", async (t) => {
@@ -771,6 +799,28 @@ test("ruleMergeNode preserves structured agent judgments from canonical runner r
     result.mergedRuleAuditResults?.find((item) => item.rule_id === "HM-REQ-010-02")?.conclusion ??
       "",
     /Location Kit 调用/,
+  );
+});
+
+test("ruleAssessmentAgentNode fails when opencode runtime is missing for agent candidates", async () => {
+  await assert.rejects(
+    () =>
+      ruleAssessmentAgentNode(
+        {
+          assistedRuleCandidates: [
+            {
+              rule_id: "ARKTS-SHOULD-001",
+              rule_source: "should_rule",
+              why_uncertain: "需要结合上下文判定。",
+              local_preliminary_signal: "unknown",
+              evidence_files: [],
+              evidence_snippets: [],
+            },
+          ],
+        } as never,
+        { logger: undefined },
+      ),
+    /rule agent 调用失败，请重新执行用例/,
   );
 });
 
@@ -1871,6 +1921,7 @@ test("runScoreWorkflow streams node lifecycle logs into run.log", async (t) => {
   assert.match(logText, /\[任务分类inputClassificationNode\] 节点完成 summary=taskType=bug_fix/);
   assert.match(logText, /\[评分融合scoreFusionOrchestrationNode\] 节点完成 summary=totalScore=/);
   assert.match(logText, /\[产物后处理artifactPostProcessNode\] 节点完成 summary=htmlLength=/);
+  assert.match(logText, /本次用例评分耗时=\d{2}min\d{2}s/);
 });
 
 test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async (t) => {
@@ -1937,7 +1988,7 @@ test("runScoreWorkflow sends unsupported rules without direct evidence to agent 
   assert.equal("tool" + "_contract" in agentPromptPayload, false);
 });
 
-test("runScoreWorkflow falls back unsupported should rules to 待人工复核 when agent is unavailable", async (t) => {
+test("runScoreWorkflow fails the case when agent request fails", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
@@ -1950,22 +2001,24 @@ test("runScoreWorkflow falls back unsupported should rules to 待人工复核 wh
   });
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
 
-  await runScoreWorkflow({
-    caseInput: { ...caseInput, caseId: "case-1" },
-    caseDir,
-    referenceRoot,
-    artifactStore,
-  });
-
-  const resultJson = JSON.parse(
-    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  await assert.rejects(
+    () =>
+      runScoreWorkflow({
+        caseInput: { ...caseInput, caseId: "case-1" },
+        caseDir,
+        referenceRoot,
+        artifactStore,
+        opencodeRunner: {
+          async runPrompt(request) {
+            if (request.requestTag.startsWith("task-understanding-")) {
+              return createOpencodeRunnerMock().runPrompt(request);
+            }
+            throw new Error("agent runtime unavailable");
+          },
+        },
+      }),
+    /agent 调用失败，请重新执行用例/,
   );
 
-  assert.equal(
-    resultJson.rule_audit_results.some(
-      (item: { rule_source: string; result: string }) =>
-        item.rule_source === "should_rule" && item.result === "待人工复核",
-    ),
-    true,
-  );
+  await assert.rejects(fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
 });

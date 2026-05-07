@@ -39,16 +39,6 @@ const ignoredDirectoryNames = new Set([
   "node_modules",
   "oh_modules",
 ]);
-const representativeExtensions = new Set([
-  ".ets",
-  ".ts",
-  ".js",
-  ".json",
-  ".json5",
-  ".yaml",
-  ".yml",
-  ".md",
-]);
 
 function isDeps(
   value: TaskUnderstandingDeps | LangGraphRunnableConfig | undefined,
@@ -142,9 +132,6 @@ async function collectProjectStructure(rootPath: string): Promise<ProjectStructu
         return ".";
       }),
   );
-  const representativeFiles = files
-    .filter((file) => representativeExtensions.has(path.extname(file)))
-    .slice(0, 80);
   const implementationHints = [
     modulePaths.length > 0 ? `HarmonyOS 模块: ${modulePaths.join(", ")}` : "",
     files.some((file) => file.endsWith(".ets")) ? "技术栈: ArkTS/ETS 页面与组件实现" : "",
@@ -163,7 +150,6 @@ async function collectProjectStructure(rootPath: string): Promise<ProjectStructu
     rootPath,
     topLevelEntries: unique(topLevelEntries).sort(),
     modulePaths,
-    representativeFiles,
     implementationHints,
     omittedFileCount,
   };

@@ -1,6 +1,7 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { ArtifactStore } from "../io/artifactStore.js";
 import { CaseLogger } from "../io/caseLogger.js";
+import { formatElapsedDuration } from "../io/duration.js";
 import { artifactPostProcessNode } from "../nodes/artifactPostProcessNode.js";
 import { inputClassificationNode } from "../nodes/inputClassificationNode.js";
 import { opencodeSandboxPreparationNode } from "../nodes/opencodeSandboxPreparationNode.js";
@@ -323,7 +324,9 @@ async function runWithOpencodeRuntimeLifecycle(
 export async function runScoreWorkflow(
   input: LocalWorkflowInput | RemoteWorkflowInput,
 ): Promise<Record<string, unknown>> {
-  return runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
+  const startedAt = Date.now();
+  const logger = new CaseLogger(input.artifactStore, input.caseDir);
+  const result = await runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
     const { logger, graph } = createCompiledScoreGraph(preparedInput, false);
     const initialState = (() => {
       if ("remoteTask" in input) {
@@ -342,6 +345,12 @@ export async function runScoreWorkflow(
 
     return runCompiledScoreGraph(logger, graph as never, initialState);
   });
+
+  if ("caseInput" in input) {
+    await logger.info(`本次用例评分耗时=${formatElapsedDuration(Date.now() - startedAt)}`);
+  }
+
+  return result;
 }
 
 export async function runPreparedScoreWorkflow(

@@ -156,12 +156,7 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     "侵入程度: 中等",
     "改动类型: UI 接入与筛选逻辑",
   ]);
-  assert.equal(
-    result.workspaceProjectStructure?.representativeFiles.includes(
-      "entry/src/main/ets/pages/Index.ets",
-    ),
-    true,
-  );
+  assert.equal(Object.hasOwn(result.workspaceProjectStructure ?? {}, "representativeFiles"), false);
   assert.equal(typeof result.opencodeSandboxRoot, "string");
 
   const persisted = JSON.parse(

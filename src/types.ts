@@ -82,7 +82,6 @@ export interface ProjectStructureSummary {
   rootPath: string;
   topLevelEntries: string[];
   modulePaths: string[];
-  representativeFiles: string[];
   implementationHints: string[];
   omittedFileCount: number;
 }
