@@ -348,6 +348,41 @@ test("createGetRemoteTaskResultHandler returns completed resultData without toke
   );
 });
 
+test("createGetRemoteTaskResultHandler omits testExecution from completed resultData", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-test-execution");
+  const expectedResultJson = createStoredResultJson(92);
+  const storedResultJson = {
+    ...expectedResultJson,
+    testExecution: {
+      logs: ["unrelated remote execution details"],
+      rawPayload: { large: true },
+    },
+  };
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(storedResultJson));
+
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 706,
+    status: "completed",
+    caseDir,
+    token: "remote-token",
+    testCaseId: 1706,
+  });
+  const handler = createGetRemoteTaskResultHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createResultRequest(706) as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.deepEqual(responseState.body?.resultData, expectedResultJson);
+  assert.equal(
+    "testExecution" in (responseState.body?.resultData as Record<string, unknown>),
+    false,
+  );
+});
+
 test("createGetRemoteTaskResultHandler ignores invalid token", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case-unauthorized");

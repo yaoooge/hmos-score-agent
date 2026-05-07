@@ -215,13 +215,7 @@ function applyHardGateReview(
   activeGateCaps: Map<string, number>,
 ): void {
   removeGates(readStringArray(effect.gate_ids), activeGateCaps);
-  const nextGateIds =
-    correctedAssessment?.trim() === "none"
-      ? []
-      : (correctedAssessment ?? "")
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean);
+  const nextGateIds = parseHardGateAssessment(correctedAssessment);
   addGates(nextGateIds, asRecord(effect.gate_caps), activeGateCaps);
 }
 
@@ -379,10 +373,25 @@ function collectInitialGateCaps(resultJson: Record<string, unknown>): Map<string
   for (const item of readRecords(resultJson.human_review_items)) {
     const effect = asRecord(item.score_effect);
     if (effect?.type === "hard_gate") {
-      addGates(readStringArray(effect.gate_ids), asRecord(effect.gate_caps), active);
+      const currentAssessment = readString(item.current_assessment);
+      const gateIds =
+        currentAssessment === undefined
+          ? readStringArray(effect.gate_ids)
+          : parseHardGateAssessment(currentAssessment);
+      addGates(gateIds, asRecord(effect.gate_caps), active);
     }
   }
   return active;
+}
+
+function parseHardGateAssessment(value: string | undefined): string[] {
+  if (value?.trim() === "none") {
+    return [];
+  }
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function findRuleImpacts(resultJson: Record<string, unknown>, ruleIds: string[]): RuleImpact[] {

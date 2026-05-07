@@ -333,10 +333,74 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
   assert.deepEqual(forbiddenRisk.score_effect.hard_gate_ids, ["G3"]);
   assert.ok(Array.isArray(forbiddenRisk.score_effect.impacts));
 
+  assert.equal(result.hardGateTriggered, true);
+  assert.equal(
+    result.humanReviewItems.some((item) => item.item === "硬门槛复核"),
+    false,
+  );
+});
+
+test("fuseRubricScoreWithRules writes uncertain hard gate rules into suggested focus", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "未找到明确负面证据，按满分保留。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "high" as const,
+      review_required: false,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "bug_fix",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础分满分。", overall_confidence: "high" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKTS-FORBID-026",
+        rule_source: "forbidden_pattern",
+        result: "待人工复核",
+        conclusion: "无法确认 finally 中 return 是否真实存在。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  assert.equal(result.hardGateTriggered, false);
   const hardGateReview = result.humanReviewItems.find((item) => item.item === "硬门槛复核") as
     | (typeof result.humanReviewItems[number] & { score_effect?: Record<string, unknown> })
     | undefined;
-  assert.deepEqual(hardGateReview?.score_effect, {
+  assert.ok(hardGateReview);
+  assert.equal(hardGateReview.current_assessment, "none");
+  assert.match(hardGateReview.uncertainty_reason, /ARKTS-FORBID-026/);
+  assert.match(hardGateReview.suggested_focus, /G3/);
+  assert.match(hardGateReview.suggested_focus, /严重工程风险/);
+  assert.match(hardGateReview.suggested_focus, /空值或异步竞争风险高/);
+  assert.match(hardGateReview.suggested_focus, /ARKTS-FORBID-026/);
+  assert.match(hardGateReview.suggested_focus, /无法确认 finally 中 return 是否真实存在/);
+  assert.deepEqual(hardGateReview.score_effect, {
     type: "hard_gate",
     gate_ids: ["G3"],
     gate_caps: { G3: 79 },

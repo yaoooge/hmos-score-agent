@@ -531,6 +531,65 @@ test("submit human review handler recalculates score cap from hard gate item rev
   assert.equal(itemReviews[0]?.score_effect_applied, true);
 });
 
+test("submit human review handler keeps pending hard gate candidates inactive during unrelated review", async (t) => {
+  const { registry, caseDir } = await writeRecalculableCompletedTask(t);
+  const resultPath = path.join(caseDir, "outputs", "result.json");
+  const resultJson = JSON.parse(await fs.readFile(resultPath, "utf-8")) as Record<string, unknown>;
+  const overall = resultJson.overall_conclusion as Record<string, unknown>;
+  overall.total_score = 90;
+  overall.hard_gate_triggered = false;
+  overall.summary = "自动评分未触发硬门槛。";
+  const dimension = (resultJson.dimension_results as Array<Record<string, unknown>>)[0];
+  dimension.score = 90;
+  const item = (dimension.item_results as Array<Record<string, unknown>>)[0];
+  item.score = 90;
+  const scoreFusion = item.score_fusion as Record<string, unknown>;
+  scoreFusion.rule_delta = -12;
+  scoreFusion.final_score = 90;
+  const ruleImpact = (item.rule_impacts as Array<Record<string, unknown>>)[0];
+  ruleImpact.score_delta = -12;
+  const risk = (resultJson.risks as Array<Record<string, unknown>>)[0];
+  risk.level = "medium";
+  resultJson.human_review_items = [
+    {
+      id: 1,
+      item: "硬门槛复核",
+      current_assessment: "none",
+      uncertainty_reason: "ARKTS-FORBID-026 可能触发 G3，但 agent 无法确认。",
+      suggested_focus: "硬门槛规则：G3 严重工程风险。",
+      score_effect: {
+        type: "hard_gate",
+        gate_ids: ["G3"],
+        gate_caps: { G3: 70 },
+      },
+    },
+  ];
+  await fs.writeFile(resultPath, `${JSON.stringify(resultJson, null, 2)}\n`);
+
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      riskReviews: [{ riskId: 1, agreeWithResultLevel: true, resultLevel: "medium" }],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  const revisedResultJson = JSON.parse(await fs.readFile(resultPath, "utf-8")) as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual(revisedResultJson.overall_conclusion, {
+    total_score: 90,
+    hard_gate_triggered: false,
+    summary: "自动评分未触发硬门槛。",
+  });
+});
+
 test("submit human review handler maps result review ids from array position when ids are absent", async (t) => {
   const { registry } = await writeCompletedTask(t, { omitResultIds: true });
   const root = await makeTempDir(t);
@@ -774,6 +833,10 @@ test("api definitions document human review submission endpoint", () => {
   assert.equal(
     Object.hasOwn(humanReviewDefinition.request?.body?.properties ?? {}, "riskReviews"),
     true,
+  );
+  assert.equal(
+    Object.keys(humanReviewDefinition.request?.body?.properties ?? {}).sort().join(","),
+    "itemReviews,riskReviews",
   );
   assert.equal(
     Object.hasOwn(humanReviewDefinition.responses[0]?.body.properties ?? {}, "summary"),

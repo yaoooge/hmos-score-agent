@@ -409,7 +409,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
               type: "object",
               required: true,
               description:
-                "Synchronous summary with review counts, datasetItemCount, and score recalculation fields when score changes are applied.",
+                "Synchronous summary with review counts, datasetItemCount across human-review datasets, and score recalculation fields when score changes are applied.",
             },
             message: messageField,
           },

@@ -353,6 +353,42 @@ function buildGateCaps(
   );
 }
 
+function selectUncertainHardGateCandidates(input: FuseRubricScoreWithRulesInput): Array<{
+  gateIds: Array<"G1" | "G2" | "G3" | "G4">;
+  rule: RuleAuditResult;
+}> {
+  return input.ruleAuditResults.flatMap((rule) => {
+    if (rule.result !== "待人工复核") {
+      return [];
+    }
+    const gateIds = selectRuleTriggeredGateIds(input, rule);
+    return gateIds.length > 0 ? [{ gateIds, rule }] : [];
+  });
+}
+
+function formatHardGateRule(input: FuseRubricScoreWithRulesInput, gateId: string): string {
+  const gate = input.rubric.hardGates.find((item) => item.id === gateId);
+  if (!gate) {
+    return gateId;
+  }
+  const title = [gate.id, gate.name].filter(Boolean).join(" ");
+  const signals = gate.triggerSignals?.length ? `：${gate.triggerSignals.join("；")}` : "";
+  return `${title}（总分上限 ${gate.scoreCap}）${signals}`;
+}
+
+function buildUncertainHardGateSuggestedFocus(
+  input: FuseRubricScoreWithRulesInput,
+  candidates: Array<{ gateIds: string[]; rule: RuleAuditResult }>,
+): string {
+  const gateRules = Array.from(new Set(candidates.flatMap((candidate) => candidate.gateIds)))
+    .map((gateId) => formatHardGateRule(input, gateId))
+    .join("；");
+  const pendingRules = candidates
+    .map((candidate) => `${candidate.rule.rule_id}：${candidate.rule.conclusion}`)
+    .join("；");
+  return `硬门槛规则：${gateRules}。待确认规则：${pendingRules}。请确认这些待复核规则是否真实成立，以及是否需要触发对应硬门槛。`;
+}
+
 function buildRiskScoreEffect(input: {
   scoringInput: FuseRubricScoreWithRulesInput;
   rule: RuleAuditResult;
@@ -541,6 +577,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
       undefined,
     );
   const totalScore = scoreCap === undefined ? rawTotalScore : Math.min(rawTotalScore, scoreCap);
+  const uncertainHardGateCandidates = selectUncertainHardGateCandidates(input);
   const humanReviewItems: HumanReviewItem[] =
     input.rubricAgentRunStatus === "success"
       ? []
@@ -553,17 +590,22 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
             suggested_focus: "人工复核 rubric 逐项评分是否合理。",
           },
         ];
-  if (triggeredGateIds.length > 0) {
+  if (uncertainHardGateCandidates.length > 0) {
+    const candidateGateIds = Array.from(
+      new Set(uncertainHardGateCandidates.flatMap((candidate) => candidate.gateIds)),
+    );
     humanReviewItems.push({
       id: humanReviewItems.length + 1,
       item: "硬门槛复核",
-      current_assessment: triggeredGateIds.join(", "),
-      uncertainty_reason: "规则分支触发了 rubric hard gate 候选条件。",
-      suggested_focus: "确认规则违规是否真实构成硬门槛风险。",
+      current_assessment: "none",
+      uncertainty_reason: `以下规则可能触发硬门槛但 agent 无法确认：${uncertainHardGateCandidates
+        .map((candidate) => candidate.rule.rule_id)
+        .join(", ")}。`,
+      suggested_focus: buildUncertainHardGateSuggestedFocus(input, uncertainHardGateCandidates),
       score_effect: {
         type: "hard_gate",
-        gate_ids: triggeredGateIds,
-        gate_caps: buildGateCaps(input, triggeredGateIds),
+        gate_ids: candidateGateIds,
+        gate_caps: buildGateCaps(input, candidateGateIds),
       },
     });
   }

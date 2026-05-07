@@ -826,7 +826,7 @@ test("scoring and report nodes fall back to deterministic results when merge out
   );
   assert.deepEqual(
     scoringResult.scoreComputation?.humanReviewItems.map((item) => item.id),
-    [1, 2],
+    [1],
   );
 
   const reportResult = await reportGenerationNode(

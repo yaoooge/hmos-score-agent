@@ -26,7 +26,7 @@
 | --- | --- | --- | --- |
 | `GET /score/remote-tasks/:taskId/result` | 路径参数：`taskId` | `success`、`taskId`、`status`、`resultData` | 读取单个远端任务的完整评分结果，供前端展示总分、维度分、待复核项、风险项和复核后修订信息。 |
 | `GET /score/rule-violation-stats` | 可选查询参数：`caseId`、`testCaseId`、`packId`、`from`、`to` | `success`、`filters`、`summary`、`rules` | 读取静态规则不满足项的聚合统计，供前端展示规则违反次数、影响用例、影响任务和最近触发时间。 |
-| `POST /score/remote-tasks/:taskId/human-review` | 路径参数：`taskId`；请求体：`reviewer`、`itemReviews`、`riskReviews` | `success`、`taskId`、`status`、`summary`、`message` | 提交逐条人工复核结论，后端接收后写入复核数据，并按复核结果重新计算分数。 |
+| `POST /score/remote-tasks/:taskId/human-review` | 路径参数：`taskId`；请求体：`reviewer`、`itemReviews`、`riskReviews` | `success`、`taskId`、`status`、`summary`、`message` | 提交逐条人工复核结论，后端接收后写入复核数据，并按逐条复核结果重新计算分数。 |
 
 ## 2. 读取评分结果
 
@@ -129,9 +129,9 @@ GET /score/remote-tasks/:taskId/result
     {
       "id": 1,
       "item": "硬门槛复核",
-      "current_assessment": "G1",
-      "uncertainty_reason": "规则分支触发了 rubric hard gate 候选条件。",
-      "suggested_focus": "确认规则违规是否真实构成硬门槛风险。"
+      "current_assessment": "none",
+      "uncertainty_reason": "以下规则可能触发硬门槛但 agent 无法确认：ARKTS-FORBID-026。",
+      "suggested_focus": "硬门槛规则：G3 严重工程风险（总分上限 79）：生命周期误用明显；空值或异步竞争风险高；敏感信息硬编码；资源释放或监听清理存在明显风险。待确认规则：ARKTS-FORBID-026：无法确认 finally 中 return 是否真实存在。请确认这些待复核规则是否真实成立，以及是否需要触发对应硬门槛。"
     }
   ]
 }
@@ -144,6 +144,15 @@ GET /score/remote-tasks/:taskId/result
 - `current_assessment`：当前系统判断，提交时必须原样带回 `resultAssessment`。
 - `uncertainty_reason`：系统不确定原因。
 - `suggested_focus`：建议人工关注点。
+
+硬门槛复核项只在 agent 无法确认某条规则是否真实触发硬门槛时出现。已经被系统明确确认并触发的硬门槛不会再额外生成 `human_review_items[]` 复核项；这类结果仍会体现在总分、`overall_conclusion.hard_gate_triggered`、风险项和风险项 `score_effect` 中。
+
+当 `item` 为 `硬门槛复核` 时：
+
+- `current_assessment` 通常为 `none`，表示当前未按该候选硬门槛扣 cap，等待人工确认。
+- `suggested_focus` 会包含候选硬门槛规则，例如 `G3 严重工程风险`、总分上限、触发信号，以及对应待确认规则 ID 和结论。
+- 如果人工确认不触发硬门槛，可选择同意当前判断。
+- 如果人工确认需要触发硬门槛，应选择修正判断，并把 `correctedAssessment` 填为对应 gate id，例如 `G3` 或 `G1,G3`。
 
 ### 页面控件建议
 
@@ -356,6 +365,7 @@ type HumanRiskReview = {
 - `summary.riskReviewCount`：本次提交的风险复核项数量。
 - `summary.riskAgreementCount`：同意当前风险等级的数量。
 - `summary.riskDisagreementCount`：修正风险等级的数量。
+- `summary.datasetItemCount`：本次写入全部 human-review 数据集的样本总数，包含 item 复核和 risk 复核。
 - `summary.scoreRecalculationApplied`：本次复核是否导致分数重算。
 - `summary.originalTotalScore`：复核前总分。
 - `summary.revisedTotalScore`：复核后总分。

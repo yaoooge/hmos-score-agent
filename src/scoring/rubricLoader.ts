@@ -22,6 +22,8 @@ export interface LoadedRubricDimension {
 
 export interface LoadedRubricHardGate {
   id: "G1" | "G2" | "G3" | "G4";
+  name?: string;
+  triggerSignals?: string[];
   scoreCap: number;
 }
 
@@ -49,6 +51,8 @@ type RubricDoc = {
   modes?: { default_evaluation_mode?: string };
   hard_gates?: Array<{
     id: LoadedRubricHardGate["id"];
+    name?: string;
+    trigger_signals?: string[];
     score_cap: number;
     applies_to?: TaskType[];
   }>;
@@ -123,6 +127,8 @@ export async function loadRubricForTaskType(
       .filter((gate) => (gate.applies_to ?? []).includes(taskType))
       .map((gate) => ({
         id: gate.id,
+        name: gate.name,
+        triggerSignals: gate.trigger_signals ?? [],
         scoreCap: gate.score_cap,
       })),
     reviewRules: {

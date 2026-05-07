@@ -344,6 +344,18 @@ function readRuleViolationStatsQuery(req: Request): RuleViolationStatsQuery | st
   return validationError ?? query;
 }
 
+function sanitizeRemoteTaskResultData(resultData: unknown): unknown {
+  if (typeof resultData !== "object" || resultData === null || Array.isArray(resultData)) {
+    return resultData;
+  }
+
+  const { testExecution: _testExecution, ...publicResultData } = resultData as Record<
+    string,
+    unknown
+  >;
+  return publicResultData;
+}
+
 export function createGetRuleViolationStatsHandler(store: RuleViolationStatsStore) {
   return async (req: Request, res: Response) => {
     const query = readRuleViolationStatsQuery(req);
@@ -401,7 +413,7 @@ export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
         path.join(record.caseDir, "outputs", "result.json"),
         "utf-8",
       );
-      const resultData = JSON.parse(resultText) as Record<string, unknown>;
+      const resultData = sanitizeRemoteTaskResultData(JSON.parse(resultText) as unknown);
       res.json({
         success: true,
         taskId,
