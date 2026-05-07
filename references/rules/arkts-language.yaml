@@ -144,7 +144,7 @@ should_rules:
         - .ets
       patterns:
         - (^[ \t]*)switch\b[^\n]*\{\r?\n\1(?:case|default)\b
-        - (^[ \t]*)(?:case\b[^\n]*|default)\s*:[ \t]*\r?\n\1\S
+        - (^[ \t]*)(?:case\b[^\n]*|default)\s*:[ \t]*\r?\n\1(?!case\b|default\b)\S
     fallback_policy: agent_assisted
   - id: ARKTS-SHOULD-012
     rule: 空格应突出关键字和重要信息，避免不必要空格和多个连续空格。
@@ -182,6 +182,7 @@ should_rules:
         - .ets
       patterns:
         - (?<![\w.])\.\d+\b|\b\d+\.(?!\d)
+      ignoreStringLiteralMatches: true
     fallback_policy: agent_assisted
 forbidden_patterns:
   - id: ARKTS-FORBID-001
@@ -210,6 +211,7 @@ forbidden_patterns:
         - .ets
       patterns:
         - (?<![\w"'`])#[_$A-Za-z][\w$]*
+      ignoreStringLiteralMatches: true
     fallback_policy: agent_assisted
   - id: ARKTS-FORBID-004
     rule: 禁止使用 var，必须使用 let 或 const。
@@ -366,6 +368,7 @@ forbidden_patterns:
         - .ets
       patterns:
         - \bin\s+['"]?[A-Za-z_$][\w$]*['"]?\s*\)
+      ignoreStringLiteralMatches: true
     fallback_policy: agent_assisted
   - id: ARKTS-FORBID-022
     rule: 禁止使用 with 语句。
@@ -398,7 +401,7 @@ forbidden_patterns:
         - .ets
       patterns:
         - >-
-          \b(?:if|while)\s*\((?:[^()]|\([^()]*\))*[^=!<>]=[^=](?:[^()]|\([^()]*\))*\)|\bfor\s*\([^;)]*;[^;)]*[^=!<>]=[^=][^;)]*;
+          \b(?:if|while)\s*\((?:[^()]|\([^()]*\))*[\w$\]\)]\s*=(?!=|>)(?:[^()]|\([^()]*\))*\)|\bfor\s*\([^;)]*;[^;)]*[\w$\]\)]\s*=(?!=|>)[^;)]*;
     fallback_policy: agent_assisted
   - id: ARKTS-FORBID-026
     rule: 禁止在 finally 代码块中使用 return、break、continue 或抛出未处理异常。

@@ -22,6 +22,8 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "ARKTS-FORBID-003",
     "禁止使用 #private 字段语法，必须改用 private 关键字。",
     ["(?<![\\w\"'`])#[_$A-Za-z][\\w$]*"],
+    undefined,
+    { ignoreStringLiteralMatches: true },
   ),
   createTextRule(
     "arkts-language",
@@ -152,6 +154,8 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "ARKTS-FORBID-021",
     "禁止使用 in 检查成员存在。",
     ["\\bin\\s+['\"]?[A-Za-z_$][\\w$]*['\"]?\\s*\\)"],
+    undefined,
+    { ignoreStringLiteralMatches: true },
   ),
   createTextRule(
     "arkts-language",
@@ -179,7 +183,7 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "ARKTS-FORBID-025",
     "禁止在 if、while、for 或其他控制性条件表达式中直接进行赋值。",
     [
-      "\\b(?:if|while)\\s*\\((?:[^()]|\\([^()]*\\))*[^=!<>]=[^=](?:[^()]|\\([^()]*\\))*\\)|\\bfor\\s*\\([^;)]*;[^;)]*[^=!<>]=[^=][^;)]*;",
+      "\\b(?:if|while)\\s*\\((?:[^()]|\\([^()]*\\))*[\\w$\\]\\)]\\s*=(?!=|>)(?:[^()]|\\([^()]*\\))*\\)|\\bfor\\s*\\([^;)]*;[^;)]*[\\w$\\]\\)]\\s*=(?!=|>)[^;)]*;",
     ],
   ),
   createTextRule(

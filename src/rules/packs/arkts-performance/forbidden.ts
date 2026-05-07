@@ -25,6 +25,8 @@ export const arktsPerformanceForbiddenRules: RegisteredRule[] = [
       "\\[[^\\]\\n]*\\b\\d+\\.\\d+\\b[^\\]\\n]*\\b\\d+\\b[^\\]\\n]*\\]",
       "\\[[^\\]\\n]*\\b\\d+\\b[^\\]\\n]*\\b\\d+\\.\\d+\\b[^\\]\\n]*\\]",
     ],
+    undefined,
+    { stripStringLiteralContents: true },
   ),
   createTextRule(
     "arkts-performance",

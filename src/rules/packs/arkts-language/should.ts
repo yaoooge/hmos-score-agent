@@ -72,7 +72,7 @@ export const arktsShouldRules: RegisteredRule[] = [
     "switch 语句中的 case 和 default 需按层级缩进。",
     [
       "(^[ \\t]*)switch\\b[^\\n]*\\{\\r?\\n\\1(?:case|default)\\b",
-      "(^[ \\t]*)(?:case\\b[^\\n]*|default)\\s*:[ \\t]*\\r?\\n\\1\\S",
+      "(^[ \\t]*)(?:case\\b[^\\n]*|default)\\s*:[ \\t]*\\r?\\n\\1(?!case\\b|default\\b)\\S",
     ],
   ),
   createPendingRule(
@@ -109,5 +109,7 @@ export const arktsShouldRules: RegisteredRule[] = [
     "ARKTS-SHOULD-016",
     "不建议省略浮点数小数点前后的 0。",
     ["(?<![\\w.])\\.\\d+\\b|\\b\\d+\\.(?!\\d)"],
+    undefined,
+    { ignoreStringLiteralMatches: true },
   ),
 ];

@@ -71,6 +71,7 @@ forbidden_patterns:
       patterns:
         - \[[^\]\n]*\b\d+\.\d+\b[^\]\n]*\b\d+\b[^\]\n]*\]
         - \[[^\]\n]*\b\d+\b[^\]\n]*\b\d+\.\d+\b[^\]\n]*\]
+      stripStringLiteralContents: true
     fallback_policy: agent_assisted
   - id: ARKTS-PERF-FORBID-004
     rule: 禁止通过超大容量初始化或大跨度下标写入制造稀疏/退化数组。

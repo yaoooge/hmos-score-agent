@@ -84,6 +84,276 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
   assert.ok(result.ruleViolations.length >= 1);
 });
 
+test("ARKTS-FORBID-021 ignores text inside string literals", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-021");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "Logger.debug(TAG, 'pause the avplayer, when stop the pip in background');\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
+test("ARKTS-FORBID-021 flags real in membership checks", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-021");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "if ('name' in userInfo) {\n  Logger.debug(TAG, 'has name');\n}\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
+});
+
+test("ARKTS-FORBID-003 ignores hex colors inside string literals", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-003");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: ".backgroundColor(isActive ? '#cedefd' : ' #f3f3f3')\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
+test("ARKTS-FORBID-003 flags real private field syntax", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-003");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "class Demo {\n  #secret: string = '';\n}\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:2"]);
+});
+
+test("ARKTS-SHOULD-016 ignores numbered list text inside string literals", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-016");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "Text('1. 查询信息；\\n' + '2. 删除信息；')\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
+test("ARKTS-SHOULD-016 flags omitted leading or trailing zero in numeric literals", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-016");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "const opacity = .5;\nconst ratio = 1.;\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedLocations, [
+    "entry/src/main/ets/pages/Index.ets:1",
+    "entry/src/main/ets/pages/Index.ets:2",
+  ]);
+});
+
+test("ARKTS-PERF-FORBID-003 ignores numbers inside string elements", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-PERF-FORBID-003");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "colors: [['rgba(0,0,0,0)', 0], ['rgba(0,0,0,0.7)', 1]]\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
+test("ARKTS-PERF-FORBID-003 flags mixed integer and float numeric arrays", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-PERF-FORBID-003");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "const values = [0, 0.7, 1];\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
+});
+
+test("ARKTS-FORBID-025 ignores strict equality against equals string literal", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-025");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "if (button.value === '=') {\n  result = calcModel.calculate();\n}\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
+test("ARKTS-SHOULD-011 accepts consecutive case labels and indented case bodies", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-011");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: [
+          "switch (button.type) {",
+          "  case CalcButtonType.OPERATOR:",
+          "  case CalcButtonType.CONSTANT:",
+          "    expression = calcModel.getDisplayExpression();",
+          "    break;",
+          "}",
+        ].join("\n"),
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
 test("runRuleEngine exposes only current rule-audit fields", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let count: number = 1;\n",
@@ -371,6 +641,40 @@ test("runRuleEngine limits incremental rule evaluation to changed files when pat
     ),
     false,
   );
+});
+
+test("runRuleEngine limits static text scan to patch added lines for every task type", async (t) => {
+  for (const taskType of ["full_generation", "continuation", "bug_fix"] as const) {
+    await t.test(taskType, async (t) => {
+      const caseDir = await createRuleFixture(t, {
+        "entry/src/main/ets/pages/Index.ets": "var legacy = 1;\nlet changed: number = 2;\n",
+      });
+
+      await fs.writeFile(
+        path.join(caseDir, "diff", "changes.patch"),
+        [
+          "diff --git a/entry/src/main/ets/pages/Index.ets b/entry/src/main/ets/pages/Index.ets",
+          "@@ -2 +2 @@",
+          "-let changed: number = 1;",
+          "+let changed: number = 2;",
+        ].join("\n"),
+        "utf-8",
+      );
+
+      const result = await runRuleEngine({
+        referenceRoot,
+        caseInput: makeCaseInput(caseDir),
+        taskType,
+      });
+
+      assert.equal(
+        result.deterministicRuleResults.some(
+          (item) => item.rule_id === "ARKTS-FORBID-004" && item.result === "不满足",
+        ),
+        false,
+      );
+    });
+  }
 });
 
 test("runRuleEngine does not report violations from files ignored by workspace gitignore", async (t) => {

@@ -13,13 +13,6 @@ function shouldKeepComments(patterns: string[]): boolean {
   );
 }
 
-function matchesAnyPattern(patterns: RegExp[], content: string): boolean {
-  return patterns.some((pattern) => {
-    pattern.lastIndex = 0;
-    return pattern.test(content);
-  });
-}
-
 function splitLines(source: string): string[] {
   return source.split(/\r?\n/);
 }
@@ -129,29 +122,191 @@ interface TextPatternMatch {
   lineSnippets: string[];
 }
 
+function toGlobalRegExp(pattern: RegExp): RegExp {
+  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+  return new RegExp(pattern.source, flags);
+}
+
+function isIndexInsideStringLiteral(source: string, targetIndex: number): boolean {
+  let index = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplateString = false;
+  let escaped = false;
+
+  while (index < targetIndex) {
+    const current = source[index] ?? "";
+
+    if (inSingleQuote || inDoubleQuote || inTemplateString) {
+      if (escaped) {
+        escaped = false;
+      } else if (current === "\\") {
+        escaped = true;
+      } else if (
+        (inSingleQuote && current === "'") ||
+        (inDoubleQuote && current === '"') ||
+        (inTemplateString && current === "`")
+      ) {
+        inSingleQuote = false;
+        inDoubleQuote = false;
+        inTemplateString = false;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (current === "'") {
+      inSingleQuote = true;
+    } else if (current === '"') {
+      inDoubleQuote = true;
+    } else if (current === "`") {
+      inTemplateString = true;
+    }
+    index += 1;
+  }
+
+  return inSingleQuote || inDoubleQuote || inTemplateString;
+}
+
+function stripStringLiteralContentsPreserveLayout(source: string): string {
+  let result = "";
+  let index = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplateString = false;
+  let escaped = false;
+
+  while (index < source.length) {
+    const current = source[index] ?? "";
+
+    if (inSingleQuote || inDoubleQuote || inTemplateString) {
+      result += current === "\n" ? "\n" : " ";
+      if (escaped) {
+        escaped = false;
+      } else if (current === "\\") {
+        escaped = true;
+      } else if (
+        (inSingleQuote && current === "'") ||
+        (inDoubleQuote && current === '"') ||
+        (inTemplateString && current === "`")
+      ) {
+        inSingleQuote = false;
+        inDoubleQuote = false;
+        inTemplateString = false;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (current === "'") {
+      inSingleQuote = true;
+      result += " ";
+    } else if (current === '"') {
+      inDoubleQuote = true;
+      result += " ";
+    } else if (current === "`") {
+      inTemplateString = true;
+      result += " ";
+    } else {
+      result += current;
+    }
+    index += 1;
+  }
+
+  return result;
+}
+
+function buildLineStarts(source: string): number[] {
+  const lineStarts = [0];
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "\n") {
+      lineStarts.push(index + 1);
+    }
+  }
+  return lineStarts;
+}
+
+function findLineNumber(lineStarts: number[], sourceIndex: number): number {
+  let low = 0;
+  let high = lineStarts.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const current = lineStarts[middle] ?? 0;
+    const next = lineStarts[middle + 1] ?? Number.POSITIVE_INFINITY;
+
+    if (sourceIndex >= current && sourceIndex < next) {
+      return middle + 1;
+    }
+    if (sourceIndex < current) {
+      high = middle - 1;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  return lineStarts.length;
+}
+
+function findMatchingLineNumbers(
+  patterns: RegExp[],
+  content: string,
+  ignoreStringLiteralMatches: boolean,
+): number[] {
+  const lineStarts = buildLineStarts(content);
+  const lineNumbers = new Set<number>();
+
+  for (const pattern of patterns) {
+    const globalPattern = toGlobalRegExp(pattern);
+    let match: RegExpExecArray | null;
+    while ((match = globalPattern.exec(content)) !== null) {
+      if (
+        !ignoreStringLiteralMatches ||
+        !isIndexInsideStringLiteral(content, match.index)
+      ) {
+        lineNumbers.add(findLineNumber(lineStarts, match.index));
+      }
+
+      if (match[0].length === 0) {
+        globalPattern.lastIndex += 1;
+      }
+    }
+  }
+
+  return Array.from(lineNumbers).sort((left, right) => left - right);
+}
+
 function findTextPatternMatch(
   file: CollectedEvidence["workspaceFiles"][number],
   patterns: RegExp[],
   keepComments: boolean,
+  ignoreStringLiteralMatches: boolean,
+  stripStringLiteralContents: boolean,
 ): TextPatternMatch | undefined {
-  const normalizedContent = keepComments ? file.content : stripCommentsPreserveLayout(file.content);
+  const commentNormalizedContent = keepComments
+    ? file.content
+    : stripCommentsPreserveLayout(file.content);
+  const normalizedContent = stripStringLiteralContents
+    ? stripStringLiteralContentsPreserveLayout(commentNormalizedContent)
+    : commentNormalizedContent;
+  const allowedLineNumbers =
+    file.patchLineNumbers === undefined ? undefined : new Set(file.patchLineNumbers);
+  const matchingLineNumbers = findMatchingLineNumbers(
+    patterns,
+    normalizedContent,
+    ignoreStringLiteralMatches,
+  ).filter((lineNumber) => allowedLineNumbers === undefined || allowedLineNumbers.has(lineNumber));
 
-  if (!matchesAnyPattern(patterns, normalizedContent)) {
+  if (matchingLineNumbers.length === 0) {
     return undefined;
   }
 
   const originalLines = splitLines(file.content);
-  const normalizedLines = splitLines(normalizedContent);
   const seenLocations = new Set<string>();
   const lineLocations: string[] = [];
   const lineSnippets: string[] = [];
 
-  normalizedLines.forEach((line, index) => {
-    if (!matchesAnyPattern(patterns, line)) {
-      return;
-    }
-
-    const lineNumber = index + 1;
+  matchingLineNumbers.forEach((lineNumber) => {
     const location = `${file.relativePath}:${lineNumber}`;
     if (seenLocations.has(location)) {
       return;
@@ -159,7 +314,7 @@ function findTextPatternMatch(
 
     seenLocations.add(location);
     lineLocations.push(location);
-    lineSnippets.push(`${location}: ${(originalLines[index] ?? "").trim()}`);
+    lineSnippets.push(`${location}: ${(originalLines[lineNumber - 1] ?? "").trim()}`);
   });
 
   return {
@@ -186,11 +341,21 @@ export function runTextPatternRule(
   const applicabilityPatterns = compilePatterns(applicabilityPatternTexts);
   const patterns = compilePatterns(patternTexts);
   const keepComments = shouldKeepComments([...applicabilityPatternTexts, ...patternTexts]);
+  const ignoreStringLiteralMatches = rule.detector_config.ignoreStringLiteralMatches === true;
+  const stripStringLiteralContents = rule.detector_config.stripStringLiteralContents === true;
   const candidateFiles = evidence.workspaceFiles.filter((file) =>
     fileExtensions.includes(path.extname(file.relativePath).toLowerCase()),
   );
   const applicabilityMatches = candidateFiles
-    .map((file) => findTextPatternMatch(file, applicabilityPatterns, keepComments))
+    .map((file) =>
+      findTextPatternMatch(
+        file,
+        applicabilityPatterns,
+        keepComments,
+        ignoreStringLiteralMatches,
+        stripStringLiteralContents,
+      ),
+    )
     .filter((match): match is TextPatternMatch => Boolean(match));
 
   if (applicabilityPatterns.length > 0 && applicabilityMatches.length === 0) {
@@ -206,7 +371,15 @@ export function runTextPatternRule(
   }
 
   const matches = candidateFiles
-    .map((file) => findTextPatternMatch(file, patterns, keepComments))
+    .map((file) =>
+      findTextPatternMatch(
+        file,
+        patterns,
+        keepComments,
+        ignoreStringLiteralMatches,
+        stripStringLiteralContents,
+      ),
+    )
     .filter((match): match is TextPatternMatch => Boolean(match));
   const matchedFiles = matches.map((match) => match.relativePath);
   const matchedLocations = matches.flatMap((match) => match.lineLocations);

@@ -45,6 +45,15 @@ function getSignalTokens(signal: Record<string, string>): string[] {
     .filter(Boolean);
 }
 
+function getPatchScopedContent(file: CollectedEvidence["workspaceFiles"][number]): string {
+  if (file.patchLineNumbers === undefined) {
+    return file.content;
+  }
+
+  const lines = file.content.split(/\r?\n/);
+  return file.patchLineNumbers.map((lineNumber) => lines[lineNumber - 1] ?? "").join("\n");
+}
+
 function buildStaticPrecheck(
   candidateFiles: CollectedEvidence["workspaceFiles"],
   astSignals: Array<Record<string, string>>,
@@ -66,7 +75,7 @@ function buildStaticPrecheck(
   for (const signal of astSignals) {
     const tokens = getSignalTokens(signal);
     const tokenMatches = tokens.filter((token) =>
-      candidateFiles.some((file) => file.content.includes(token)),
+      candidateFiles.some((file) => getPatchScopedContent(file).includes(token)),
     );
 
     if (tokenMatches.length === tokens.length && tokens.length > 0) {
