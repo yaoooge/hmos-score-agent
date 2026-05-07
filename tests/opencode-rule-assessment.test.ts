@@ -45,6 +45,23 @@ function payload(): AgentBootstrapPayload {
   };
 }
 
+function payloadWithTwoRules(): AgentBootstrapPayload {
+  return {
+    ...payload(),
+    assisted_rule_candidates: [
+      ...payload().assisted_rule_candidates,
+      {
+        rule_id: "R2",
+        rule_source: "should_rule",
+        why_uncertain: "需要上下文",
+        local_preliminary_signal: "unknown",
+        evidence_files: ["generated/entry/src/feature.ets"],
+        evidence_snippets: [],
+      },
+    ],
+  };
+}
+
 function finalAnswer() {
   return {
     summary: {
@@ -58,6 +75,23 @@ function finalAnswer() {
         confidence: "high",
         reason: "补丁未见违反规则的实现。",
         evidence_used: ["generated/entry/src/main.ets"],
+        needs_human_review: false,
+      },
+    ],
+  };
+}
+
+function finalAnswerWithTwoRules() {
+  return {
+    ...finalAnswer(),
+    rule_assessments: [
+      ...finalAnswer().rule_assessments,
+      {
+        rule_id: "R2",
+        decision: "pass",
+        confidence: "medium",
+        reason: "补丁未见违反第二条规则的实现。",
+        evidence_used: ["generated/entry/src/feature.ets"],
         needs_human_review: false,
       },
     ],
@@ -236,86 +270,70 @@ test("runOpencodeRuleAssessment fails when retry also times out", async () => {
   ]);
 });
 
-test("runOpencodeRuleAssessment fills incomplete rule coverage from the local skeleton", async () => {
+test("runOpencodeRuleAssessment retries when agent output omits candidate rules", async () => {
+  const calls: Array<{ requestTag: string; prompt: string }> = [];
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/sandbox/case",
-    bootstrapPayload: payload(),
-    runPrompt: async (request) => ({
-      requestTag: request.requestTag,
-      rawEvents: "",
-      rawText: JSON.stringify({
-        summary: { assistant_scope: "empty", overall_confidence: "low" },
-        rule_assessments: [],
-      }),
-      elapsedMs: 1,
-    }),
+    bootstrapPayload: payloadWithTwoRules(),
+    runPrompt: async (request) => {
+      calls.push({ requestTag: request.requestTag, prompt: request.prompt });
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify(calls.length === 1 ? finalAnswer() : finalAnswerWithTwoRules()),
+        elapsedMs: 1,
+      };
+    },
   });
 
   assert.equal(result.outcome, "success");
-  assert.equal(result.final_answer?.rule_assessments[0]?.rule_id, "R1");
-  assert.equal(result.final_answer?.rule_assessments[0]?.decision, "uncertain");
-  assert.equal(result.final_answer?.rule_assessments[0]?.needs_human_review, true);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1]?.prompt ?? "", /missing=R2/);
+  assert.match(calls[1]?.prompt ?? "", /只补齐列出的候选 rule_id/);
+  assert.deepEqual(
+    result.final_answer?.rule_assessments.map((assessment) => assessment.rule_id),
+    ["R1", "R2"],
+  );
 });
 
-test("runOpencodeRuleAssessment normalizes assessments through the local rule skeleton", async () => {
+test("runOpencodeRuleAssessment filters unexpected rule ids and deduplicates through the local skeleton", async () => {
+  let calls = 0;
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/sandbox/case",
     bootstrapPayload: payload(),
-    runPrompt: async (request) => ({
-      requestTag: request.requestTag,
-      rawEvents: "",
-      rawText: JSON.stringify({
-        summary: { assistant_scope: "读取 sandbox 后完成判定。", overall_confidence: "medium" },
-        rule_assessments: [
-          {
-            rule_id: "UNKNOWN",
-            decision: "violation",
-            confidence: "high",
-            reason: "未知规则应被过滤。",
-            evidence_used: ["generated/entry/src/main.ets"],
-            needs_human_review: false,
-          },
-          finalAnswer().rule_assessments[0],
-          {
-            ...finalAnswer().rule_assessments[0],
-            decision: "violation",
-            reason: "重复规则应被本地骨架去重。",
-          },
-        ],
-      }),
-      elapsedMs: 1,
-    }),
+    runPrompt: async (request) => {
+      calls += 1;
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify({
+          summary: { assistant_scope: "读取 sandbox 后完成判定。", overall_confidence: "medium" },
+          rule_assessments: [
+            {
+              rule_id: "UNKNOWN",
+              decision: "violation",
+              confidence: "high",
+              reason: "未知规则应被过滤。",
+              evidence_used: ["generated/entry/src/main.ets"],
+              needs_human_review: false,
+            },
+            finalAnswer().rule_assessments[0],
+            {
+              ...finalAnswer().rule_assessments[0],
+              decision: "violation",
+              reason: "重复规则应被本地骨架去重。",
+            },
+          ],
+        }),
+        elapsedMs: 1,
+      };
+    },
   });
 
   assert.equal(result.outcome, "success");
+  assert.equal(calls, 1);
   assert.equal(result.final_answer?.rule_assessments.length, 1);
   assert.deepEqual(result.final_answer?.rule_assessments[0], finalAnswer().rule_assessments[0]);
-});
-
-test("runOpencodeRuleAssessment fills omitted candidates as uncertain review items", async () => {
-  const result = await runOpencodeRuleAssessment({
-    sandboxRoot: "/sandbox/case",
-    bootstrapPayload: payload(),
-    runPrompt: async (request) => ({
-      requestTag: request.requestTag,
-      rawEvents: "",
-      rawText: JSON.stringify({
-        summary: { assistant_scope: "未覆盖所有候选。", overall_confidence: "low" },
-        rule_assessments: [],
-      }),
-      elapsedMs: 1,
-    }),
-  });
-
-  assert.equal(result.outcome, "success");
-  assert.deepEqual(result.final_answer?.rule_assessments[0], {
-    rule_id: "R1",
-    decision: "uncertain",
-    confidence: "low",
-    reason: "agent 输出遗漏该候选规则，本地骨架补为 uncertain，需人工复核。",
-    evidence_used: [],
-    needs_human_review: true,
-  });
 });
 
 test("runOpencodeRuleAssessment ignores extra fields and coerces review boolean strings", async () => {

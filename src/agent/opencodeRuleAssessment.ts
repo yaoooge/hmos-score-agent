@@ -198,28 +198,14 @@ function validateRuleCoverage(
   candidates: AssistedRuleCandidate[],
 ): { ok: boolean; failureReason?: string } {
   const expectedRuleIds = candidates.map((candidate) => candidate.rule_id);
-  const expected = new Set(expectedRuleIds);
   const seen = new Set<string>();
-  const duplicate = new Set<string>();
-  const unexpected = new Set<string>();
 
   for (const assessment of finalAnswer.rule_assessments) {
-    if (seen.has(assessment.rule_id)) {
-      duplicate.add(assessment.rule_id);
-    }
     seen.add(assessment.rule_id);
-    if (!expected.has(assessment.rule_id)) {
-      unexpected.add(assessment.rule_id);
-    }
   }
 
   const missing = expectedRuleIds.filter((ruleId) => !seen.has(ruleId));
-  const parts = [
-    missing.length > 0 ? `missing=${missing.join(",")}` : "",
-    duplicate.size > 0 ? `duplicate=${Array.from(duplicate).join(",")}` : "",
-    unexpected.size > 0 ? `unexpected=${Array.from(unexpected).join(",")}` : "",
-  ].filter(Boolean);
-  return parts.length > 0 ? { ok: false, failureReason: parts.join("; ") } : { ok: true };
+  return missing.length > 0 ? { ok: false, failureReason: `missing=${missing.join(",")}` } : { ok: true };
 }
 
 function normalizeRuleAssessmentResult(
@@ -237,19 +223,12 @@ function normalizeRuleAssessmentResult(
     ...finalAnswer,
     rule_assessments: candidates.map((candidate) => {
       const assessment = assessmentsByRuleId.get(candidate.rule_id);
-      if (assessment) {
-        return {
-          ...assessment,
-          rule_id: candidate.rule_id,
-        };
+      if (!assessment) {
+        throw new Error(`internal rule coverage validation missed missing=${candidate.rule_id}`);
       }
       return {
+        ...assessment,
         rule_id: candidate.rule_id,
-        decision: "uncertain",
-        confidence: "low",
-        reason: "agent 输出遗漏该候选规则，本地骨架补为 uncertain，需人工复核。",
-        evidence_used: [],
-        needs_human_review: true,
       };
     }),
   };
@@ -282,8 +261,7 @@ function parseRuleAssessmentRunResult(
     };
   }
 
-  const finalAnswer = normalizeRuleAssessmentResult(parsed.data, candidates);
-  const validation = validateRuleCoverage(finalAnswer, candidates);
+  const validation = validateRuleCoverage(parsed.data, candidates);
   if (!validation.ok) {
     return {
       outcome: "protocol_error",
@@ -293,6 +271,7 @@ function parseRuleAssessmentRunResult(
     };
   }
 
+  const finalAnswer = normalizeRuleAssessmentResult(parsed.data, candidates);
   return {
     outcome: "success",
     final_answer: finalAnswer,
