@@ -315,6 +315,33 @@ function isNonCaseMustRuleAbsentFromPatch(
   return /补丁|patch|effective\.patch|read_patch/i.test(text) && /未(发现|见)|没有|无/.test(text);
 }
 
+function isNoIssueJudgementOnChangedCode(
+  assessment: AgentAssistedRuleResult["rule_assessments"][number],
+): boolean {
+  if (assessment.decision !== "uncertain") {
+    return false;
+  }
+
+  const text = `${assessment.reason} ${assessment.evidence_used.join(" ")}`;
+  const mentionsChangedCode = /新增代码|新增内容|新增改动|补丁|patch|effective\.patch|改动/.test(
+    text,
+  );
+  const saysNoIssue =
+    /未(发现|见)(明显)?(该规则相关)?(违规|问题|风险|异常|反模式)/.test(text) ||
+    /没有(发现)?(该规则相关)?(违规|问题|风险|异常|反模式)/.test(text) ||
+    /无(明显)?(该规则相关)?(违规|问题|风险|异常|反模式)/.test(text);
+
+  return mentionsChangedCode && saysNoIssue;
+}
+
+function cleanNoIssueConclusion(reason: string): string {
+  const cleaned = reason
+    .replace(/，?需要人工(?:review|复核)确认。?/gi, "")
+    .replace(/，?需人工(?:review|复核)确认。?/gi, "")
+    .trim();
+  return cleaned.length > 0 ? cleaned : "新增代码未发现该规则相关问题。";
+}
+
 function mapAgentAssessmentToRuleResult(
   candidate: AssistedRuleCandidate,
   assessment: AgentAssistedRuleResult["rule_assessments"][number],
@@ -326,6 +353,16 @@ function mapAgentAssessmentToRuleResult(
       rule_source: candidate.rule_source,
       result: "满足",
       conclusion: `${assessment.reason} 补丁未见相关改动，按 patch-only 评测视为无问题。`,
+    };
+  }
+
+  if (isNoIssueJudgementOnChangedCode(assessment)) {
+    return {
+      rule_id: candidate.rule_id,
+      rule_summary: candidate.rule_summary ?? candidate.rule_name,
+      rule_source: candidate.rule_source,
+      result: "满足",
+      conclusion: `${cleanNoIssueConclusion(assessment.reason)} 新增代码未见相关问题，按 patch-only 评测视为无问题。`,
     };
   }
 

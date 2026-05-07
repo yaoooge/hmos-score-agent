@@ -13,8 +13,10 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 优先读取 `patch/effective.patch`，根据 patch 中出现的文件路径继续阅读相关 `generated/` 或 `original/` 上下文辅助理解。
 - 必须覆盖 `assisted_rule_candidates` 中的每一个 `rule_id`，不能新增、遗漏或重复。
 - 只判断候选规则，不输出未请求规则。
+- `local_preliminary_signal` 或 `why_uncertain` 中的“未接入静态判定器”只表示本地规则引擎需要你辅助判定，本身不是人工复核理由。
+- 如果你阅读新增代码、补丁和必要上下文后未发现该候选规则相关问题，必须输出 `decision="pass"` 且 `needs_human_review=false`。
 - 无法确认时使用 `decision="uncertain"`，并设置 `needs_human_review=true`。
-- `evidence_used` 只能填写 sandbox `generated/`目录下的相对路径。
+- `evidence_used` 只能填写 sandbox `generated/`、`original/`、`patch/`、`metadata/` 下的相对路径。
 
 ## References
 

@@ -203,6 +203,40 @@ test("mergeRuleAuditResults treats non-case must rules absent from patch as sati
   );
 });
 
+test("mergeRuleAuditResults treats uncertain no-issue judgements on changed code as satisfied", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "ARKTS-SHOULD-001",
+        rule_source: "should_rule",
+        why_uncertain: "当前版本未接入静态判定器，需要 Agent 辅助判定。",
+        local_preliminary_signal: "未接入静态判定器，需要agent辅助判定",
+        evidence_files: ["patch/effective.patch"],
+        evidence_snippets: [],
+      },
+    ],
+    agentFinalAnswer: makeFinalAnswer([
+      {
+        rule_id: "ARKTS-SHOULD-001",
+        decision: "uncertain",
+        confidence: "low",
+        reason: "当前版本未接入静态判定器，新增代码未发现问题，需要人工review确认。",
+        evidence_used: ["patch/effective.patch"],
+        needs_human_review: true,
+      },
+    ]),
+  });
+
+  assert.equal(merged.ruleAgentRunStatus, "success");
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "满足");
+  assert.match(
+    merged.mergedRuleAuditResults[0]?.conclusion ?? "",
+    /新增代码未见相关问题，按 patch-only 评测视为无问题/,
+  );
+  assert.doesNotMatch(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /人工review|人工复核/);
+});
+
 test("buildAgentBootstrapPayload emits opencode sandbox context instead of inline evidence-only prompt", () => {
   const payload = buildAgentBootstrapPayload({
     caseInput: {

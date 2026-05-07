@@ -98,6 +98,8 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   assert.doesNotMatch(prompt, /references\//);
   assert.match(prompt, /优先阅读 patch\/effective\.patch/);
   assert.match(prompt, /根据 patch 中出现的文件路径继续阅读相关 generated\/ 或 original\/ 上下文/);
+  assert.match(prompt, /未接入静态判定器本身不是人工复核理由/);
+  assert.match(prompt, /新增代码未发现该规则相关问题时，必须输出 decision="pass" 且 needs_human_review=false/);
   assert.doesNotMatch(prompt, /initial_target_files/);
   assert.match(prompt, /output_file: metadata\/agent-output\/rule-assessment\.json/);
   assert.match(prompt, /严格遵守 system prompt 中的正确输出格式/);

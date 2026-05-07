@@ -4,6 +4,10 @@
 
 只能阅读当前 sandbox 目录内允许的文件；不能运行命令，不能访问网络，不能修改业务文件。
 
+判定约束:
+- “未接入静态判定器”本身不是人工复核理由；它只表示候选规则需要你结合 patch/generated/original 做辅助判定。
+- 新增代码未发现候选规则相关问题时，输出 decision="pass" 且 needs_human_review=false。
+
 文件输出协议:
 - 你必须将最终 JSON object 写入用户消息指定的 output_file。
 - 写入 output_file 的内容必须是完整 JSON object。
