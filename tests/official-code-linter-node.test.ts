@@ -78,12 +78,66 @@ test("officialCodeLinterNode returns not_installed without rule results when run
         hasPatch: true,
       },
     } as ScoreGraphState,
-    { runDir: "", timeoutMs: 120000 },
+    { enabled: true, runDir: "", timeoutMs: 120000 },
   );
 
   assert.equal(result.officialLinterRunStatus, "not_installed");
   assert.deepEqual(result.officialLinterFindings, []);
   assert.deepEqual(result.officialLinterRuleResults, []);
+});
+
+test("officialCodeLinterNode is disabled by default and does not invoke configured linter", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-node-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const caseDir = path.join(root, "case-1");
+  const generated = path.join(root, "generated");
+  const runDir = path.join(root, "run");
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "let a = 1;\n",
+  );
+  const markerPath = path.join(root, "linter-was-called.txt");
+  const fakeLinterBin = path.join(runDir, "bin", "codelinter");
+  await fs.writeFile(
+    fakeLinterBin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(markerPath)}, 'called');`,
+      "console.log('[]');",
+    ].join("\n"),
+  );
+  await fs.chmod(fakeLinterBin, 0o755);
+
+  const result = await officialCodeLinterNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-1",
+        promptText: "",
+        originalProjectPath: generated,
+        generatedProjectPath: generated,
+      },
+      hasPatch: true,
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 0,
+        changedFileCount: 1,
+        changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+        hasPatch: true,
+      },
+    } as ScoreGraphState,
+    { runDir, timeoutMs: 120000 },
+  );
+
+  assert.equal(result.officialLinterRunStatus, "not_enabled");
+  assert.deepEqual(result.officialLinterFindings, []);
+  assert.deepEqual(result.officialLinterRuleResults, []);
+  await assert.rejects(fs.access(markerPath));
 });
 
 test("officialCodeLinterNode writes only effective findings and diagnostics outside workspace", async (t) => {
@@ -142,7 +196,7 @@ test("officialCodeLinterNode writes only effective findings and diagnostics outs
         hasPatch: true,
       },
     } as ScoreGraphState,
-    { runDir, timeoutMs: 120000 },
+    { enabled: true, runDir, timeoutMs: 120000 },
   );
 
   assert.equal(result.officialLinterRunStatus, "success");

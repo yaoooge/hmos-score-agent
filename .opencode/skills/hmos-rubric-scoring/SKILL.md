@@ -12,6 +12,9 @@ description: Score HarmonyOS generated code against rubric items and return only
 - 优先读取 `patch/effective.patch`，不要从预设目标文件列表开始阅读。
 - 根据 patch 中出现的文件路径继续阅读相关 `generated/` 或 `original/` 上下文，不要大量阅读无关代码。
 - 当 changed files 很多时，结合 `workspace_project_structure` 选择代表性文件取证。
+- 当前被评分工程是鸿蒙工程。阅读和评分时必须优先按 HarmonyOS / OpenHarmony 应用工程语境理解代码
+- 重点审视 ArkTS 与 ArkUI 的语法、生命周期、状态管理、组件声明、装饰器、事件绑定、资源引用、路由导航、异步调用和模块导入是否符合鸿蒙工程常见用法。
+- 重点审视相关 Kit / API 是否被正常使用，包括导入路径、权限与能力声明、调用时机、参数类型、错误处理、回调/Promise 流程、设备能力适配和 API 版本兼容性。
 - 必须覆盖 `rubric_summary.dimension_summaries` 中的每一个 `dimension_name + item_name`，不能新增、遗漏或重复。
 - 每个 `score` 必须来自对应 item 的 `scoring_bands.score`。
 - `matched_band_score` 必须与 `score` 相同。
@@ -99,6 +102,9 @@ description: Score HarmonyOS generated code against rubric items and return only
 - 每个 rubric item 恰好出现一次。
 - 每个 `score` 均来自对应 item 的允许分值。
 - 每个扣分项都有完整 `deduction_trace`。
+- 已按鸿蒙工程语境检查 HarmonyOS / OpenHarmony 特性、ArkTS / ArkUI 语法及用法、Kit / API 使用方式、权限能力声明和 API 兼容性。
+- 已结合用户用例或任务目标检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
+- `rationale`、`overall_assessment`、`main_issues` 不是只描述孤立片段，而是给出基于完整功能链路的评分依据。
 - `risks` 是数组且字段名正确。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
 - JSON 语法完整，所有 `{}`、`[]`、字符串和逗号都正确闭合。

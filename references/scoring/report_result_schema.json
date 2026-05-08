@@ -806,6 +806,7 @@
         "runStatus": {
           "type": "string",
           "enum": [
+            "not_enabled",
             "not_installed",
             "success",
             "failed",

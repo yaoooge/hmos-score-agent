@@ -116,6 +116,7 @@ export interface RuleAuditResult {
 }
 
 export type OfficialLinterRunStatus =
+  | "not_enabled"
   | "not_installed"
   | "success"
   | "failed"

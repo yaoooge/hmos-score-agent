@@ -71,16 +71,32 @@ function makeSummary(input: {
 
 export async function officialCodeLinterNode(
   state: ScoreGraphState,
-  deps: { runDir?: string; timeoutMs?: number } = {},
+  deps: { enabled?: boolean; runDir?: string; timeoutMs?: number } = {},
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("officialCodeLinterNode");
   const startedAt = Date.now();
   try {
     const config = getConfig();
+    const enabled = deps.enabled ?? config.officialCodeLinterEnabled;
     const runDir = deps.runDir ?? config.officialCodeLinterRunDir;
     const timeoutMs = deps.timeoutMs ?? config.officialCodeLinterTimeoutMs;
     const caseDir = state.caseDir;
     const generatedProjectPath = state.caseInput?.generatedProjectPath;
+
+    if (!enabled) {
+      const notEnabledSummary = makeSummary({
+        runStatus: "not_enabled",
+        effectiveFindingCount: 0,
+        durationMs: Date.now() - startedAt,
+        diagnostics: "official Code Linter is disabled by HMOS_CODE_LINTER_ENABLED",
+      });
+      return {
+        officialLinterRunStatus: "not_enabled",
+        officialLinterSummary: notEnabledSummary,
+        officialLinterFindings: [],
+        officialLinterRuleResults: [],
+      };
+    }
 
     const notInstalledSummary = makeSummary({
       runStatus: "not_installed",

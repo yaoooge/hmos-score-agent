@@ -90,6 +90,9 @@ cp .env.example .env
 - `HMOS_OPENCODE_API_KEY`：provider 鉴权密钥
 - `HMOS_OPENCODE_TIMEOUT_MS`：单次 opencode 调用超时时间
 - `HMOS_OPENCODE_MAX_OUTPUT_BYTES`：单次 opencode 输出上限
+- `HMOS_CODE_LINTER_ENABLED`：是否启用官方 Code Linter，默认 `false`；仅 `true` 会开启
+- `HMOS_CODE_LINTER_RUN_DIR`：官方 Code Linter 运行目录，启用后用于查找 `bin/codelinter` 或 `index.js`
+- `HMOS_CODE_LINTER_TIMEOUT_MS`：官方 Code Linter 单次运行超时时间，默认 `120000`
 
 工程级 opencode 配置位于 `.opencode/`：
 

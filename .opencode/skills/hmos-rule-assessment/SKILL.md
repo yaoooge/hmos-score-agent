@@ -11,6 +11,11 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 
 - 只基于 sandbox 内可见文件和用户消息中的 `bootstrap_payload` 或 retry candidate IDs 完成规则判定。
 - 优先读取 `patch/effective.patch`，根据 patch 中出现的文件路径继续阅读相关 `generated/` 或 `original/` 上下文辅助理解。
+- 当前被判定工程是鸿蒙工程。阅读和判定时必须优先按 HarmonyOS / OpenHarmony 应用工程语境理解代码。
+- 判断候选规则时，重点关注鸿蒙特性是否被正确实现，ArkTS 与 ArkUI 的语法、生命周期、状态管理、组件声明、装饰器、事件绑定、资源引用、路由导航、异步调用和模块导入是否符合鸿蒙工程常见用法。
+- 对涉及 Kit / API 的候选规则，要核查 Kit 是否正常使用，包括导入路径、权限与能力声明、调用时机、参数类型、错误处理、回调/Promise 流程、设备能力适配和 API 版本兼容性。
+- 对用户提供的用例、规则语义或任务目标，要审视其功能特性是否真正落地：入口是否可达、核心流程是否闭环、边界状态是否处理、用户交互是否完整、数据流是否连贯、异常和空状态是否有合理表现。
+- 不要只根据零散代码片段输出判定结论。判定 `violation`、`pass`、`not_applicable` 或 `uncertain` 前，应把 patch、相关上下文、候选规则语义、用例目标、功能流程和鸿蒙特性放在一起判断；`reason` 必须说明完整功能链路上的依据。
 - 必须覆盖 `assisted_rule_candidates` 中的每一个 `rule_id`，不能新增、遗漏或重复。
 - 只判断候选规则，不输出未请求规则。
 - `local_preliminary_signal` 或 `why_uncertain` 中的“未接入静态判定器”只表示本地规则引擎需要你辅助判定，本身不是人工复核理由。
@@ -71,6 +76,9 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 
 - 每个候选 `rule_id` 恰好出现一次。
 - 没有候选列表外的 `rule_id`。
+- 已按鸿蒙工程语境检查 HarmonyOS / OpenHarmony 特性、ArkTS / ArkUI 语法及用法、Kit / API 使用方式、权限能力声明和 API 兼容性。
+- 已结合用户用例或规则语义检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
+- 每个 `reason` 都不是孤立片段结论，而是基于候选规则、相关上下文和完整功能链路的判定依据。
 - `decision`、`confidence`、`overall_confidence` 均为允许枚举。
 - `evidence_used` 是字符串数组。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。

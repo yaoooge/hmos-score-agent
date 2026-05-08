@@ -37,17 +37,25 @@ test("generated code-linter config explicitly includes the four v1 recommended r
 });
 
 test("official Code Linter config defaults to global node with optional run dir", () => {
+  const previousEnabled = process.env.HMOS_CODE_LINTER_ENABLED;
   const previousRunDir = process.env.HMOS_CODE_LINTER_RUN_DIR;
   const previousTimeout = process.env.HMOS_CODE_LINTER_TIMEOUT_MS;
+  delete process.env.HMOS_CODE_LINTER_ENABLED;
   delete process.env.HMOS_CODE_LINTER_RUN_DIR;
   delete process.env.HMOS_CODE_LINTER_TIMEOUT_MS;
 
   try {
     const config = getConfig() as Record<string, unknown>;
+    assert.equal(config.officialCodeLinterEnabled, false);
     assert.equal(config.officialCodeLinterRunDir, undefined);
     assert.equal(config.officialCodeLinterTimeoutMs, 120000);
     assert.equal(Object.hasOwn(config, "officialCodeLinterNode"), false);
   } finally {
+    if (previousEnabled === undefined) {
+      delete process.env.HMOS_CODE_LINTER_ENABLED;
+    } else {
+      process.env.HMOS_CODE_LINTER_ENABLED = previousEnabled;
+    }
     if (previousRunDir === undefined) {
       delete process.env.HMOS_CODE_LINTER_RUN_DIR;
     } else {
@@ -61,3 +69,23 @@ test("official Code Linter config defaults to global node with optional run dir"
   }
 });
 
+test("official Code Linter is enabled only by explicit true environment flag", () => {
+  const previousEnabled = process.env.HMOS_CODE_LINTER_ENABLED;
+
+  try {
+    process.env.HMOS_CODE_LINTER_ENABLED = "true";
+    assert.equal(getConfig().officialCodeLinterEnabled, true);
+
+    process.env.HMOS_CODE_LINTER_ENABLED = "1";
+    assert.equal(getConfig().officialCodeLinterEnabled, false);
+
+    process.env.HMOS_CODE_LINTER_ENABLED = "false";
+    assert.equal(getConfig().officialCodeLinterEnabled, false);
+  } finally {
+    if (previousEnabled === undefined) {
+      delete process.env.HMOS_CODE_LINTER_ENABLED;
+    } else {
+      process.env.HMOS_CODE_LINTER_ENABLED = previousEnabled;
+    }
+  }
+});
