@@ -101,6 +101,18 @@ function makeValidResultJson(): Record<string, unknown> {
     human_review_items: [],
     final_recommendation: [],
     rule_audit_results: [],
+    official_linter_summary: {
+      configuredRuleSets: [
+        "plugin:@typescript-eslint/recommended",
+        "plugin:@security/recommended",
+        "plugin:@performance/recommended",
+        "plugin:@hw-stylistic/recommended",
+      ],
+      effectiveFindingCount: 0,
+      runStatus: "not_installed",
+      durationMs: 0,
+    },
+    official_linter_results: [],
     report_meta: {
       report_file_name: "report.html",
       result_json_file_name: "result.json",

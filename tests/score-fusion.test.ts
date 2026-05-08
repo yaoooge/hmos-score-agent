@@ -133,6 +133,200 @@ test("fuseRubricScoreWithRules records rule impacts on affected rubric items", a
   );
 });
 
+test("fuseRubricScoreWithRules maps official unsafe crypto linter rules to security boundary penalties", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "bug_fix",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "OFFICIAL-LINTER:@security/no-unsafe-aes",
+        rule_source: "forbidden_pattern",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 @security/no-unsafe-aes unsafe crypto",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const securityDetail = result.scoreFusionDetails.find(
+    (detail) => detail.item_name === "安全/边界意识",
+  );
+  assert.ok(securityDetail);
+  assert.equal(securityDetail.rule_impacts[0]?.rule_id, "OFFICIAL-LINTER:@security/no-unsafe-aes");
+  assert.equal(securityDetail.rule_impacts[0]?.severity, "heavy");
+  assert.ok((securityDetail.rule_impacts[0]?.score_delta ?? 0) < 0);
+});
+
+test("fuseRubricScoreWithRules maps official commented-code rule to static quality only", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "bug_fix",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
+        rule_source: "forbidden_pattern",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 @security/no-commented-code remove code",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const impactedDetails = result.scoreFusionDetails.filter((detail) =>
+    detail.rule_impacts.some(
+      (impact) => impact.rule_id === "OFFICIAL-LINTER:@security/no-commented-code",
+    ),
+  );
+
+  assert.deepEqual(
+    impactedDetails.map((detail) => detail.item_name),
+    ["静态坏味道控制"],
+  );
+  assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "light");
+  assert.ok((impactedDetails[0]?.rule_impacts[0]?.score_delta ?? 0) < 0);
+});
+
+test("fuseRubricScoreWithRules maps official performance linter rules to performance risk penalties", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "OFFICIAL-LINTER:@performance/foreach-args-check",
+        rule_source: "should_rule",
+        result: "不满足",
+        conclusion:
+          "entry/src/main/ets/pages/Index.ets:1:1 @performance/foreach-args-check avoid expensive foreach",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const performanceDetail = result.scoreFusionDetails.find(
+    (detail) => detail.item_name === "性能风险",
+  );
+  assert.ok(performanceDetail);
+  assert.equal(
+    performanceDetail.rule_impacts[0]?.rule_id,
+    "OFFICIAL-LINTER:@performance/foreach-args-check",
+  );
+  assert.equal(performanceDetail.rule_impacts[0]?.severity, "medium");
+  assert.ok((performanceDetail.rule_impacts[0]?.score_delta ?? 0) < 0);
+});
+
+test("fuseRubricScoreWithRules maps official max-len linter rule to one static quality penalty", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "OFFICIAL-LINTER:@hw-stylistic/max-len",
+        rule_source: "should_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 @hw-stylistic/max-len line too long",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const impactedDetails = result.scoreFusionDetails.filter((detail) =>
+    detail.rule_impacts.some(
+      (impact) => impact.rule_id === "OFFICIAL-LINTER:@hw-stylistic/max-len",
+    ),
+  );
+
+  assert.deepEqual(
+    impactedDetails.map((detail) => detail.item_name),
+    ["静态坏味道控制"],
+  );
+  assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "light");
+  assert.ok((impactedDetails[0]?.rule_impacts[0]?.score_delta ?? 0) < 0);
+});
+
+test("fuseRubricScoreWithRules does not apply prefix fallback for unmapped official linter rules", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "OFFICIAL-LINTER:@hw-stylistic/future-rule",
+        rule_source: "should_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 @hw-stylistic/future-rule issue",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const impacts = result.scoreFusionDetails.flatMap((detail) =>
+    detail.rule_impacts.filter(
+      (impact) => impact.rule_id === "OFFICIAL-LINTER:@hw-stylistic/future-rule",
+    ),
+  );
+
+  assert.deepEqual(impacts, []);
+});
+
 test("fuseRubricScoreWithRules falls back to top rubric band when rubric output is invalid", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);

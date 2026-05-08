@@ -44,7 +44,7 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "forbidden_pattern",
     "ARKTS-FORBID-006",
     "禁止在对象类型中使用 call signature。",
-    ["^\\s*\\([^)]*\\)\\s*:\\s*[^=][^;{]*;?$"],
+    ["^\\s*\\([^)]*\\)\\s*:\\s*[^=;{\\r\\n]+;?\\s*$"],
   ),
   createTextRule(
     "arkts-language",

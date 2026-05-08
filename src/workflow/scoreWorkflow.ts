@@ -16,6 +16,7 @@ import { ruleAssessmentAgentNode } from "../nodes/ruleAssessmentAgentNode.js";
 import { ruleAuditNode } from "../nodes/ruleAuditNode.js";
 import { ruleMergeNode } from "../nodes/ruleMergeNode.js";
 import { scoreFusionOrchestrationNode } from "../nodes/scoreFusionOrchestrationNode.js";
+import { officialCodeLinterNode } from "../nodes/officialCodeLinterNode.js";
 import { taskUnderstandingNode } from "../nodes/taskUnderstandingNode.js";
 import { createOpencodeRuntimeConfig, type OpencodeRuntimeConfig } from "../opencode/opencodeConfig.js";
 import {
@@ -133,6 +134,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       graph: new StateGraph(ScoreState)
         .addNode("opencodeSandboxPreparationNode", (s) => opencodeSandboxPreparationNode(s))
         .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
+        .addNode("officialCodeLinterNode", (s) => officialCodeLinterNode(s))
         .addNode("rubricPreparationNode", (s) =>
           rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
         )
@@ -159,7 +161,8 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
         )
         .addEdge(START, "opencodeSandboxPreparationNode")
         .addEdge("opencodeSandboxPreparationNode", "ruleAuditNode")
-        .addEdge("ruleAuditNode", "rubricPreparationNode")
+        .addEdge("ruleAuditNode", "officialCodeLinterNode")
+        .addEdge("officialCodeLinterNode", "rubricPreparationNode")
         .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
         .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
         .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")
@@ -191,6 +194,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       )
       .addNode("inputClassificationNode", (s) => inputClassificationNode(s))
       .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
+      .addNode("officialCodeLinterNode", (s) => officialCodeLinterNode(s))
       .addNode("rubricPreparationNode", (s) =>
         rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
       )
@@ -219,7 +223,8 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       .addEdge("remoteTaskPreparationNode", "taskUnderstandingNode")
       .addEdge("taskUnderstandingNode", "inputClassificationNode")
       .addEdge("inputClassificationNode", "ruleAuditNode")
-      .addEdge("ruleAuditNode", "rubricPreparationNode")
+      .addEdge("ruleAuditNode", "officialCodeLinterNode")
+      .addEdge("officialCodeLinterNode", "rubricPreparationNode")
       .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
       .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
       .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")

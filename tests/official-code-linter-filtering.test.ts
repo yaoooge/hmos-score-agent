@@ -1,0 +1,95 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mapOfficialCodeLinterFindings } from "../src/rules/officialCodeLinter/resultMapper.js";
+import { sanitizeOfficialCodeLinterOutput } from "../src/rules/officialCodeLinter/sanitizer.js";
+import type { OfficialLinterFinding } from "../src/types.js";
+
+const findings: OfficialLinterFinding[] = [
+  {
+    rule_id: "@security/no-http",
+    message: "use https",
+    severity: "error",
+    file: "/tmp/workspace/entry/src/main/ets/pages/Changed.ets",
+    line: 2,
+    column: 1,
+    source_rule_set: "plugin:@security/recommended",
+  },
+  {
+    rule_id: "@security/no-http",
+    message: "legacy issue",
+    severity: "error",
+    file: "/tmp/workspace/entry/src/main/ets/pages/Legacy.ets",
+    line: 9,
+    column: 1,
+    source_rule_set: "plugin:@security/recommended",
+  },
+];
+
+test("changed-file filtering drops unchanged findings before artifacts and rule results", () => {
+  const mapped = mapOfficialCodeLinterFindings({
+    findings,
+    workspaceDir: "/tmp/workspace",
+    hasPatch: true,
+    changedFiles: ["entry/src/main/ets/pages/Changed.ets"],
+  });
+
+  assert.deepEqual(mapped.effectiveFindings.map((item) => item.file), [
+    "entry/src/main/ets/pages/Changed.ets",
+  ]);
+  assert.equal(mapped.ruleResults.length, 1);
+  assert.equal(mapped.ruleResults[0]?.rule_id, "OFFICIAL-LINTER:@security/no-http");
+  assert.equal(mapped.ruleResults[0]?.rule_source, "forbidden_pattern");
+  assert.doesNotMatch(JSON.stringify(mapped), /Legacy\.ets|legacy issue|filtered/i);
+});
+
+test("without reliable patch scope all official findings are effective", () => {
+  const mapped = mapOfficialCodeLinterFindings({
+    findings,
+    workspaceDir: "/tmp/workspace",
+    hasPatch: false,
+    changedFiles: [],
+  });
+
+  assert.deepEqual(
+    mapped.effectiveFindings.map((item) => item.file),
+    ["entry/src/main/ets/pages/Changed.ets", "entry/src/main/ets/pages/Legacy.ets"],
+  );
+});
+
+test("multiple findings for the same rule aggregate to one rule result", () => {
+  const mapped = mapOfficialCodeLinterFindings({
+    findings: [
+      findings[0],
+      {
+        ...findings[0],
+        line: 4,
+        column: 2,
+        message: "use https again",
+      },
+    ],
+    workspaceDir: "/tmp/workspace",
+    hasPatch: false,
+    changedFiles: [],
+  });
+
+  assert.equal(mapped.effectiveFindings.length, 2);
+  assert.equal(mapped.ruleResults.length, 1);
+  assert.match(mapped.ruleResults[0]?.conclusion ?? "", /命中 2 处/);
+});
+
+test("sanitized diagnostics do not include finding detail lines or filtered counts", () => {
+  const sanitized = sanitizeOfficialCodeLinterOutput({
+    text:
+      "/tmp/workspace/entry/src/main/ets/pages/Legacy.ets:9:1 error legacy issue @security/no-http\nfinished\n",
+    effectiveFindingCount: 1,
+    runStatus: "success",
+  });
+
+  assert.doesNotMatch(
+    sanitized,
+    /Legacy\.ets|legacy issue|@security\/no-http|filtered|dropped|unchanged/i,
+  );
+  assert.match(sanitized, /runStatus=success/);
+  assert.match(sanitized, /effectiveFindingCount=1/);
+});
+

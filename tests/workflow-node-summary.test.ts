@@ -82,6 +82,15 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
+    summarizeNodeUpdate("officialCodeLinterNode", {
+      officialLinterRunStatus: "success",
+      officialLinterFindings: [{ rule_id: "@performance/foreach-args-check" }],
+      officialLinterRuleResults: [{ rule_id: "OFFICIAL-LINTER:@performance/foreach-args-check" }],
+    }),
+    "status=success findings=1 ruleResults=1",
+  );
+
+  assert.equal(
     summarizeNodeUpdate("rubricPreparationNode", {
       rubricSnapshot: {
         dimension_summaries: [{ name: "A" }, { name: "B" }],

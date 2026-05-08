@@ -4,6 +4,7 @@ export type WorkflowNodeId =
   | "opencodeSandboxPreparationNode"
   | "inputClassificationNode"
   | "ruleAuditNode"
+  | "officialCodeLinterNode"
   | "rubricPreparationNode"
   | "rubricScoringPromptBuilderNode"
   | "rubricScoringAgentNode"

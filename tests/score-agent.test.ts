@@ -713,6 +713,36 @@ test("ruleMergeNode returns deterministic results directly when there are no ass
   assert.equal(result.ruleAgentAssessmentResult, undefined);
 });
 
+test("ruleMergeNode merges official linter rule results with deterministic results", async () => {
+  const result = await ruleMergeNode(
+    {
+      deterministicRuleResults: [
+        {
+          rule_id: "ARKTS-SHOULD-001",
+          rule_source: "should_rule",
+          result: "不满足",
+          conclusion: "internal",
+        },
+      ],
+      officialLinterRuleResults: [
+        {
+          rule_id: "OFFICIAL-LINTER:@performance/foreach-args-check",
+          rule_source: "should_rule",
+          result: "不满足",
+          conclusion: "official",
+        },
+      ],
+      assistedRuleCandidates: [],
+    } as never,
+    {},
+  );
+
+  assert.deepEqual(result.mergedRuleAuditResults?.map((item) => item.rule_id), [
+    "ARKTS-SHOULD-001",
+    "OFFICIAL-LINTER:@performance/foreach-args-check",
+  ]);
+});
+
 test("ruleMergeNode preserves structured agent judgments from canonical runner result", async () => {
   const result = await ruleMergeNode(
     {
@@ -1077,6 +1107,147 @@ test("reportGenerationNode includes case_rule_results in resultJson", async (t) 
     {
       pack_id: "case-requirement_004",
       display_name: "用例 requirement_004 约束规则",
+    },
+  ]);
+});
+
+test("reportGenerationNode includes official_linter_results with findings and score impact", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const reportResult = await reportGenerationNode(
+    {
+      taskType: "full_generation",
+      caseInput: {
+        caseId: "case-1",
+        promptText: "实现首页",
+        originalProjectPath: "/tmp/original",
+        generatedProjectPath: "/tmp/workspace",
+      },
+      constraintSummary: {
+        explicitConstraints: [],
+        contextualConstraints: [],
+        implicitConstraints: [],
+        classificationHints: ["full_generation"],
+      },
+      rubricSnapshot: {
+        task_type: "full_generation",
+        evaluation_mode: "auto_precheck_with_human_review",
+        scenario: "生成首页",
+        scoring_method: "discrete_band",
+        scoring_note: "按离散档位给分。",
+        common_risks: [],
+        report_emphasis: [],
+        dimension_summaries: [],
+        hard_gates: [],
+        review_rule_summary: [],
+      },
+      deterministicRuleResults: [],
+      mergedRuleAuditResults: [
+        {
+          rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
+          rule_summary: "官方 Code Linter：@security/no-commented-code",
+          rule_source: "forbidden_pattern",
+          result: "不满足",
+          conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
+        },
+      ],
+      officialLinterSummary: {
+        configuredRuleSets: ["plugin:@security/recommended"],
+        effectiveFindingCount: 1,
+        runStatus: "success",
+        durationMs: 50,
+      },
+      officialLinterFindings: [
+        {
+          rule_id: "@security/no-commented-code",
+          message: "Delete the related code completely when it is invalid.",
+          severity: "warn",
+          file: "entry/src/main/ets/components/HomeTab.ets",
+          line: 58,
+          column: 27,
+          source_rule_set: "plugin:@security/recommended",
+        },
+      ],
+      scoreComputation: {
+        overallConclusion: {
+          total_score: 98.8,
+          hard_gate_triggered: false,
+          summary: "官方 linter 发现安全规范问题。",
+        },
+        dimensionScores: [],
+        submetricDetails: [],
+        scoreFusionDetails: [
+          {
+            dimension_name: "代码质量",
+            item_name: "安全与规范",
+            agent_evaluation: {
+              base_score: 10,
+              matched_band_score: 10,
+              matched_criteria: "",
+              logic: "",
+              evidence_used: [],
+              confidence: "medium",
+              deduction_trace: null,
+            },
+            rule_impacts: [
+              {
+                rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
+                rule_source: "forbidden_pattern",
+                result: "不满足",
+                severity: "light",
+                score_delta: -1.2,
+                reason: "存在无效注释代码。",
+                evidence: "entry/src/main/ets/components/HomeTab.ets:58:27",
+                agent_assisted: false,
+                needs_human_review: false,
+              },
+            ],
+            score_fusion: {
+              base_score: 10,
+              rule_delta: -1.2,
+              final_score: 8.8,
+              fusion_logic: "官方 linter 规则轻扣 1.2 分。",
+            },
+          },
+        ],
+        risks: [],
+        strengths: [],
+        mainIssues: [],
+        humanReviewItems: [],
+        finalRecommendation: [],
+      },
+      ruleViolations: [],
+      caseRuleDefinitions: [],
+    } as never,
+    { referenceRoot },
+  );
+
+  assert.deepEqual(reportResult.resultJson?.official_linter_results, [
+    {
+      rule_id: "@security/no-commented-code",
+      rule_result_id: "OFFICIAL-LINTER:@security/no-commented-code",
+      source_rule_set: "plugin:@security/recommended",
+      severity: "warn",
+      result: "不满足",
+      finding_count: 1,
+      findings: [
+        {
+          file: "entry/src/main/ets/components/HomeTab.ets",
+          line: 58,
+          column: 27,
+          severity: "warn",
+          message: "Delete the related code completely when it is invalid.",
+        },
+      ],
+      conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
+      score_delta: -1.2,
+      affected_items: [
+        {
+          dimension_name: "代码质量",
+          item_name: "安全与规范",
+          score_delta: -1.2,
+          reason: "存在无效注释代码。",
+        },
+      ],
     },
   ]);
 });

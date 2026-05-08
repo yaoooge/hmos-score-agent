@@ -791,6 +791,162 @@
         "additionalProperties": false
       }
     },
+    "official_linter_summary": {
+      "type": "object",
+      "properties": {
+        "configuredRuleSets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "effectiveFindingCount": {
+          "type": "number"
+        },
+        "runStatus": {
+          "type": "string",
+          "enum": [
+            "not_installed",
+            "success",
+            "failed",
+            "timeout",
+            "invalid_output"
+          ]
+        },
+        "exitCode": {
+          "type": "number"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "diagnostics": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "configuredRuleSets",
+        "effectiveFindingCount",
+        "runStatus",
+        "durationMs"
+      ],
+      "additionalProperties": false
+    },
+    "official_linter_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "string"
+          },
+          "rule_result_id": {
+            "type": "string"
+          },
+          "source_rule_set": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "suggestion",
+              "warn",
+              "error",
+              "unknown"
+            ]
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "不满足"
+            ]
+          },
+          "finding_count": {
+            "type": "number"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "number"
+                },
+                "column": {
+                  "type": "number"
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "suggestion",
+                    "warn",
+                    "error",
+                    "unknown"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "severity",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "score_delta": {
+            "type": "number"
+          },
+          "affected_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dimension_name": {
+                  "type": "string"
+                },
+                "item_name": {
+                  "type": "string"
+                },
+                "score_delta": {
+                  "type": "number"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dimension_name",
+                "item_name",
+                "score_delta",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rule_id",
+          "rule_result_id",
+          "source_rule_set",
+          "severity",
+          "result",
+          "finding_count",
+          "findings",
+          "conclusion",
+          "score_delta",
+          "affected_items"
+        ],
+        "additionalProperties": false
+      }
+    },
     "report_meta": {
       "type": "object",
       "properties": {
@@ -964,6 +1120,8 @@
     "human_review_items",
     "final_recommendation",
     "rule_audit_results",
+    "official_linter_summary",
+    "official_linter_results",
     "report_meta"
   ],
   "additionalProperties": false

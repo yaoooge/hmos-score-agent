@@ -2,7 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { validateReportResult } from "../report/schemaValidator.js";
 import { getRegisteredRulePacks, listRegisteredRules } from "../rules/engine/rulePackRegistry.js";
-import type { ConfidenceLevel, RuleAuditResult, ScoreFusionDetail } from "../types.js";
+import { officialCodeLinterRecommendedRuleSets } from "../rules/officialCodeLinter/recommendedRuleSets.js";
+import type {
+  ConfidenceLevel,
+  OfficialLinterFinding,
+  OfficialLinterResult,
+  RuleAuditResult,
+  ScoreFusionDetail,
+} from "../types.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 
@@ -194,6 +201,85 @@ function enrichRuleAuditResultsWithSummary(
   }));
 }
 
+const severityRank: Record<OfficialLinterFinding["severity"], number> = {
+  error: 4,
+  warn: 3,
+  suggestion: 2,
+  unknown: 1,
+};
+
+function roundScoreDelta(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function pickHighestSeverity(
+  findings: OfficialLinterFinding[],
+): OfficialLinterFinding["severity"] {
+  return findings.reduce<OfficialLinterFinding["severity"]>((highest, finding) => {
+    return severityRank[finding.severity] > severityRank[highest] ? finding.severity : highest;
+  }, "unknown");
+}
+
+function buildOfficialLinterResults(state: ScoreGraphState): OfficialLinterResult[] {
+  const findingsByRule = new Map<string, OfficialLinterFinding[]>();
+  for (const finding of state.officialLinterFindings ?? []) {
+    findingsByRule.set(finding.rule_id, [...(findingsByRule.get(finding.rule_id) ?? []), finding]);
+  }
+
+  const ruleResultsById = new Map(
+    (state.officialLinterRuleResults ?? []).map((result) => [result.rule_id, result]),
+  );
+  const scoreImpactsByRuleId = new Map<
+    string,
+    OfficialLinterResult["affected_items"]
+  >();
+  for (const detail of state.scoreComputation.scoreFusionDetails ?? []) {
+    for (const impact of detail.rule_impacts) {
+      if (!impact.rule_id.startsWith("OFFICIAL-LINTER:")) {
+        continue;
+      }
+      scoreImpactsByRuleId.set(impact.rule_id, [
+        ...(scoreImpactsByRuleId.get(impact.rule_id) ?? []),
+        {
+          dimension_name: detail.dimension_name,
+          item_name: detail.item_name,
+          score_delta: impact.score_delta,
+          reason: impact.reason,
+        },
+      ]);
+    }
+  }
+
+  return Array.from(findingsByRule.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([ruleId, findings]) => {
+      const ruleResultId = `OFFICIAL-LINTER:${ruleId}`;
+      const affectedItems = scoreImpactsByRuleId.get(ruleResultId) ?? [];
+      return {
+        rule_id: ruleId,
+        rule_result_id: ruleResultId,
+        source_rule_set: findings[0]?.source_rule_set ?? "unknown",
+        severity: pickHighestSeverity(findings),
+        result: "不满足",
+        finding_count: findings.length,
+        findings: findings.map((finding) => ({
+          file: finding.file,
+          line: finding.line,
+          column: finding.column,
+          severity: finding.severity,
+          message: finding.message,
+        })),
+        conclusion:
+          ruleResultsById.get(ruleResultId)?.conclusion ??
+          `官方 Code Linter ${ruleId} 命中 ${findings.length} 处。`,
+        score_delta: roundScoreDelta(
+          affectedItems.reduce((sum, item) => sum + item.score_delta, 0),
+        ),
+        affected_items: affectedItems,
+      };
+    });
+}
+
 export async function reportGenerationNode(
   state: ScoreGraphState,
   config: { referenceRoot: string },
@@ -248,6 +334,13 @@ export async function reportGenerationNode(
       human_review_items: state.scoreComputation.humanReviewItems,
       final_recommendation: state.scoreComputation.finalRecommendation,
       rule_audit_results: effectiveRuleAuditResultsWithSummary,
+      official_linter_summary: state.officialLinterSummary ?? {
+        configuredRuleSets: [...officialCodeLinterRecommendedRuleSets],
+        effectiveFindingCount: 0,
+        runStatus: "not_installed",
+        durationMs: 0,
+      },
+      official_linter_results: buildOfficialLinterResults(state),
       case_rule_results: caseRuleResults,
       report_meta: {
         report_file_name: "report.html",

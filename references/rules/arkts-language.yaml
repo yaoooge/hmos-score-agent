@@ -238,7 +238,7 @@ forbidden_patterns:
       fileExtensions:
         - .ets
       patterns:
-        - ^\s*\([^)]*\)\s*:\s*[^=][^;{]*;?$
+        - ^\s*\([^)]*\)\s*:\s*[^=;{\r\n]+;?\s*$
     fallback_policy: agent_assisted
   - id: ARKTS-FORBID-007
     rule: 禁止在 type 或 interface 中定义构造签名。

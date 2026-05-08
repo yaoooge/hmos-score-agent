@@ -115,6 +115,56 @@ export interface RuleAuditResult {
   conclusion: string;
 }
 
+export type OfficialLinterRunStatus =
+  | "not_installed"
+  | "success"
+  | "failed"
+  | "timeout"
+  | "invalid_output";
+
+export interface OfficialLinterFinding {
+  rule_id: string;
+  message: string;
+  severity: "suggestion" | "warn" | "error" | "unknown";
+  file: string;
+  line?: number;
+  column?: number;
+  source_rule_set: string;
+}
+
+export interface OfficialLinterSummary {
+  configuredRuleSets: string[];
+  effectiveFindingCount: number;
+  runStatus: OfficialLinterRunStatus;
+  exitCode?: number;
+  durationMs: number;
+  diagnostics?: string;
+}
+
+export interface OfficialLinterResult {
+  rule_id: string;
+  rule_result_id: string;
+  source_rule_set: string;
+  severity: OfficialLinterFinding["severity"];
+  result: "不满足";
+  finding_count: number;
+  findings: Array<{
+    file: string;
+    line?: number;
+    column?: number;
+    severity: OfficialLinterFinding["severity"];
+    message: string;
+  }>;
+  conclusion: string;
+  score_delta: number;
+  affected_items: Array<{
+    dimension_name: string;
+    item_name: string;
+    score_delta: number;
+    reason: string;
+  }>;
+}
+
 export interface StaticRuleAuditResult {
   rule_id: string;
   rule_summary?: string;

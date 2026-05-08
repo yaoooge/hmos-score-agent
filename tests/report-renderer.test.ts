@@ -188,6 +188,62 @@ test("renderHtmlReport renders case rule section with priority and hard gate sta
   assert.match(html, /已触发硬门槛/);
 });
 
+test("official linter results render finding details and score impact", () => {
+  const viewModel = buildHtmlReportViewModel(
+    makeResultJson({
+      official_linter_summary: {
+        configuredRuleSets: ["plugin:@typescript-eslint/recommended", "plugin:@security/recommended"],
+        effectiveFindingCount: 1,
+        runStatus: "success",
+        durationMs: 50,
+      },
+      official_linter_results: [
+        {
+          rule_id: "@security/no-commented-code",
+          rule_result_id: "OFFICIAL-LINTER:@security/no-commented-code",
+          source_rule_set: "plugin:@security/recommended",
+          severity: "warn",
+          result: "不满足",
+          finding_count: 1,
+          findings: [
+            {
+              file: "entry/src/main/ets/components/HomeTab.ets",
+              line: 58,
+              column: 27,
+              severity: "warn",
+              message: "Delete the related code completely when it is invalid.",
+            },
+          ],
+          conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
+          score_delta: -1.2,
+          affected_items: [
+            {
+              dimension_name: "代码质量",
+              item_name: "安全与规范",
+              score_delta: -1.2,
+              reason: "存在无效注释代码。",
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  const html = renderHtmlReport(viewModel);
+
+  assert.equal(viewModel.officialLinter.runStatus, "success");
+  assert.equal(viewModel.officialLinter.effectiveFindingCount, 1);
+  assert.equal(viewModel.officialLinter.results[0]?.ruleId, "@security/no-commented-code");
+  assert.equal(viewModel.officialLinter.results[0]?.scoreDeltaText, "-1.2 分");
+  assert.match(html, /官方 Code Linter/);
+  assert.match(html, /plugin:@security\/recommended/);
+  assert.match(html, /@security\/no-commented-code/);
+  assert.match(html, /entry\/src\/main\/ets\/components\/HomeTab\.ets:58:27/);
+  assert.match(html, /Delete the related code completely when it is invalid\./);
+  assert.match(html, /扣分影响/);
+  assert.doesNotMatch(JSON.stringify(viewModel.officialLinter), /Legacy\.ets|legacy issue|filtered/i);
+  assert.doesNotMatch(html, /Legacy\.ets|legacy issue|filtered|unchanged/i);
+});
+
 test("renderHtmlReport renders bound rule packs inside overall card", () => {
   const html = renderHtmlReport(buildHtmlReportViewModel(makeResultJson()));
   const summarySection = html.slice(

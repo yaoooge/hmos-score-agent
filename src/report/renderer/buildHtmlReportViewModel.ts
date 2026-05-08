@@ -67,6 +67,35 @@ export interface HtmlReportViewModel {
     }>;
     emptyState: string;
   };
+  officialLinter: {
+    runStatus: string;
+    configuredRuleSets: string[];
+    effectiveFindingCount: number;
+    durationMs: number;
+    diagnostics: string;
+    results: Array<{
+      ruleId: string;
+      ruleResultId: string;
+      sourceRuleSet: string;
+      severity: string;
+      result: string;
+      findingCount: number;
+      conclusion: string;
+      scoreDeltaText: string;
+      affectedItems: Array<{
+        dimensionName: string;
+        itemName: string;
+        scoreDeltaText: string;
+        reason: string;
+      }>;
+      findings: Array<{
+        location: string;
+        severity: string;
+        message: string;
+      }>;
+    }>;
+    emptyState: string;
+  };
   boundRulePacks: {
     items: Array<{
       packId: string;
@@ -186,6 +215,13 @@ function formatRuleDelta(value: unknown): string {
   return `${delta > 0 ? "+" : ""}${delta} 分`;
 }
 
+function formatLocation(item: Record<string, unknown>): string {
+  const file = String(item.file ?? "").trim();
+  const line = item.line === undefined ? "" : `:${String(item.line)}`;
+  const column = item.column === undefined ? "" : `:${String(item.column)}`;
+  return `${file}${line}${column}`;
+}
+
 function formatRuleOpinion(ruleImpacts: unknown[]): string {
   if (ruleImpacts.length === 0) {
     return "未发现足够的负面规则证据，保持细则评分结果。";
@@ -226,6 +262,10 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
     : [];
   const ruleAuditResults = Array.isArray(resultJson.rule_audit_results)
     ? resultJson.rule_audit_results
+    : [];
+  const officialLinterSummary = asRecord(resultJson.official_linter_summary);
+  const officialLinterResults = Array.isArray(resultJson.official_linter_results)
+    ? resultJson.official_linter_results
     : [];
   const boundRulePacks = Array.isArray(resultJson.bound_rule_packs)
     ? resultJson.bound_rule_packs
@@ -358,6 +398,46 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         };
       }),
       emptyState: "当前没有可展示的规则审计结果。",
+    },
+    officialLinter: {
+      runStatus: String(officialLinterSummary.runStatus ?? "not_installed"),
+      configuredRuleSets: asStringArray(officialLinterSummary.configuredRuleSets),
+      effectiveFindingCount: Number(officialLinterSummary.effectiveFindingCount ?? 0),
+      durationMs: Number(officialLinterSummary.durationMs ?? 0),
+      diagnostics: String(officialLinterSummary.diagnostics ?? ""),
+      results: officialLinterResults.map((item) => {
+        const current = asRecord(item);
+        const affectedItems = Array.isArray(current.affected_items) ? current.affected_items : [];
+        const findings = Array.isArray(current.findings) ? current.findings : [];
+        return {
+          ruleId: String(current.rule_id ?? ""),
+          ruleResultId: String(current.rule_result_id ?? ""),
+          sourceRuleSet: String(current.source_rule_set ?? ""),
+          severity: String(current.severity ?? ""),
+          result: String(current.result ?? ""),
+          findingCount: Number(current.finding_count ?? 0),
+          conclusion: String(current.conclusion ?? ""),
+          scoreDeltaText: formatRuleDelta(current.score_delta),
+          affectedItems: affectedItems.map((affectedItem) => {
+            const affected = asRecord(affectedItem);
+            return {
+              dimensionName: String(affected.dimension_name ?? ""),
+              itemName: String(affected.item_name ?? ""),
+              scoreDeltaText: formatRuleDelta(affected.score_delta),
+              reason: String(affected.reason ?? ""),
+            };
+          }),
+          findings: findings.map((finding) => {
+            const currentFinding = asRecord(finding);
+            return {
+              location: formatLocation(currentFinding),
+              severity: String(currentFinding.severity ?? ""),
+              message: String(currentFinding.message ?? ""),
+            };
+          }),
+        };
+      }),
+      emptyState: "当前没有可展示的官方 linter 问题明细。",
     },
     boundRulePacks: {
       items: boundRulePacks.map((item) => {

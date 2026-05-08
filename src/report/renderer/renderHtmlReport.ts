@@ -332,6 +332,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
     <main class="page">
       <nav class="top-nav">
         <a href="#summary">摘要</a>
+        <a href="#official-linter">官方 Linter</a>
         <a href="#dimensions">维度得分</a>
         <a href="#human-review">待人工复核</a>
         <a href="#rule-audit">规则审计结果</a>
@@ -395,6 +396,80 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
               )
               .join("")}
           </div>
+        </div>
+      </section>
+
+      <section id="official-linter" class="section-card">
+        <div class="section-title">
+          <h2>官方 Code Linter</h2>
+          <small>运行摘要、问题明细与扣分影响</small>
+        </div>
+        <div class="score-split-grid">
+          <div class="detail-card">
+            <strong>运行状态</strong>
+            <p>${escapeHtml(viewModel.officialLinter.runStatus)}</p>
+          </div>
+          <div class="detail-card">
+            <strong>有效 finding 数</strong>
+            <p>${escapeHtml(String(viewModel.officialLinter.effectiveFindingCount))}</p>
+          </div>
+          <div class="detail-card">
+            <strong>耗时</strong>
+            <p>${escapeHtml(String(viewModel.officialLinter.durationMs))} ms</p>
+          </div>
+        </div>
+        <div class="summary-inline-block">
+          <div class="eyebrow">生效规则集</div>
+          ${renderList(viewModel.officialLinter.configuredRuleSets, "当前没有可展示的官方 linter 规则集。")}
+        </div>
+        <div class="summary-inline-block">
+          <div class="eyebrow">问题明细</div>
+          ${
+            viewModel.officialLinter.results.length > 0
+              ? viewModel.officialLinter.results
+                  .map(
+                    (result) => `
+                    <article class="rule-row">
+                      <div class="rule-head">
+                        <div>
+                          <strong>${escapeHtml(result.ruleId)}</strong>
+                          <div class="detail-meta">
+                            <span>${escapeHtml(result.sourceRuleSet)}</span>
+                            <span>严重级别 ${escapeHtml(result.severity)}</span>
+                            <span>命中 ${result.findingCount} 处</span>
+                            <span>扣分影响 ${escapeHtml(result.scoreDeltaText)}</span>
+                          </div>
+                        </div>
+                        <span class="rule-status 不满足">${escapeHtml(result.result)}</span>
+                      </div>
+                      <p>${escapeHtml(result.conclusion)}</p>
+                      ${
+                        result.affectedItems.length > 0
+                          ? `<div class="opinion-block">
+                              <strong>扣分明细</strong>
+                              <ul class="plain-list">${result.affectedItems
+                                .map(
+                                  (item) =>
+                                    `<li>${escapeHtml(item.dimensionName)} / ${escapeHtml(item.itemName)}：${escapeHtml(item.scoreDeltaText)}。${escapeHtml(item.reason)}</li>`,
+                                )
+                                .join("")}</ul>
+                            </div>`
+                          : `<p class="empty-state">该官方 linter 规则未映射到具体评分项扣分。</p>`
+                      }
+                      <div class="opinion-block">
+                        <strong>命中位置</strong>
+                        <ul class="plain-list">${result.findings
+                          .map(
+                            (finding) =>
+                              `<li><strong>${escapeHtml(finding.location)}</strong> <span class="muted">${escapeHtml(finding.severity)}</span><br />${escapeHtml(finding.message)}</li>`,
+                          )
+                          .join("")}</ul>
+                      </div>
+                    </article>`,
+                  )
+                  .join("")
+              : `<p class="empty-state">${escapeHtml(viewModel.officialLinter.emptyState)}</p>`
+          }
         </div>
       </section>
 

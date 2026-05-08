@@ -84,6 +84,63 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
   assert.ok(result.ruleViolations.length >= 1);
 });
 
+test("ARKTS-FORBID-006 ignores typed arrow function callbacks", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-006");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "components/collect_personal_info/src/main/ets/common/ProfileUtils.ets",
+        content: [
+          "export const formatDate = (format: string): string => {",
+          "  return format.replace(/Y{2,4}/g,",
+          "    (match: string, escaped: string): string => escaped || match)",
+          "}",
+        ].join("\n"),
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
+test("ARKTS-FORBID-006 flags object type call signatures", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-006");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: "interface Callable {\n  (value: number): string;\n}\n",
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:2"]);
+});
+
 test("ARKTS-FORBID-021 ignores text inside string literals", () => {
   const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-021");
   assert.ok(rule);

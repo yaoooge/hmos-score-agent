@@ -34,6 +34,8 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
       ).length;
       return `rules=${rulesCount} violations=${ruleViolations.length} uncertain=${uncertainCount}`;
     }
+    case "officialCodeLinterNode":
+      return `status=${String(update.officialLinterRunStatus ?? "")} findings=${lengthOf(update.officialLinterFindings)} ruleResults=${lengthOf(update.officialLinterRuleResults)}`;
     case "rubricPreparationNode": {
       const rubricSnapshot = update.rubricSnapshot as
         | {

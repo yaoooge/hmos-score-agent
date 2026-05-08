@@ -10,10 +10,14 @@ export async function ruleMergeNode(
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("ruleMergeNode");
   try {
+    const deterministicRuleResults = [
+      ...(state.deterministicRuleResults ?? []),
+      ...(state.officialLinterRuleResults ?? []),
+    ];
     if ((state.assistedRuleCandidates?.length ?? 0) === 0) {
       await deps.logger?.info("rule agent 判定合并完成 source=deterministic-only");
       return {
-        mergedRuleAuditResults: state.deterministicRuleResults ?? [],
+        mergedRuleAuditResults: deterministicRuleResults,
         ruleAgentAssessmentResult: undefined,
       };
     }
@@ -21,7 +25,7 @@ export async function ruleMergeNode(
     const ruleAgentRunStatus = state.ruleAgentRunStatus;
     if (ruleAgentRunStatus === "skipped" || ruleAgentRunStatus === "not_enabled") {
       const mergedRuleAuditResults = [
-        ...(state.deterministicRuleResults ?? []),
+        ...deterministicRuleResults,
         ...(state.assistedRuleCandidates ?? []).map((candidate) => ({
           rule_id: candidate.rule_id,
           rule_summary: candidate.rule_summary ?? candidate.rule_name,
@@ -39,7 +43,7 @@ export async function ruleMergeNode(
 
     const finalAnswer = state.ruleAgentRunnerResult?.final_answer;
     const merged = mergeRuleAuditResults({
-      deterministicRuleResults: state.deterministicRuleResults ?? [],
+      deterministicRuleResults,
       assistedRuleCandidates: state.assistedRuleCandidates ?? [],
       agentFinalAnswer: finalAnswer,
     });

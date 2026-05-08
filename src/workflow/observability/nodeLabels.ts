@@ -6,6 +6,7 @@ const NODE_LABELS: Record<WorkflowNodeId, string> = {
   opencodeSandboxPreparationNode: "opencode 沙箱准备",
   inputClassificationNode: "任务分类",
   ruleAuditNode: "规则审计",
+  officialCodeLinterNode: "官方 Code Linter",
   rubricPreparationNode: "评分基线准备",
   rubricScoringPromptBuilderNode: "Rubric Agent 载荷组装",
   rubricScoringAgentNode: "Rubric Agent 评分",
