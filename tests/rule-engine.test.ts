@@ -661,6 +661,9 @@ test("collectEvidence ignores files named BuildProfile.ets during scoring", asyn
   );
   assert.deepEqual(evidence.originalFiles, []);
   assert.deepEqual(evidence.changedFiles, ["entry/src/main/ets/pages/Index.ets"]);
+  assert.deepEqual(evidence.summary.changedLineNumbersByFile, {
+    "entry/src/main/ets/pages/Index.ets": [1],
+  });
   assert.doesNotMatch(evidence.patchText ?? "", /BuildProfile\.ets/);
 });
 

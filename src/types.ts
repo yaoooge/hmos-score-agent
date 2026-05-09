@@ -226,6 +226,7 @@ export interface EvidenceSummary {
   originalFileCount: number;
   changedFileCount: number;
   changedFiles: string[];
+  changedLineNumbersByFile?: Record<string, number[]>;
   hasPatch: boolean;
 }
 

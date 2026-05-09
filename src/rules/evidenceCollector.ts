@@ -152,6 +152,7 @@ export async function collectEvidence(
       originalFileCount: originalFiles.length,
       changedFileCount: changedFiles.length,
       changedFiles,
+      changedLineNumbersByFile: Object.fromEntries(patchScope.addedLineNumbersByFile),
       hasPatch: Boolean(patchText),
     },
   };

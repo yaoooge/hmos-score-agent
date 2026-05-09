@@ -142,6 +142,7 @@ export async function officialCodeLinterNode(
       workspaceDir: workspace.workspaceDir,
       hasPatch: state.evidenceSummary?.hasPatch ?? state.hasPatch ?? false,
       changedFiles: state.evidenceSummary?.changedFiles ?? [],
+      changedLineNumbersByFile: state.evidenceSummary?.changedLineNumbersByFile,
     });
 
     const runStatus: OfficialLinterRunStatus =

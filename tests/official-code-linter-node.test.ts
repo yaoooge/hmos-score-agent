@@ -172,6 +172,7 @@ test("officialCodeLinterNode writes only effective findings and diagnostics outs
       "const workspace = process.cwd();",
       "console.log(JSON.stringify([",
       "{filePath: workspace + '/entry/src/main/ets/pages/Changed.ets', messages: [{ rule: '@performance/foreach-args-check', message: 'changed issue', severity: 'warn', line: 1, column: 1 }]},",
+      "{filePath: workspace + '/entry/src/main/ets/pages/Changed.ets', messages: [{ rule: '@performance/foreach-args-check', message: 'same-file legacy issue', severity: 'warn', line: 2, column: 1 }]},",
       "{filePath: workspace + '/entry/src/main/ets/pages/Legacy.ets', messages: [{ rule: '@security/no-http', message: 'legacy issue', severity: 'warn', line: 2, column: 1 }]}",
       "]));",
     ].join("\n"),
@@ -193,6 +194,9 @@ test("officialCodeLinterNode writes only effective findings and diagnostics outs
         originalFileCount: 0,
         changedFileCount: 1,
         changedFiles: ["entry/src/main/ets/pages/Changed.ets"],
+        changedLineNumbersByFile: {
+          "entry/src/main/ets/pages/Changed.ets": [1],
+        },
         hasPatch: true,
       },
     } as ScoreGraphState,
@@ -206,7 +210,10 @@ test("officialCodeLinterNode writes only effective findings and diagnostics outs
   const effectivePath = path.join(caseDir, "intermediate", "code-linter", "findings.effective.json");
   const effective = await fs.readFile(effectivePath, "utf-8");
   assert.match(effective, /Changed\.ets/);
-  assert.doesNotMatch(effective, /Legacy\.ets|legacy issue|@security\/no-http/);
+  assert.doesNotMatch(
+    effective,
+    /Legacy\.ets|legacy issue|same-file legacy issue|@security\/no-http/,
+  );
 
   const workspaceFiles = await collectWorkspaceFiles(
     path.join(caseDir, "intermediate", "code-linter", "workspace"),

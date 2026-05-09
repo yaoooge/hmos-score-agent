@@ -7,6 +7,7 @@ export interface OfficialCodeLinterMappingInput {
   workspaceDir: string;
   hasPatch: boolean;
   changedFiles: string[];
+  changedLineNumbersByFile?: Record<string, number[]>;
 }
 
 export interface OfficialCodeLinterMappingResult {
@@ -78,6 +79,37 @@ function dedupeFindings(findings: OfficialLinterFinding[]): OfficialLinterFindin
   return results;
 }
 
+function normalizeChangedLineNumbersByFile(
+  input: Record<string, number[]> | undefined,
+  workspaceDir: string,
+): Map<string, Set<number>> {
+  const result = new Map<string, Set<number>>();
+  for (const [file, lineNumbers] of Object.entries(input ?? {})) {
+    result.set(normalizeOfficialLinterPath(file, workspaceDir), new Set(lineNumbers));
+  }
+  return result;
+}
+
+function isFindingInPatchScope(input: {
+  finding: OfficialLinterFinding;
+  changedFiles: Set<string>;
+  changedLineNumbersByFile: Map<string, Set<number>>;
+  shouldFilterByChangedFiles: boolean;
+}): boolean {
+  if (!input.shouldFilterByChangedFiles) {
+    return true;
+  }
+  if (!input.changedFiles.has(input.finding.file)) {
+    return false;
+  }
+
+  const changedLineNumbers = input.changedLineNumbersByFile.get(input.finding.file);
+  if (!changedLineNumbers) {
+    return true;
+  }
+  return input.finding.line !== undefined && changedLineNumbers.has(input.finding.line);
+}
+
 function aggregateRuleResults(findings: OfficialLinterFinding[]): RuleAuditResult[] {
   const groups = new Map<string, OfficialLinterFinding[]>();
   for (const finding of findings) {
@@ -107,14 +139,23 @@ export function mapOfficialCodeLinterFindings(
   const changedFiles = new Set(
     input.changedFiles.map((file) => normalizeOfficialLinterPath(file, input.workspaceDir)),
   );
+  const changedLineNumbersByFile = normalizeChangedLineNumbersByFile(
+    input.changedLineNumbersByFile,
+    input.workspaceDir,
+  );
   const shouldFilterByChangedFiles = input.hasPatch === true && changedFiles.size > 0;
   const normalizedFindings = input.findings.map((finding) => ({
     ...finding,
     file: normalizeOfficialLinterPath(finding.file, input.workspaceDir),
   }));
   const effectiveFindings = dedupeFindings(
-    normalizedFindings.filter(
-      (finding) => !shouldFilterByChangedFiles || changedFiles.has(finding.file),
+    normalizedFindings.filter((finding) =>
+      isFindingInPatchScope({
+        finding,
+        changedFiles,
+        changedLineNumbersByFile,
+        shouldFilterByChangedFiles,
+      }),
     ),
   );
 

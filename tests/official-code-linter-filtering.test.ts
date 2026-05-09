@@ -42,6 +42,45 @@ test("changed-file filtering drops unchanged findings before artifacts and rule 
   assert.doesNotMatch(JSON.stringify(mapped), /Legacy\.ets|legacy issue|filtered/i);
 });
 
+test("patch line filtering drops same-file findings outside added patch lines", () => {
+  const mapped = mapOfficialCodeLinterFindings({
+    findings: [
+      {
+        rule_id: "@security/no-http",
+        message: "new issue",
+        severity: "error",
+        file: "/tmp/workspace/entry/src/main/ets/pages/Changed.ets",
+        line: 2,
+        column: 1,
+        source_rule_set: "plugin:@security/recommended",
+      },
+      {
+        rule_id: "@security/no-http",
+        message: "pre-existing issue",
+        severity: "error",
+        file: "/tmp/workspace/entry/src/main/ets/pages/Changed.ets",
+        line: 9,
+        column: 1,
+        source_rule_set: "plugin:@security/recommended",
+      },
+    ],
+    workspaceDir: "/tmp/workspace",
+    hasPatch: true,
+    changedFiles: ["entry/src/main/ets/pages/Changed.ets"],
+    changedLineNumbersByFile: {
+      "entry/src/main/ets/pages/Changed.ets": [2],
+    },
+  });
+
+  assert.deepEqual(
+    mapped.effectiveFindings.map((item) => `${item.file}:${item.line}:${item.message}`),
+    ["entry/src/main/ets/pages/Changed.ets:2:new issue"],
+  );
+  assert.equal(mapped.ruleResults.length, 1);
+  assert.match(mapped.ruleResults[0]?.conclusion ?? "", /:2:1/);
+  assert.doesNotMatch(JSON.stringify(mapped), /pre-existing issue|:9:1/);
+});
+
 test("without reliable patch scope all official findings are effective", () => {
   const mapped = mapOfficialCodeLinterFindings({
     findings,
@@ -92,4 +131,3 @@ test("sanitized diagnostics do not include finding detail lines or filtered coun
   assert.match(sanitized, /runStatus=success/);
   assert.match(sanitized, /effectiveFindingCount=1/);
 });
-
