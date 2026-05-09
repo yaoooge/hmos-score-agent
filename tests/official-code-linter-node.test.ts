@@ -86,7 +86,7 @@ test("officialCodeLinterNode returns not_installed without rule results when run
   assert.deepEqual(result.officialLinterRuleResults, []);
 });
 
-test("officialCodeLinterNode is disabled by default and does not invoke configured linter", async (t) => {
+test("officialCodeLinterNode does not invoke configured linter when disabled", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-node-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const caseDir = path.join(root, "case-1");
@@ -131,7 +131,7 @@ test("officialCodeLinterNode is disabled by default and does not invoke configur
         hasPatch: true,
       },
     } as ScoreGraphState,
-    { runDir, timeoutMs: 120000 },
+    { enabled: false, runDir, timeoutMs: 120000 },
   );
 
   assert.equal(result.officialLinterRunStatus, "not_enabled");

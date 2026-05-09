@@ -526,8 +526,10 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
   const localCaseRoot = await makeTempDir(t);
   const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
   const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
+  const originalCodeLinterEnabled = process.env.HMOS_CODE_LINTER_ENABLED;
   process.env.LOCAL_CASE_ROOT = localCaseRoot;
   process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
+  process.env.HMOS_CODE_LINTER_ENABLED = "false";
 
   const originalUrl = "https://remote.example.com/assets/original.json";
   const workspaceUrl = "https://remote.example.com/assets/workspace.json";
@@ -588,6 +590,11 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
       delete process.env.DEFAULT_REFERENCE_ROOT;
     } else {
       process.env.DEFAULT_REFERENCE_ROOT = originalReferenceRoot;
+    }
+    if (originalCodeLinterEnabled === undefined) {
+      delete process.env.HMOS_CODE_LINTER_ENABLED;
+    } else {
+      process.env.HMOS_CODE_LINTER_ENABLED = originalCodeLinterEnabled;
     }
   });
 
@@ -789,8 +796,10 @@ test("executeAcceptedRemoteEvaluationTask runs post-completed hook after complet
   const localCaseRoot = await makeTempDir(t);
   const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
   const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
+  const originalCodeLinterEnabled = process.env.HMOS_CODE_LINTER_ENABLED;
   process.env.LOCAL_CASE_ROOT = localCaseRoot;
   process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
+  process.env.HMOS_CODE_LINTER_ENABLED = "false";
 
   const originalUrl = "https://remote.example.com/assets/post-hook-original.json";
   const workspaceUrl = "https://remote.example.com/assets/post-hook-workspace.json";
@@ -842,6 +851,11 @@ test("executeAcceptedRemoteEvaluationTask runs post-completed hook after complet
       delete process.env.DEFAULT_REFERENCE_ROOT;
     } else {
       process.env.DEFAULT_REFERENCE_ROOT = originalReferenceRoot;
+    }
+    if (originalCodeLinterEnabled === undefined) {
+      delete process.env.HMOS_CODE_LINTER_ENABLED;
+    } else {
+      process.env.HMOS_CODE_LINTER_ENABLED = originalCodeLinterEnabled;
     }
   });
 
