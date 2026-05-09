@@ -32,6 +32,7 @@ test("project opencode template defines read-only permissions without secrets", 
   assert.match(templateText, /"hmos-understanding"\s*:/);
   assert.match(templateText, /"hmos-rubric-scoring"\s*:/);
   assert.match(templateText, /"hmos-rule-assessment"\s*:/);
+  assert.match(templateText, /"hmos-human-rating-gap-analysis"\s*:/);
   assert.match(templateText, /"edit"\s*:\s*"deny"/);
   assert.match(templateText, /"bash"\s*:\s*"deny"/);
   assert.match(templateText, /"external_directory"\s*:\s*"deny"/);
@@ -61,6 +62,10 @@ test("opencode agents can only use their matching project skill", async () => {
   assert.deepEqual(template.agent?.["hmos-rule-assessment"]?.permission?.skill, {
     "*": "deny",
     "hmos-rule-assessment": "allow",
+  });
+  assert.deepEqual(template.agent?.["hmos-human-rating-gap-analysis"]?.permission?.skill, {
+    "*": "deny",
+    "hmos-human-rating-gap-analysis": "allow",
   });
 });
 
@@ -105,7 +110,12 @@ test("project opencode template configures json formatter for agent output files
 test("opencode scoring agents can edit only sandbox agent output files", async () => {
   const template = (await parseTemplateConfig()) as { agent?: Record<string, { permission?: Record<string, unknown> }> };
 
-  for (const agent of ["hmos-understanding", "hmos-rubric-scoring", "hmos-rule-assessment"]) {
+  for (const agent of [
+    "hmos-understanding",
+    "hmos-rubric-scoring",
+    "hmos-rule-assessment",
+    "hmos-human-rating-gap-analysis",
+  ]) {
     const permission = template.agent?.[agent]?.permission ?? {};
     assert.equal(permission.write, "allow", agent);
     assert.deepEqual(
@@ -140,6 +150,11 @@ test("project opencode skills define agent contracts and scoped references", asy
         "rules/arkts-language.yaml",
         "rules/arkts-performance.yaml",
       ],
+    },
+    {
+      skill: "hmos-human-rating-gap-analysis",
+      outputFile: "metadata/agent-output/human-rating-gap-analysis.json",
+      references: [],
     },
   ];
 
@@ -192,6 +207,7 @@ test("opencode agent system prompts require writing final json to output_file", 
     ".opencode/prompts/hmos-understanding-system.md",
     ".opencode/prompts/hmos-rubric-scoring-system.md",
     ".opencode/prompts/hmos-rule-assessment-system.md",
+    ".opencode/prompts/hmos-human-rating-gap-analysis-system.md",
   ]) {
     const prompt = await readProjectFile(file);
     assert.match(prompt, /写入用户消息指定的 output_file/);
@@ -204,6 +220,7 @@ test("project opencode agent system prompts require matching skills", async () =
   const taskPrompt = await readProjectFile(".opencode/prompts/hmos-understanding-system.md");
   const rubricPrompt = await readProjectFile(".opencode/prompts/hmos-rubric-scoring-system.md");
   const rulePrompt = await readProjectFile(".opencode/prompts/hmos-rule-assessment-system.md");
+  const humanRatingPrompt = await readProjectFile(".opencode/prompts/hmos-human-rating-gap-analysis-system.md");
 
   assert.match(taskPrompt, /你是评分工作流中的任务理解 agent/);
   assert.match(taskPrompt, /必须使用 hmos-understanding skill/);
@@ -216,6 +233,10 @@ test("project opencode agent system prompts require matching skills", async () =
   assert.match(rulePrompt, /你是评分流程中的规则判定 agent/);
   assert.match(rulePrompt, /必须使用 hmos-rule-assessment skill/);
   assert.match(rulePrompt, /职责边界、证据边界、JSON 输出契约和写入 output_file 协议/);
+
+  assert.match(humanRatingPrompt, /你是评分流程中的人工评级差异分析 agent/);
+  assert.match(humanRatingPrompt, /必须使用 hmos-human-rating-gap-analysis skill/);
+  assert.match(humanRatingPrompt, /职责边界、证据边界、JSON 输出契约和写入 output_file 协议/);
 });
 
 test("project opencode template uses the Bailian Anthropic provider shape", async () => {

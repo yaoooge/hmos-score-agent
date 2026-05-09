@@ -249,6 +249,29 @@ test("human review evidence store writes datasets without extra sample ids", asy
   assert.equal(Object.hasOwn(sample, "evidenceId"), false);
 });
 
+test("human review evidence store writes human rating gap analysis dataset", async (t) => {
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+
+  await store.appendDatasetSample("human_rating_gap_analysis", {
+    type: "human_rating_gap_analysis",
+    taskId: 88,
+    manualRating: "L1",
+    autoScore: 92,
+    primaryConclusion: "scoring_system_needs_improvement",
+  });
+
+  const datasetLines = (
+    await fs.readFile(path.join(root, "datasets", "human_rating_gap_analyses.jsonl"), "utf-8")
+  )
+    .trim()
+    .split("\n");
+  const sample = JSON.parse(datasetLines[0] ?? "{}") as Record<string, unknown>;
+  assert.equal(datasetLines.length, 1);
+  assert.equal(sample.type, "human_rating_gap_analysis");
+  assert.equal(sample.taskId, 88);
+});
+
 test("human review evidence store serializes concurrent dataset appends", async (t) => {
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);

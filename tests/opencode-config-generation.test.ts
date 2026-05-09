@@ -108,6 +108,7 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   assert.match(generatedText, /"hmos-understanding"\s*:/);
   assert.match(generatedText, /"hmos-rubric-scoring"\s*:/);
   assert.match(generatedText, /"hmos-rule-assessment"\s*:/);
+  assert.match(generatedText, /"hmos-human-rating-gap-analysis"\s*:/);
 
   const generated = JSON.parse(generatedText) as {
     model?: string;
@@ -160,6 +161,13 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   );
   assert.match(
     await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-human-rating-gap-analysis-system.md"),
+      "utf-8",
+    ),
+    /必须使用 hmos-human-rating-gap-analysis skill/,
+  );
+  assert.match(
+    await fs.readFile(
       path.join(
         repoRoot,
         ".opencode",
@@ -203,6 +211,21 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   ),
     /必须使用 hmos-rule-assessment skill/,
   );
+  assert.match(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "xdg-config",
+        "opencode",
+        "prompts",
+        "hmos-human-rating-gap-analysis-system.md",
+      ),
+      "utf-8",
+    ),
+    /必须使用 hmos-human-rating-gap-analysis skill/,
+  );
 
   assert.match(
     await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "formatters", "format-json.mjs"), "utf-8"),
@@ -235,6 +258,13 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   assert.match(
     await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-rule-assessment", "SKILL.md"), "utf-8"),
     /metadata\/agent-output\/rule-assessment\.json/,
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-human-rating-gap-analysis", "SKILL.md"),
+      "utf-8",
+    ),
+    /metadata\/agent-output\/human-rating-gap-analysis\.json/,
   );
   assert.match(
     await fs.readFile(

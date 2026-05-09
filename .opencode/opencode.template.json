@@ -127,6 +127,37 @@
         "external_directory": "deny",
         "doom_loop": "deny"
       }
+    },
+    "hmos-human-rating-gap-analysis": {
+      "description": "Analyzes gaps between manual L1/L2 ratings and high automatic scores and returns only the required JSON object.",
+      "mode": "primary",
+      "prompt": "{file:./prompts/hmos-human-rating-gap-analysis-system.md}",
+      "temperature": 0.1,
+      "permission": {
+        "read": "allow",
+        "write": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "edit": {
+          "*": "deny",
+          "metadata/agent-output/*.json": "allow",
+          "**/metadata/agent-output/*.json": "allow"
+        },
+        "bash": "deny",
+        "task": "deny",
+        "skill": {
+          "*": "deny",
+          "hmos-human-rating-gap-analysis": "allow"
+        },
+        "lsp": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "codesearch": "deny",
+        "question": "deny",
+        "external_directory": "deny",
+        "doom_loop": "deny"
+      }
     }
   },
   "formatter": {

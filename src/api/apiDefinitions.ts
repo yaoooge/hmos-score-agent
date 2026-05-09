@@ -57,6 +57,7 @@ export const API_PATHS = {
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
   ruleViolationStats: "/score/rule-violation-stats",
   humanReview: "/score/remote-tasks/:taskId/human-review",
+  manualRating: "/score/remote-tasks/:taskId/manual-rating",
 } as const;
 
 const successField = {
@@ -351,6 +352,75 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             message: messageField,
           },
         },
+      },
+    ],
+  },
+  {
+    method: "POST",
+    path: API_PATHS.manualRating,
+    description:
+      "Accept a whole-task manual L1-L6 rating and run gap analysis for qualified L1/L2 high-score disagreements without modifying outputs/result.json.",
+    request: {
+      pathParams: { taskId: taskIdField },
+      body: {
+        type: "object",
+        description: "Manual whole-task rating submitted by a human reviewer.",
+        properties: {
+          reviewer: {
+            type: "string",
+            required: false,
+            description: "Optional human reviewer identifier.",
+          },
+          manualRating: {
+            type: "enum",
+            required: true,
+            values: ["L1", "L2", "L3", "L4", "L5", "L6"],
+            description: "Manual whole-task rating.",
+          },
+          basis: {
+            type: "string",
+            required: true,
+            description: "Human-readable basis for the manual rating.",
+          },
+        },
+      },
+    },
+    responses: [
+      {
+        status: 200,
+        description:
+          "Manual rating was accepted. Qualified gaps are analyzed and appended to the human-review JSONL dataset directory.",
+        body: {
+          type: "object",
+          description: "Manual rating acceptance response.",
+          properties: {
+            success: successField,
+            taskId: taskIdField,
+            status: {
+              type: "string",
+              required: true,
+              description: "Submission processing status. Completed for synchronous handling.",
+            },
+            summary: {
+              type: "object",
+              required: true,
+              description:
+                "Manual rating comparison summary with manualRating, autoScore, autoRating, gapQualified, and analysisStatus.",
+            },
+            message: messageField,
+          },
+        },
+      },
+      { status: 400, description: "Invalid manual rating payload.", body: errorResponseBody },
+      {
+        status: 404,
+        description: "Task record or result file was not found.",
+        body: errorResponseBody,
+      },
+      {
+        status: 409,
+        description: "Task exists but has not completed yet, or total_score is missing.",
+        body: errorResponseBody,
       },
     ],
   },

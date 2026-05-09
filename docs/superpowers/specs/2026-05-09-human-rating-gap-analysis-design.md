@@ -10,7 +10,7 @@ Date: 2026-05-09
 
 ## Goals
 
-- 新增人工评级接口，支持提交人工评级 `L1` 到 `L6`、评级依据、审核人信息和可选备注。
+- 新增人工评级接口，支持提交人工评级 `L1` 到 `L6`、评级依据和审核人信息。
 - 新增处理节点，读取原始 `outputs/result.json`，计算自动分对应等级，与人工评级比较。
 - 不改写、不覆盖、不追加修改 `outputs/result.json`。
 - 仅将差异较大的任务进入下一步 agent 分析：
@@ -23,7 +23,7 @@ Date: 2026-05-09
   - `scoring_system_needs_improvement`：自动评分系统可能需要改进。
   - `both_need_review`：两侧都需要复核。
   - `insufficient_evidence`：证据不足，无法归因。
-- 将差异分析结论写成一张表汇总，便于后续人工复盘。
+- 将差异分析结论追加写入人工复核数据目录下的 JSONL 汇总表，便于后续人工复盘和批量统计。
 - 保留机器可读 JSON 产物，便于前端或后续统计读取。
 
 ## Non-Goals
@@ -44,6 +44,8 @@ Date: 2026-05-09
 - 远程任务状态与 caseDir 由 `RemoteTaskRegistry` 管理。
 - 完整评分结果落在每个 caseDir 的 `outputs/result.json`。
 - 已有 `humanReviewHandler` 会调用 `applyHumanReviewRecalculation` 并写回 `outputs/result.json`，因此本需求不能复用该写回路径。
+- 人工复核相关持久数据目录由 `getConfig().humanReviewEvidenceRoot` 管理，默认本地路径为 `~/.hmos-score-agent/human-review-evidences`，生产可通过 `HUMAN_REVIEW_EVIDENCE_ROOT` 配置到 `/data/hmos-score-agent/human-review-evidences`。
+- 现有人工复核数据集写入 `humanReviewEvidenceRoot/datasets/*.jsonl`，人工评级差异汇总应复用该目录，不写到单个用例目录下。
 - opencode agent 调用已有三套模式：agent-specific runner、prompt renderer、Zod schema 校验、节点调用。
 - agent skill 已落在 `.opencode/skills/<skill-name>/SKILL.md`，运行时配置会复制 skills。
 
@@ -51,24 +53,9 @@ Date: 2026-05-09
 
 采用“独立人工评级接口 + 独立差异分析节点 + 独立产物”的方案。
 
-### Approach A: 扩展现有 human-review 接口
+### 新增独立 manual-rating 接口
 
-在 `POST /score/remote-tasks/:taskId/human-review` 中增加整单评级字段。
-
-Pros:
-
-- 接口数量少。
-- 可复用现有 handler 的任务校验逻辑。
-
-Cons:
-
-- 现有接口语义是逐项复核和重算，会写回 `result.json`。
-- 新需求明确要求不改变 `result.json`，两种语义放在一个接口里容易误用。
-- 测试和文档需要解释同一接口的两种副作用模式，维护成本高。
-
-### Approach B: 新增独立 manual-rating 接口
-
-新增 `POST /score/remote-tasks/:taskId/manual-rating`，只接收整单人工评级并触发差异分析。产物写入独立目录，不影响原始评分结果。
+新增 `POST /score/remote-tasks/:taskId/manual-rating`，只接收整单人工评级并触发差异分析。单任务分析产物写入 caseDir 的独立 `human-rating/` 目录，跨任务汇总写入人工复核数据目录，不影响原始评分结果。
 
 Pros:
 
@@ -81,23 +68,6 @@ Cons:
 
 - 增加一个 API 定义和 handler。
 - 需要新增一套 agent runner、skill 和产物结构。
-
-### Approach C: 离线批处理脚本
-
-不新增服务接口，只提供本地脚本读取人工评级文件和 result.json，批量生成差异表。
-
-Pros:
-
-- 实现最小，不影响服务端 API。
-- 适合一次性离线分析。
-
-Cons:
-
-- 不满足“调用接口写入人工评级”的需求。
-- 无法和远程任务生命周期自然衔接。
-- 后续平台集成成本高。
-
-推荐 Approach B。它与现有逐项复核能力隔离，保留 `result.json` 原样，同时为后续平台通过接口提交人工评级提供稳定入口。
 
 ## API Design
 
@@ -112,17 +82,9 @@ Content-Type: application/json
 
 ```json
 {
-  "reviewer": {
-    "id": "alice",
-    "role": "qa"
-  },
+  "reviewer": "alice",
   "manualRating": "L1",
-  "basis": "无法编译运行，核心页面启动即崩溃。",
-  "details": {
-    "compileStatus": "failed",
-    "runStatus": "not_started",
-    "notes": "DevEco 编译报 ArkTS 类型错误。"
-  }
+  "basis": "无法编译运行，核心页面启动即崩溃。"
 }
 ```
 
@@ -130,8 +92,7 @@ Content-Type: application/json
 
 - `manualRating` 必填，只允许 `L1`、`L2`、`L3`、`L4`、`L5`、`L6`。
 - `basis` 必填，非空字符串，记录人工评级依据。
-- `reviewer` 可选，结构与现有人工复核 reviewer 保持一致。
-- `details` 可选，保存平台侧补充证据，不参与自动分计算。
+- `reviewer` 可选，字符串，记录人工评级提交人。
 
 响应体：
 
@@ -145,9 +106,7 @@ Content-Type: application/json
     "autoScore": 92,
     "autoRating": "L5",
     "gapQualified": true,
-    "analysisStatus": "completed",
-    "analysisArtifact": "human-rating/analysis.json",
-    "summaryTable": "human-rating/rating-gap-summary.csv"
+    "analysisStatus": "completed"
   },
   "message": "人工评级已接收，评分差异较大，已完成差异原因分析。"
 }
@@ -207,6 +166,7 @@ Content-Type: application/json
 - `src/humanRating/humanRatingTypes.ts`
 - `src/humanRating/humanRatingGapRules.ts`
 - `src/humanRating/humanRatingArtifactStore.ts`
+- `src/humanRating/humanRatingGapSummaryStore.ts`
 - `src/api/manualRatingHandler.ts`
 - `src/nodes/humanRatingGapAnalysisNode.ts`
 - `src/agent/opencodeHumanRatingGapAnalysis.ts`
@@ -225,14 +185,14 @@ Content-Type: application/json
 10. agent 使用 `hmos-human-rating-gap-analysis` skill，读取 sandbox 中的 `outputs/result.json`、人工评级 payload、相关 intermediate 证据，输出差异归因 JSON。
 11. 本地 runner 用 Zod 校验 agent 输出。
 12. 写入机器可读产物 `human-rating/analysis.json`。
-13. 生成或覆盖汇总表 `human-rating/rating-gap-summary.csv`。首版本固定使用 CSV，不生成 xlsx。
+13. 将最新人工评级、自动评分、差异规则和 agent 归因结论追加写入 `humanReviewEvidenceRoot/datasets/human_rating_gap_analyses.jsonl`。
 14. 接口同步返回处理摘要。
 
 首版本接口同步等待 agent 完成。异步队列和查询接口不在本期范围内。
 
 ## Artifact Design
 
-所有新产物写在 caseDir 的 `human-rating/` 下，不放入 `outputs/`，避免被误认为原始评分输出。
+单任务分析产物写在 caseDir 的 `human-rating/` 下，不放入 `outputs/`，避免被误认为原始评分输出。跨任务汇总表不写在 caseDir 下，统一追加到人工复核数据目录。
 
 ```text
 caseDir/
@@ -242,9 +202,22 @@ caseDir/
     manual-rating.json
     analysis.json
     analysis-skipped.json
-    rating-gap-summary.csv
     agent-output/
       human-rating-gap-analysis.json
+```
+
+跨任务汇总表路径：
+
+```text
+humanReviewEvidenceRoot/
+  datasets/
+    human_rating_gap_analyses.jsonl
+```
+
+生产环境通常对应：
+
+```text
+/data/hmos-score-agent/human-review-evidences/datasets/human_rating_gap_analyses.jsonl
 ```
 
 `manual-rating.json`：
@@ -254,15 +227,9 @@ caseDir/
   "taskId": 88,
   "testCaseId": 188,
   "reviewedAt": "2026-05-09T02:30:00.000Z",
-  "reviewer": {
-    "id": "alice",
-    "role": "qa"
-  },
+  "reviewer": "alice",
   "manualRating": "L1",
   "basis": "无法编译运行，核心页面启动即崩溃。",
-  "details": {
-    "compileStatus": "failed"
-  },
   "autoScore": 92,
   "autoRating": "L5",
   "gapQualified": true,
@@ -300,7 +267,7 @@ caseDir/
 }
 ```
 
-`rating-gap-summary.csv` 字段：
+`human_rating_gap_analyses.jsonl` 每行是一条完整 JSON 记录。字段：
 
 | 字段 | 说明 |
 | --- | --- |
@@ -317,8 +284,14 @@ caseDir/
 | reasonSummary | 差异原因摘要 |
 | humanNeedsImprovement | 人工评级是否建议改进 |
 | scoringNeedsImprovement | 评分系统是否建议改进 |
-| recommendedActions | 建议动作，多个建议用 `; ` 连接 |
+| recommendedActions | 建议动作数组 |
 | artifactPath | analysis.json 相对路径 |
+
+JSONL 行示例：
+
+```json
+{"taskId":88,"testCaseId":188,"caseName":"电视台云服务新增全屏播放","reviewedAt":"2026-05-09T02:30:00.000Z","reviewer":"alice","manualRating":"L1","manualBasis":"无法编译运行，核心页面启动即崩溃。","autoScore":92,"autoRating":"L5","gapRule":"manual=L1 autoScore>=70","primaryConclusion":"scoring_system_needs_improvement","confidence":"medium","reasonSummary":"自动评分未充分识别编译失败证据。","humanNeedsImprovement":false,"scoringNeedsImprovement":true,"recommendedActions":["评分系统应将远程构建失败作为 L1 hard gate。"],"artifactPath":"human-rating/analysis.json"}
+```
 
 ## Agent and Skill Design
 
@@ -403,14 +376,15 @@ manualRating: "/score/remote-tasks/:taskId/manual-rating"
 
 ## Idempotency and Overwrite Policy
 
-首版本允许同一任务重复提交人工评级，但必须保留历史：
+首版本允许同一任务重复提交人工评级，但用例目录只保留当前单份 JSON 产物，避免同目录 JSON 与 JSONL 重复表达同一数据：
 
 - 当前最新评级写入 `human-rating/manual-rating.json`。
-- 每次提交同时追加一行 `human-rating/manual-rating-history.jsonl`。
-- 每次差异分析覆盖 `human-rating/analysis.json`，并追加一行 `human-rating/analysis-history.jsonl`。
-- `rating-gap-summary.csv` 表示当前 case 最新结论，重复提交时覆盖生成，不追加重复行。
+- 每次差异分析覆盖 `human-rating/analysis.json`。
+- 未命中差异阈值时覆盖 `human-rating/analysis-skipped.json`。
+- 每次命中差异阈值并完成 agent 分析后，追加一行 `humanReviewEvidenceRoot/datasets/human_rating_gap_analyses.jsonl`。
+- JSONL 汇总表保留提交历史，不做去重覆盖；消费方如需当前最新结论，应按 `taskId` 取最后一条。
 
-这样方便平台修正错误人工评级，同时仍能追踪历史。
+这样用例目录保持单用例最新状态清晰，跨用例历史和汇总能力统一由 evidence store 的 JSONL 承担。
 
 ## Observability
 
@@ -441,7 +415,7 @@ manualRating: "/score/remote-tasks/:taskId/manual-rating"
 - 确认提交人工评级后 `outputs/result.json` 字节内容不变。
 - agent runner 校验合法 JSON 输出。
 - agent runner 拒绝缺字段、非法枚举、空 evidence、空 recommendedActions。
-- 汇总 CSV 包含期望字段和当前最新分析结论。
+- JSONL 汇总表追加到 `humanReviewEvidenceRoot/datasets/human_rating_gap_analyses.jsonl`，不在 caseDir 下生成 CSV。
 - API definitions 包含新路径、请求 schema 和响应 schema。
 
 ## Acceptance Criteria
@@ -453,6 +427,6 @@ manualRating: "/score/remote-tasks/:taskId/manual-rating"
 - 每个命中阈值的任务生成：
   - `human-rating/manual-rating.json`
   - `human-rating/analysis.json`
-  - `human-rating/rating-gap-summary.csv`
+  - `humanReviewEvidenceRoot/datasets/human_rating_gap_analyses.jsonl` 中新增一行汇总记录
 - agent 结论能明确指向人工评级改进、评分系统改进、双方复核或证据不足。
 - 自动化测试覆盖阈值判断、result.json 不变、agent 输出校验和 API 协议。

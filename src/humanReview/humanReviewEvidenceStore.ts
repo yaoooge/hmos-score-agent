@@ -12,6 +12,7 @@ export type HumanReviewEvidenceStore = {
 const DATASET_FILE_NAMES: Record<HumanReviewDatasetType, string> = {
   item_review_calibration: "item_review_calibrations.jsonl",
   risk_review_calibration: "risk_review_calibrations.jsonl",
+  human_rating_gap_analysis: "human_rating_gap_analyses.jsonl",
 };
 
 export function createHumanReviewEvidenceStore(root: string): HumanReviewEvidenceStore {

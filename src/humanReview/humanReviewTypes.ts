@@ -27,7 +27,10 @@ export type HumanReviewSubmissionPayload = {
   riskReviews?: HumanRiskReview[];
 };
 
-export type HumanReviewDatasetType = "item_review_calibration" | "risk_review_calibration";
+export type HumanReviewDatasetType =
+  | "item_review_calibration"
+  | "risk_review_calibration"
+  | "human_rating_gap_analysis";
 
 export type HumanReviewDatasetSample = Record<string, unknown> & {
   type: HumanReviewDatasetType;

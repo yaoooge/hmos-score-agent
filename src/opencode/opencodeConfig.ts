@@ -123,6 +123,7 @@ const REQUIRED_SKILL_NAMES = [
   "hmos-understanding",
   "hmos-rubric-scoring",
   "hmos-rule-assessment",
+  "hmos-human-rating-gap-analysis",
 ] as const;
 
 async function ensureRequiredSkillFiles(skillsDir: string): Promise<void> {
