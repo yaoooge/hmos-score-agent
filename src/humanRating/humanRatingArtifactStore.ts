@@ -45,6 +45,7 @@ export async function writeHumanRatingSkipped(
     skipReason,
   };
   await writeJson(humanRatingPath(caseDir, "analysis-skipped.json"), skipped);
+  await removeIfExists(humanRatingPath(caseDir, "analysis.json"));
   await removeIfExists(humanRatingPath(caseDir, "analysis-history.jsonl"));
 }
 
@@ -53,5 +54,6 @@ export async function writeHumanRatingAnalysis(
   record: HumanRatingAnalysisRecord,
 ): Promise<void> {
   await writeJson(humanRatingPath(caseDir, "analysis.json"), record);
+  await removeIfExists(humanRatingPath(caseDir, "analysis-skipped.json"));
   await removeIfExists(humanRatingPath(caseDir, "analysis-history.jsonl"));
 }

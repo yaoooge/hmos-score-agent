@@ -56,6 +56,13 @@ function analysisFixture(): HumanRatingGapAnalysis {
   };
 }
 
+function analysisFixtureWithReason(reasonSummary: string): HumanRatingGapAnalysis {
+  return {
+    ...analysisFixture(),
+    reasonSummary,
+  };
+}
+
 async function writeCompletedTask(
   t: test.TestContext,
   options: { taskId?: number; status?: "completed" | "running"; autoScore?: number; omitScore?: boolean } = {},
@@ -116,6 +123,7 @@ test("human rating artifact store writes only case-local json artifacts", async 
     { ...record, gapQualified: false, gapRule: undefined },
     "未达到差异分析阈值。",
   );
+  await fs.access(path.join(caseDir, "human-rating", "analysis-skipped.json"));
   await writeHumanRatingAnalysis(caseDir, {
     ...record,
     analysis: {
@@ -132,10 +140,13 @@ test("human rating artifact store writes only case-local json artifacts", async 
   const latest = JSON.parse(
     await fs.readFile(path.join(caseDir, "human-rating", "manual-rating.json"), "utf-8"),
   ) as Record<string, unknown>;
-  await fs.access(path.join(caseDir, "human-rating", "analysis-skipped.json"));
   await fs.access(path.join(caseDir, "human-rating", "analysis.json"));
 
   assert.equal(latest.taskId, 88);
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "human-rating", "analysis-skipped.json")),
+    /ENOENT/,
+  );
   await assert.rejects(
     () => fs.access(path.join(caseDir, "human-rating", "manual-rating-history.jsonl")),
     /ENOENT/,
@@ -191,6 +202,123 @@ test("submit manual rating handler analyzes qualified L1 gap and keeps result js
   assert.equal(sample.manualRating, "L1");
   assert.equal(sample.autoScore, 92);
   assert.equal(sample.primaryConclusion, "scoring_system_needs_improvement");
+});
+
+test("submit manual rating handler reruns qualified gap analysis and overwrites old task data", async (t) => {
+  const { caseDir, registry } = await writeCompletedTask(t, { autoScore: 92 });
+  const evidenceRoot = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(evidenceRoot);
+  const analysisReasons = ["第一次分析。", "第二次分析。"];
+  let analyzerCallCount = 0;
+  const handler = createSubmitManualRatingHandler({
+    registry,
+    store,
+    analyzeGap: async () => {
+      const reason = analysisReasons[analyzerCallCount] ?? "额外分析。";
+      analyzerCallCount += 1;
+      return analysisFixtureWithReason(reason);
+    },
+  });
+
+  {
+    const { response, state } = createResponse();
+    await handler(
+      createManualRatingRequest(88, {
+        reviewer: "alice",
+        manualRating: "L1",
+        basis: "第一次人工依据。",
+      }) as never,
+      response as never,
+    );
+    assert.equal(state.statusCode, 200);
+  }
+
+  {
+    const { response, state } = createResponse();
+    await handler(
+      createManualRatingRequest(88, {
+        reviewer: "bob",
+        manualRating: "L1",
+        basis: "第二次人工依据。",
+      }) as never,
+      response as never,
+    );
+    assert.equal(state.statusCode, 200);
+    assert.equal((state.body?.summary as Record<string, unknown>).analysisStatus, "completed");
+  }
+
+  assert.equal(analyzerCallCount, 2);
+  const latestManualRating = JSON.parse(
+    await fs.readFile(path.join(caseDir, "human-rating", "manual-rating.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  const latestAnalysis = JSON.parse(
+    await fs.readFile(path.join(caseDir, "human-rating", "analysis.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  const datasetLines = (
+    await fs.readFile(path.join(evidenceRoot, "datasets", "human_rating_gap_analyses.jsonl"), "utf-8")
+  )
+    .trim()
+    .split("\n");
+  const sample = JSON.parse(datasetLines[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(latestManualRating.reviewer, "bob");
+  assert.equal(latestManualRating.basis, "第二次人工依据。");
+  assert.equal((latestAnalysis.analysis as Record<string, unknown>).reasonSummary, "第二次分析。");
+  assert.equal(datasetLines.length, 1);
+  assert.equal(sample.taskId, 88);
+  assert.equal(sample.reviewer, "bob");
+  assert.equal(sample.manualBasis, "第二次人工依据。");
+  assert.equal(sample.reasonSummary, "第二次分析。");
+});
+
+test("submit manual rating handler clears previous analysis when repeated submission is skipped", async (t) => {
+  const { caseDir, registry } = await writeCompletedTask(t, { autoScore: 92 });
+  const evidenceRoot = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(evidenceRoot);
+  const handler = createSubmitManualRatingHandler({
+    registry,
+    store,
+    analyzeGap: async () => analysisFixture(),
+  });
+
+  {
+    const { response, state } = createResponse();
+    await handler(
+      createManualRatingRequest(88, {
+        reviewer: "alice",
+        manualRating: "L1",
+        basis: "无法编译运行。",
+      }) as never,
+      response as never,
+    );
+    assert.equal(state.statusCode, 200);
+  }
+
+  {
+    const { response, state } = createResponse();
+    await handler(
+      createManualRatingRequest(88, {
+        reviewer: "bob",
+        manualRating: "L3",
+        basis: "人工复核后认为质量可接受。",
+      }) as never,
+      response as never,
+    );
+    assert.equal(state.statusCode, 200);
+    assert.equal((state.body?.summary as Record<string, unknown>).analysisStatus, "skipped");
+  }
+
+  const latestManualRating = JSON.parse(
+    await fs.readFile(path.join(caseDir, "human-rating", "manual-rating.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  await fs.access(path.join(caseDir, "human-rating", "analysis-skipped.json"));
+  await assert.rejects(() => fs.access(path.join(caseDir, "human-rating", "analysis.json")), /ENOENT/);
+  await assert.rejects(
+    () => fs.access(path.join(evidenceRoot, "datasets", "human_rating_gap_analyses.jsonl")),
+    /ENOENT/,
+  );
+  assert.equal(latestManualRating.manualRating, "L3");
+  assert.equal(latestManualRating.reviewer, "bob");
 });
 
 test("submit manual rating handler skips non-qualified ratings without analyzer or summary dataset", async (t) => {

@@ -1,1 +1,0 @@
-Return only this JSON object: {"ok":true}

@@ -112,6 +112,7 @@ export function createSubmitManualRatingHandler(deps: SubmitManualRatingDeps) {
 
     if (!decision.gapQualified) {
       await writeHumanRatingSkipped(record.caseDir, manualRatingRecord, "未达到差异分析阈值。");
+      await deps.store.deleteDatasetSamples("human_rating_gap_analysis", { taskId });
       res.json({
         success: true,
         taskId,
@@ -138,26 +139,30 @@ export function createSubmitManualRatingHandler(deps: SubmitManualRatingDeps) {
       analysis,
     };
     await writeHumanRatingAnalysis(record.caseDir, analysisRecord);
-    await deps.store.appendDatasetSample("human_rating_gap_analysis", {
-      type: "human_rating_gap_analysis",
-      taskId,
-      testCaseId: record.testCaseId,
-      caseName: manualRatingRecord.caseName,
-      reviewedAt,
-      reviewer: payload.reviewer,
-      manualRating: payload.manualRating,
-      manualBasis: payload.basis,
-      autoScore,
-      autoRating: decision.autoRating,
-      gapRule: decision.gapRule,
-      primaryConclusion: analysis.primaryConclusion,
-      confidence: analysis.confidence,
-      reasonSummary: analysis.reasonSummary,
-      humanNeedsImprovement: analysis.humanRatingReview.needsImprovement,
-      scoringNeedsImprovement: analysis.scoringSystemReview.needsImprovement,
-      recommendedActions: analysis.recommendedActions,
-      artifactPath: "human-rating/analysis.json",
-    });
+    await deps.store.upsertDatasetSample(
+      "human_rating_gap_analysis",
+      {
+        type: "human_rating_gap_analysis",
+        taskId,
+        testCaseId: record.testCaseId,
+        caseName: manualRatingRecord.caseName,
+        reviewedAt,
+        reviewer: payload.reviewer,
+        manualRating: payload.manualRating,
+        manualBasis: payload.basis,
+        autoScore,
+        autoRating: decision.autoRating,
+        gapRule: decision.gapRule,
+        primaryConclusion: analysis.primaryConclusion,
+        confidence: analysis.confidence,
+        reasonSummary: analysis.reasonSummary,
+        humanNeedsImprovement: analysis.humanRatingReview.needsImprovement,
+        scoringNeedsImprovement: analysis.scoringSystemReview.needsImprovement,
+        recommendedActions: analysis.recommendedActions,
+        artifactPath: "human-rating/analysis.json",
+      },
+      { taskId },
+    );
 
     res.json({
       success: true,
