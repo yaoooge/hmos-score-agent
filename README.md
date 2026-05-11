@@ -16,7 +16,7 @@
 ```bash
 npm install
 cp .env.example .env
-npm run dev:cli -- --case cases/simple_test
+npm run score -- --case cases/simple_test
 ```
 
 启动 API 服务：
@@ -42,9 +42,8 @@ API 服务默认监听 `PORT`，未设置时为 `3000`。启动后可先访问 `
 | --- | --- |
 | `npm run build` | TypeScript 编译检查并输出 `dist/`。 |
 | `npm start` | 启动编译后的 API 服务。 |
-| `npm run dev:cli` | 直接运行本地单用例评分。 |
 | `npm run dev:api` | 以开发模式启动 HTTP 服务。 |
-| `npm run score` | 与 `dev:cli` 等价。 |
+| `npm run score` | 直接运行本地单用例评分。 |
 | `npm run rulepack:export` | 导出规则包 YAML。 |
 | `npm test` | 运行全部 node:test 测试。 |
 | `npm run lint` | 运行 ESLint。 |
