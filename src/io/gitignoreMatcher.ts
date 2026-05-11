@@ -40,7 +40,7 @@ function containsBuiltinIgnoredDirectory(relativePath: string, kind: EntryKind):
   const normalized = normalizeRelativePath(relativePath);
   const segments = normalized.split("/").filter(Boolean);
   const directorySegments = kind === "directory" ? segments : segments.slice(0, -1);
-  if (directorySegments.some((segment) => segment.startsWith(".") || segment === "resources")) {
+  if (directorySegments.some((segment) => segment.startsWith("."))) {
     return true;
   }
   return directorySegments.some(

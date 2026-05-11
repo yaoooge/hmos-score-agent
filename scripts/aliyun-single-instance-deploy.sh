@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# 阿里云 ECS 单实例更新部署脚本。
-# 前提：系统依赖、Node.js、opencode CLI 和工程目录均已安装/创建。
-# 若运行用户不存在，脚本会自动创建并修正工程目录归属。
-# 流程：拉取/更新代码仓 -> 生成缺失的 .env -> npm ci -> build -> 写入/重启 systemd -> 健康检查。
+# 阿里云 ECS 单实例部署脚本。
+# 默认只执行更新部署：拉取代码 -> build -> 重启 systemd -> 健康检查。
+# 首次初始化请显式设置 DEPLOY_MODE=bootstrap。
 #
 # 用法：
 #   sudo bash scripts/aliyun-single-instance-deploy.sh
+#   sudo env DEPLOY_MODE=bootstrap bash scripts/aliyun-single-instance-deploy.sh
 #
 # 常用覆盖项：
 #   sudo env BRANCH=main \
@@ -19,6 +19,7 @@ APP_USER="${APP_USER:-hmos}"
 APP_DIR="${APP_DIR:-/opt/hmos-score-agent}"
 BRANCH="${BRANCH:-main}"
 PORT="${PORT:-3000}"
+DEPLOY_MODE="${DEPLOY_MODE:-update}"
 
 LOCAL_CASE_ROOT="${LOCAL_CASE_ROOT:-/data/hmos-score-agent/local-cases}"
 HUMAN_REVIEW_EVIDENCE_ROOT="${HUMAN_REVIEW_EVIDENCE_ROOT:-/data/hmos-score-agent/human-review-evidences}"
@@ -55,13 +56,46 @@ run_as_app_user() {
   sudo -H -u "${APP_USER}" "$@"
 }
 
-check_existing_environment() {
-  log "检查现有部署环境"
+require_commands() {
   for command_name in sudo git npm opencode systemctl curl; do
     if ! need_command "${command_name}"; then
       die "缺少命令：${command_name}。请先完成服务器基础安装。"
     fi
   done
+}
+
+require_update_commands() {
+  for command_name in sudo git npm systemctl curl; do
+    if ! need_command "${command_name}"; then
+      die "缺少命令：${command_name}。请先完成服务器基础安装。"
+    fi
+  done
+}
+
+check_update_environment() {
+  log "检查更新部署环境"
+  require_update_commands
+
+  if ! id "${APP_USER}" >/dev/null 2>&1; then
+    die "运行用户不存在：${APP_USER}。请先执行 DEPLOY_MODE=bootstrap 完成首次初始化。"
+  fi
+
+  if [[ ! -d "${APP_DIR}/.git" ]]; then
+    die "工程目录不是 git 仓库：${APP_DIR}。请先完成首次初始化或确认 APP_DIR。"
+  fi
+
+  if [[ ! -f "${APP_DIR}/.env" ]]; then
+    die ".env 不存在：${APP_DIR}/.env。请先执行 DEPLOY_MODE=bootstrap 完成首次初始化。"
+  fi
+
+  if [[ ! -f "/etc/systemd/system/${APP_NAME}.service" ]]; then
+    die "systemd 服务不存在：${APP_NAME}.service。请先执行 DEPLOY_MODE=bootstrap 完成首次初始化。"
+  fi
+}
+
+check_bootstrap_environment() {
+  log "检查首次初始化环境"
+  require_commands
 
   if ! id "${APP_USER}" >/dev/null 2>&1; then
     log "运行用户不存在，自动创建：${APP_USER}"
@@ -69,7 +103,7 @@ check_existing_environment() {
   fi
 
   if [[ ! -d "${APP_DIR}/.git" ]]; then
-    die "工程目录不是 git 仓库：${APP_DIR}。请先完成首次安装或确认 APP_DIR。"
+    die "工程目录不是 git 仓库：${APP_DIR}。请先完成代码仓库初始化或确认 APP_DIR。"
   fi
 
   mkdir -p "${LOCAL_CASE_ROOT}" "${HUMAN_REVIEW_EVIDENCE_ROOT}"
@@ -78,9 +112,7 @@ check_existing_environment() {
 }
 
 checkout_code() {
-  log "拉取/更新代码仓：${APP_DIR}#${BRANCH}"
-  run_as_app_user git -C "${APP_DIR}" fetch origin "${BRANCH}"
-  run_as_app_user git -C "${APP_DIR}" checkout "${BRANCH}"
+  log "拉取更新：${APP_DIR}#${BRANCH}"
   run_as_app_user git -C "${APP_DIR}" pull --ff-only origin "${BRANCH}"
 }
 
@@ -148,6 +180,11 @@ EOF
 install_app_dependencies() {
   log "安装项目依赖并构建"
   run_as_app_user npm --prefix "${APP_DIR}" ci
+  run_as_app_user npm --prefix "${APP_DIR}" run build
+}
+
+build_app() {
+  log "构建项目"
   run_as_app_user npm --prefix "${APP_DIR}" run build
 }
 
@@ -246,14 +283,29 @@ EOF
 
 main() {
   require_root
-  check_existing_environment
-  checkout_code
-  write_env_file
-  install_app_dependencies
-  write_systemd_service
-  open_local_firewall
-  wait_for_health
-  print_summary
+  case "${DEPLOY_MODE}" in
+    update)
+      check_update_environment
+      checkout_code
+      build_app
+      systemctl restart "${APP_NAME}.service"
+      wait_for_health
+      print_summary
+      ;;
+    bootstrap)
+      check_bootstrap_environment
+      checkout_code
+      write_env_file
+      install_app_dependencies
+      write_systemd_service
+      open_local_firewall
+      wait_for_health
+      print_summary
+      ;;
+    *)
+      die "未知 DEPLOY_MODE：${DEPLOY_MODE}。可选值：update, bootstrap"
+      ;;
+  esac
 }
 
 main "$@"

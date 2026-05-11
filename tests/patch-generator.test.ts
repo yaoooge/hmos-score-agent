@@ -68,7 +68,7 @@ test("generateCasePatch excludes transient workspace artifacts from the diff", a
   assert.doesNotMatch(patchText, /build\/artifact\.txt/);
 });
 
-test("generateCasePatch excludes all dot directories and resources directories", async (t) => {
+test("generateCasePatch excludes dot directories without hiding resources directories", async (t) => {
   const caseDir = await createCaseFixture(t);
   const patchPath = path.join(caseDir, "diff", "changes.patch");
 
@@ -91,7 +91,7 @@ test("generateCasePatch excludes all dot directories and resources directories",
 
   const patchText = await fs.readFile(patchPath, "utf-8");
   assert.doesNotMatch(patchText, /src\/\.cache\/generated\.txt/);
-  assert.doesNotMatch(patchText, /entry\/src\/main\/resources\/string\.json/);
+  assert.match(patchText, /entry\/src\/main\/resources\/string\.json/);
   assert.match(patchText, /restaurant-grid/);
 });
 

@@ -73,11 +73,18 @@ test("official linter workspace only contains copied project files and code-lint
   await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
     recursive: true,
   });
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "resources", "base", "profile"), {
+    recursive: true,
+  });
   await fs.mkdir(path.join(generated, "node_modules", "left-pad"), { recursive: true });
   await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
   await fs.writeFile(
     path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
     "let a = 1;\n",
+  );
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "resources", "base", "profile", "route_map.json"),
+    "{}\n",
   );
   await fs.writeFile(path.join(generated, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n");
   await fs.writeFile(path.join(caseDir, "inputs", "secret.txt"), "must not copy\n");
@@ -85,7 +92,11 @@ test("official linter workspace only contains copied project files and code-lint
   const result = await prepareOfficialCodeLinterWorkspace({ generatedProjectPath: generated, caseDir });
   const workspaceFiles = await collectWorkspaceFiles(result.workspaceDir);
 
-  assert.deepEqual(workspaceFiles, ["code-linter.json5", "entry/src/main/ets/pages/Index.ets"]);
+  assert.deepEqual(workspaceFiles, [
+    "code-linter.json5",
+    "entry/src/main/ets/pages/Index.ets",
+    "entry/src/main/resources/base/profile/route_map.json",
+  ]);
   assert.equal(workspaceFiles.includes("summary.json"), false);
   assert.equal(workspaceFiles.includes("findings.effective.json"), false);
   assert.equal(workspaceFiles.some((item) => item.startsWith("inputs/")), false);

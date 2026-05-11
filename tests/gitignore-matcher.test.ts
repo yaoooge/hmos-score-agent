@@ -105,3 +105,19 @@ test("collectVisibleFiles supports evaluation-only ignored path prefixes without
     "entry/src/main/ets/pages/test/Index.ets",
   ]);
 });
+
+test("collectVisibleFiles keeps src/main/resources files visible", async (t) => {
+  const rootDir = await makeTempDir(t);
+  await fs.mkdir(path.join(rootDir, "entry", "src", "main", "resources", "base", "profile"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(rootDir, "entry", "src", "main", "resources", "base", "profile", "route_map.json"),
+    "{}\n",
+    "utf-8",
+  );
+
+  const files = await collectVisibleFiles(rootDir);
+
+  assert.deepEqual(files, ["entry/src/main/resources/base/profile/route_map.json"]);
+});

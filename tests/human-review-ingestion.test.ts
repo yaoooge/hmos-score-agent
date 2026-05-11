@@ -816,7 +816,10 @@ test("human review config reads persistent evidence root from environment", () =
 
 test("aliyun deployment script writes persistent human review environment", async () => {
   const script = await fs.readFile("scripts/aliyun-single-instance-deploy.sh", "utf-8");
+  const updateSection = script.slice(script.indexOf("    update)"), script.indexOf("    bootstrap)"));
 
+  assert.match(script, /DEPLOY_MODE="\$\{DEPLOY_MODE:-update\}"/);
+  assert.match(script, /DEPLOY_MODE=bootstrap/);
   assert.match(
     script,
     /LOCAL_CASE_ROOT="\$\{LOCAL_CASE_ROOT:-\/data\/hmos-score-agent\/local-cases\}"/,
@@ -829,6 +832,26 @@ test("aliyun deployment script writes persistent human review environment", asyn
   assert.match(script, /mkdir -p.*\$\{LOCAL_CASE_ROOT\}/);
   assert.match(script, /mkdir -p.*\$\{HUMAN_REVIEW_EVIDENCE_ROOT\}/);
   assert.match(script, /chown.*\$\{HUMAN_REVIEW_EVIDENCE_ROOT\}/);
+  assert.match(script, /git -C "\$\{APP_DIR\}" pull --ff-only origin "\$\{BRANCH\}"/);
+  assert.match(script, /build_app\(\) \{[\s\S]*npm --prefix "\$\{APP_DIR\}" run build[\s\S]*\}/);
+  assert.match(
+    script,
+    /install_app_dependencies\(\) \{[\s\S]*npm --prefix "\$\{APP_DIR\}" ci[\s\S]*npm --prefix "\$\{APP_DIR\}" run build[\s\S]*\}/,
+  );
+  assert.match(
+    script,
+    /write_systemd_service\(\) \{[\s\S]*systemctl daemon-reload[\s\S]*systemctl enable "\$\{APP_NAME\}.service"[\s\S]*systemctl restart "\$\{APP_NAME\}.service"/,
+  );
+  assert.match(updateSection, /checkout_code/);
+  assert.match(updateSection, /build_app/);
+  assert.match(updateSection, /systemctl restart "\$\{APP_NAME\}.service"/);
+  assert.doesNotMatch(updateSection, /git -C "\$\{APP_DIR\}" fetch origin "\$\{BRANCH\}"/);
+  assert.doesNotMatch(updateSection, /git -C "\$\{APP_DIR\}" checkout "\$\{BRANCH\}"/);
+  assert.doesNotMatch(updateSection, /npm --prefix "\$\{APP_DIR\}" ci/);
+  assert.doesNotMatch(updateSection, /systemctl daemon-reload/);
+  assert.doesNotMatch(updateSection, /systemctl enable "\$\{APP_NAME\}.service"/);
+  assert.doesNotMatch(script, /git -C "\$\{APP_DIR\}" fetch origin "\$\{BRANCH\}"/);
+  assert.doesNotMatch(script, /git -C "\$\{APP_DIR\}" checkout "\$\{BRANCH\}"/);
 });
 
 test("api definitions document human review submission endpoint", () => {
