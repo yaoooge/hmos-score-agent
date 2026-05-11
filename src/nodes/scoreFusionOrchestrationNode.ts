@@ -32,6 +32,7 @@ export async function scoreFusionOrchestrationNode(
         hasPatch: false,
       },
       caseRuleDefinitions: state.caseRuleDefinitions ?? [],
+      hvigorBuildCheckSummary: state.hvigorBuildCheckSummary,
     });
 
     return { scoreComputation };

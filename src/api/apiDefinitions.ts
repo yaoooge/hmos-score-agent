@@ -380,7 +380,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
           basis: {
             type: "string",
             required: true,
-            description: "Human-readable basis for the manual rating.",
+            description: "Human-readable basis for the manual rating. Empty string is allowed.",
           },
         },
       },

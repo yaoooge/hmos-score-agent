@@ -36,6 +36,77 @@ test("app config no longer exposes direct model provider settings", () => {
   assert.equal(`${oldProviderPrefix}Model` in config, false);
 });
 
+test("getConfig derives official tool run directories from HMOS_OFFICIAL_TOOL_RUN_DIR", () => {
+  const previousOfficialToolRunDir = process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
+  const previousCodeLinterRunDir = process.env.HMOS_CODE_LINTER_RUN_DIR;
+  const previousHvigorTimeoutMs = process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS;
+  const toolRoot = path.resolve(process.cwd(), ".tmp-official-tools");
+  process.env.HMOS_OFFICIAL_TOOL_RUN_DIR = toolRoot;
+  process.env.HMOS_CODE_LINTER_RUN_DIR = path.resolve(process.cwd(), "legacy-codelinter");
+  delete process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS;
+
+  try {
+    const config = getConfig();
+    assert.equal(config.officialToolRunDir, toolRoot);
+    assert.equal(config.officialCodeLinterRunDir, path.join(toolRoot, "codelinter"));
+    assert.equal(config.hvigorBuildCheckRunDir, path.join(toolRoot, "hvigor"));
+    assert.equal(config.hvigorBuildCheckTimeoutMs, 300000);
+  } finally {
+    if (previousOfficialToolRunDir === undefined) {
+      delete process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
+    } else {
+      process.env.HMOS_OFFICIAL_TOOL_RUN_DIR = previousOfficialToolRunDir;
+    }
+    if (previousCodeLinterRunDir === undefined) {
+      delete process.env.HMOS_CODE_LINTER_RUN_DIR;
+    } else {
+      process.env.HMOS_CODE_LINTER_RUN_DIR = previousCodeLinterRunDir;
+    }
+    if (previousHvigorTimeoutMs === undefined) {
+      delete process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS;
+    } else {
+      process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS = previousHvigorTimeoutMs;
+    }
+  }
+});
+
+test("getConfig derives hvigor run dir from legacy codelinter run dir", () => {
+  const previousOfficialToolRunDir = process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
+  const previousCodeLinterRunDir = process.env.HMOS_CODE_LINTER_RUN_DIR;
+  const previousHvigorTimeoutMs = process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS;
+  delete process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
+  const codeLinterRunDir = path.resolve(process.cwd(), "command-line-tools", "codelinter");
+  process.env.HMOS_CODE_LINTER_RUN_DIR = codeLinterRunDir;
+  process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS = "12345";
+
+  try {
+    const config = getConfig();
+    assert.equal(config.officialToolRunDir, undefined);
+    assert.equal(config.officialCodeLinterRunDir, codeLinterRunDir);
+    assert.equal(
+      config.hvigorBuildCheckRunDir,
+      path.resolve(process.cwd(), "command-line-tools", "hvigor"),
+    );
+    assert.equal(config.hvigorBuildCheckTimeoutMs, 12345);
+  } finally {
+    if (previousOfficialToolRunDir === undefined) {
+      delete process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
+    } else {
+      process.env.HMOS_OFFICIAL_TOOL_RUN_DIR = previousOfficialToolRunDir;
+    }
+    if (previousCodeLinterRunDir === undefined) {
+      delete process.env.HMOS_CODE_LINTER_RUN_DIR;
+    } else {
+      process.env.HMOS_CODE_LINTER_RUN_DIR = previousCodeLinterRunDir;
+    }
+    if (previousHvigorTimeoutMs === undefined) {
+      delete process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS;
+    } else {
+      process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS = previousHvigorTimeoutMs;
+    }
+  }
+});
+
 test("repo-maintained runtime files no longer use direct model provider naming", async () => {
   const files = [
     "src/config.ts",

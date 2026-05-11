@@ -188,8 +188,11 @@ function parseSubmissionPayload(body: unknown): ManualRatingSubmissionPayload | 
   if (typeof candidate.manualRating !== "string" || !HUMAN_RATINGS.has(candidate.manualRating)) {
     return "manualRating must be one of L1, L2, L3, L4, L5, L6";
   }
-  if (typeof candidate.basis !== "string" || candidate.basis.trim().length === 0) {
-    return "basis is required";
+  if (typeof candidate.basis !== "string") {
+    return "basis must be a string";
+  }
+  if (candidate.basis !== "" && candidate.basis.trim().length === 0) {
+    return "basis cannot be blank";
   }
   if (candidate.reviewer !== undefined && typeof candidate.reviewer !== "string") {
     return "reviewer must be a string";

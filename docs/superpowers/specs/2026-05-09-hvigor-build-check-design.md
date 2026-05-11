@@ -137,23 +137,13 @@ HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS=300000
 
 每个模块路径映射为 hvigor module name：
 
-- 模块路径为 `entry` 时，module name 为 `entry`，执行 HAP 编译。
-- 模块路径为 `.` 时，module name 为 `entry`，执行 HAP 编译。该规则覆盖单模块工程根目录即模块目录的情况。
-- 其他模块路径默认取最后一个 path segment 作为 module name，执行 HAR 编译。
-
-示例：
-
-| module path | module name | command |
-| --- | --- | --- |
-| `entry` | `entry` | `assembleHap` |
-| `features/feature1` | `feature1` | `assembleHar` |
-| `libs/common` | `common` | `assembleHar` |
-| `.` | `entry` | `assembleHap` |
+- 模块中/hvigorfile.ts中使用hapTasks时执行HAP编译，使用harTasks时执行HAR编译，使用hspTasks时使用HSP编译
 
 该规则与 hvigor 命令参数保持一致：
 
 ```bash
 hvigorw assembleHar --mode module -p module=<moduleName>@default -p product=default --no-daemon
+hvigorw assembleHsp --mode module -p module=<moduleName>@default -p product=default --no-daemon
 hvigorw assembleHap --mode module -p module=entry@default -p product=default --no-daemon
 ```
 
@@ -336,8 +326,9 @@ build check 结束后必须清理临时 workspace 内的构建产物。清理范
 ```text
 workspace/.hvigor
 workspace/build
-workspace/oh_modules/.cache
+workspace/oh_modules
 workspace/<modulePath>/build
+workspace/<modulePath>/oh_modules
 workspace/<modulePath>/.preview
 ```
 

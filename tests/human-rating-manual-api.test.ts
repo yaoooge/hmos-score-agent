@@ -257,6 +257,15 @@ test("submit manual rating handler rejects invalid requests and missing auto sco
   {
     const { response, state } = createResponse();
     await handler(
+      createManualRatingRequest(88, { manualRating: "L1", basis: "" }) as never,
+      response as never,
+    );
+    assert.equal(state.statusCode, 409);
+  }
+
+  {
+    const { response, state } = createResponse();
+    await handler(
       createManualRatingRequest(88, { manualRating: "L1", basis: "无法编译运行。" }) as never,
       response as never,
     );

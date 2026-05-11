@@ -600,3 +600,76 @@ test("fuseRubricScoreWithRules writes uncertain hard gate rules into suggested f
     gate_caps: { G3: 79 },
   });
 });
+
+test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fails", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "基础评分较高。",
+      evidence_used: ["workspace/features/feature1/src/main/ets/Index.ets"],
+      confidence: "high" as const,
+      review_required: false,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础分满分。", overall_confidence: "high" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["features/feature1/src/main/ets/Index.ets"],
+      hasPatch: true,
+    },
+    hvigorBuildCheckSummary: {
+      enabled: true,
+      status: "failed",
+      hvigorRunDir: "/tools/hvigor",
+      checkedModules: ["features/feature1"],
+      hardGateTriggered: true,
+      scoreCap: 59,
+      diagnostics: "hvigor build check failed",
+      durationMs: 1000,
+      moduleResults: [
+        {
+          modulePath: "features/feature1",
+          moduleName: "feature1",
+          command: "assembleHar",
+          status: "failed",
+          exitCode: 7,
+          durationMs: 1000,
+          stderrExcerpt: "compile failed",
+        },
+      ],
+      cleanup: {
+        attempted: true,
+        removedPaths: ["features/feature1/build"],
+        failedPaths: [],
+      },
+    },
+  });
+
+  assert.equal(result.totalScore, 59);
+  assert.equal(result.hardGateTriggered, true);
+  assert.match(result.hardGateReason ?? "", /BUILD-CHECK/);
+  assert.ok(result.risks.some((risk) => /编译/.test(`${risk.title}${risk.description}`)));
+});

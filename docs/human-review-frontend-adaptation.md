@@ -14,11 +14,12 @@
   -> 展示复核后的最新评分结果
 ```
 
-前端需要适配三个接口：
+前端需要适配四个接口：
 
 - `GET /score/remote-tasks/:taskId/result`
 - `GET /score/rule-violation-stats`
 - `POST /score/remote-tasks/:taskId/human-review`
+- `POST /score/remote-tasks/:taskId/manual-rating`
 
 接口概览：
 
@@ -27,6 +28,7 @@
 | `GET /score/remote-tasks/:taskId/result` | 路径参数：`taskId` | `success`、`taskId`、`status`、`resultData` | 读取单个远端任务的完整评分结果，供前端展示总分、维度分、待复核项、风险项和复核后修订信息。 |
 | `GET /score/rule-violation-stats` | 可选查询参数：`caseId`、`testCaseId`、`packId`、`from`、`to` | `success`、`filters`、`summary`、`rules` | 读取静态规则不满足项的聚合统计，供前端展示规则违反次数、影响用例、影响任务和最近触发时间。 |
 | `POST /score/remote-tasks/:taskId/human-review` | 路径参数：`taskId`；请求体：`reviewer`、`itemReviews`、`riskReviews` | `success`、`taskId`、`status`、`summary`、`message` | 提交逐条人工复核结论，后端接收后写入复核数据，并按逐条复核结果重新计算分数。 |
+| `POST /score/remote-tasks/:taskId/manual-rating` | 路径参数：`taskId`；请求体：`reviewer`、`manualRating`、`basis` | `success`、`taskId`、`status`、`summary`、`message` | 提交整单人工评级 L1-L6。后端比较人工评级和自动评分，只对人工 L1 且自动分 >=70、人工 L2 且自动分 >=80 的任务触发差异分析。该接口不改写评分结果。 |
 
 ## 2. 读取评分结果
 
@@ -584,3 +586,55 @@ GET /score/rule-violation-stats
   "rules": []
 }
 ```
+
+## 13. 整单人工评级接口
+
+该接口给管理台新增一个“整单评分复核”入口，和逐条人工复核接口是两条独立链路。
+
+### 接口
+
+```http
+POST /score/remote-tasks/:taskId/manual-rating
+Content-Type: application/json
+```
+
+### 请求体
+
+```ts
+type ManualRatingPayload = {
+  reviewer?: string;
+  manualRating: "L1" | "L2" | "L3" | "L4" | "L5" | "L6";
+  basis: string;
+};
+```
+
+### 字段说明
+
+- `reviewer`：可选，提交人标识。
+- `manualRating`：必填，整单人工评级，只能取 `L1` 到 `L6`。
+- `basis`：必填，人工评级依据，前端应要求非空。
+
+### 成功响应
+
+```json
+{
+  "success": true,
+  "taskId": 551,
+  "status": "completed",
+  "summary": {
+    "manualRating": "L1",
+    "autoScore": 93,
+    "autoRating": "L5",
+    "gapQualified": true,
+    "analysisStatus": "completed"
+  },
+  "message": "人工评级已接收，评分差异较大，已完成差异原因分析。"
+}
+```
+
+### 错误响应
+
+- `400`：`manualRating` 非法，或 `basis` 为空。
+- `404`：任务不存在，或结果文件不存在。
+- `409`：任务尚未完成，或结果中缺少 `overall_conclusion.total_score`。
+

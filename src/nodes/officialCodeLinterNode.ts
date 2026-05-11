@@ -7,7 +7,13 @@ import { mapOfficialCodeLinterFindings } from "../rules/officialCodeLinter/resul
 import { runOfficialCodeLinter } from "../rules/officialCodeLinter/runner.js";
 import { sanitizeOfficialCodeLinterOutput } from "../rules/officialCodeLinter/sanitizer.js";
 import { prepareOfficialCodeLinterWorkspace } from "../rules/officialCodeLinter/workspacePreparer.js";
-import type { OfficialLinterRunStatus, OfficialLinterSummary } from "../types.js";
+import { runHvigorBuildCheck } from "../rules/officialCodeLinter/hvigorBuildCheck.js";
+import type {
+  HvigorBuildCheckStatus,
+  HvigorBuildCheckSummary,
+  OfficialLinterRunStatus,
+  OfficialLinterSummary,
+} from "../types.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import type { ScoreGraphState } from "../workflow/state.js";
 
@@ -52,6 +58,10 @@ async function writeSummaryArtifacts(input: {
   await writeLinterArtifact(input.caseDir, "exit-code.txt", `${input.exitCode ?? ""}\n`);
 }
 
+async function writeHvigorSummaryArtifact(caseDir: string, summary: HvigorBuildCheckSummary) {
+  await writeLinterArtifact(caseDir, "hvigor-summary.json", `${JSON.stringify(summary, null, 2)}\n`);
+}
+
 function makeSummary(input: {
   runStatus: OfficialLinterRunStatus;
   effectiveFindingCount: number;
@@ -71,7 +81,13 @@ function makeSummary(input: {
 
 export async function officialCodeLinterNode(
   state: ScoreGraphState,
-  deps: { enabled?: boolean; runDir?: string; timeoutMs?: number } = {},
+  deps: {
+    enabled?: boolean;
+    runDir?: string;
+    timeoutMs?: number;
+    hvigorRunDir?: string;
+    hvigorTimeoutMs?: number;
+  } = {},
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("officialCodeLinterNode");
   const startedAt = Date.now();
@@ -79,11 +95,22 @@ export async function officialCodeLinterNode(
     const config = getConfig();
     const enabled = deps.enabled ?? config.officialCodeLinterEnabled;
     const runDir = deps.runDir ?? config.officialCodeLinterRunDir;
+    const hvigorRunDir =
+      deps.hvigorRunDir ??
+      config.hvigorBuildCheckRunDir ??
+      (runDir ? path.join(path.dirname(runDir), "hvigor") : undefined);
     const timeoutMs = deps.timeoutMs ?? config.officialCodeLinterTimeoutMs;
+    const hvigorTimeoutMs = deps.hvigorTimeoutMs ?? config.hvigorBuildCheckTimeoutMs;
     const caseDir = state.caseDir;
     const generatedProjectPath = state.caseInput?.generatedProjectPath;
 
     if (!enabled) {
+      const hvigorSummary = await runHvigorBuildCheck({
+        enabled: false,
+        hvigorRunDir,
+        changedFiles: [],
+        timeoutMs: hvigorTimeoutMs,
+      });
       const notEnabledSummary = makeSummary({
         runStatus: "not_enabled",
         effectiveFindingCount: 0,
@@ -95,6 +122,8 @@ export async function officialCodeLinterNode(
         officialLinterSummary: notEnabledSummary,
         officialLinterFindings: [],
         officialLinterRuleResults: [],
+        hvigorBuildCheckStatus: hvigorSummary.status,
+        hvigorBuildCheckSummary: hvigorSummary,
       };
     }
 
@@ -104,7 +133,13 @@ export async function officialCodeLinterNode(
       durationMs: Date.now() - startedAt,
       diagnostics: "official Code Linter run directory or entrypoint is unavailable",
     });
-    if (!runDir || !(await hasOfficialCodeLinterEntrypoint(runDir)) || !caseDir || !generatedProjectPath) {
+    if (!caseDir || !generatedProjectPath) {
+      const hvigorSummary = await runHvigorBuildCheck({
+        enabled: true,
+        hvigorRunDir,
+        changedFiles: state.evidenceSummary?.changedFiles ?? [],
+        timeoutMs: hvigorTimeoutMs,
+      });
       if (caseDir) {
         const sanitized = sanitizeOfficialCodeLinterOutput({
           text: notInstalledSummary.diagnostics ?? "",
@@ -118,25 +153,41 @@ export async function officialCodeLinterNode(
           stdout: sanitized,
           stderr: sanitized,
         });
+        await writeHvigorSummaryArtifact(caseDir, hvigorSummary);
       }
       return {
         officialLinterRunStatus: "not_installed",
         officialLinterSummary: notInstalledSummary,
         officialLinterFindings: [],
         officialLinterRuleResults: [],
+        hvigorBuildCheckStatus: hvigorSummary.status,
+        hvigorBuildCheckSummary: hvigorSummary,
       };
     }
 
     const workspace = await prepareOfficialCodeLinterWorkspace({ generatedProjectPath, caseDir });
-    const runResult = await runOfficialCodeLinter({
-      runDir,
+    const hvigorSummary = await runHvigorBuildCheck({
+      enabled: true,
+      hvigorRunDir,
       workspaceDir: workspace.workspaceDir,
-      timeoutMs,
+      changedFiles: state.evidenceSummary?.changedFiles ?? [],
+      timeoutMs: hvigorTimeoutMs,
     });
-    const parsed = parseOfficialCodeLinterOutput({
-      stdout: runResult.stdout,
-      stderr: runResult.stderr,
-    });
+
+    const linterInstalled = Boolean(runDir && (await hasOfficialCodeLinterEntrypoint(runDir)));
+    const runResult = linterInstalled
+      ? await runOfficialCodeLinter({
+          runDir: runDir as string,
+          workspaceDir: workspace.workspaceDir,
+          timeoutMs,
+        })
+      : undefined;
+    const parsed = runResult
+      ? parseOfficialCodeLinterOutput({
+          stdout: runResult.stdout,
+          stderr: runResult.stderr,
+        })
+      : { status: "unparsed" as const, findings: [] };
     const mapped = mapOfficialCodeLinterFindings({
       findings: parsed.findings,
       workspaceDir: workspace.workspaceDir,
@@ -145,12 +196,13 @@ export async function officialCodeLinterNode(
       changedLineNumbersByFile: state.evidenceSummary?.changedLineNumbersByFile,
     });
 
-    const runStatus: OfficialLinterRunStatus =
-      runResult.status === "timeout"
+    const runStatus: OfficialLinterRunStatus = !linterInstalled
+      ? "not_installed"
+      : runResult?.status === "timeout"
         ? "timeout"
         : parsed.status === "parsed"
           ? "success"
-          : runResult.status === "failed"
+          : runResult?.status === "failed"
             ? "failed"
             : "invalid_output";
     const effectiveFindings = runStatus === "success" ? mapped.effectiveFindings : [];
@@ -158,17 +210,17 @@ export async function officialCodeLinterNode(
     const summary = makeSummary({
       runStatus,
       effectiveFindingCount: effectiveFindings.length,
-      durationMs: runResult.durationMs,
-      exitCode: runResult.exitCode,
+      durationMs: runResult?.durationMs ?? Date.now() - startedAt,
+      exitCode: runResult?.exitCode,
       diagnostics: runStatus === "success" ? undefined : `official Code Linter status=${runStatus}`,
     });
     const sanitizedStdout = sanitizeOfficialCodeLinterOutput({
-      text: runResult.stdout,
+      text: runResult?.stdout ?? notInstalledSummary.diagnostics ?? "",
       effectiveFindingCount: effectiveFindings.length,
       runStatus,
     });
     const sanitizedStderr = sanitizeOfficialCodeLinterOutput({
-      text: runResult.stderr,
+      text: runResult?.stderr ?? "",
       effectiveFindingCount: effectiveFindings.length,
       runStatus,
     });
@@ -178,14 +230,17 @@ export async function officialCodeLinterNode(
       findings: effectiveFindings,
       stdout: sanitizedStdout,
       stderr: sanitizedStderr,
-      exitCode: runResult.exitCode,
+      exitCode: runResult?.exitCode,
     });
+    await writeHvigorSummaryArtifact(caseDir, hvigorSummary);
 
     return {
       officialLinterRunStatus: runStatus,
       officialLinterSummary: summary,
       officialLinterFindings: effectiveFindings,
       officialLinterRuleResults: ruleResults,
+      hvigorBuildCheckStatus: hvigorSummary.status as HvigorBuildCheckStatus,
+      hvigorBuildCheckSummary: hvigorSummary,
     };
   } catch (error) {
     emitNodeFailed("officialCodeLinterNode", error);

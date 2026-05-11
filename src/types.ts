@@ -142,6 +142,43 @@ export interface OfficialLinterSummary {
   diagnostics?: string;
 }
 
+export type HvigorBuildCheckStatus =
+  | "not_enabled"
+  | "skipped"
+  | "tool_unavailable"
+  | "success"
+  | "failed"
+  | "timeout";
+
+export interface HvigorBuildCheckModuleResult {
+  modulePath: string;
+  moduleName: string;
+  command: "assembleHar" | "assembleHap" | "assembleHsp";
+  status: "success" | "failed" | "timeout" | "skipped";
+  exitCode?: number;
+  durationMs: number;
+  stdoutExcerpt?: string;
+  stderrExcerpt?: string;
+  diagnostics?: string;
+}
+
+export interface HvigorBuildCheckSummary {
+  enabled: boolean;
+  status: HvigorBuildCheckStatus;
+  hvigorRunDir?: string;
+  checkedModules: string[];
+  moduleResults: HvigorBuildCheckModuleResult[];
+  hardGateTriggered: boolean;
+  scoreCap?: number;
+  diagnostics?: string;
+  durationMs: number;
+  cleanup: {
+    attempted: boolean;
+    removedPaths: string[];
+    failedPaths: Array<{ path: string; reason: string }>;
+  };
+}
+
 export interface OfficialLinterResult {
   rule_id: string;
   rule_result_id: string;

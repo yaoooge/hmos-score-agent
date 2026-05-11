@@ -5,6 +5,7 @@ import { getRegisteredRulePacks, listRegisteredRules } from "../rules/engine/rul
 import { officialCodeLinterRecommendedRuleSets } from "../rules/officialCodeLinter/recommendedRuleSets.js";
 import type {
   ConfidenceLevel,
+  HvigorBuildCheckSummary,
   OfficialLinterFinding,
   OfficialLinterResult,
   RuleAuditResult,
@@ -280,6 +281,49 @@ function buildOfficialLinterResults(state: ScoreGraphState): OfficialLinterResul
     });
 }
 
+function buildHvigorBuildCheckSummary(
+  summary: HvigorBuildCheckSummary | undefined,
+): Record<string, unknown> | undefined {
+  if (!summary) {
+    return undefined;
+  }
+  const output: Record<string, unknown> = {
+    enabled: summary.enabled,
+    status: summary.status,
+    checked_modules: summary.checkedModules,
+    hard_gate_triggered: summary.hardGateTriggered,
+    duration_ms: summary.durationMs,
+    module_results: summary.moduleResults.map((result) => {
+      const moduleResult: Record<string, unknown> = {
+        module_path: result.modulePath,
+        module_name: result.moduleName,
+        command: result.command,
+        status: result.status,
+        duration_ms: result.durationMs,
+      };
+      if (result.exitCode !== undefined) {
+        moduleResult.exit_code = result.exitCode;
+      }
+      if (result.diagnostics !== undefined) {
+        moduleResult.diagnostics = result.diagnostics;
+      }
+      return moduleResult;
+    }),
+  };
+  if (summary.hvigorRunDir !== undefined) {
+    output.hvigor_run_dir = summary.hvigorRunDir;
+  }
+  if (summary.scoreCap !== undefined) {
+    output.score_cap = summary.scoreCap;
+  }
+  if (summary.diagnostics !== undefined) {
+    output.diagnostics = summary.diagnostics;
+  }
+  return {
+    ...output,
+  };
+}
+
 export async function reportGenerationNode(
   state: ScoreGraphState,
   config: { referenceRoot: string },
@@ -319,7 +363,7 @@ export async function reportGenerationNode(
         task_type: state.taskType,
         evaluation_mode: "auto_precheck_with_human_review",
         rules_enabled: true,
-        build_check_enabled: false,
+        build_check_enabled: state.hvigorBuildCheckSummary?.enabled ?? false,
         target_description: "HarmonyOS 生成工程评分",
         target_scope: state.caseInput.generatedProjectPath,
         task_type_basis: state.constraintSummary.classificationHints.join("; "),
@@ -349,6 +393,10 @@ export async function reportGenerationNode(
         generated_at: new Date().toISOString(),
       },
     };
+    const buildCheckSummary = buildHvigorBuildCheckSummary(state.hvigorBuildCheckSummary);
+    if (buildCheckSummary) {
+      resultJson.build_check_summary = buildCheckSummary;
+    }
 
     if (typeof schema !== "object" || schema === null) {
       throw new Error("report_result_schema.json 内容不合法。");

@@ -5,6 +5,7 @@ import type {
   CaseRuleDefinition,
   DimensionScore,
   EvidenceSummary,
+  HvigorBuildCheckSummary,
   HumanReviewItem,
   LoadedRubricSnapshot,
   RiskItem,
@@ -29,6 +30,7 @@ type FuseRubricScoreWithRulesInput = {
   ruleViolations: RuleViolation[];
   evidenceSummary: EvidenceSummary;
   caseRuleDefinitions?: CaseRuleDefinition[];
+  hvigorBuildCheckSummary?: HvigorBuildCheckSummary;
 };
 
 type MetricPenaltyRule = {
@@ -438,6 +440,37 @@ function buildRiskScoreEffect(input: {
   };
 }
 
+function isHvigorBuildHardGateTriggered(summary?: HvigorBuildCheckSummary): boolean {
+  if (!summary) {
+    return false;
+  }
+  return (
+    summary.hardGateTriggered ||
+    summary.status === "tool_unavailable" ||
+    summary.status === "failed" ||
+    summary.status === "timeout"
+  );
+}
+
+function buildHvigorBuildRisk(summary: HvigorBuildCheckSummary): RiskItem {
+  const failedModules = summary.moduleResults.filter(
+    (result) => result.status === "failed" || result.status === "timeout",
+  );
+  const moduleText =
+    failedModules.length > 0
+      ? failedModules
+          .map((result) => `${result.modulePath}:${result.command}:${result.status}`)
+          .join("；")
+      : summary.checkedModules.join("；") || "未识别模块";
+  return {
+    id: 0,
+    level: "high",
+    title: "工程编译校验未通过",
+    description: `hvigor 编译校验状态为 ${summary.status}，涉及模块：${moduleText}。`,
+    evidence: summary.diagnostics ?? moduleText,
+  };
+}
+
 export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): ScoreComputation {
   const criteriaByMetric = buildCriteriaByMetric(input.rubricSnapshot);
   const scoringBandsByMetric = buildScoringBandsByMetric(input.rubricSnapshot);
@@ -472,6 +505,13 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     ...risk,
     id: index + 1,
   }));
+  const hvigorHardGateTriggered = isHvigorBuildHardGateTriggered(input.hvigorBuildCheckSummary);
+  if (hvigorHardGateTriggered && input.hvigorBuildCheckSummary) {
+    risks.push({
+      ...buildHvigorBuildRisk(input.hvigorBuildCheckSummary),
+      id: risks.length + 1,
+    });
+  }
 
   for (const rule of input.ruleAuditResults) {
     if (rule.result !== "不满足" && rule.result !== "待人工复核") {
@@ -585,11 +625,16 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
   const scoreCap = triggeredGateIds
     .map((gateId) => input.rubric.hardGates.find((gate) => gate.id === gateId)?.scoreCap)
     .filter((value): value is number => typeof value === "number")
+    .concat(hvigorHardGateTriggered ? [input.hvigorBuildCheckSummary?.scoreCap ?? 59] : [])
     .reduce<number | undefined>(
       (minCap, current) => (minCap === undefined ? current : Math.min(minCap, current)),
       undefined,
     );
   const totalScore = scoreCap === undefined ? rawTotalScore : Math.min(rawTotalScore, scoreCap);
+  const hardGateReasons = [
+    ...triggeredGateIds,
+    ...(hvigorHardGateTriggered ? ["BUILD-CHECK"] : []),
+  ];
   const uncertainHardGateCandidates = selectUncertainHardGateCandidates(input);
   const humanReviewItems: HumanReviewItem[] =
     input.rubricAgentRunStatus === "success"
@@ -625,14 +670,14 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
 
   return {
     totalScore,
-    hardGateTriggered: triggeredGateIds.length > 0,
-    hardGateReason: triggeredGateIds.join(", "),
+    hardGateTriggered: hardGateReasons.length > 0,
+    hardGateReason: hardGateReasons.join(", "),
     overallConclusion: {
       total_score: totalScore,
-      hard_gate_triggered: triggeredGateIds.length > 0,
+      hard_gate_triggered: hardGateReasons.length > 0,
       summary:
-        triggeredGateIds.length > 0
-          ? `已完成 rubric 基础评分与规则修正融合，并触发硬门槛：${triggeredGateIds.join(", ")}。`
+        hardGateReasons.length > 0
+          ? `已完成 rubric 基础评分与规则修正融合，并触发硬门槛：${hardGateReasons.join(", ")}。`
           : "已完成 rubric 基础评分与规则修正融合。",
     },
     dimensionScores,

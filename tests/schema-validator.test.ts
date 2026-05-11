@@ -162,6 +162,36 @@ test("validateReportResult accepts result with bound_rule_packs", () => {
   assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
 });
 
+test("validateReportResult accepts result with hvigor build_check_summary", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.basic_info = {
+    ...(valid.basic_info as Record<string, unknown>),
+    build_check_enabled: true,
+  };
+  valid.build_check_summary = {
+    enabled: true,
+    status: "failed",
+    checked_modules: ["features/feature1"],
+    hard_gate_triggered: true,
+    score_cap: 59,
+    diagnostics: "hvigor build check failed",
+    duration_ms: 1000,
+    module_results: [
+      {
+        module_path: "features/feature1",
+        module_name: "feature1",
+        command: "assembleHar",
+        status: "failed",
+        exit_code: 7,
+        duration_ms: 1000,
+      },
+    ],
+  };
+
+  assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
+});
+
 test("validateReportResult accepts deduction_trace for deducted items", () => {
   const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
   const valid = makeValidResultJson();
