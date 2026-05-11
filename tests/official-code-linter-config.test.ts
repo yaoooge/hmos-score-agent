@@ -37,9 +37,11 @@ test("generated code-linter config explicitly includes the four v1 recommended r
 });
 
 test("official Code Linter config defaults to global node with optional run dir", () => {
+  const previousOfficialToolRunDir = process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
   const previousEnabled = process.env.HMOS_CODE_LINTER_ENABLED;
   const previousRunDir = process.env.HMOS_CODE_LINTER_RUN_DIR;
   const previousTimeout = process.env.HMOS_CODE_LINTER_TIMEOUT_MS;
+  delete process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
   delete process.env.HMOS_CODE_LINTER_ENABLED;
   delete process.env.HMOS_CODE_LINTER_RUN_DIR;
   delete process.env.HMOS_CODE_LINTER_TIMEOUT_MS;
@@ -47,10 +49,17 @@ test("official Code Linter config defaults to global node with optional run dir"
   try {
     const config = getConfig() as Record<string, unknown>;
     assert.equal(config.officialCodeLinterEnabled, false);
+    assert.equal(config.officialToolRunDir, undefined);
     assert.equal(config.officialCodeLinterRunDir, undefined);
+    assert.equal(config.hvigorBuildCheckRunDir, undefined);
     assert.equal(config.officialCodeLinterTimeoutMs, 120000);
     assert.equal(Object.hasOwn(config, "officialCodeLinterNode"), false);
   } finally {
+    if (previousOfficialToolRunDir === undefined) {
+      delete process.env.HMOS_OFFICIAL_TOOL_RUN_DIR;
+    } else {
+      process.env.HMOS_OFFICIAL_TOOL_RUN_DIR = previousOfficialToolRunDir;
+    }
     if (previousEnabled === undefined) {
       delete process.env.HMOS_CODE_LINTER_ENABLED;
     } else {
