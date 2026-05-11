@@ -1811,13 +1811,13 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
 
   const resultJsonPath = path.join(caseDir, "outputs", "result.json");
   const reportHtmlPath = path.join(caseDir, "outputs", "report.html");
-  const storedRuleAuditPath = path.join(caseDir, "intermediate", "rule-audit.json");
   const resultJson = JSON.parse(await fs.readFile(resultJsonPath, "utf-8"));
-  const ruleAuditJson = JSON.parse(await fs.readFile(storedRuleAuditPath, "utf-8"));
   const reportHtml = await fs.readFile(reportHtmlPath, "utf-8");
   const schema = JSON.parse(await fs.readFile(schemaPath, "utf-8"));
   const ajv = new Ajv2020({ strict: false });
   const validate = ajv.compile(schema);
+  const topLevelEntries = (await fs.readdir(caseDir)).sort();
+  const sandboxEntries = (await fs.readdir(path.join(caseDir, "opencode-sandbox"))).sort();
 
   assert.equal(validate(resultJson), true, ajv.errorsText(validate.errors));
   assert.equal(result.uploadMessage, undefined);
@@ -1833,12 +1833,21 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.equal("submetric_details" in resultJson, false);
   assert.ok(resultJson.overall_conclusion.total_score >= 70);
   assert.ok(resultJson.overall_conclusion.total_score <= 79);
-  assert.ok(ruleAuditJson.length > 10);
-  assert.ok(ruleAuditJson.some((item: { result: string }) => item.result === "不满足"));
+  assert.ok(resultJson.rule_audit_results.length > 10);
+  assert.ok(resultJson.rule_audit_results.some((item: { result: string }) => item.result === "不满足"));
   assert.match(reportHtml, /评分报告/);
   assert.match(reportHtml, /维度得分概览/);
   assert.match(reportHtml, /规则审计结果/);
   assert.doesNotMatch(reportHtml, /<pre>\s*\{/);
+  assert.deepEqual(topLevelEntries, ["inputs", "logs", "opencode-sandbox", "outputs"]);
+  assert.deepEqual(sandboxEntries, ["metadata", "patch"]);
+  await fs.access(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"));
+  await fs.access(path.join(caseDir, "logs", "run.log"));
+  await fs.access(path.join(caseDir, "opencode-sandbox", "metadata", "metadata.json"));
+  await fs.access(path.join(caseDir, "opencode-sandbox", "patch", "effective.patch"));
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "opencode-sandbox", "generated")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "opencode-sandbox", "original")), /ENOENT/);
 });
 
 test("runScoreWorkflow stops ephemeral opencode runtime after a single local case", async (t) => {
@@ -1914,8 +1923,8 @@ test("runScoreWorkflow includes case_rule_results and generated patch output", a
   });
 
   const resultJson = result.resultJson as Record<string, unknown>;
-  const generatedPatchText = await fs.readFile(
-    path.join(caseDir, "intermediate", "generated.patch"),
+  const sandboxPatchText = await fs.readFile(
+    path.join(caseDir, "opencode-sandbox", "patch", "effective.patch"),
     "utf-8",
   );
 
@@ -1934,7 +1943,7 @@ test("runScoreWorkflow includes case_rule_results and generated patch output", a
       display_name: "用例 case-1 约束规则",
     },
   ]);
-  assert.match(generatedPatchText, /diff --git/);
+  assert.match(sandboxPatchText, /diff --git/);
 });
 
 test("runScoreWorkflow feeds generated patch into incremental scoring instead of reporting patch context missing", async (t) => {
@@ -1962,7 +1971,7 @@ test("runScoreWorkflow feeds generated patch into incremental scoring instead of
   const resultJson = result.resultJson as {
     human_review_items?: Array<{ item?: string }>;
   };
-  const generatedPatchPath = path.join(caseDir, "intermediate", "generated.patch");
+  const generatedPatchPath = path.join(caseDir, "opencode-sandbox", "patch", "effective.patch");
   const generatedPatchText = await fs.readFile(generatedPatchPath, "utf-8");
 
   assert.match(generatedPatchText, /diff --git/);
@@ -2108,19 +2117,18 @@ test("runScoreWorkflow keeps 未接入判定器 inside static layer only", async
   });
   const caseInput = await loadCaseFromPath(fixtureCaseDir);
 
-  await runScoreWorkflow({
+  const result = await runScoreWorkflow({
     caseInput: { ...caseInput, caseId: "case-1" },
     caseDir,
     referenceRoot,
     artifactStore,
   });
 
-  const mergedAudit = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "rule-audit-merged.json"), "utf-8"),
-  );
+  const mergedAudit = (result.resultJson as { rule_audit_results?: Array<{ result: string }> })
+    .rule_audit_results;
 
   assert.equal(
-    mergedAudit.some((item: { result: string }) => item.result === "未接入判定器"),
+    mergedAudit?.some((item) => item.result === "未接入判定器"),
     false,
   );
 });
@@ -2192,4 +2200,7 @@ test("runScoreWorkflow fails the case when agent request fails", async (t) => {
   );
 
   await assert.rejects(fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"));
+  await fs.access(path.join(caseDir, "intermediate", "constraint-summary.json"));
+  await fs.access(path.join(caseDir, "opencode-sandbox", "generated"));
+  await fs.access(path.join(caseDir, "opencode-sandbox", "metadata"));
 });

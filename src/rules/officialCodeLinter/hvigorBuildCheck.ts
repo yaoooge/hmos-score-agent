@@ -26,21 +26,22 @@ type CommandResult = {
   durationMs: number;
 };
 
-const outputExcerptBytes = 64 * 1024;
+const stdoutExcerptBytes = 64 * 1024;
+const stderrExcerptBytes = 16 * 1024;
 
 function toPosixPath(value: string): string {
   return value.split(path.sep).join("/").replace(/\\/g, "/");
 }
 
-function excerptOutput(value: string): string | undefined {
+function excerptOutput(value: string, maxBytes: number): string | undefined {
   if (!value) {
     return undefined;
   }
   const buffer = Buffer.from(value, "utf-8");
-  if (buffer.length <= outputExcerptBytes) {
+  if (buffer.length <= maxBytes) {
     return value;
   }
-  return buffer.subarray(buffer.length - outputExcerptBytes).toString("utf-8");
+  return buffer.subarray(buffer.length - maxBytes).toString("utf-8");
 }
 
 function makeEmptySummary(input: {
@@ -156,6 +157,24 @@ async function findHvigorw(hvigorRunDir: string): Promise<string | undefined> {
   return undefined;
 }
 
+async function findOhpm(hvigorRunDir: string): Promise<string | undefined> {
+  const toolRoot = path.dirname(hvigorRunDir);
+  const candidates = [
+    path.join(toolRoot, "ohpm", "bin", "ohpm"),
+    path.join(toolRoot, "bin", "ohpm"),
+    path.join(toolRoot, "ohpm"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate, fsSync.constants.X_OK);
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 function runCommand(input: {
   command: string;
   args: string[];
@@ -181,8 +200,8 @@ function runCommand(input: {
       clearTimeout(timer);
       resolve({
         ...result,
-        stdout: excerptOutput(result.stdout) ?? "",
-        stderr: excerptOutput(result.stderr) ?? "",
+        stdout: excerptOutput(result.stdout, stdoutExcerptBytes) ?? "",
+        stderr: excerptOutput(result.stderr, stderrExcerptBytes) ?? "",
         durationMs: Date.now() - startedAt,
       });
     };
@@ -272,6 +291,40 @@ function commandArgsForModule(input: {
     "product=default",
     "--no-daemon",
   ];
+}
+
+function buildFinalSummary(input: {
+  enabled: boolean;
+  status: HvigorBuildCheckStatus;
+  hvigorRunDir?: string;
+  checkedModules: string[];
+  moduleResults: HvigorBuildCheckModuleResult[];
+  startedAt: number;
+  diagnostics?: string;
+}): HvigorBuildCheckSummary {
+  const hardGateTriggered = input.status === "failed" || input.status === "timeout";
+  return {
+    enabled: input.enabled,
+    status: input.status,
+    hvigorRunDir: input.hvigorRunDir,
+    checkedModules: input.checkedModules,
+    moduleResults: input.moduleResults,
+    hardGateTriggered,
+    scoreCap: hardGateTriggered ? 59 : undefined,
+    diagnostics:
+      input.diagnostics ??
+      (input.status === "success"
+        ? undefined
+        : input.status === "skipped"
+          ? "changed modules do not declare supported hvigor task types"
+          : `hvigor build check ${input.status}`),
+    durationMs: Date.now() - input.startedAt,
+    cleanup: {
+      attempted: false,
+      removedPaths: [],
+      failedPaths: [],
+    },
+  };
 }
 
 export async function runHvigorBuildCheck(
@@ -365,6 +418,11 @@ export async function runHvigorBuildCheck(
   }
 
   const moduleResults: HvigorBuildCheckModuleResult[] = [];
+  const compilableModules: Array<{
+    modulePath: string;
+    moduleName: string;
+    command: HvigorBuildCheckModuleResult["command"];
+  }> = [];
   for (const modulePath of modules) {
     const target = await detectHvigorModuleBuildTarget(input.workspaceDir, modulePath);
     const command = commandForTarget(target);
@@ -380,6 +438,63 @@ export async function runHvigorBuildCheck(
       });
       continue;
     }
+    compilableModules.push({ modulePath, moduleName, command });
+  }
+
+  if (compilableModules.length === 0) {
+    const summary = buildFinalSummary({
+      enabled: true,
+      status: "skipped",
+      hvigorRunDir: input.hvigorRunDir,
+      checkedModules: modules,
+      moduleResults,
+      startedAt,
+    });
+    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
+    summary.durationMs = Date.now() - startedAt;
+    return summary;
+  }
+
+  const ohpm = await findOhpm(input.hvigorRunDir);
+  if (!ohpm) {
+    const summary = makeEmptySummary({
+      enabled: true,
+      status: "tool_unavailable",
+      hvigorRunDir: input.hvigorRunDir,
+      checkedModules: modules,
+      durationMs: Date.now() - startedAt,
+      diagnostics: "ohpm is unavailable",
+      hardGateTriggered: true,
+      scoreCap: 59,
+    });
+    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
+    return summary;
+  }
+
+  const installResult = await runCommand({
+    command: ohpm,
+    args: ["install"],
+    cwd: input.workspaceDir,
+    timeoutMs: input.timeoutMs,
+  });
+  if (installResult.status !== "success") {
+    const status: HvigorBuildCheckStatus = installResult.status === "timeout" ? "timeout" : "failed";
+    const summary = makeEmptySummary({
+      enabled: true,
+      status,
+      hvigorRunDir: input.hvigorRunDir,
+      checkedModules: modules,
+      durationMs: Date.now() - startedAt,
+      diagnostics: `ohpm install ${installResult.status}`,
+      hardGateTriggered: true,
+      scoreCap: 59,
+    });
+    summary.moduleResults = [];
+    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
+    return summary;
+  }
+
+  for (const { command, moduleName, modulePath } of compilableModules) {
     const commandResult = await runCommand({
       command: hvigorw,
       args: commandArgsForModule({ command, moduleName }),
@@ -408,28 +523,14 @@ export async function runHvigorBuildCheck(
       : compiled.length > 0
         ? "success"
         : "skipped";
-  const hardGateTriggered = status === "failed" || status === "timeout";
-  const summary: HvigorBuildCheckSummary = {
+  const summary = buildFinalSummary({
     enabled: true,
     status,
     hvigorRunDir: input.hvigorRunDir,
     checkedModules: modules,
     moduleResults,
-    hardGateTriggered,
-    scoreCap: hardGateTriggered ? 59 : undefined,
-    diagnostics:
-      status === "success"
-        ? undefined
-        : status === "skipped"
-          ? "changed modules do not declare supported hvigor task types"
-          : `hvigor build check ${status}`,
-    durationMs: Date.now() - startedAt,
-    cleanup: {
-      attempted: false,
-      removedPaths: [],
-      failedPaths: [],
-    },
-  };
+    startedAt,
+  });
   summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
   summary.durationMs = Date.now() - startedAt;
   return summary;

@@ -1,5 +1,6 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { ArtifactStore } from "../io/artifactStore.js";
+import { pruneCompletedCaseArtifacts } from "../io/caseArtifactCleanup.js";
 import { CaseLogger } from "../io/caseLogger.js";
 import { formatElapsedDuration } from "../io/duration.js";
 import { artifactPostProcessNode } from "../nodes/artifactPostProcessNode.js";
@@ -354,6 +355,7 @@ export async function runScoreWorkflow(
   if ("caseInput" in input) {
     await logger.info(`本次用例评分耗时=${formatElapsedDuration(Date.now() - startedAt)}`);
   }
+  await pruneCompletedCaseArtifacts(input.caseDir);
 
   return result;
 }
@@ -361,11 +363,13 @@ export async function runScoreWorkflow(
 export async function runPreparedScoreWorkflow(
   input: PreparedWorkflowInput,
 ): Promise<Record<string, unknown>> {
-  return runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
+  const result = await runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
     const { logger, graph } = createCompiledScoreGraph(preparedInput, true);
     return runCompiledScoreGraph(logger, graph as never, {
       ...input.preparedState,
       caseDir: input.caseDir,
     });
   });
+  await pruneCompletedCaseArtifacts(input.caseDir);
+  return result;
 }
