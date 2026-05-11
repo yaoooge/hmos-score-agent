@@ -285,6 +285,7 @@ test("officialCodeLinterNode runs hvigor build check for changed modules and cle
     "product=default",
     "--no-daemon",
   ]);
+  assert.deepEqual(commandCalls[3], ["hvigor", "assembleApp", "--no-daemon"]);
 
   const artifactDir = path.join(caseDir, "intermediate", "code-linter");
   const hvigorSummary = JSON.parse(
@@ -294,6 +295,101 @@ test("officialCodeLinterNode runs hvigor build check for changed modules and cle
   await assert.rejects(fs.access(path.join(artifactDir, "workspace", ".hvigor")));
   await assert.rejects(fs.access(path.join(artifactDir, "workspace", "oh_modules")));
   await assert.rejects(fs.access(path.join(artifactDir, "workspace", "entry", "build")));
+});
+
+test("officialCodeLinterNode runs assembleApp after changed modules compile and marks baseline app failure", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-hvigor-app-fail-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const caseDir = path.join(root, "case-1");
+  const generated = path.join(root, "generated");
+  const runDir = path.join(root, "tools", "codelinter");
+  const hvigorRunDir = path.join(root, "tools", "hvigor");
+  const commandLogPath = path.join(root, "command-log.jsonl");
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
+  await fs.mkdir(hvigorRunDir, { recursive: true });
+  await fs.mkdir(path.join(root, "tools", "ohpm", "bin"), { recursive: true });
+  await fs.writeFile(path.join(generated, "entry", "hvigorfile.ts"), "export const hapTasks = [];\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "let a = 1;\n",
+  );
+  const fakeLinterBin = path.join(runDir, "bin", "codelinter");
+  await fs.writeFile(fakeLinterBin, "#!/usr/bin/env node\nconsole.log('[]');\n");
+  await fs.chmod(fakeLinterBin, 0o755);
+  const fakeOhpm = path.join(root, "tools", "ohpm", "bin", "ohpm");
+  await fs.writeFile(
+    fakeOhpm,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(commandLogPath)}, JSON.stringify(['ohpm', ...process.argv.slice(2)]) + '\\n');`,
+      "if (process.argv[2] === 'install') { process.exit(0); }",
+      "process.exit(1);",
+    ].join("\n"),
+  );
+  await fs.chmod(fakeOhpm, 0o755);
+  const fakeHvigorw = path.join(hvigorRunDir, "hvigorw");
+  await fs.writeFile(
+    fakeHvigorw,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(commandLogPath)}, JSON.stringify(['hvigor', ...process.argv.slice(2)]) + '\\n');`,
+      "if (process.argv[2] === '--version') { console.log('hvigor 1.0.0'); process.exit(0); }",
+      "if (process.argv[2] === 'assembleApp') { console.error('baseline app compile failed'); process.exit(7); }",
+      "console.log('module build ok');",
+      "process.exit(0);",
+    ].join("\n"),
+  );
+  await fs.chmod(fakeHvigorw, 0o755);
+
+  const result = await officialCodeLinterNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-1",
+        promptText: "",
+        originalProjectPath: generated,
+        generatedProjectPath: generated,
+      },
+      hasPatch: true,
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 0,
+        changedFileCount: 1,
+        changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+        hasPatch: true,
+      },
+    } as ScoreGraphState,
+    { enabled: true, runDir, hvigorRunDir, timeoutMs: 120000, hvigorTimeoutMs: 120000 },
+  );
+
+  assert.equal(result.hvigorBuildCheckStatus, "failed");
+  assert.equal(result.hvigorBuildCheckSummary?.hardGateTriggered, true);
+  assert.equal(result.hvigorBuildCheckSummary?.scoreCap, 59);
+  const appResult = result.hvigorBuildCheckSummary?.moduleResults.find(
+    (item) => item.command === "assembleApp",
+  );
+  assert.equal(appResult?.modulePath, ".");
+  assert.equal(appResult?.moduleName, "app");
+  assert.equal(appResult?.status, "failed");
+  assert.match(appResult?.stderrExcerpt ?? "", /baseline app compile failed/);
+  assert.match(result.hvigorBuildCheckSummary?.diagnostics ?? "", /整包 assembleApp 编译失败/);
+  assert.match(result.hvigorBuildCheckSummary?.diagnostics ?? "", /原代码问题，非新增修改引入/);
+  const commandCalls = (await fs.readFile(commandLogPath, "utf-8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[]);
+  assert.deepEqual(commandCalls.at(-1), ["hvigor", "assembleApp", "--no-daemon"]);
+
+  const artifactDir = path.join(caseDir, "intermediate", "code-linter");
+  const hvigorSummary = JSON.parse(
+    await fs.readFile(path.join(artifactDir, "hvigor-summary.json"), "utf-8"),
+  ) as { diagnostics?: string };
+  assert.match(hvigorSummary.diagnostics ?? "", /原代码问题，非新增修改引入/);
 });
 
 test("officialCodeLinterNode truncates long hvigor stderr excerpts", async (t) => {
@@ -453,6 +549,7 @@ test("officialCodeLinterNode marks hvigor failure as a hard gate", async (t) => 
   const generated = path.join(root, "generated");
   const runDir = path.join(root, "tools", "codelinter");
   const hvigorRunDir = path.join(root, "tools", "hvigor");
+  const commandLogPath = path.join(root, "command-log.jsonl");
   await fs.mkdir(path.join(generated, "features", "feature1", "src", "main", "ets"), {
     recursive: true,
   });
@@ -473,7 +570,13 @@ test("officialCodeLinterNode marks hvigor failure as a hard gate", async (t) => 
   const fakeOhpm = path.join(root, "tools", "ohpm", "bin", "ohpm");
   await fs.writeFile(
     fakeOhpm,
-    "#!/usr/bin/env node\nif (process.argv[2] === 'install') { process.exit(0); }\nprocess.exit(1);\n",
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(commandLogPath)}, JSON.stringify(['ohpm', ...process.argv.slice(2)]) + '\\n');`,
+      "if (process.argv[2] === 'install') { process.exit(0); }",
+      "process.exit(1);",
+    ].join("\n"),
   );
   await fs.chmod(fakeOhpm, 0o755);
   const fakeHvigorw = path.join(hvigorRunDir, "hvigorw");
@@ -481,7 +584,13 @@ test("officialCodeLinterNode marks hvigor failure as a hard gate", async (t) => 
     fakeHvigorw,
     [
       "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      `fs.appendFileSync(${JSON.stringify(commandLogPath)}, JSON.stringify(['hvigor', ...process.argv.slice(2)]) + '\\n');`,
       "if (process.argv[2] === '--version') { console.log('hvigor 1.0.0'); process.exit(0); }",
+      "fs.mkdirSync(path.join(process.cwd(), '.hvigor'), { recursive: true });",
+      "fs.mkdirSync(path.join(process.cwd(), 'oh_modules'), { recursive: true });",
+      "fs.mkdirSync(path.join(process.cwd(), 'features', 'feature1', 'build'), { recursive: true });",
       "console.error('compile failed');",
       "process.exit(7);",
     ].join("\n"),
@@ -514,6 +623,16 @@ test("officialCodeLinterNode marks hvigor failure as a hard gate", async (t) => 
   assert.equal(result.hvigorBuildCheckSummary?.scoreCap, 59);
   assert.equal(result.hvigorBuildCheckSummary?.moduleResults[0]?.command, "assembleHar");
   assert.equal(result.hvigorBuildCheckSummary?.moduleResults[0]?.modulePath, "features/feature1");
+  const commandCalls = (await fs.readFile(commandLogPath, "utf-8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[]);
+  assert.equal(commandCalls.some((call) => call[1] === "assembleApp"), false);
+  const artifactDir = path.join(caseDir, "intermediate", "code-linter");
+  await fs.access(path.join(artifactDir, "hvigor-summary.json"));
+  await fs.access(path.join(artifactDir, "workspace", ".hvigor"));
+  await fs.access(path.join(artifactDir, "workspace", "oh_modules"));
+  await fs.access(path.join(artifactDir, "workspace", "features", "feature1", "build"));
 });
 
 test("officialCodeLinterNode writes only effective findings and diagnostics outside workspace", async (t) => {

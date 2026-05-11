@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import Ajv2020 from "ajv/dist/2020.js";
 import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
 import { ArtifactStore } from "../src/io/artifactStore.js";
+import { pruneCompletedCaseArtifacts } from "../src/io/caseArtifactCleanup.js";
 import { loadCaseFromPath } from "../src/io/caseLoader.js";
 import { inputClassificationNode } from "../src/nodes/inputClassificationNode.js";
 import { artifactPostProcessNode } from "../src/nodes/artifactPostProcessNode.js";
@@ -1787,6 +1788,30 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
   await assert.rejects(
     fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"),
   );
+});
+
+test("pruneCompletedCaseArtifacts preserves code-linter diagnostics when requested", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const artifactStore = new ArtifactStore(localCaseRoot);
+  const caseDir = await artifactStore.ensureCaseDir("case-keep-code-linter");
+  await fs.mkdir(path.join(caseDir, "intermediate", "code-linter", "workspace", "entry"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(caseDir, "intermediate", "code-linter", "workspace", "entry", "Index.ets"),
+    "let value: number = 1;\n",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"),
+    "{\"status\":\"failed\"}\n",
+  );
+  await fs.writeFile(path.join(caseDir, "intermediate", "temporary.json"), "{}\n");
+
+  await pruneCompletedCaseArtifacts(caseDir, { keepCodeLinterDiagnostics: true });
+
+  await fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace", "entry", "Index.ets"));
+  await fs.access(path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"));
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "temporary.json")), /ENOENT/);
 });
 
 test("runScoreWorkflow writes artifacts and produces schema-valid result json", async (t) => {

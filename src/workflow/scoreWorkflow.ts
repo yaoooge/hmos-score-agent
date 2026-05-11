@@ -240,6 +240,10 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
   };
 }
 
+function shouldKeepCodeLinterDiagnostics(result: Record<string, unknown>): boolean {
+  return result.hvigorBuildCheckStatus === "failed" || result.hvigorBuildCheckStatus === "timeout";
+}
+
 async function createOpencodeWorkflowRuntime(): Promise<OpencodeWorkflowRuntime> {
   await ensureOpencodeCliAvailable();
   const runtime = await createOpencodeRuntimeConfig({ repoRoot: process.cwd() });
@@ -355,7 +359,9 @@ export async function runScoreWorkflow(
   if ("caseInput" in input) {
     await logger.info(`本次用例评分耗时=${formatElapsedDuration(Date.now() - startedAt)}`);
   }
-  await pruneCompletedCaseArtifacts(input.caseDir);
+  await pruneCompletedCaseArtifacts(input.caseDir, {
+    keepCodeLinterDiagnostics: shouldKeepCodeLinterDiagnostics(result),
+  });
 
   return result;
 }
@@ -370,6 +376,8 @@ export async function runPreparedScoreWorkflow(
       caseDir: input.caseDir,
     });
   });
-  await pruneCompletedCaseArtifacts(input.caseDir);
+  await pruneCompletedCaseArtifacts(input.caseDir, {
+    keepCodeLinterDiagnostics: shouldKeepCodeLinterDiagnostics(result),
+  });
   return result;
 }

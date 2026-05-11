@@ -466,9 +466,27 @@ function buildHvigorBuildRisk(summary: HvigorBuildCheckSummary): RiskItem {
     id: 0,
     level: "high",
     title: "工程编译校验未通过",
-    description: `hvigor 编译校验状态为 ${summary.status}，涉及模块：${moduleText}。`,
+    description: `hvigor 编译校验状态为 ${summary.status}，涉及模块：${moduleText}。${
+      summary.diagnostics ? ` ${summary.diagnostics}` : ""
+    }`,
     evidence: summary.diagnostics ?? moduleText,
   };
+}
+
+function buildHvigorBuildConclusionDetail(summary?: HvigorBuildCheckSummary): string | undefined {
+  const appFailure = summary?.moduleResults.find(
+    (result) =>
+      result.command === "assembleApp" &&
+      (result.status === "failed" || result.status === "timeout"),
+  );
+  if (!appFailure) {
+    return undefined;
+  }
+  return (
+    summary?.diagnostics ??
+    appFailure.diagnostics ??
+    "整包 assembleApp 编译未通过：组件包可编译，但整包编译未通过，判断为原代码问题，非新增修改引入。"
+  );
 }
 
 export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): ScoreComputation {
@@ -635,6 +653,9 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     ...triggeredGateIds,
     ...(hvigorHardGateTriggered ? ["BUILD-CHECK"] : []),
   ];
+  const hvigorConclusionDetail = hvigorHardGateTriggered
+    ? buildHvigorBuildConclusionDetail(input.hvigorBuildCheckSummary)
+    : undefined;
   const uncertainHardGateCandidates = selectUncertainHardGateCandidates(input);
   const humanReviewItems: HumanReviewItem[] =
     input.rubricAgentRunStatus === "success"
@@ -677,7 +698,9 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
       hard_gate_triggered: hardGateReasons.length > 0,
       summary:
         hardGateReasons.length > 0
-          ? `已完成 rubric 基础评分与规则修正融合，并触发硬门槛：${hardGateReasons.join(", ")}。`
+          ? `已完成 rubric 基础评分与规则修正融合，并触发硬门槛：${hardGateReasons.join(", ")}。${
+              hvigorConclusionDetail ? ` ${hvigorConclusionDetail}` : ""
+            }`
           : "已完成 rubric 基础评分与规则修正融合。",
     },
     dimensionScores,

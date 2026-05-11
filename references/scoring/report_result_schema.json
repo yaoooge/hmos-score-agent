@@ -886,7 +886,8 @@
                 "enum": [
                   "assembleHar",
                   "assembleHap",
-                  "assembleHsp"
+                  "assembleHsp",
+                  "assembleApp"
                 ]
               },
               "status": {

@@ -644,20 +644,30 @@ test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fa
       enabled: true,
       status: "failed",
       hvigorRunDir: "/tools/hvigor",
-      checkedModules: ["features/feature1"],
+      checkedModules: ["entry"],
       hardGateTriggered: true,
       scoreCap: 59,
-      diagnostics: "hvigor build check failed",
+      diagnostics: "整包 assembleApp 编译失败：组件包可编译，但整包编译未通过，判断为原代码问题，非新增修改引入。",
       durationMs: 1000,
       moduleResults: [
         {
-          modulePath: "features/feature1",
-          moduleName: "feature1",
-          command: "assembleHar",
+          modulePath: "entry",
+          moduleName: "entry",
+          command: "assembleHap",
+          status: "success",
+          exitCode: 0,
+          durationMs: 500,
+        },
+        {
+          modulePath: ".",
+          moduleName: "app",
+          command: "assembleApp",
           status: "failed",
           exitCode: 7,
-          durationMs: 1000,
-          stderrExcerpt: "compile failed",
+          durationMs: 500,
+          stderrExcerpt: "baseline app compile failed",
+          diagnostics:
+            "整包 assembleApp 编译失败：组件包可编译，但整包编译未通过，判断为原代码问题，非新增修改引入。",
         },
       ],
       cleanup: {
@@ -671,5 +681,7 @@ test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fa
   assert.equal(result.totalScore, 59);
   assert.equal(result.hardGateTriggered, true);
   assert.match(result.hardGateReason ?? "", /BUILD-CHECK/);
+  assert.match(result.overallConclusion.summary, /原代码问题，非新增修改引入/);
   assert.ok(result.risks.some((risk) => /编译/.test(`${risk.title}${risk.description}`)));
+  assert.ok(result.risks.some((risk) => /原代码问题，非新增修改引入/.test(risk.evidence)));
 });

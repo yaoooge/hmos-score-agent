@@ -3,6 +3,11 @@ import path from "node:path";
 
 const CASE_DIR_KEEP_ENTRIES = new Set(["inputs", "outputs", "logs", "opencode-sandbox"]);
 const OPENCODE_SANDBOX_KEEP_ENTRIES = new Set(["metadata", "patch"]);
+const INTERMEDIATE_CODE_LINTER_KEEP_ENTRIES = new Set(["workspace", "hvigor-summary.json"]);
+
+type PruneCompletedCaseArtifactsOptions = {
+  keepCodeLinterDiagnostics?: boolean;
+};
 
 async function pruneDirectoryChildren(root: string, keepEntries: Set<string>): Promise<void> {
   let entries: Array<{ name: string }>;
@@ -23,8 +28,21 @@ async function pruneDirectoryChildren(root: string, keepEntries: Set<string>): P
   );
 }
 
-export async function pruneCompletedCaseArtifacts(caseDir: string): Promise<void> {
-  await pruneDirectoryChildren(caseDir, CASE_DIR_KEEP_ENTRIES);
+export async function pruneCompletedCaseArtifacts(
+  caseDir: string,
+  options: PruneCompletedCaseArtifactsOptions = {},
+): Promise<void> {
+  const caseDirKeepEntries = options.keepCodeLinterDiagnostics
+    ? new Set([...CASE_DIR_KEEP_ENTRIES, "intermediate"])
+    : CASE_DIR_KEEP_ENTRIES;
+  await pruneDirectoryChildren(caseDir, caseDirKeepEntries);
+  if (options.keepCodeLinterDiagnostics) {
+    await pruneDirectoryChildren(path.join(caseDir, "intermediate"), new Set(["code-linter"]));
+    await pruneDirectoryChildren(
+      path.join(caseDir, "intermediate", "code-linter"),
+      INTERMEDIATE_CODE_LINTER_KEEP_ENTRIES,
+    );
+  }
   await pruneDirectoryChildren(
     path.join(caseDir, "opencode-sandbox"),
     OPENCODE_SANDBOX_KEEP_ENTRIES,

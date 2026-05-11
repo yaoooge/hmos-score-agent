@@ -277,6 +277,18 @@ async function cleanupBuildArtifacts(
   };
 }
 
+async function applyCleanupPolicy(
+  summary: HvigorBuildCheckSummary,
+  workspaceDir: string,
+  modulePaths: string[],
+): Promise<HvigorBuildCheckSummary> {
+  if (summary.status === "failed" || summary.status === "timeout") {
+    return summary;
+  }
+  summary.cleanup = await cleanupBuildArtifacts(workspaceDir, modulePaths);
+  return summary;
+}
+
 function commandArgsForModule(input: {
   command: HvigorBuildCheckModuleResult["command"];
   moduleName: string;
@@ -291,6 +303,15 @@ function commandArgsForModule(input: {
     "product=default",
     "--no-daemon",
   ];
+}
+
+function commandArgsForApp(): string[] {
+  return ["assembleApp", "--no-daemon"];
+}
+
+function appBuildFailureDiagnostics(status: "failed" | "timeout"): string {
+  const reason = status === "timeout" ? "超时" : "失败";
+  return `整包 assembleApp 编译${reason}：组件包可编译，但整包编译未通过，判断为原代码问题，非新增修改引入。`;
 }
 
 function buildFinalSummary(input: {
@@ -361,8 +382,7 @@ export async function runHvigorBuildCheck(
       durationMs: Date.now() - startedAt,
       diagnostics: "no changed HarmonyOS module under src/main",
     });
-    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, []);
-    return summary;
+    return applyCleanupPolicy(summary, input.workspaceDir, []);
   }
 
   if (!input.hvigorRunDir) {
@@ -375,8 +395,7 @@ export async function runHvigorBuildCheck(
       hardGateTriggered: true,
       scoreCap: 59,
     });
-    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
-    return summary;
+    return applyCleanupPolicy(summary, input.workspaceDir, modules);
   }
 
   const hvigorw = await findHvigorw(input.hvigorRunDir);
@@ -391,8 +410,7 @@ export async function runHvigorBuildCheck(
       hardGateTriggered: true,
       scoreCap: 59,
     });
-    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
-    return summary;
+    return applyCleanupPolicy(summary, input.workspaceDir, modules);
   }
 
   const versionResult = await runCommand({
@@ -413,8 +431,7 @@ export async function runHvigorBuildCheck(
       hardGateTriggered: true,
       scoreCap: 59,
     });
-    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
-    return summary;
+    return applyCleanupPolicy(summary, input.workspaceDir, modules);
   }
 
   const moduleResults: HvigorBuildCheckModuleResult[] = [];
@@ -450,9 +467,8 @@ export async function runHvigorBuildCheck(
       moduleResults,
       startedAt,
     });
-    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
     summary.durationMs = Date.now() - startedAt;
-    return summary;
+    return applyCleanupPolicy(summary, input.workspaceDir, modules);
   }
 
   const ohpm = await findOhpm(input.hvigorRunDir);
@@ -467,8 +483,7 @@ export async function runHvigorBuildCheck(
       hardGateTriggered: true,
       scoreCap: 59,
     });
-    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
-    return summary;
+    return applyCleanupPolicy(summary, input.workspaceDir, modules);
   }
 
   const installResult = await runCommand({
@@ -490,8 +505,7 @@ export async function runHvigorBuildCheck(
       scoreCap: 59,
     });
     summary.moduleResults = [];
-    summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
-    return summary;
+    return applyCleanupPolicy(summary, input.workspaceDir, modules);
   }
 
   for (const { command, moduleName, modulePath } of compilableModules) {
@@ -513,6 +527,33 @@ export async function runHvigorBuildCheck(
     });
   }
 
+  const componentFailed = moduleResults.find((result) => result.status === "failed");
+  const componentTimedOut = moduleResults.find((result) => result.status === "timeout");
+  const componentCompiled = moduleResults.filter((result) => result.status !== "skipped");
+  if (!componentFailed && !componentTimedOut && componentCompiled.length > 0) {
+    const appCommandResult = await runCommand({
+      command: hvigorw,
+      args: commandArgsForApp(),
+      cwd: input.workspaceDir,
+      timeoutMs: input.timeoutMs,
+    });
+    const appDiagnostics =
+      appCommandResult.status === "failed" || appCommandResult.status === "timeout"
+        ? appBuildFailureDiagnostics(appCommandResult.status)
+        : undefined;
+    moduleResults.push({
+      modulePath: ".",
+      moduleName: "app",
+      command: "assembleApp",
+      status: appCommandResult.status,
+      exitCode: appCommandResult.exitCode,
+      durationMs: appCommandResult.durationMs,
+      stdoutExcerpt: appCommandResult.stdout,
+      stderrExcerpt: appCommandResult.stderr,
+      diagnostics: appDiagnostics,
+    });
+  }
+
   const failed = moduleResults.find((result) => result.status === "failed");
   const timedOut = moduleResults.find((result) => result.status === "timeout");
   const compiled = moduleResults.filter((result) => result.status !== "skipped");
@@ -523,6 +564,10 @@ export async function runHvigorBuildCheck(
       : compiled.length > 0
         ? "success"
         : "skipped";
+  const diagnostics =
+    (failed?.command === "assembleApp" || timedOut?.command === "assembleApp"
+      ? (failed ?? timedOut)?.diagnostics
+      : undefined) ?? undefined;
   const summary = buildFinalSummary({
     enabled: true,
     status,
@@ -530,8 +575,8 @@ export async function runHvigorBuildCheck(
     checkedModules: modules,
     moduleResults,
     startedAt,
+    diagnostics,
   });
-  summary.cleanup = await cleanupBuildArtifacts(input.workspaceDir, modules);
   summary.durationMs = Date.now() - startedAt;
-  return summary;
+  return applyCleanupPolicy(summary, input.workspaceDir, modules);
 }

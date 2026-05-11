@@ -153,7 +153,7 @@ export type HvigorBuildCheckStatus =
 export interface HvigorBuildCheckModuleResult {
   modulePath: string;
   moduleName: string;
-  command: "assembleHar" | "assembleHap" | "assembleHsp";
+  command: "assembleHar" | "assembleHap" | "assembleHsp" | "assembleApp";
   status: "success" | "failed" | "timeout" | "skipped";
   exitCode?: number;
   durationMs: number;
