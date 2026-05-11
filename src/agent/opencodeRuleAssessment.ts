@@ -71,6 +71,7 @@ function retryFailureGuidance(reason: string): string[] {
     "协议错误修复清单:",
     `- listed protocol errors: ${summarizeRetryFailureReason(reason)}`,
     "- 只修复 listed protocol errors，禁止重新判定，禁止改变未列出的 rule 判断。",
+    "- 若 listed protocol errors 指向结论不相关，按 hmos-rule-assessment skill 重新判定相关 rule_id，并只改动这些 rule_id。",
   ];
   if (reason.includes("missing=")) {
     guidance.push("- missing: 只补齐列出的候选 rule_id；无法确认时 decision=\"uncertain\" 且 needs_human_review=true。");
@@ -164,6 +165,7 @@ function renderRuleAssessmentPrompt(input: {
     "5. 未接入静态判定器本身不是人工复核理由；它只表示该候选规则需要你阅读 patch/generated/original 后做语义判定。",
     "6. 新增代码未发现该规则相关问题时，必须输出 decision=\"pass\" 且 needs_human_review=false，不要因为 local_preliminary_signal 或 why_uncertain 包含“未接入静态判定器”而输出 uncertain。",
     "7. evidence_used 只能填写 sandbox 内相对路径，例如 generated/、original/、patch/、metadata/ 下的路径。",
+    "8. 输出前按 hmos-rule-assessment skill 自检结论相关性；发现不相关时重新判定对应 rule_id。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",

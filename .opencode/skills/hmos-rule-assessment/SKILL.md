@@ -22,6 +22,8 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 如果你阅读新增代码、补丁和必要上下文后未发现该候选规则相关问题，必须输出 `decision="pass"` 且 `needs_human_review=false`。
 - 无法确认时使用 `decision="uncertain"`，并设置 `needs_human_review=true`。
 - `evidence_used` 只能填写 sandbox `generated/`、`original/`、`patch/`、`metadata/` 下的相对路径。
+- 输出 JSON 后必须再进行一轮结论相关性检视：逐条核对 `rule_id`、候选规则语义、任务期望、`decision`、`reason` 和 `evidence_used` 是否一致。
+- 若发现 `reason` 与候选规则语义、任务期望或 `evidence_used` 不相关，例如期望声明路由与系统权限但 `reason` 却写表单重置完整，必须重新阅读该候选规则并重新判定后再写入最终 JSON。
 
 ## References
 
@@ -79,6 +81,7 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 已按鸿蒙工程语境检查 HarmonyOS / OpenHarmony 特性、ArkTS / ArkUI 语法及用法、Kit / API 使用方式、权限能力声明和 API 兼容性。
 - 已结合用户用例或规则语义检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
 - 每个 `reason` 都不是孤立片段结论，而是基于候选规则、相关上下文和完整功能链路的判定依据。
+- 每个 `reason` 都与对应候选规则语义、任务期望、`decision` 和 `evidence_used` 直接相关；若不相关，已重新判定该条规则。
 - `decision`、`confidence`、`overall_confidence` 均为允许枚举。
 - `evidence_used` 是字符串数组。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
