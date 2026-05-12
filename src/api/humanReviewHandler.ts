@@ -216,9 +216,6 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
       return `itemReviews[${String(index)}].agree is required or invalid`;
     }
     if (itemReview.agree === false) {
-      if (typeof itemReview.correctedAssessment !== "string" || itemReview.correctedAssessment.trim().length === 0) {
-        return `itemReviews[${String(index)}].correctedAssessment is required when agree is false`;
-      }
       if (typeof itemReview.reason !== "string" || itemReview.reason.trim().length === 0) {
         return `itemReviews[${String(index)}].reason is required when agree is false`;
       }
@@ -310,7 +307,6 @@ async function appendItemReviewCalibrationSamples(input: {
       resultReviewItem,
       humanReview: {
         agree: review.agree,
-        correctedAssessment: review.correctedAssessment,
         reason: review.reason,
         overallComment: hasNonEmptyString(input.payload.overallComment)
           ? input.payload.overallComment

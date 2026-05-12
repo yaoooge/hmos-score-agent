@@ -60,7 +60,6 @@ Content-Type: application/json
     {
       "itemId": 1,
       "agree": false,
-      "correctedAssessment": "none",
       "reason": "该证据不足，不应触发硬门槛。"
     }
   ],
@@ -84,7 +83,6 @@ Content-Type: application/json
 | `itemReviews` | array | 否 | 对 `result.json.human_review_items[]` 的逐条复核。 |
 | `itemReviews[].itemId` | number | 是 | 复核项 ID。缺少 ID 的历史结果按数组位置从 1 映射。 |
 | `itemReviews[].agree` | boolean | 是 | 是否同意当前复核项判断。 |
-| `itemReviews[].correctedAssessment` | string | 条件必填 | `agree=false` 时必填。 |
 | `itemReviews[].reason` | string | 条件必填 | `agree=false` 时必填。 |
 | `riskReviews` | array | 否 | 对 `result.json.risks[]` 的风险等级复核。 |
 | `riskReviews[].riskId` | number | 是 | 风险项 ID。缺少 ID 的历史结果按数组位置从 1 映射。 |
@@ -105,13 +103,12 @@ Content-Type: application/json
 - 同一个请求中 `itemId` 不能重复，`riskId` 不能重复。
 - `agree` 必须是 boolean。
 - `agree=false` 时，必须提供非空 `reason`。
-- `itemReviews[].agree=false` 时，必须提供非空 `correctedAssessment`。
 - `riskReviews[].agree=false` 时，必须提供合法 `correctedLevel`。
 - 提交的 `itemId` 必须能匹配 `result.json.human_review_items[]`。
 - 提交的 `riskId` 必须能匹配 `result.json.risks[]`。
-- 如果 `result.json` 已存在 `human_review_revision.applied=true`，再次提交会返回 `409`。
+- 如果 `result.json` 已存在 `human_review_revision`，再次提交会直接覆盖为最新复核结果，不保留历史 revision。
 
-当前简化协议不再要求客户端回传原始 `resultAssessment` 或 `resultLevel`。服务端以 `id` 从 `result.json` 读取当前结果，避免前端重复传输展示值。
+当前简化协议不再要求客户端回传原始判断、原始风险等级或评分项修正结论。服务端以 `id` 从 `result.json` 读取当前结果，避免前端重复传输展示值。
 
 ## 服务端处理流程
 
@@ -248,28 +245,11 @@ corrected_delta = original_score_delta / original_weight * corrected_weight
 
 如果风险项没有 `score_effect`，人工改等级只会记录复核结果，不参与分数重算。
 
-### 复核项重算
+### 复核项记录
 
-`human_review_items[].score_effect` 当前支持：
+`itemReviews` 当前只表达人工是否同意复核项，以及不同意时的原因。服务端不再要求或读取评分项修正结论，因此评分项复核不会根据 `human_review_items[].score_effect` 改写 hard gate 或规则扣分。
 
-| 类型 | 行为 |
-| --- | --- |
-| `hard_gate` | 根据 `correctedAssessment` 重算 hard gate 是否成立。 |
-| `rule_result` | 根据 `correctedAssessment` 重算关联规则是否保留扣分。 |
-
-`hard_gate` 的 `correctedAssessment` 可以是：
-
-- `none`：取消该 hard gate。
-- `G1`、`G2`、`G3`、`G4` 或逗号分隔列表：设置生效的 hard gate。
-
-`rule_result` 的 `correctedAssessment` 可以是：
-
-- `满足`
-- `不满足`
-- `不涉及`
-- `待人工复核`
-
-其中 `不满足` 保留规则扣分，`满足` / `不涉及` / `待人工复核` 会移除或暂停规则扣分。
+风险项复核仍支持通过 `correctedLevel` 触发风险等级相关的分数重算。
 
 ### 评分项档位收敛
 

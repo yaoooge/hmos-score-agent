@@ -233,7 +233,7 @@ test("human review evidence store writes datasets without extra sample ids", asy
     taskId: 88,
     testCaseId: 188,
     itemId: 1,
-    humanReview: { correctedAssessment: "不要用 mockData 替代真实接口。" },
+    humanReview: { agree: false, reason: "不要用 mockData 替代真实接口。" },
   });
 
   const datasetLines = (
@@ -402,7 +402,6 @@ test("submit human review handler writes simplified item review calibration samp
         {
           itemId: 1,
           agree: false,
-          correctedAssessment: "确认使用 mockData 替代真实接口。",
           reason: "代码中存在 const mockData = []。",
         },
       ],
@@ -447,7 +446,6 @@ test("submit human review handler writes simplified item review calibration samp
   });
   assert.deepEqual(samples[0]?.humanReview, {
     agree: false,
-    correctedAssessment: "确认使用 mockData 替代真实接口。",
     reason: "代码中存在 const mockData = []。",
     overallComment: "Agent 未发现异常态缺少 toast 提示。",
   });
@@ -509,7 +507,7 @@ test("submit human review handler recalculates scores from risk level review", a
   );
 });
 
-test("submit human review handler recalculates score cap from hard gate item review", async (t) => {
+test("submit human review handler records item review without corrected assessment", async (t) => {
   const { registry, caseDir } = await writeRecalculableCompletedTask(t);
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
@@ -522,7 +520,6 @@ test("submit human review handler recalculates score cap from hard gate item rev
         {
           itemId: 1,
           agree: false,
-          correctedAssessment: "none",
           reason: "该 forbidden_pattern 证据不足，不应触发 G3。",
         },
       ],
@@ -531,21 +528,79 @@ test("submit human review handler recalculates score cap from hard gate item rev
   );
 
   assert.equal(state.statusCode, 200);
-  assert.equal((state.body?.summary as Record<string, unknown>).scoreRecalculationApplied, true);
-  assert.equal((state.body?.summary as Record<string, unknown>).originalTotalScore, 70);
-  assert.equal((state.body?.summary as Record<string, unknown>).revisedTotalScore, 80);
+  assert.equal(Object.hasOwn(state.body?.summary as Record<string, unknown>, "scoreRecalculationApplied"), false);
 
   const resultJson = JSON.parse(
     await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
   ) as Record<string, unknown>;
   assert.deepEqual(resultJson.overall_conclusion, {
-    total_score: 80,
-    hard_gate_triggered: false,
-    summary: "已根据人工逐条复核重新计分：70 -> 80。",
+    total_score: 70,
+    hard_gate_triggered: true,
+    summary: "自动评分命中 G3，应用 70 分 cap。",
   });
   const revision = resultJson.human_review_revision as Record<string, unknown>;
   const itemReviews = revision.item_reviews as Array<Record<string, unknown>>;
-  assert.equal(itemReviews[0]?.score_effect_applied, true);
+  assert.deepEqual(itemReviews[0], {
+    itemId: 1,
+    agree: false,
+    reason: "该 forbidden_pattern 证据不足，不应触发 G3。",
+    score_effect_applied: false,
+  });
+});
+
+test("submit human review handler allows repeated review and overwrites latest revision", async (t) => {
+  const { registry, caseDir } = await writeRecalculableCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+
+  const first = createResponse();
+  await handler(
+    createReviewRequest(88, undefined, {
+      reviewer: "alice",
+      riskReviews: [
+        {
+          riskId: 1,
+          agree: false,
+          correctedLevel: "medium",
+          reason: "风险存在，但影响范围低于 high。",
+        },
+      ],
+    }) as never,
+    first.response as never,
+  );
+  assert.equal(first.state.statusCode, 200);
+
+  const second = createResponse();
+  await handler(
+    createReviewRequest(88, undefined, {
+      reviewer: "bob",
+      itemReviews: [
+        {
+          itemId: 1,
+          agree: false,
+          reason: "二次复核仅确认人工复核项不同意。",
+        },
+      ],
+    }) as never,
+    second.response as never,
+  );
+
+  assert.equal(second.state.statusCode, 200);
+  const resultJson = JSON.parse(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  const revision = resultJson.human_review_revision as Record<string, unknown>;
+  assert.equal(revision.reviewer, "bob");
+  assert.deepEqual(revision.risk_reviews, []);
+  assert.deepEqual(revision.item_reviews, [
+    {
+      itemId: 1,
+      agree: false,
+      reason: "二次复核仅确认人工复核项不同意。",
+      score_effect_applied: false,
+    },
+  ]);
 });
 
 test("submit human review handler keeps pending hard gate candidates inactive during unrelated review", async (t) => {

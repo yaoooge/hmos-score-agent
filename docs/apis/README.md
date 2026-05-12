@@ -42,11 +42,10 @@
 | `itemReviews` | array | 逐条评分项复核。 |
 | `riskReviews` | array | 风险项复核。 |
 | `agree` | boolean | 是否同意系统当前判断或风险等级。 |
-| `correctedAssessment` | string | 不同意评分项判断时填写的新结论。 |
 | `correctedLevel` | enum | 不同意风险等级时填写的新等级：`high`、`medium`、`low`、`none`。 |
 | `reason` | string | 不同意时必填的原因。 |
 
-提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的条目进行重算。响应 `summary` 会返回逐项复核数量、数据集写入数量和 `hasOverallComment`；发生分数变化时额外返回重算前后总分和变更计数。
+提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的风险项进行重算。再次提交会覆盖 `result.json` 中的最新 `human_review_revision`。响应 `summary` 会返回逐项复核数量、数据集写入数量和 `hasOverallComment`；发生分数变化时额外返回重算前后总分和变更计数。
 
 ## 人工评级
 

@@ -41,17 +41,11 @@ type DimensionResult = Record<string, unknown> & {
 };
 
 const RISK_LEVELS = new Set(["high", "medium", "low", "none"]);
-const RULE_RESULTS = new Set(["满足", "不满足", "不涉及", "待人工复核"]);
-
 export function applyHumanReviewRecalculation(input: {
   resultJson: Record<string, unknown>;
   payload: HumanReviewSubmissionPayload;
   reviewedAt: string;
 }): HumanReviewRecalculationResult | HumanReviewRecalculationError {
-  if (hasAppliedHumanReview(input.resultJson)) {
-    return { status: 409, message: "Human review has already been applied" };
-  }
-
   const resultJson = cloneJson(input.resultJson);
   const originalTotalScore = readTotalScore(resultJson);
   if (originalTotalScore === undefined) {
@@ -62,43 +56,15 @@ export function applyHumanReviewRecalculation(input: {
   const touchedRuleIds = new Set<string>();
   let applied = false;
   let changedRiskCount = 0;
-  let changedItemReviewCount = 0;
+  const changedItemReviewCount = 0;
 
   const itemReviewEffects: Array<Record<string, unknown>> = [];
   for (const review of input.payload.itemReviews ?? []) {
-    const resultItem = findArrayItemById(resultJson.human_review_items, review.itemId);
-    const effect = asRecord(resultItem?.score_effect);
-    let effectApplied = false;
-    if (effect) {
-      const validation = validateItemReviewEffect(review, effect);
-      if (validation) {
-        return validation;
-      }
-      const ruleIds = readStringArray(effect.rule_ids);
-      for (const ruleId of ruleIds) {
-        if (touchedRuleIds.has(ruleId)) {
-          return { status: 400, message: `rule_id ${ruleId} is reviewed more than once` };
-        }
-        touchedRuleIds.add(ruleId);
-      }
-      if (effect.type === "hard_gate") {
-        applyHardGateReview(review.correctedAssessment, effect, activeGateCaps);
-        effectApplied = !review.agree;
-      } else if (effect.type === "rule_result") {
-        applyRuleResultReview(resultJson, review.correctedAssessment, effect, activeGateCaps);
-        effectApplied = !review.agree;
-      }
-    }
-    if (effectApplied) {
-      applied = true;
-      changedItemReviewCount += 1;
-    }
     itemReviewEffects.push({
       itemId: review.itemId,
       agree: review.agree,
-      correctedAssessment: review.correctedAssessment,
       reason: review.reason,
-      score_effect_applied: effectApplied,
+      score_effect_applied: false,
     });
   }
 
@@ -175,72 +141,6 @@ export function applyHumanReviewRecalculation(input: {
 
 function cloneJson(value: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
-}
-
-function hasAppliedHumanReview(resultJson: Record<string, unknown>): boolean {
-  const revision = asRecord(resultJson.human_review_revision);
-  return revision?.applied === true;
-}
-
-function validateItemReviewEffect(
-  review: { agree: boolean; correctedAssessment?: string },
-  effect: Record<string, unknown>,
-): HumanReviewRecalculationError | undefined {
-  if (review.agree) {
-    return undefined;
-  }
-  if (effect.type === "hard_gate") {
-    const value = review.correctedAssessment?.trim() ?? "";
-    if (value === "none") {
-      return undefined;
-    }
-    const gates = value.split(",").map((item) => item.trim()).filter(Boolean);
-    if (gates.length > 0 && gates.every((gate) => /^G[1-4]$/.test(gate))) {
-      return undefined;
-    }
-    return { status: 400, message: "hard_gate correctedAssessment is invalid" };
-  }
-  if (effect.type === "rule_result" && !RULE_RESULTS.has(review.correctedAssessment ?? "")) {
-    return { status: 400, message: "rule_result correctedAssessment is invalid" };
-  }
-  return undefined;
-}
-
-function applyHardGateReview(
-  correctedAssessment: string | undefined,
-  effect: Record<string, unknown>,
-  activeGateCaps: Map<string, number>,
-): void {
-  removeGates(readStringArray(effect.gate_ids), activeGateCaps);
-  const nextGateIds = parseHardGateAssessment(correctedAssessment);
-  addGates(nextGateIds, asRecord(effect.gate_caps), activeGateCaps);
-}
-
-function applyRuleResultReview(
-  resultJson: Record<string, unknown>,
-  correctedAssessment: string | undefined,
-  effect: Record<string, unknown>,
-  activeGateCaps: Map<string, number>,
-): void {
-  const ruleIds = readStringArray(effect.rule_ids);
-  const shouldKeepImpact = correctedAssessment === "不满足";
-  for (const impact of findRuleImpacts(resultJson, ruleIds)) {
-    if (shouldKeepImpact) {
-      impact.score_delta = readOriginalScoreDelta(impact);
-      impact.result = "不满足";
-    } else {
-      impact.score_delta = 0;
-      if (correctedAssessment === "待人工复核") {
-        impact.result = "待人工复核";
-        impact.needs_human_review = true;
-      }
-    }
-  }
-  if (shouldKeepImpact) {
-    addGates(readStringArray(effect.hard_gate_ids), asRecord(effect.gate_caps), activeGateCaps);
-  } else {
-    removeGates(readStringArray(effect.hard_gate_ids), activeGateCaps);
-  }
 }
 
 function applyRiskLevelEffect(
@@ -391,14 +291,6 @@ function parseHardGateAssessment(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function findRuleImpacts(resultJson: Record<string, unknown>, ruleIds: string[]): RuleImpact[] {
-  return readDimensions(resultJson).flatMap((dimension) =>
-    readItems(dimension).flatMap((item) =>
-      readRuleImpacts(item).filter((impact) => ruleIds.includes(readString(impact.rule_id) ?? "")),
-    ),
-  );
-}
-
 function findRuleImpact(
   resultJson: Record<string, unknown>,
   input: { ruleId: string; dimensionName: string; itemName: string },
@@ -412,10 +304,6 @@ function findRuleImpact(
   return scoreItem
     ? readRuleImpacts(scoreItem).find((impact) => readString(impact.rule_id) === input.ruleId)
     : undefined;
-}
-
-function readOriginalScoreDelta(impact: RuleImpact): number {
-  return readNumber(impact.original_score_delta) ?? readNumber(impact.score_delta) ?? 0;
 }
 
 function readDimensions(resultJson: Record<string, unknown>): DimensionResult[] {

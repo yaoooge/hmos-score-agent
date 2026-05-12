@@ -429,7 +429,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
     method: "POST",
     path: API_PATHS.humanReview,
     description:
-      "Accept first-version per-item human review results for a completed remote task and recalculate scores from review decisions.",
+      "Accept per-item human review results for a completed remote task. Repeated submissions overwrite the latest result revision.",
     request: {
       pathParams: { taskId: taskIdField },
       body: {
@@ -454,7 +454,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             items: {
               type: "object",
               description:
-                "One item review with itemId, agree, and correctedAssessment plus reason when agree is false.",
+                "One item review with itemId and agree, plus reason when agree is false.",
             },
           },
           riskReviews: {

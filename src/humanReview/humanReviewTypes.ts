@@ -3,7 +3,6 @@ export type HumanRiskLevel = "high" | "medium" | "low" | "none";
 export type HumanReviewItemReview = {
   itemId: number;
   agree: boolean;
-  correctedAssessment?: string;
   reason?: string;
 };
 
