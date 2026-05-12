@@ -4,7 +4,6 @@ import express, { NextFunction, Request, Response } from "express";
 import { API_PATHS } from "./apiDefinitions.js";
 import { getConfig } from "../config.js";
 import { createSubmitHumanReviewHandler } from "./humanReviewHandler.js";
-import { createSubmitManualRatingHandler } from "./manualRatingHandler.js";
 import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 import { uploadTaskCallback } from "../io/uploader.js";
 import {
@@ -523,10 +522,6 @@ export function createApp(
   app.post(
     API_PATHS.humanReview,
     createSubmitHumanReviewHandler({ registry, store: humanReviewEvidenceStore }),
-  );
-  app.post(
-    API_PATHS.manualRating,
-    createSubmitManualRatingHandler({ registry, store: humanReviewEvidenceStore }),
   );
   return app;
 }

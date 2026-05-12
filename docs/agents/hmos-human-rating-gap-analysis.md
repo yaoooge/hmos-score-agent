@@ -21,7 +21,7 @@
 | `L1` | `>= 70` |
 | `L2` | `>= 80` |
 
-触发入口是 `POST /score/remote-tasks/:taskId/manual-rating`。
+触发入口是 `POST /score/remote-tasks/:taskId/human-review`，请求体中的 `manualLevel` 提供人工评级，`overallComment` 作为人工评级依据。
 
 ## 职责
 

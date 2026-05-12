@@ -1,3 +1,5 @@
+import type { HumanManualRating } from "../humanRating/humanRatingTypes.js";
+
 export type HumanRiskLevel = "high" | "medium" | "low" | "none";
 
 export type HumanReviewItemReview = {
@@ -15,6 +17,7 @@ export type HumanRiskReview = {
 
 export type HumanReviewSubmissionPayload = {
   reviewer?: string;
+  manualLevel: HumanManualRating;
   overallComment?: string;
   itemReviews?: HumanReviewItemReview[];
   riskReviews?: HumanRiskReview[];

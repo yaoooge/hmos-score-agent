@@ -4,17 +4,17 @@
 
 ## 适用场景
 
-人工复核用于修正已完成远端任务中的逐条评分判断或风险等级。它不是整单评级入口，也不重新运行完整评分 workflow。
+人工复核用于修正已完成远端任务中的逐条评分判断或风险等级，并提交整单 L1-L6 人工评级。它不重新运行完整评分 workflow。
 
 适合使用人工复核的情况：
 
 - 人工确认某个 `human_review_items[]` 的判断不准确。
 - 人工确认某个 `risks[]` 的风险等级需要调整。
 - 人工想补充 agent 未识别、未发现或未充分说明的问题。
+- 人工提交整单 L1-L6 评级，并在与自动分差异较大时触发差异分析。
 
 不适合使用人工复核的情况：
 
-- 人工只想给整单 L1-L6 评级，应使用 `POST /score/remote-tasks/:taskId/manual-rating`。
 - 人工想直接改总分、维度分或评分项分。当前接口不接受人工直接提交分数。
 - 任务还未完成。接口只处理 `completed` 的远端任务。
 
@@ -55,6 +55,7 @@ Content-Type: application/json
 ```json
 {
   "reviewer": "qa-user-1",
+  "manualLevel": "L3",
   "overallComment": "人工补充：agent 未发现异常态缺少 toast 提示。",
   "itemReviews": [
     {
@@ -79,7 +80,8 @@ Content-Type: application/json
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `reviewer` | string | 否 | 复核人标识。 |
-| `overallComment` | string | 否 | 整体评价，用于补充 agent 未识别、未发现或未充分说明的问题。 |
+| `manualLevel` | enum | 是 | 整单人工评级，可选 `L1`、`L2`、`L3`、`L4`、`L5`、`L6`。 |
+| `overallComment` | string | 否 | 整体评价，用于补充 agent 未识别、未发现或未充分说明的问题；人工评级差异分析会将它作为评级依据。 |
 | `itemReviews` | array | 否 | 对 `result.json.human_review_items[]` 的逐条复核。 |
 | `itemReviews[].itemId` | number | 是 | 复核项 ID。缺少 ID 的历史结果按数组位置从 1 映射。 |
 | `itemReviews[].agree` | boolean | 是 | 是否同意当前复核项判断。 |
@@ -90,7 +92,7 @@ Content-Type: application/json
 | `riskReviews[].correctedLevel` | enum | 条件必填 | `agree=false` 时必填，可选 `high`、`medium`、`low`、`none`。 |
 | `riskReviews[].reason` | string | 条件必填 | `agree=false` 时必填。 |
 
-`itemReviews` 和 `riskReviews` 可以同时缺省或为空数组。此时接口只记录整体处理结果，不会写入逐项数据集，也不会触发重算。
+`itemReviews` 和 `riskReviews` 可以同时缺省或为空数组。此时接口只记录整单人工评级，不会写入逐项数据集，也不会触发复核重算。
 
 ## 校验规则
 
@@ -99,6 +101,7 @@ Content-Type: application/json
 - `taskId` 必须能在远端任务 registry 中找到。
 - 任务状态必须是 `completed`。
 - `outputs/result.json` 必须存在且可解析。
+- `manualLevel` 必须是 `L1` 到 `L6`。
 - `itemReviews` 和 `riskReviews` 如果出现，必须是数组。
 - 同一个请求中 `itemId` 不能重复，`riskId` 不能重复。
 - `agree` 必须是 boolean。
@@ -108,7 +111,7 @@ Content-Type: application/json
 - 提交的 `riskId` 必须能匹配 `result.json.risks[]`。
 - 如果 `result.json` 已存在 `human_review_revision`，再次提交会直接覆盖为最新复核结果，不保留历史 revision。
 
-当前简化协议不再要求客户端回传原始判断、原始风险等级或评分项修正结论。服务端以 `id` 从 `result.json` 读取当前结果，避免前端重复传输展示值。
+当前简化协议不再要求客户端回传原始判断、原始风险等级或评分项修正结论，也不再单独提交 `basis`。服务端以 `id` 从 `result.json` 读取当前结果，人工评级依据取 `overallComment`，缺省时按空字符串记录。
 
 ## 服务端处理流程
 
@@ -117,6 +120,7 @@ Content-Type: application/json
 - `src/api/humanReviewHandler.ts`
 - `src/humanReview/applyHumanReviewRecalculation.ts`
 - `src/humanReview/humanReviewEvidenceStore.ts`
+- `src/humanRating/humanRatingSubmission.ts`
 
 处理步骤：
 
@@ -127,7 +131,8 @@ Content-Type: application/json
 5. 将逐项复核样本追加写入人工复核数据集。
 6. 如果有逐项复核，调用重算逻辑。
 7. 如果重算成功，将修正后的 `outputs/result.json` 原子写回。
-8. 返回同步处理摘要。
+8. 按 `manualLevel` 和最新总分执行人工评级差异分析；`overallComment` 作为评级依据。
+9. 返回同步处理摘要。
 
 成功响应示例：
 
@@ -143,6 +148,11 @@ Content-Type: application/json
     "riskDisagreementCount": 1,
     "datasetItemCount": 1,
     "hasOverallComment": true,
+    "manualLevel": "L3",
+    "autoScore": 100,
+    "autoRating": "L6",
+    "gapQualified": false,
+    "analysisStatus": "skipped",
     "scoreRecalculationApplied": true,
     "originalTotalScore": 79,
     "revisedTotalScore": 100,
@@ -204,7 +214,7 @@ risk_review_calibrations.jsonl
 
 人工复核后的重算遵循一个核心原则：
 
-人工只改变结构化评分信号，服务端只根据 `result.json` 中已有的 `score_effect` 元数据重算，不从 `reason` 或 `overallComment` 推断分数。
+人工只改变结构化评分信号，服务端只根据 `result.json` 中已有的 `score_effect` 元数据重算，不从 `reason` 或 `overallComment` 推断分数。`overallComment` 只作为人工评级差异分析的文字依据。
 
 ### 风险等级重算
 
@@ -387,8 +397,8 @@ wc -l ~/.hmos-score-agent/human-review-evidences/datasets/risk_review_calibratio
 
 ## 注意事项
 
-- 同一任务当前只支持成功应用一次人工复核。
 - 人工复核会改写 `outputs/result.json`，后续 `GET /score/remote-tasks/:taskId/result` 返回的是修正后结果。
-- 人工评级 `manual-rating` 不会改写 `outputs/result.json`。
-- `overallComment` 用于记录整体人工观察，不参与分数重算。
+- 再次提交人工复核会覆盖最新 `human_review_revision` 和 `human-rating/manual-rating.json`。
+- 人工评级差异分析不会改写 `outputs/result.json`。
+- `overallComment` 用于记录整体人工观察并作为人工评级依据，不参与分数重算。
 - 数据集样本用于后续校准和分析，不是恢复原始结果的备份。

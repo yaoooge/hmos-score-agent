@@ -8,6 +8,7 @@ import { API_DEFINITIONS, API_PATHS } from "../src/api/apiDefinitions.js";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import { getConfig } from "../src/config.js";
 import { createHumanReviewEvidenceStore } from "../src/humanReview/humanReviewEvidenceStore.js";
+import type { HumanRatingGapAnalysis } from "../src/humanRating/humanRatingTypes.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "human-review-"));
@@ -36,10 +37,15 @@ function createReviewRequest(
   taskId: number,
   token: string | undefined,
   body: Record<string, unknown>,
+  options: { addDefaultManualLevel?: boolean } = {},
 ) {
+  const requestBody =
+    options.addDefaultManualLevel === false || Object.hasOwn(body, "manualLevel")
+      ? body
+      : { manualLevel: "L3", ...body };
   return {
     params: { taskId: String(taskId) },
-    body,
+    body: requestBody,
     header(name: string) {
       return name.toLowerCase() === "token" ? token : undefined;
     },
@@ -48,7 +54,12 @@ function createReviewRequest(
 
 async function writeCompletedTask(
   t: test.TestContext,
-  options: { status?: "completed" | "running"; omitResultIds?: boolean } = {},
+  options: {
+    status?: "completed" | "running";
+    omitResultIds?: boolean;
+    autoScore?: number;
+    omitScore?: boolean;
+  } = {},
 ) {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case");
@@ -57,7 +68,7 @@ async function writeCompletedTask(
     path.join(caseDir, "outputs", "result.json"),
     JSON.stringify({
       basic_info: { task_type: "bug_fix" },
-      overall_conclusion: { total_score: 60 },
+      overall_conclusion: options.omitScore ? {} : { total_score: options.autoScore ?? 60 },
       risks: [
         {
           ...(options.omitResultIds ? {} : { id: 1 }),
@@ -95,6 +106,18 @@ async function writeCompletedTask(
     testCaseId: 188,
   });
   return { localCaseRoot, caseDir, registry };
+}
+
+function analysisFixture(): HumanRatingGapAnalysis {
+  return {
+    primaryConclusion: "scoring_system_needs_improvement",
+    confidence: "medium",
+    reasonSummary: "自动评分漏判编译失败。",
+    humanRatingReview: { needsImprovement: false, reason: "人工依据充分。" },
+    scoringSystemReview: { needsImprovement: true, reason: "缺少构建失败 hard gate。" },
+    evidence: ["outputs/result.json: overall_conclusion.total_score=92"],
+    recommendedActions: ["补充构建失败 hard gate。"],
+  };
 }
 
 async function writeRecalculableCompletedTask(t: test.TestContext) {
@@ -314,6 +337,11 @@ test("submit human review handler accepts empty first-version payload", async (t
     riskDisagreementCount: 0,
     datasetItemCount: 0,
     hasOverallComment: false,
+    manualLevel: "L3",
+    autoScore: 60,
+    autoRating: "L3",
+    gapQualified: false,
+    analysisStatus: "skipped",
   });
   await assert.rejects(
     fs.readFile(path.join(root, "datasets", "risk_review_calibrations.jsonl"), "utf-8"),
@@ -356,6 +384,11 @@ test("submit human review handler writes manual risk review calibration samples 
     riskDisagreementCount: 1,
     datasetItemCount: 2,
     hasOverallComment: false,
+    manualLevel: "L3",
+    autoScore: 60,
+    autoRating: "L3",
+    gapQualified: false,
+    analysisStatus: "skipped",
   });
 
   const samples = (
@@ -421,6 +454,11 @@ test("submit human review handler writes simplified item review calibration samp
     riskDisagreementCount: 0,
     datasetItemCount: 1,
     hasOverallComment: true,
+    manualLevel: "L3",
+    autoScore: 60,
+    autoRating: "L3",
+    gapQualified: false,
+    analysisStatus: "skipped",
   });
 
   const samples = (
@@ -450,6 +488,91 @@ test("submit human review handler writes simplified item review calibration samp
     overallComment: "Agent 未发现异常态缺少 toast 提示。",
   });
   await assert.rejects(fs.stat(path.join(root, "raw")), /ENOENT/);
+});
+
+test("submit human review handler processes manual level with overall comment as basis", async (t) => {
+  const { registry, caseDir } = await writeCompletedTask(t, { autoScore: 92 });
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  let analyzerCallCount = 0;
+  const handler = createSubmitHumanReviewHandler({
+    registry,
+    store,
+    analyzeGap: async ({ manualRatingRecord }) => {
+      analyzerCallCount += 1;
+      assert.equal(manualRatingRecord.manualRating, "L1");
+      assert.equal(manualRatingRecord.basis, "无法编译运行。");
+      return analysisFixture();
+    },
+  });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      reviewer: "qa-user-1",
+      manualLevel: "L1",
+      overallComment: "无法编译运行。",
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  assert.equal(state.body?.success, true);
+  assert.equal(analyzerCallCount, 1);
+  assert.equal((state.body?.summary as Record<string, unknown>).manualLevel, "L1");
+  assert.equal((state.body?.summary as Record<string, unknown>).analysisStatus, "completed");
+
+  const manualRating = JSON.parse(
+    await fs.readFile(path.join(caseDir, "human-rating", "manual-rating.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  const datasetLines = (
+    await fs.readFile(path.join(root, "datasets", "human_rating_gap_analyses.jsonl"), "utf-8")
+  )
+    .trim()
+    .split("\n");
+  const sample = JSON.parse(datasetLines[0] ?? "{}") as Record<string, unknown>;
+
+  assert.equal(manualRating.manualRating, "L1");
+  assert.equal(manualRating.basis, "无法编译运行。");
+  assert.equal(sample.manualRating, "L1");
+  assert.equal(sample.manualBasis, "无法编译运行。");
+});
+
+test("submit human review handler accepts manual level without overall comment basis", async (t) => {
+  const { registry } = await writeCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, { manualLevel: "L3" }) as never,
+    response as never,
+  );
+  assert.equal(state.statusCode, 200);
+
+  const manualRating = JSON.parse(
+    await fs.readFile(
+      path.join((await registry.get(88))?.caseDir ?? "", "human-rating", "manual-rating.json"),
+      "utf-8",
+    ),
+  ) as Record<string, unknown>;
+  assert.equal(manualRating.manualRating, "L3");
+  assert.equal(manualRating.basis, "");
+});
+
+test("submit human review handler rejects missing manual level", async (t) => {
+  const { registry } = await writeCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {}, { addDefaultManualLevel: false }) as never,
+    response as never,
+  );
+  assert.equal(state.statusCode, 400);
 });
 
 test("submit human review handler recalculates scores from risk level review", async (t) => {
@@ -695,6 +818,11 @@ test("submit human review handler maps result review ids from array position whe
     riskDisagreementCount: 0,
     datasetItemCount: 2,
     hasOverallComment: false,
+    manualLevel: "L3",
+    autoScore: 60,
+    autoRating: "L3",
+    gapQualified: false,
+    analysisStatus: "skipped",
   });
 
   const itemSamples = (
@@ -894,7 +1022,9 @@ test("api definitions document human review submission endpoint", () => {
   );
   assert.equal(
     API_DEFINITIONS.some(
-      (definition) => definition.path === "/score/human-reviews/:reviewId",
+      (definition) =>
+        definition.path === "/score/human-reviews/:reviewId" ||
+        definition.path === "/score/remote-tasks/:taskId/manual-rating",
     ),
     false,
   );
@@ -911,8 +1041,12 @@ test("api definitions document human review submission endpoint", () => {
     true,
   );
   assert.equal(
+    Object.hasOwn(humanReviewDefinition.request?.body?.properties ?? {}, "manualLevel"),
+    true,
+  );
+  assert.equal(
     Object.keys(humanReviewDefinition.request?.body?.properties ?? {}).sort().join(","),
-    "itemReviews,overallComment,reviewer,riskReviews",
+    "itemReviews,manualLevel,overallComment,reviewer,riskReviews",
   );
   assert.equal(
     Object.hasOwn(humanReviewDefinition.responses[0]?.body.properties ?? {}, "summary"),

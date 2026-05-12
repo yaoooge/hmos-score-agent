@@ -401,14 +401,19 @@ test("submit manual rating handler rejects invalid requests and missing auto sco
   }
 });
 
-test("api definitions document manual rating submission endpoint", () => {
-  assert.equal(API_PATHS.manualRating, "/score/remote-tasks/:taskId/manual-rating");
+test("api definitions expose manual rating through human review endpoint", () => {
+  assert.equal(
+    API_DEFINITIONS.some(
+      (item) => item.method === "POST" && item.path === "/score/remote-tasks/:taskId/manual-rating",
+    ),
+    false,
+  );
   const definition = API_DEFINITIONS.find(
-    (item) => item.method === "POST" && item.path === API_PATHS.manualRating,
+    (item) => item.method === "POST" && item.path === API_PATHS.humanReview,
   );
   assert.ok(definition);
-  assert.equal(Object.hasOwn(definition.request?.body?.properties ?? {}, "manualRating"), true);
-  assert.equal(Object.hasOwn(definition.request?.body?.properties ?? {}, "basis"), true);
-  assert.equal(Object.hasOwn(definition.request?.body?.properties ?? {}, "reviewer"), true);
+  assert.equal(Object.hasOwn(definition.request?.body?.properties ?? {}, "manualLevel"), true);
+  assert.equal(Object.hasOwn(definition.request?.body?.properties ?? {}, "overallComment"), true);
+  assert.equal(Object.hasOwn(definition.request?.body?.properties ?? {}, "basis"), false);
   assert.equal(Object.hasOwn(definition.responses[0]?.body.properties ?? {}, "summary"), true);
 });

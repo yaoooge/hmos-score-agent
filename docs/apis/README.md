@@ -10,8 +10,7 @@
 | `POST` | `/score/run-remote-task` | 接收远端任务并异步执行评分。 | `taskId`、`testCase`、`executionResult`、`callback`，`token` 已废弃但仍兼容。 | `200` 返回任务接收成功信息；失败返回 `500`。 |
 | `GET` | `/score/remote-tasks/:taskId/result` | 读取已完成远端任务的完整评分结果。 | 路径参数 `taskId`。 | `200` 返回 `success`、`taskId`、`status`、`resultData`；未完成返回 `409`，未找到返回 `404`。 |
 | `GET` | `/score/rule-violation-stats` | 读取静态规则违反聚合统计。 | 可选查询 `caseId`、`testCaseId`、`packId`、`from`、`to`。 | `200` 返回 `success`、`filters`、`summary`、`rules`；参数非法返回 `400`。 |
-| `POST` | `/score/remote-tasks/:taskId/human-review` | 提交逐条人工复核并按复核结果重算分数。 | 路径参数 `taskId`，body 包含 `reviewer`、`overallComment`、`itemReviews`、`riskReviews`。 | `200` 返回 `success`、`taskId`、`status`、`summary`、`message`。 |
-| `POST` | `/score/remote-tasks/:taskId/manual-rating` | 提交整单人工评级并在满足阈值时触发差异分析。 | 路径参数 `taskId`，body 包含 `reviewer`、`manualRating`、`basis`。 | `200` 返回 `success`、`taskId`、`status`、`summary`、`message`。 |
+| `POST` | `/score/remote-tasks/:taskId/human-review` | 提交人工复核和整单人工评级，并按复核结果重算分数。 | 路径参数 `taskId`，body 包含必填 `manualLevel`，以及可选 `reviewer`、`overallComment`、`itemReviews`、`riskReviews`。 | `200` 返回 `success`、`taskId`、`status`、`summary`、`message`。 |
 
 ## 远端任务接收
 
@@ -33,31 +32,20 @@
 
 ## 人工复核
 
-`POST /score/remote-tasks/:taskId/human-review` 接收逐条复核结论。请求体核心字段：
+`POST /score/remote-tasks/:taskId/human-review` 接收逐条复核结论和整单人工评级。请求体核心字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `reviewer` | string | 可选的复核人标识。 |
-| `overallComment` | string | 可选的整体评价，用于补充 agent 未识别或未发现的问题。 |
+| `manualLevel` | enum | 必填，`L1` 到 `L6`。 |
+| `overallComment` | string | 可选的整体评价；人工评级差异分析会将它作为评级依据。 |
 | `itemReviews` | array | 逐条评分项复核。 |
 | `riskReviews` | array | 风险项复核。 |
 | `agree` | boolean | 是否同意系统当前判断或风险等级。 |
 | `correctedLevel` | enum | 不同意风险等级时填写的新等级：`high`、`medium`、`low`、`none`。 |
 | `reason` | string | 不同意时必填的原因。 |
 
-提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的风险项进行重算。再次提交会覆盖 `result.json` 中的最新 `human_review_revision`。响应 `summary` 会返回逐项复核数量、数据集写入数量和 `hasOverallComment`；发生分数变化时额外返回重算前后总分和变更计数。
-
-## 人工评级
-
-`POST /score/remote-tasks/:taskId/manual-rating` 仅接收整单评级：
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `reviewer` | string | 可选的复核人标识。 |
-| `manualRating` | enum | `L1` 到 `L6`。 |
-| `basis` | string | 人工评级依据。 |
-
-当人工评级为 `L1` 且自动分 `>= 70`，或人工评级为 `L2` 且自动分 `>= 80` 时，服务会调用 `hmos-human-rating-gap-analysis` 生成差异分析，并写入 `human-rating/analysis.json`。
+提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的风险项进行重算。再次提交会覆盖 `result.json` 中的最新 `human_review_revision`。同时，服务会记录 `manualLevel` 到 `human-rating/manual-rating.json`；当人工评级为 `L1` 且自动分 `>= 70`，或人工评级为 `L2` 且自动分 `>= 80` 时，会调用 `hmos-human-rating-gap-analysis` 生成差异分析，并写入 `human-rating/analysis.json`。响应 `summary` 会返回逐项复核数量、数据集写入数量、`hasOverallComment` 和人工评级差异分析状态；发生分数变化时额外返回重算前后总分和变更计数。
 
 ## 远端回调
 

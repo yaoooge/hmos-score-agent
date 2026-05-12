@@ -9,11 +9,14 @@ import type {
   HumanRiskReview,
 } from "../humanReview/humanReviewTypes.js";
 import { applyHumanReviewRecalculation } from "../humanReview/applyHumanReviewRecalculation.js";
+import type { ManualRatingAnalyzer } from "../humanRating/humanRatingSubmission.js";
+import { processHumanRatingSubmission } from "../humanRating/humanRatingSubmission.js";
 import type { RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 
 export type SubmitHumanReviewDeps = {
   registry: RemoteTaskRegistry;
   store: HumanReviewEvidenceStore;
+  analyzeGap?: ManualRatingAnalyzer;
 };
 
 type NormalizedResultRisk = {
@@ -33,6 +36,7 @@ type NormalizedResultReviewItem = {
 };
 
 const RISK_LEVELS = new Set(["high", "medium", "low", "none"]);
+const MANUAL_LEVELS = new Set(["L1", "L2", "L3", "L4", "L5", "L6"]);
 
 export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
   return async (req: Request, res: Response) => {
@@ -102,11 +106,12 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
           changedDimensionScoreCount: number;
         }
       | undefined;
+    const reviewedAt = new Date().toISOString();
     if (hasReviewItems) {
       const recalculation = applyHumanReviewRecalculation({
         resultJson,
         payload,
-        reviewedAt: new Date().toISOString(),
+        reviewedAt,
       });
       if ("status" in recalculation) {
         res.status(recalculation.status).json({
@@ -134,8 +139,29 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       resultJson,
       payload,
     });
+    const ratingResultJson = recalculatedResultJson ?? resultJson;
     if (recalculatedResultJson) {
       await writeResultJsonAtomically(record.caseDir, recalculatedResultJson);
+    }
+    const manualRating = await processHumanRatingSubmission({
+      store: deps.store,
+      taskId,
+      testCaseId: record.testCaseId,
+      caseDir: record.caseDir,
+      resultJson: ratingResultJson,
+      reviewedAt,
+      reviewer: payload.reviewer,
+      manualLevel: payload.manualLevel,
+      basis: sanitizeOverallComment(payload.overallComment) ?? "",
+      analyzeGap: deps.analyzeGap,
+    });
+    if ("status" in manualRating) {
+      res.status(manualRating.status).json({
+        success: false,
+        taskId,
+        message: manualRating.message,
+      });
+      return;
     }
     const itemReviewCount = payload.itemReviews?.length ?? 0;
     const riskReviewCount = payload.riskReviews?.length ?? 0;
@@ -149,6 +175,7 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       riskDisagreementCount,
       datasetItemCount: itemDatasetCount + riskDatasetCount,
       hasOverallComment,
+      ...manualRating.summary,
       ...(recalculationSummary?.scoreRecalculationApplied ? recalculationSummary : {}),
     };
 
@@ -158,8 +185,8 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       status: "completed",
       summary,
       message: recalculationSummary?.scoreRecalculationApplied
-        ? "人工复核结果已接收，结果分数已重新计算。"
-        : "人工复核结果已接收。",
+        ? `人工复核结果已接收，结果分数已重新计算。${manualRating.message}`
+        : `人工复核结果已接收。${manualRating.message}`,
     });
   };
 }
@@ -186,6 +213,9 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
   const candidate = body as Partial<HumanReviewSubmissionPayload>;
   if (candidate.reviewer !== undefined && typeof candidate.reviewer !== "string") {
     return "reviewer must be a string";
+  }
+  if (typeof candidate.manualLevel !== "string" || !MANUAL_LEVELS.has(candidate.manualLevel)) {
+    return "manualLevel must be one of L1, L2, L3, L4, L5, L6";
   }
   if (candidate.overallComment !== undefined && typeof candidate.overallComment !== "string") {
     return "overallComment must be a string";
@@ -250,6 +280,7 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
 
   return {
     reviewer: candidate.reviewer,
+    manualLevel: candidate.manualLevel,
     overallComment: candidate.overallComment,
     itemReviews: itemReviews as HumanReviewItemReview[],
     riskReviews: riskReviews as HumanRiskReview[],
@@ -411,6 +442,14 @@ function isRiskLevel(value: unknown): value is HumanRiskLevel {
 
 function hasNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function sanitizeOverallComment(overallComment: HumanReviewSubmissionPayload["overallComment"]): string | undefined {
+  if (typeof overallComment !== "string") {
+    return undefined;
+  }
+  const trimmed = overallComment.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function buildTaskSummary(resultJson: Record<string, unknown>): string {

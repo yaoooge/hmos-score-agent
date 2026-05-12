@@ -35,8 +35,7 @@ flowchart LR
   A[GET /score/remote-tasks/:taskId/result] --> B[查看评分结果]
   B --> C[POST /score/remote-tasks/:taskId/human-review]
   C --> D[重算 outputs/result.json]
-  B --> E[POST /score/remote-tasks/:taskId/manual-rating]
-  E --> F{L1>=70 或 L2>=80?}
+  C --> F{L1>=70 或 L2>=80?}
   F -- 否 --> G[仅写入 manual-rating.json]
   F -- 是 --> H[hmos-human-rating-gap-analysis]
   H --> I[human-rating/analysis.json]
@@ -114,8 +113,7 @@ hmos-score-agent/
 
 | 流程 | 入口 | 行为 |
 | --- | --- | --- |
-| 逐条人工复核 | `POST /score/remote-tasks/:taskId/human-review` | 读取已完成任务的 `outputs/result.json`，写入人工复核样本，并按 `score_effect` 元数据重算总分、维度分和硬门槛状态。 |
-| 整单人工评级 | `POST /score/remote-tasks/:taskId/manual-rating` | 写入 `human-rating/manual-rating.json`，当人工评级为 L1 且自动分 >= 70，或人工评级为 L2 且自动分 >= 80 时调用 `hmos-human-rating-gap-analysis`。 |
+| 人工复核与评级 | `POST /score/remote-tasks/:taskId/human-review` | 读取已完成任务的 `outputs/result.json`，写入人工复核样本，并按 `score_effect` 元数据重算总分、维度分和硬门槛状态；同时写入 `manualLevel` 对应的 `human-rating/manual-rating.json`，当人工评级为 L1 且自动分 >= 70，或人工评级为 L2 且自动分 >= 80 时调用 `hmos-human-rating-gap-analysis`。 |
 | 规则违反统计 | 主评分完成后触发 | 远端任务完成时将规则违反快照写入本地统计索引，供 `GET /score/rule-violation-stats` 查询。 |
 
 人工评级差异分析只生成 `human-rating/analysis.json` 和样本数据，不改写原始 `outputs/result.json`。
