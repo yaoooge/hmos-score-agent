@@ -66,6 +66,12 @@ export interface CaseRuleDefinition {
     targetPatterns: string[];
     astSignals: Array<Record<string, string>>;
     llmPrompt: string;
+    kit?: string[];
+    targetChecks?: Array<{
+      target: string;
+      astSignals: Array<Record<string, string>>;
+      llmPrompt: string;
+    }>;
   };
   fallback_policy: "agent_assisted";
   is_case_rule: true;
@@ -286,8 +292,14 @@ export interface AssistedRuleCandidate {
   evidence_snippets: string[];
   rule_name?: string;
   priority?: CaseConstraintPriority;
+  kit?: string[];
   llm_prompt?: string;
   ast_signals?: Array<Record<string, string>>;
+  target_checks?: Array<{
+    target: string;
+    ast_signals: Array<Record<string, string>>;
+    llm_prompt: string;
+  }>;
   static_precheck?: CaseRuleStaticPrecheck;
   is_case_rule?: boolean;
 }

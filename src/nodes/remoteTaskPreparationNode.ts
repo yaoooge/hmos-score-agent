@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { load } from "js-yaml";
 import { loadCaseFromPath } from "../io/caseLoader.js";
 import { downloadManifestToDirectory, downloadToFile } from "../io/downloader.js";
 import type { RemoteEvaluationTask } from "../types.js";
@@ -18,7 +19,24 @@ function buildRemotePrompt(task: RemoteEvaluationTask): string {
 }
 
 function shouldMaterializeExpectedConstraints(expectedOutput: string): boolean {
-  return expectedOutput.trim().startsWith("constraints:");
+  const trimmed = expectedOutput.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const parsed = load(trimmed);
+    if (Array.isArray(parsed)) {
+      return true;
+    }
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return Array.isArray((parsed as { constraints?: unknown }).constraints);
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
 }
 
 export async function remoteTaskPreparationNode(

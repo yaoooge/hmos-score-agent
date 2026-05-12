@@ -12,11 +12,21 @@ export interface AppConfig {
   officialToolRunDir?: string;
   officialCodeLinterRunDir?: string;
   officialCodeLinterTimeoutMs: number;
+  hvigorBuildCheckEnabled: boolean;
   hvigorBuildCheckRunDir?: string;
   hvigorBuildCheckTimeoutMs: number;
 }
 
+function isExplicitlyEnabled(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === "true";
+}
+
 export function getConfig(): AppConfig {
+  const officialCodeLinterEnabled = isExplicitlyEnabled(process.env.HMOS_CODE_LINTER_ENABLED);
+  const hvigorBuildCheckEnabled =
+    process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED === undefined
+      ? officialCodeLinterEnabled
+      : isExplicitlyEnabled(process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED);
   const officialToolRunDir = process.env.HMOS_OFFICIAL_TOOL_RUN_DIR
     ? path.resolve(process.env.HMOS_OFFICIAL_TOOL_RUN_DIR)
     : undefined;
@@ -40,11 +50,11 @@ export function getConfig(): AppConfig {
       ? path.resolve(process.env.HUMAN_REVIEW_EVIDENCE_ROOT)
       : path.resolve(os.homedir(), ".hmos-score-agent", "human-review-evidences"),
     remoteTaskAcceptTimeoutMs: Number(process.env.REMOTE_TASK_ACCEPT_TIMEOUT_MS ?? 300000),
-    officialCodeLinterEnabled:
-      process.env.HMOS_CODE_LINTER_ENABLED?.trim().toLowerCase() === "true",
+    officialCodeLinterEnabled,
     officialToolRunDir,
     officialCodeLinterRunDir,
     officialCodeLinterTimeoutMs: Number(process.env.HMOS_CODE_LINTER_TIMEOUT_MS ?? 120000),
+    hvigorBuildCheckEnabled,
     hvigorBuildCheckRunDir,
     hvigorBuildCheckTimeoutMs: Number(process.env.HMOS_HVIGOR_BUILD_CHECK_TIMEOUT_MS ?? 300000),
   };

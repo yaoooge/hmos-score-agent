@@ -37,6 +37,14 @@ type DeterministicStaticRuleAuditResult = StaticRuleAuditResult & {
   result: Exclude<StaticRuleAuditResult["result"], "未接入判定器">;
 };
 
+type RuntimeTargetCheck = {
+  target: string;
+  astSignals: Array<Record<string, string>>;
+  llmPrompt: string;
+};
+
+type AssistedRuleTargetCheck = NonNullable<AssistedRuleCandidate["target_checks"]>[number];
+
 function isDeterministicStaticRule(
   rule: StaticRuleAuditResult,
 ): rule is DeterministicStaticRuleAuditResult {
@@ -139,8 +147,10 @@ export async function runRuleEngine(input: {
         evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
         rule_name: runtimeRule?.rule_name,
         priority: runtimeRule?.priority,
+        kit: readStringArray(runtimeRule?.detector_config.kit),
         llm_prompt: runtimeRule?.detector_config.llmPrompt,
         ast_signals: runtimeRule?.detector_config.astSignals,
+        target_checks: readTargetChecks(runtimeRule?.detector_config.targetChecks),
         static_precheck: staticPrecheck,
         is_case_rule: runtimeRule?.is_case_rule,
       };
@@ -155,6 +165,49 @@ export async function runRuleEngine(input: {
     ruleEvidenceIndex,
     evidenceSummary: evidence.summary,
   };
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value.filter((item): item is string => typeof item === "string");
+  return strings.length > 0 ? strings : undefined;
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((item) => typeof item === "string");
+}
+
+function readTargetChecks(value: unknown): AssistedRuleCandidate["target_checks"] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const targetChecks = value.flatMap((item): AssistedRuleTargetCheck[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+    const check = item as Partial<RuntimeTargetCheck>;
+    if (typeof check.target !== "string") {
+      return [];
+    }
+    const astSignals = Array.isArray(check.astSignals)
+      ? check.astSignals.filter(isStringRecord)
+      : [];
+    return [
+      {
+        target: check.target,
+        ast_signals: astSignals,
+        llm_prompt: typeof check.llmPrompt === "string" ? check.llmPrompt : "",
+      },
+    ];
+  });
+
+  return targetChecks.length > 0 ? targetChecks : undefined;
 }
 
 function evaluateRegisteredRule(

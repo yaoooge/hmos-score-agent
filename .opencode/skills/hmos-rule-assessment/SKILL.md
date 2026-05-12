@@ -14,6 +14,8 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 当前被判定工程是鸿蒙工程。阅读和判定时必须优先按 HarmonyOS / OpenHarmony 应用工程语境理解代码。
 - 判断候选规则时，重点关注鸿蒙特性是否被正确实现，ArkTS 与 ArkUI 的语法、生命周期、状态管理、组件声明、装饰器、事件绑定、资源引用、路由导航、异步调用和模块导入是否符合鸿蒙工程常见用法。
 - 对涉及 Kit / API 的候选规则，要核查 Kit 是否正常使用，包括导入路径、权限与能力声明、调用时机、参数类型、错误处理、回调/Promise 流程、设备能力适配和 API 版本兼容性。
+- 如果候选规则包含 `kit` 字段，必须围绕列出的 Kit 做重点审视，并在 `reason` 中体现关键判断依据。
+- 如果同一候选规则包含多个 `target_checks`，必须逐个 target 阅读或检索对应文件，分别按各自 `llm_prompt` 审视后，再汇总为该 `rule_id` 的最终判定。
 - 对用户提供的用例、规则语义或任务目标，要审视其功能特性是否真正落地：入口是否可达、核心流程是否闭环、边界状态是否处理、用户交互是否完整、数据流是否连贯、异常和空状态是否有合理表现。
 - 不要只根据零散代码片段输出判定结论。判定 `violation`、`pass`、`not_applicable` 或 `uncertain` 前，应把 patch、相关上下文、候选规则语义、用例目标、功能流程和鸿蒙特性放在一起判断；`reason` 必须说明完整功能链路上的依据。
 - 必须覆盖 `assisted_rule_candidates` 中的每一个 `rule_id`，不能新增、遗漏或重复。
@@ -79,6 +81,7 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 每个候选 `rule_id` 恰好出现一次。
 - 没有候选列表外的 `rule_id`。
 - 已按鸿蒙工程语境检查 HarmonyOS / OpenHarmony 特性、ArkTS / ArkUI 语法及用法、Kit / API 使用方式、权限能力声明和 API 兼容性。
+- 已对候选规则中的每个 `target_checks` 逐项审视，且已重点核查 `kit` 指定能力。
 - 已结合用户用例或规则语义检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
 - 每个 `reason` 都不是孤立片段结论，而是基于候选规则、相关上下文和完整功能链路的判定依据。
 - 每个 `reason` 都与对应候选规则语义、任务期望、`decision` 和 `evidence_used` 直接相关；若不相关，已重新判定该条规则。

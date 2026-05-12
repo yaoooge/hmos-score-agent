@@ -96,6 +96,71 @@ test("loadCaseConstraintRules maps current YAML fields into runtime case rules",
   });
 });
 
+test("loadCaseConstraintRules accepts top-level list constraints with kit and per-target llm checks", async (t) => {
+  const rootDir = await makeTempDir(t);
+  const caseDir = await writeCaseFixture(rootDir, {
+    expectedConstraintsYaml: `
+- id: EXP-MUST-01
+  name: 必须通过FormExtensionAbility实现卡片生命周期管理
+  priority: P0
+  kit:
+    - 'ArkUI: FormExtensionAbility'
+  rules:
+    - target: '**/entryformability/*.ets'
+      llm: '检查是否存在继承自 FormExtensionAbility 的类，并实现生命周期方法'
+    - target: '**/module.json5'
+      llm: '检查 extensionAbilities 中是否声明 type 为 form 的扩展能力'
+`,
+  });
+  const caseInput = await loadCaseFromPath(caseDir);
+
+  const rules = await loadCaseConstraintRules(caseInput);
+
+  assert.equal(rules.length, 1);
+  assert.deepEqual(rules[0]?.detector_config.kit, ["ArkUI: FormExtensionAbility"]);
+  assert.deepEqual(rules[0]?.detector_config.targetPatterns, [
+    "**/entryformability/*.ets",
+    "**/module.json5",
+  ]);
+  assert.deepEqual(rules[0]?.detector_config.targetChecks, [
+    {
+      target: "**/entryformability/*.ets",
+      astSignals: [],
+      llmPrompt: "检查是否存在继承自 FormExtensionAbility 的类，并实现生命周期方法",
+    },
+    {
+      target: "**/module.json5",
+      astSignals: [],
+      llmPrompt: "检查 extensionAbilities 中是否声明 type 为 form 的扩展能力",
+    },
+  ]);
+  assert.equal(
+    rules[0]?.detector_config.llmPrompt,
+    "**/entryformability/*.ets: 检查是否存在继承自 FormExtensionAbility 的类，并实现生命周期方法\n**/module.json5: 检查 extensionAbilities 中是否声明 type 为 form 的扩展能力",
+  );
+});
+
+test("loadCaseConstraintRules ignores malformed kit instead of rejecting the constraint file", async (t) => {
+  const rootDir = await makeTempDir(t);
+  const caseDir = await writeCaseFixture(rootDir, {
+    expectedConstraintsYaml: `constraints:
+  - id: MALL-MUST-01
+    name: 主导航必须采用四 Tab 结构
+    priority: P0
+    kit: 123
+    rules:
+      - target: '**/pages/MainPage.ets'
+        llm: 检查底部导航栏是否使用 Tabs + TabContent 组件实现
+`,
+  });
+  const caseInput = await loadCaseFromPath(caseDir);
+
+  const rules = await loadCaseConstraintRules(caseInput);
+
+  assert.equal(rules.length, 1);
+  assert.equal(rules[0]?.detector_config.kit, undefined);
+});
+
 test("loadCaseConstraintRules rejects unsupported fields instead of ignoring them", async (t) => {
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {

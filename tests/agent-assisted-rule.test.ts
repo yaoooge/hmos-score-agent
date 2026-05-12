@@ -286,8 +286,16 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
       evidence_snippets: ['{ "module": { "name": "entry" } }'],
       rule_name: "module.json5 需配置 Client ID",
       priority: "P1",
+      kit: ["Account Kit"],
       llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
       ast_signals: [{ type: "json_key", name: "metadata" }],
+      target_checks: [
+        {
+          target: "**/module.json5",
+          ast_signals: [{ type: "json_key", name: "metadata" }],
+          llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
+        },
+      ],
       static_precheck: {
         target_matched: true,
         target_files: ["entry/src/main/module.json5"],
@@ -317,8 +325,16 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
 
   assert.equal(payload.assisted_rule_candidates[0]?.rule_name, "module.json5 需配置 Client ID");
   assert.equal(payload.assisted_rule_candidates[0]?.priority, "P1");
+  assert.deepEqual(payload.assisted_rule_candidates[0]?.kit, ["Account Kit"]);
   assert.deepEqual(payload.assisted_rule_candidates[0]?.ast_signals, [
     { type: "json_key", name: "metadata" },
+  ]);
+  assert.deepEqual(payload.assisted_rule_candidates[0]?.target_checks, [
+    {
+      target: "**/module.json5",
+      ast_signals: [{ type: "json_key", name: "metadata" }],
+      llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
+    },
   ]);
   assert.equal(payload.assisted_rule_candidates[0]?.static_precheck?.signal_status, "all_matched");
 });

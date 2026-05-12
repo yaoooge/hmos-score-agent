@@ -98,3 +98,34 @@ test("official Code Linter is enabled only by explicit true environment flag", (
     }
   }
 });
+
+test("hvigor build check uses its own enable flag and falls back to legacy linter flag", () => {
+  const previousCodeLinterEnabled = process.env.HMOS_CODE_LINTER_ENABLED;
+  const previousHvigorEnabled = process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED;
+
+  try {
+    process.env.HMOS_CODE_LINTER_ENABLED = "false";
+    process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED = "true";
+    assert.equal(getConfig().officialCodeLinterEnabled, false);
+    assert.equal(getConfig().hvigorBuildCheckEnabled, true);
+
+    process.env.HMOS_CODE_LINTER_ENABLED = "true";
+    process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED = "false";
+    assert.equal(getConfig().officialCodeLinterEnabled, true);
+    assert.equal(getConfig().hvigorBuildCheckEnabled, false);
+
+    delete process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED;
+    assert.equal(getConfig().hvigorBuildCheckEnabled, true);
+  } finally {
+    if (previousCodeLinterEnabled === undefined) {
+      delete process.env.HMOS_CODE_LINTER_ENABLED;
+    } else {
+      process.env.HMOS_CODE_LINTER_ENABLED = previousCodeLinterEnabled;
+    }
+    if (previousHvigorEnabled === undefined) {
+      delete process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED;
+    } else {
+      process.env.HMOS_HVIGOR_BUILD_CHECK_ENABLED = previousHvigorEnabled;
+    }
+  }
+});

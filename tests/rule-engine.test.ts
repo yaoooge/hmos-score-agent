@@ -452,6 +452,17 @@ test("runRuleEngine routes all runtime case rules to agent candidates and keeps 
           { type: "call", name: "LoginWithHuaweiIDButton" },
         ],
         llmPrompt: "检查是否从 @kit.AccountKit 导入并使用 LoginWithHuaweiIDButton",
+        kit: ["Account Kit"],
+        targetChecks: [
+          {
+            target: "**/pages/*.ets",
+            astSignals: [
+              { type: "import", module: "@kit.AccountKit" },
+              { type: "call", name: "LoginWithHuaweiIDButton" },
+            ],
+            llmPrompt: "检查是否从 @kit.AccountKit 导入并使用 LoginWithHuaweiIDButton",
+          },
+        ],
       },
       fallback_policy: "agent_assisted",
       is_case_rule: true,
@@ -493,6 +504,24 @@ test("runRuleEngine routes all runtime case rules to agent candidates and keeps 
   assert.equal(
     result.assistedRuleCandidates.some((item) => item.rule_id === "HM-REQ-008-06"),
     true,
+  );
+  assert.deepEqual(
+    result.assistedRuleCandidates.find((item) => item.rule_id === "HM-REQ-008-01")?.kit,
+    ["Account Kit"],
+  );
+  assert.deepEqual(
+    result.assistedRuleCandidates.find((item) => item.rule_id === "HM-REQ-008-01")
+      ?.target_checks,
+    [
+      {
+        target: "**/pages/*.ets",
+        ast_signals: [
+          { type: "import", module: "@kit.AccountKit" },
+          { type: "call", name: "LoginWithHuaweiIDButton" },
+        ],
+        llm_prompt: "检查是否从 @kit.AccountKit 导入并使用 LoginWithHuaweiIDButton",
+      },
+    ],
   );
   assert.equal(
     result.staticRuleAuditResults.some(

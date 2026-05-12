@@ -422,3 +422,66 @@ test("remoteTaskPreparationNode materializes expected constraint yaml for remote
     expectedConstraintsYaml,
   );
 });
+
+test("remoteTaskPreparationNode materializes top-level list expected constraint yaml", async (t) => {
+  const workspaceUrl = "https://remote.example.com/workspace.json";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+  const expectedConstraintsYaml = [
+    "- id: MALL-MUST-01",
+    "  name: '主导航必须采用四 Tab 结构'",
+    "  priority: P0",
+    "  kit:",
+    "    - 'ArkUI: Tabs / TabContent'",
+    "  rules:",
+    "    - target: '**/pages/MainPage.ets'",
+    "      llm: '检查底部导航栏是否使用 Tabs + TabContent 组件实现'",
+  ].join("\n");
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("Tabs() {}\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  const result = await remoteTaskPreparationNode({
+    caseDir: tempCaseDir,
+    remoteTask: {
+      taskId: 12,
+      testCase: {
+        id: 12,
+        name: "remote-case-with-list-constraints",
+        type: "requirement",
+        description: "实现商城首页",
+        input: "实现商城首页",
+        expectedOutput: expectedConstraintsYaml,
+        fileUrl: "",
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+      },
+      token: "remote-token",
+      callback: "https://remote.example.com/callback",
+    },
+  } as never);
+
+  assert.ok(result.sourceCasePath);
+  assert.equal(
+    await fs.readFile(path.join(result.sourceCasePath, "expected_constraints.yaml"), "utf-8"),
+    expectedConstraintsYaml,
+  );
+  assert.equal(result.caseInput?.expectedConstraintsPath, path.join(result.sourceCasePath, "expected_constraints.yaml"));
+});

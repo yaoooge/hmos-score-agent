@@ -357,7 +357,7 @@ export async function runHvigorBuildCheck(
       enabled: false,
       status: "not_enabled",
       durationMs: Date.now() - startedAt,
-      diagnostics: "hvigor build check is disabled because official Code Linter is disabled",
+      diagnostics: "hvigor build check is disabled by HMOS_HVIGOR_BUILD_CHECK_ENABLED",
     });
   }
   if (!input.workspaceDir) {

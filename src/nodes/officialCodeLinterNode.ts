@@ -85,6 +85,7 @@ export async function officialCodeLinterNode(
     enabled?: boolean;
     runDir?: string;
     timeoutMs?: number;
+    hvigorEnabled?: boolean;
     hvigorRunDir?: string;
     hvigorTimeoutMs?: number;
   } = {},
@@ -94,6 +95,8 @@ export async function officialCodeLinterNode(
   try {
     const config = getConfig();
     const enabled = deps.enabled ?? config.officialCodeLinterEnabled;
+    const hvigorEnabled =
+      deps.hvigorEnabled ?? (deps.enabled === undefined ? config.hvigorBuildCheckEnabled : deps.enabled);
     const runDir = deps.runDir ?? config.officialCodeLinterRunDir;
     const hvigorRunDir =
       deps.hvigorRunDir ??
@@ -104,7 +107,7 @@ export async function officialCodeLinterNode(
     const caseDir = state.caseDir;
     const generatedProjectPath = state.caseInput?.generatedProjectPath;
 
-    if (!enabled) {
+    if (!enabled && !hvigorEnabled) {
       const hvigorSummary = await runHvigorBuildCheck({
         enabled: false,
         hvigorRunDir,
@@ -127,28 +130,32 @@ export async function officialCodeLinterNode(
       };
     }
 
-    const notInstalledSummary = makeSummary({
-      runStatus: "not_installed",
+    const unavailableRunStatus: OfficialLinterRunStatus = enabled ? "not_installed" : "not_enabled";
+    const unavailableDiagnostics = enabled
+      ? "official Code Linter run directory or entrypoint is unavailable"
+      : "official Code Linter is disabled by HMOS_CODE_LINTER_ENABLED";
+    const unavailableSummary = makeSummary({
+      runStatus: unavailableRunStatus,
       effectiveFindingCount: 0,
       durationMs: Date.now() - startedAt,
-      diagnostics: "official Code Linter run directory or entrypoint is unavailable",
+      diagnostics: unavailableDiagnostics,
     });
     if (!caseDir || !generatedProjectPath) {
       const hvigorSummary = await runHvigorBuildCheck({
-        enabled: true,
+        enabled: hvigorEnabled,
         hvigorRunDir,
         changedFiles: state.evidenceSummary?.changedFiles ?? [],
         timeoutMs: hvigorTimeoutMs,
       });
       if (caseDir) {
         const sanitized = sanitizeOfficialCodeLinterOutput({
-          text: notInstalledSummary.diagnostics ?? "",
+          text: unavailableSummary.diagnostics ?? "",
           effectiveFindingCount: 0,
-          runStatus: "not_installed",
+          runStatus: unavailableRunStatus,
         });
         await writeSummaryArtifacts({
           caseDir,
-          summary: notInstalledSummary,
+          summary: unavailableSummary,
           findings: [],
           stdout: sanitized,
           stderr: sanitized,
@@ -156,8 +163,8 @@ export async function officialCodeLinterNode(
         await writeHvigorSummaryArtifact(caseDir, hvigorSummary);
       }
       return {
-        officialLinterRunStatus: "not_installed",
-        officialLinterSummary: notInstalledSummary,
+        officialLinterRunStatus: unavailableRunStatus,
+        officialLinterSummary: unavailableSummary,
         officialLinterFindings: [],
         officialLinterRuleResults: [],
         hvigorBuildCheckStatus: hvigorSummary.status,
@@ -167,14 +174,16 @@ export async function officialCodeLinterNode(
 
     const workspace = await prepareOfficialCodeLinterWorkspace({ generatedProjectPath, caseDir });
     const hvigorSummary = await runHvigorBuildCheck({
-      enabled: true,
+      enabled: hvigorEnabled,
       hvigorRunDir,
       workspaceDir: workspace.workspaceDir,
       changedFiles: state.evidenceSummary?.changedFiles ?? [],
       timeoutMs: hvigorTimeoutMs,
     });
 
-    const linterInstalled = Boolean(runDir && (await hasOfficialCodeLinterEntrypoint(runDir)));
+    const linterInstalled = enabled
+      ? Boolean(runDir && (await hasOfficialCodeLinterEntrypoint(runDir)))
+      : false;
     const runResult = linterInstalled
       ? await runOfficialCodeLinter({
           runDir: runDir as string,
@@ -197,7 +206,9 @@ export async function officialCodeLinterNode(
     });
 
     const runStatus: OfficialLinterRunStatus = !linterInstalled
-      ? "not_installed"
+      ? enabled
+        ? "not_installed"
+        : "not_enabled"
       : runResult?.status === "timeout"
         ? "timeout"
         : parsed.status === "parsed"
@@ -212,10 +223,15 @@ export async function officialCodeLinterNode(
       effectiveFindingCount: effectiveFindings.length,
       durationMs: runResult?.durationMs ?? Date.now() - startedAt,
       exitCode: runResult?.exitCode,
-      diagnostics: runStatus === "success" ? undefined : `official Code Linter status=${runStatus}`,
+      diagnostics:
+        runStatus === "success"
+          ? undefined
+          : runStatus === "not_enabled"
+            ? "official Code Linter is disabled by HMOS_CODE_LINTER_ENABLED"
+            : `official Code Linter status=${runStatus}`,
     });
     const sanitizedStdout = sanitizeOfficialCodeLinterOutput({
-      text: runResult?.stdout ?? notInstalledSummary.diagnostics ?? "",
+      text: runResult?.stdout ?? summary.diagnostics ?? "",
       effectiveFindingCount: effectiveFindings.length,
       runStatus,
     });

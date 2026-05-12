@@ -13,6 +13,7 @@ interface RawConstraint {
   name: string;
   description?: string;
   priority: CaseConstraintPriority;
+  kit?: string[];
   rules: RawConstraintRule[];
 }
 
@@ -23,7 +24,7 @@ interface RawConstraintRule {
 }
 
 const TOP_LEVEL_KEYS = ["constraints"];
-const CONSTRAINT_KEYS = ["id", "name", "description", "priority", "rules"];
+const CONSTRAINT_KEYS = ["id", "name", "description", "priority", "kit", "rules"];
 const RULE_KEYS = ["target", "ast", "llm"];
 
 export async function loadCaseConstraintRules(caseInput: CaseInput): Promise<CaseRuleDefinition[]> {
@@ -36,9 +37,22 @@ export async function loadCaseConstraintRules(caseInput: CaseInput): Promise<Cas
   const document = parseConstraintFile(parsed);
 
   return document.constraints.map((constraint) => {
+    const targetChecks = constraint.rules.map((rule) => ({
+      target: rule.target,
+      astSignals: normalizeAstSignals(rule.ast),
+      llmPrompt: rule.llm ?? "",
+    }));
     const targetPatterns = constraint.rules.map((rule) => rule.target);
-    const astSignals = constraint.rules.flatMap((rule) => normalizeAstSignals(rule.ast));
-    const llmPrompt = constraint.rules.find((rule) => typeof rule.llm === "string")?.llm ?? "";
+    const astSignals = targetChecks.flatMap((check) => check.astSignals);
+    const llmPrompt = formatCombinedLlmPrompt(targetChecks);
+
+    const detectorConfig: CaseRuleDefinition["detector_config"] = {
+      targetPatterns,
+      astSignals,
+      llmPrompt,
+      ...(constraint.kit ? { kit: constraint.kit } : {}),
+      ...(targetChecks.length > 1 || constraint.kit ? { targetChecks } : {}),
+    };
 
     return {
       pack_id: `case-${caseInput.caseId}`,
@@ -48,11 +62,7 @@ export async function loadCaseConstraintRules(caseInput: CaseInput): Promise<Cas
       summary: constraint.description?.trim() || constraint.name,
       priority: constraint.priority,
       detector_kind: "case_constraint",
-      detector_config: {
-        targetPatterns,
-        astSignals,
-        llmPrompt,
-      },
+      detector_config: detectorConfig,
       fallback_policy: "agent_assisted",
       is_case_rule: true,
     };
@@ -60,6 +70,12 @@ export async function loadCaseConstraintRules(caseInput: CaseInput): Promise<Cas
 }
 
 function parseConstraintFile(value: unknown): RawCaseConstraintFile {
+  if (Array.isArray(value)) {
+    return {
+      constraints: value.map((constraint, index) => parseConstraint(constraint, `[${index}]`)),
+    };
+  }
+
   const root = expectRecord(value, "root");
   assertSupportedKeys(root, TOP_LEVEL_KEYS, "root");
 
@@ -88,6 +104,10 @@ function parseConstraint(value: unknown, location: string): RawConstraint {
       constraint.description === undefined
         ? undefined
         : expectString(constraint.description, `${location}.description`),
+    kit:
+      constraint.kit === undefined
+        ? undefined
+        : parseOptionalStringArray(constraint.kit),
     priority,
     rules,
   };
@@ -144,6 +164,21 @@ function normalizeAstSignals(value: unknown): Array<Record<string, string>> {
   });
 }
 
+function formatCombinedLlmPrompt(
+  targetChecks: Array<{ target: string; llmPrompt: string }>,
+): string {
+  const checksWithPrompt = targetChecks.filter((check) => check.llmPrompt.length > 0);
+  if (checksWithPrompt.length === 0) {
+    return "";
+  }
+  if (checksWithPrompt.length === 1) {
+    return checksWithPrompt[0]?.llmPrompt ?? "";
+  }
+  return checksWithPrompt
+    .map((check) => `${check.target}: ${check.llmPrompt}`)
+    .join("\n");
+}
+
 function parsePriority(value: unknown, location: string): CaseConstraintPriority {
   const priority = expectString(value, location);
   if (priority !== "P0" && priority !== "P1") {
@@ -180,4 +215,12 @@ function expectString(value: unknown, location: string): string {
     throw new Error(`${location} must be a string`);
   }
   return value;
+}
+
+function parseOptionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value.filter((entry): entry is string => typeof entry === "string");
+  return strings.length > 0 ? strings : undefined;
 }

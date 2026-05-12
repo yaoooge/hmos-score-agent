@@ -40,6 +40,14 @@ function payload(): AgentBootstrapPayload {
         local_preliminary_signal: "unknown",
         evidence_files: ["generated/entry/src/main.ets"],
         evidence_snippets: [],
+        kit: ["ArkUI: Tabs / TabContent"],
+        target_checks: [
+          {
+            target: "**/pages/MainPage.ets",
+            ast_signals: [],
+            llm_prompt: "检查底部导航栏是否使用 Tabs + TabContent 组件实现",
+          },
+        ],
       },
     ],
   };
@@ -136,6 +144,10 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   assert.match(prompt, /根据 patch 中出现的文件路径继续阅读相关 generated\/ 或 original\/ 上下文/);
   assert.match(prompt, /未接入静态判定器本身不是人工复核理由/);
   assert.match(prompt, /新增代码未发现该规则相关问题时，必须输出 decision="pass" 且 needs_human_review=false/);
+  assert.match(prompt, /同一候选规则包含多个 target_checks 时，必须逐个 target 审视/);
+  assert.match(prompt, /候选规则包含 kit 时，必须重点核查指定 Kit/);
+  assert.match(prompt, /ArkUI: Tabs \/ TabContent/);
+  assert.match(prompt, /target_checks/);
   assert.doesNotMatch(prompt, /initial_target_files/);
   assert.match(prompt, /output_file: metadata\/agent-output\/rule-assessment\.json/);
   assert.match(prompt, /严格遵守 system prompt 中的正确输出格式/);
