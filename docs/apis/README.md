@@ -62,7 +62,7 @@
 
 ## 远端回调
 
-`POST /score/run-remote-task` 需要调用方提供 `callback`。服务在评分完成时会向该地址发送回调。
+`POST /score/run-remote-task` 需要调用方提供 `callback`。服务会向该地址发送进度和结果回调。任务已接收但因并发限制仍在本地排队时，会先发送一次 `status: "pending"`；任务进入执行槽位后继续发送现有的执行中和完成/失败回调。
 
 | 字段 | 说明 |
 | --- | --- |

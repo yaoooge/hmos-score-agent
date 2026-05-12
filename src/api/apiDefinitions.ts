@@ -158,7 +158,8 @@ const remoteCallbackDefinition = {
   name: "remoteTaskCallback",
   method: "POST",
   urlSource: "request.body.callback",
-  description: "Callback sent to the remote platform while executing an accepted remote task.",
+  description:
+    "Callback sent to the remote platform while executing an accepted remote task. Queued tasks receive an early pending callback before an execution slot is available.",
   body: {
     type: "object",
     description: "Remote task callback payload produced by this service.",

@@ -1351,6 +1351,77 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
   releases.get(4)?.();
 });
 
+test("createRunRemoteTaskHandler uploads pending callback for queued remote task", async (t) => {
+  const callbackCalls: Array<{ taskId: number; body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    callbackCalls.push({
+      taskId: Number(JSON.parse(String(init?.body ?? "{}")).taskId),
+      body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+    });
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const releases = new Map<number, () => void>();
+  const startedTaskIds = new Set<number>();
+  const deps = {
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
+      const taskId = Number(remoteTask.taskId);
+      return {
+        taskId,
+        caseDir: `/tmp/remote-case-${String(taskId)}`,
+        message: "任务接收成功，结果将通过 callback 返回",
+        remoteTask: {
+          ...remoteTask,
+          callback: `https://remote.example.com/api/evaluation-tasks/callback/${String(taskId)}`,
+          testCase: { id: taskId + 100 },
+        } as never,
+        workflowState: {} as never,
+      };
+    },
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+    executeAcceptedRemoteEvaluationTask: async (acceptedTask: { taskId: number }) => {
+      startedTaskIds.add(acceptedTask.taskId);
+      await new Promise<void>((resolve) => {
+        releases.set(acceptedTask.taskId, resolve);
+      });
+    },
+  };
+  const handler = createRunRemoteTaskHandler(deps as never);
+  const responses = [1, 2, 3, 4].map(() => createResponse());
+
+  await Promise.all(
+    [1, 2, 3, 4].map((taskId, index) =>
+      handler(
+        { body: { taskId, testCase: { id: taskId + 100 } } } as never,
+        responses[index]?.response as never,
+      ),
+    ),
+  );
+
+  assert.deepEqual(
+    responses.map(({ responseState }) => responseState.statusCode),
+    [200, 200, 200, 200],
+  );
+  assert.deepEqual(
+    [...startedTaskIds].sort((left, right) => left - right),
+    [1, 2, 3],
+  );
+  await waitForAssertion(async () => {
+    assert.deepEqual(callbackCalls, [{ taskId: 4, body: { taskId: 4, status: "pending" } }]);
+  });
+
+  releases.get(1)?.();
+  releases.get(2)?.();
+  releases.get(3)?.();
+  releases.get(4)?.();
+});
+
 test("createRunRemoteTaskHandler logs remote API request, response, and errors", async () => {
   const originalInfo = console.info;
   const originalError = console.error;

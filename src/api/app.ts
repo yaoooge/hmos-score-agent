@@ -6,6 +6,7 @@ import { getConfig } from "../config.js";
 import { createSubmitHumanReviewHandler } from "./humanReviewHandler.js";
 import { createSubmitManualRatingHandler } from "./manualRatingHandler.js";
 import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
+import { uploadTaskCallback } from "../io/uploader.js";
 import {
   createHumanReviewEvidenceStore,
   type HumanReviewEvidenceStore,
@@ -87,6 +88,13 @@ function formatRemoteLogContext(context: RemoteTaskLogContext): string {
   return `taskId=${String(context.taskId ?? "unknown")} testCaseId=${String(context.testCaseId ?? "unknown")}`;
 }
 
+function formatAcceptedTaskLogContext(acceptedTask: AcceptedRemoteEvaluationTask): string {
+  return formatRemoteLogContext({
+    taskId: acceptedTask.taskId,
+    testCaseId: acceptedTask.remoteTask.testCase.id,
+  });
+}
+
 function logRemoteApiTriggered(context: RemoteTaskLogContext): void {
   console.info(
     `api_request_triggered route=POST /score/run-remote-task ${formatRemoteLogContext(context)}`,
@@ -113,6 +121,20 @@ function sendRemoteApiResponse(
     return;
   }
   res.status(status).json(body);
+}
+
+async function uploadQueuedPendingCallback(acceptedTask: AcceptedRemoteEvaluationTask): Promise<void> {
+  const upload = await uploadTaskCallback(
+    acceptedTask.remoteTask.callback,
+    acceptedTask.remoteTask.token,
+    {
+      taskId: acceptedTask.taskId,
+      status: "pending",
+    },
+  );
+  console.info(
+    `queued_remote_task_callback_sent ${formatAcceptedTaskLogContext(acceptedTask)} status=pending uploaded=${String(upload.uploaded)} message=${upload.message}`,
+  );
 }
 
 export function createRunRemoteTaskHandler(
@@ -288,7 +310,9 @@ export function createRunRemoteTaskHandler(
         token: acceptedTask.remoteTask.token,
         testCaseId: acceptedTask.remoteTask.testCase.id,
       });
-      void enqueueRemoteTaskExecution(acceptedTask).catch((error) => {
+      const executionPromise = enqueueRemoteTaskExecution(acceptedTask);
+      const shouldUploadQueuedPendingCallback = queuedTaskIds.has(acceptedTask.taskId);
+      void executionPromise.catch((error) => {
         console.error(
           `run-remote-task background execution failed ${formatRemoteLogContext(acceptedTaskLogContext)} error=${formatError(error)}`,
         );
@@ -298,6 +322,13 @@ export function createRunRemoteTaskHandler(
         taskId: acceptedTask.taskId,
         message: acceptedTask.message,
       });
+      if (shouldUploadQueuedPendingCallback) {
+        void uploadQueuedPendingCallback(acceptedTask).catch((error) => {
+          console.error(
+            `queued_remote_task_callback_failed ${formatAcceptedTaskLogContext(acceptedTask)} error=${formatError(error)}`,
+          );
+        });
+      }
     } catch (error) {
       if (taskId !== undefined) {
         upsertTaskRecord(taskId, "failed", { error: formatError(error) });
