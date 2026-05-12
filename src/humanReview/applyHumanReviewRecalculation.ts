@@ -83,10 +83,10 @@ export function applyHumanReviewRecalculation(input: {
       }
       if (effect.type === "hard_gate") {
         applyHardGateReview(review.correctedAssessment, effect, activeGateCaps);
-        effectApplied = !review.agreeWithResultAssessment;
+        effectApplied = !review.agree;
       } else if (effect.type === "rule_result") {
         applyRuleResultReview(resultJson, review.correctedAssessment, effect, activeGateCaps);
-        effectApplied = !review.agreeWithResultAssessment;
+        effectApplied = !review.agree;
       }
     }
     if (effectApplied) {
@@ -95,11 +95,9 @@ export function applyHumanReviewRecalculation(input: {
     }
     itemReviewEffects.push({
       itemId: review.itemId,
-      agreeWithResultAssessment: review.agreeWithResultAssessment,
-      resultAssessment: review.resultAssessment,
+      agree: review.agree,
       correctedAssessment: review.correctedAssessment,
       reason: review.reason,
-      comment: review.comment,
       score_effect_applied: effectApplied,
     });
   }
@@ -109,7 +107,7 @@ export function applyHumanReviewRecalculation(input: {
     const risk = findArrayItemById(resultJson.risks, review.riskId);
     const effect = asRecord(risk?.score_effect);
     let effectApplied = false;
-    if (!review.agreeWithResultLevel && risk) {
+    if (!review.agree && risk) {
       risk.level = review.correctedLevel;
       changedRiskCount += 1;
       if (effect?.type === "risk_level_rule_impact") {
@@ -129,11 +127,9 @@ export function applyHumanReviewRecalculation(input: {
     }
     riskReviewEffects.push({
       riskId: review.riskId,
-      agreeWithResultLevel: review.agreeWithResultLevel,
-      resultLevel: review.resultLevel,
+      agree: review.agree,
       correctedLevel: review.correctedLevel,
       reason: review.reason,
-      comment: review.comment,
       score_effect_applied: effectApplied,
     });
   }
@@ -151,6 +147,7 @@ export function applyHumanReviewRecalculation(input: {
     applied: true,
     reviewed_at: input.reviewedAt,
     reviewer: sanitizeReviewer(input.payload.reviewer),
+    overall_comment: sanitizeOverallComment(input.payload.overallComment),
     score_recalculation: {
       original_total_score: originalTotalScore,
       revised_total_score: revisedTotalScore,
@@ -186,10 +183,10 @@ function hasAppliedHumanReview(resultJson: Record<string, unknown>): boolean {
 }
 
 function validateItemReviewEffect(
-  review: { agreeWithResultAssessment: boolean; correctedAssessment?: string },
+  review: { agree: boolean; correctedAssessment?: string },
   effect: Record<string, unknown>,
 ): HumanReviewRecalculationError | undefined {
-  if (review.agreeWithResultAssessment) {
+  if (review.agree) {
     return undefined;
   }
   if (effect.type === "hard_gate") {
@@ -534,16 +531,20 @@ function formatScore(value: number): string {
   return Number.isInteger(value) ? String(value) : String(roundScore(value));
 }
 
-function sanitizeReviewer(reviewer: HumanReviewSubmissionPayload["reviewer"]): Record<string, string> | undefined {
-  if (!reviewer) {
+function sanitizeReviewer(reviewer: HumanReviewSubmissionPayload["reviewer"]): string | undefined {
+  if (typeof reviewer !== "string") {
     return undefined;
   }
-  const sanitized: Record<string, string> = {};
-  if (typeof reviewer.id === "string") {
-    sanitized.id = reviewer.id;
+  const trimmed = reviewer.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function sanitizeOverallComment(
+  overallComment: HumanReviewSubmissionPayload["overallComment"],
+): string | undefined {
+  if (typeof overallComment !== "string") {
+    return undefined;
   }
-  if (typeof reviewer.role === "string") {
-    sanitized.role = reviewer.role;
-  }
-  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+  const trimmed = overallComment.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }

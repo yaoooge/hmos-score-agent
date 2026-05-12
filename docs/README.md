@@ -8,9 +8,10 @@
 | --- | --- | --- |
 | 1 | [ARCHITECTURE.md](ARCHITECTURE.md) | 先了解代码仓目录结构、主评分 workflow、人工复核和人工评级差异分析流程。 |
 | 2 | [apis/README.md](apis/README.md) | 对接管理台、远端任务平台、人工复核页面或接口联调。 |
-| 3 | [agents/README.md](agents/README.md) | 维护 opencode agent、prompt、skill、权限和输出协议。 |
-| 4 | [superpowers/specs/](superpowers/specs/) | 追溯历史需求设计、方案取舍和行为来源。 |
-| 5 | [superpowers/plans/](superpowers/plans/) | 追溯历史实现计划和落地步骤。 |
+| 3 | [human-review/README.md](human-review/README.md) | 查看人工复核全流程、重算规则、产物和排查方式。 |
+| 4 | [agents/README.md](agents/README.md) | 维护 opencode agent、prompt、skill、权限和输出协议。 |
+| 5 | [superpowers/specs/](superpowers/specs/) | 追溯历史需求设计、方案取舍和行为来源。 |
+| 6 | [superpowers/plans/](superpowers/plans/) | 追溯历史实现计划和落地步骤。 |
 
 ## 文档分类
 
@@ -18,6 +19,7 @@
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 当前代码结构、运行入口、主评分 workflow、人工侧流程和运行产物。 |
 | [apis/](apis/) | 服务对外 HTTP API、请求字段、响应字段、callback 约定。 |
+| [human-review/](human-review/) | 人工复核全流程、重算规则、数据集和排查方式。 |
 | [agents/](agents/) | 项目内 opencode agent 的职责、调用入口、权限、输入输出契约。 |
 | [superpowers/specs/](superpowers/specs/) | 历史设计文档，按日期和主题命名。 |
 | [superpowers/plans/](superpowers/plans/) | 历史实现计划，按日期和主题命名。 |

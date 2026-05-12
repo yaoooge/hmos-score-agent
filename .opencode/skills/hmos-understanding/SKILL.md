@@ -31,6 +31,8 @@ description: Extract task constraints from preprocessed case input and return on
 - 顶层只能包含 `explicitConstraints`、`contextualConstraints`、`implicitConstraints`、`classificationHints`。
 - 四个字段都必须是数组。
 - 数组元素必须是短字符串；前三个字段以中文短句为主，`classificationHints` 可以包含英文分类标签。
+- 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
+- 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
 
 正确输出格式:
 
@@ -65,5 +67,6 @@ description: Extract task constraints from preprocessed case input and return on
 - 顶层字段恰好是四个 contract 字段。
 - 四个字段都是数组。
 - 数组元素都是字符串。
+- 文案类字符串均为中文；英文分类标签、文件路径、代码标识符和原始专有名词除外。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
 - JSON 语法完整，所有 `{}`、`[]`、字符串和逗号都正确闭合。

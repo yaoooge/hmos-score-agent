@@ -436,6 +436,17 @@ export const API_DEFINITIONS: ApiDefinition[] = [
         type: "object",
         description: "Human review submission from the remote scoring console.",
         properties: {
+          reviewer: {
+            type: "string",
+            required: false,
+            description: "Optional human reviewer identifier.",
+          },
+          overallComment: {
+            type: "string",
+            required: false,
+            description:
+              "Optional whole-task human comment for issues the current agent missed or did not identify.",
+          },
           itemReviews: {
             type: "array",
             required: false,
@@ -443,7 +454,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             items: {
               type: "object",
               description:
-                "One item review with itemId, agreeWithResultAssessment, resultAssessment, and optional correctedAssessment, reason, comment.",
+                "One item review with itemId, agree, and correctedAssessment plus reason when agree is false.",
             },
           },
           riskReviews: {
@@ -454,7 +465,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             items: {
               type: "object",
               description:
-                "One risk review with riskId, agreeWithResultLevel, resultLevel, and optional correctedLevel, reason, comment.",
+                "One risk review with riskId, agree, and correctedLevel plus reason when agree is false.",
             },
           },
         },
@@ -480,7 +491,7 @@ export const API_DEFINITIONS: ApiDefinition[] = [
               type: "object",
               required: true,
               description:
-                "Synchronous summary with review counts, datasetItemCount across human-review datasets, and score recalculation fields when score changes are applied.",
+                "Synchronous summary with review counts, datasetItemCount, hasOverallComment, and score recalculation fields when score changes are applied.",
             },
             message: messageField,
           },

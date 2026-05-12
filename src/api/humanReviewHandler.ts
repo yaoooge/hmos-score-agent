@@ -139,16 +139,16 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
     }
     const itemReviewCount = payload.itemReviews?.length ?? 0;
     const riskReviewCount = payload.riskReviews?.length ?? 0;
-    const riskAgreementCount = (payload.riskReviews ?? []).filter(
-      (item) => item.agreeWithResultLevel,
-    ).length;
+    const riskAgreementCount = (payload.riskReviews ?? []).filter((item) => item.agree).length;
     const riskDisagreementCount = riskReviewCount - riskAgreementCount;
+    const hasOverallComment = hasNonEmptyString(payload.overallComment);
     const summary = {
       itemReviewCount,
       riskReviewCount,
       riskAgreementCount,
       riskDisagreementCount,
       datasetItemCount: itemDatasetCount + riskDatasetCount,
+      hasOverallComment,
       ...(recalculationSummary?.scoreRecalculationApplied ? recalculationSummary : {}),
     };
 
@@ -184,6 +184,12 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
     return "Request body must be an object";
   }
   const candidate = body as Partial<HumanReviewSubmissionPayload>;
+  if (candidate.reviewer !== undefined && typeof candidate.reviewer !== "string") {
+    return "reviewer must be a string";
+  }
+  if (candidate.overallComment !== undefined && typeof candidate.overallComment !== "string") {
+    return "overallComment must be a string";
+  }
   const itemReviews = candidate.itemReviews ?? [];
   const riskReviews = candidate.riskReviews ?? [];
   if (!Array.isArray(itemReviews)) {
@@ -206,18 +212,15 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
       return `itemReviews[${String(index)}].itemId is duplicated`;
     }
     itemIds.add(itemReview.itemId);
-    if (typeof itemReview.agreeWithResultAssessment !== "boolean") {
-      return `itemReviews[${String(index)}].agreeWithResultAssessment is required or invalid`;
+    if (typeof itemReview.agree !== "boolean") {
+      return `itemReviews[${String(index)}].agree is required or invalid`;
     }
-    if (typeof itemReview.resultAssessment !== "string") {
-      return `itemReviews[${String(index)}].resultAssessment is required or invalid`;
-    }
-    if (itemReview.agreeWithResultAssessment === false) {
+    if (itemReview.agree === false) {
       if (typeof itemReview.correctedAssessment !== "string" || itemReview.correctedAssessment.trim().length === 0) {
-        return `itemReviews[${String(index)}].correctedAssessment is required when agreeWithResultAssessment is false`;
+        return `itemReviews[${String(index)}].correctedAssessment is required when agree is false`;
       }
       if (typeof itemReview.reason !== "string" || itemReview.reason.trim().length === 0) {
-        return `itemReviews[${String(index)}].reason is required when agreeWithResultAssessment is false`;
+        return `itemReviews[${String(index)}].reason is required when agree is false`;
       }
     }
   }
@@ -235,24 +238,22 @@ function parseSubmissionPayload(body: unknown): HumanReviewSubmissionPayload | s
       return `riskReviews[${String(index)}].riskId is duplicated`;
     }
     riskIds.add(riskReview.riskId);
-    if (typeof riskReview.agreeWithResultLevel !== "boolean") {
-      return `riskReviews[${String(index)}].agreeWithResultLevel is required or invalid`;
+    if (typeof riskReview.agree !== "boolean") {
+      return `riskReviews[${String(index)}].agree is required or invalid`;
     }
-    if (!isRiskLevel(riskReview.resultLevel)) {
-      return `riskReviews[${String(index)}].resultLevel is required or invalid`;
-    }
-    if (riskReview.agreeWithResultLevel === false) {
+    if (riskReview.agree === false) {
       if (!isRiskLevel(riskReview.correctedLevel)) {
-        return `riskReviews[${String(index)}].correctedLevel is required when agreeWithResultLevel is false`;
+        return `riskReviews[${String(index)}].correctedLevel is required when agree is false`;
       }
       if (typeof riskReview.reason !== "string" || riskReview.reason.trim().length === 0) {
-        return `riskReviews[${String(index)}].reason is required when agreeWithResultLevel is false`;
+        return `riskReviews[${String(index)}].reason is required when agree is false`;
       }
     }
   }
 
   return {
     reviewer: candidate.reviewer,
+    overallComment: candidate.overallComment,
     itemReviews: itemReviews as HumanReviewItemReview[],
     riskReviews: riskReviews as HumanRiskReview[],
   };
@@ -271,12 +272,6 @@ function validateReviewsWithResult(
         message: `itemReviews[${String(index)}].itemId does not match result human_review_items`,
       };
     }
-    if (review.resultAssessment !== resultItem.current_assessment) {
-      return {
-        status: 409,
-        message: `itemReviews[${String(index)}].resultAssessment does not match result review item assessment`,
-      };
-    }
   }
 
   const risksById = new Map(readResultRisks(resultJson).map((risk) => [risk.id, risk]));
@@ -286,12 +281,6 @@ function validateReviewsWithResult(
       return {
         status: 400,
         message: `riskReviews[${String(index)}].riskId does not match result risks`,
-      };
-    }
-    if (review.resultLevel !== risk.level) {
-      return {
-        status: 409,
-        message: `riskReviews[${String(index)}].resultLevel does not match result risk level`,
       };
     }
   }
@@ -320,10 +309,12 @@ async function appendItemReviewCalibrationSamples(input: {
       taskSummary: buildTaskSummary(input.resultJson),
       resultReviewItem,
       humanReview: {
-        agreeWithResultAssessment: review.agreeWithResultAssessment,
+        agree: review.agree,
         correctedAssessment: review.correctedAssessment,
         reason: review.reason,
-        comment: review.comment,
+        overallComment: hasNonEmptyString(input.payload.overallComment)
+          ? input.payload.overallComment
+          : undefined,
       },
     });
     count += 1;
@@ -353,10 +344,12 @@ async function appendRiskReviewCalibrationSamples(input: {
       taskSummary: buildTaskSummary(input.resultJson),
       resultRisk: risk,
       humanReview: {
-        agreeWithResultLevel: review.agreeWithResultLevel,
+        agree: review.agree,
         correctedLevel: review.correctedLevel,
         reason: review.reason,
-        comment: review.comment,
+        overallComment: hasNonEmptyString(input.payload.overallComment)
+          ? input.payload.overallComment
+          : undefined,
       },
     });
     count += 1;
@@ -418,6 +411,10 @@ function readResultArrayId(item: Record<string, unknown>, index: number): number
 
 function isRiskLevel(value: unknown): value is HumanRiskLevel {
   return typeof value === "string" && RISK_LEVELS.has(value);
+}
+
+function hasNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function buildTaskSummary(resultJson: Record<string, unknown>): string {

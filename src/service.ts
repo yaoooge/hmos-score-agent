@@ -390,7 +390,7 @@ export async function acceptRemoteEvaluationTask(
   const artifactStore = new ArtifactStore(config.localCaseRoot);
   const caseDir = await artifactStore.ensureCaseDir(
     buildRunCaseId({
-      taskType: "full_generation",
+      taskType: "case",
       uniqueId: randomUUID().replace(/-/g, "").slice(0, 8),
     }),
   );

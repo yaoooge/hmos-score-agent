@@ -121,6 +121,40 @@ function assertCompletedCallbackSummary(
   assert.equal("rule_audit_results" in resultData, false);
 }
 
+test("acceptRemoteEvaluationTask uses a neutral case label before remote classification", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  t.after(() => {
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+  });
+
+  const accepted = await acceptRemoteEvaluationTask({
+    taskId: 42,
+    testCase: {
+      id: 1001,
+      name: "remote-case",
+      type: "requirement",
+      description: "修复登录页",
+      input: "请修复登录失败问题",
+      expectedOutput: "",
+      fileUrl: "",
+    },
+    executionResult: {
+      isBuildSuccess: true,
+      outputCodeUrl: "https://remote.example.com/workspace.json",
+    },
+    callback: "https://remote.example.com/callback",
+  });
+
+  assert.match(path.basename(accepted.caseDir), /^\d{8}T\d{6}_case_[a-f0-9]{8}$/);
+  assert.equal(path.basename(accepted.caseDir).includes("_full_generation_"), false);
+});
+
 async function waitForAssertion(assertion: () => Promise<void>, attempts = 20): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -894,7 +928,7 @@ test("executeAcceptedRemoteEvaluationTask runs post-completed hook after complet
 
   await waitForAssertion(async () => {
     assert.equal(callbackCalls.length, 4);
-  });
+  }, 500);
   const raceResult = await Promise.race([
     uploadPromise.then((message) => ({ kind: "returned", message })),
     new Promise<{ kind: "timeout" }>((resolve) =>

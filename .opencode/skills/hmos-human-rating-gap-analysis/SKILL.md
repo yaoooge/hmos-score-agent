@@ -93,6 +93,8 @@ description: Analyze disagreements between manual whole-task L1/L2 ratings and h
 
 - `evidence` 必须是非空数组。
 - `recommendedActions` 必须是非空数组。
+- 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
+- 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
 - 不要增加额外字段。
 - 不要输出 Markdown。
 - 不要输出分析过程。
@@ -115,6 +117,7 @@ description: Analyze disagreements between manual whole-task L1/L2 ratings and h
 - `primaryConclusion` 是否是允许枚举。
 - `evidence` 是否非空。
 - `recommendedActions` 是否非空。
+- 文案类字符串是否均为中文；英文枚举值、文件路径、代码标识符和原始专有名词除外。
 - 是否已经写入 `metadata/agent-output/human-rating-gap-analysis.json`。
 
 ## References

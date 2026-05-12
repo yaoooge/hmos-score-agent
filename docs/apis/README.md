@@ -10,7 +10,7 @@
 | `POST` | `/score/run-remote-task` | 接收远端任务并异步执行评分。 | `taskId`、`testCase`、`executionResult`、`callback`，`token` 已废弃但仍兼容。 | `200` 返回任务接收成功信息；失败返回 `500`。 |
 | `GET` | `/score/remote-tasks/:taskId/result` | 读取已完成远端任务的完整评分结果。 | 路径参数 `taskId`。 | `200` 返回 `success`、`taskId`、`status`、`resultData`；未完成返回 `409`，未找到返回 `404`。 |
 | `GET` | `/score/rule-violation-stats` | 读取静态规则违反聚合统计。 | 可选查询 `caseId`、`testCaseId`、`packId`、`from`、`to`。 | `200` 返回 `success`、`filters`、`summary`、`rules`；参数非法返回 `400`。 |
-| `POST` | `/score/remote-tasks/:taskId/human-review` | 提交逐条人工复核并按复核结果重算分数。 | 路径参数 `taskId`，body 包含 `itemReviews`、`riskReviews`。 | `200` 返回 `success`、`taskId`、`status`、`summary`、`message`。 |
+| `POST` | `/score/remote-tasks/:taskId/human-review` | 提交逐条人工复核并按复核结果重算分数。 | 路径参数 `taskId`，body 包含 `reviewer`、`overallComment`、`itemReviews`、`riskReviews`。 | `200` 返回 `success`、`taskId`、`status`、`summary`、`message`。 |
 | `POST` | `/score/remote-tasks/:taskId/manual-rating` | 提交整单人工评级并在满足阈值时触发差异分析。 | 路径参数 `taskId`，body 包含 `reviewer`、`manualRating`、`basis`。 | `200` 返回 `success`、`taskId`、`status`、`summary`、`message`。 |
 
 ## 远端任务接收
@@ -37,16 +37,16 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
+| `reviewer` | string | 可选的复核人标识。 |
+| `overallComment` | string | 可选的整体评价，用于补充 agent 未识别或未发现的问题。 |
 | `itemReviews` | array | 逐条评分项复核。 |
 | `riskReviews` | array | 风险项复核。 |
-| `agreeWithResultAssessment` | boolean | 是否同意系统判断。 |
-| `resultAssessment` | string | 系统当前判断。 |
-| `correctedAssessment` | string | 修正后的判断。 |
-| `agreeWithResultLevel` | boolean | 是否同意系统风险等级。 |
-| `resultLevel` | enum | 当前风险等级：`high`、`medium`、`low`、`none`。 |
-| `correctedLevel` | enum | 修正后的风险等级。 |
+| `agree` | boolean | 是否同意系统当前判断或风险等级。 |
+| `correctedAssessment` | string | 不同意评分项判断时填写的新结论。 |
+| `correctedLevel` | enum | 不同意风险等级时填写的新等级：`high`、`medium`、`low`、`none`。 |
+| `reason` | string | 不同意时必填的原因。 |
 
-提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的条目进行重算。
+提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的条目进行重算。响应 `summary` 会返回逐项复核数量、数据集写入数量和 `hasOverallComment`；发生分数变化时额外返回重算前后总分和变更计数。
 
 ## 人工评级
 

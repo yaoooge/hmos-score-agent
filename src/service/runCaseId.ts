@@ -20,7 +20,7 @@ export function inferTaskTypeFromCaseInput(
 
 type BuildRunCaseIdInput = {
   now?: Date;
-  taskType: TaskType;
+  taskType: TaskType | "case";
   uniqueId?: string;
 };
 

@@ -2,27 +2,21 @@ export type HumanRiskLevel = "high" | "medium" | "low" | "none";
 
 export type HumanReviewItemReview = {
   itemId: number;
-  agreeWithResultAssessment: boolean;
-  resultAssessment: string;
+  agree: boolean;
   correctedAssessment?: string;
   reason?: string;
-  comment?: string;
 };
 
 export type HumanRiskReview = {
   riskId: number;
-  agreeWithResultLevel: boolean;
-  resultLevel: HumanRiskLevel;
+  agree: boolean;
   correctedLevel?: HumanRiskLevel;
   reason?: string;
-  comment?: string;
 };
 
 export type HumanReviewSubmissionPayload = {
-  reviewer?: {
-    id?: string;
-    role?: string;
-  };
+  reviewer?: string;
+  overallComment?: string;
   itemReviews?: HumanReviewItemReview[];
   riskReviews?: HumanRiskReview[];
 };

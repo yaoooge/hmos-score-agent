@@ -45,6 +45,8 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - `decision` 只能是 `violation`、`pass`、`not_applicable`、`uncertain` 之一。
 - `confidence` 和 `overall_confidence` 只能是 `high`、`medium`、`low` 之一。
 - `evidence_used` 必须是字符串数组；没有证据时输出 `[]`。
+- 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
+- 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
 
 正确输出格式:
 
@@ -87,5 +89,6 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 每个 `reason` 都与对应候选规则语义、任务期望、`decision` 和 `evidence_used` 直接相关；若不相关，已重新判定该条规则。
 - `decision`、`confidence`、`overall_confidence` 均为允许枚举。
 - `evidence_used` 是字符串数组。
+- 文案类字符串均为中文；英文枚举值、文件路径、代码标识符和原始专有名词除外。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
 - JSON 语法完整，所有 `{}`、`[]`、字符串和逗号都正确闭合。

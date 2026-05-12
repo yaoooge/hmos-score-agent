@@ -313,6 +313,7 @@ test("submit human review handler accepts empty first-version payload", async (t
     riskAgreementCount: 0,
     riskDisagreementCount: 0,
     datasetItemCount: 0,
+    hasOverallComment: false,
   });
   await assert.rejects(
     fs.readFile(path.join(root, "datasets", "risk_review_calibrations.jsonl"), "utf-8"),
@@ -332,16 +333,13 @@ test("submit human review handler writes manual risk review calibration samples 
       riskReviews: [
         {
           riskId: 1,
-          agreeWithResultLevel: false,
-          resultLevel: "medium",
+          agree: false,
           correctedLevel: "low",
           reason: "该风险只影响异常态提示，不影响主流程功能。",
-          comment: "边界体验问题。",
         },
         {
           riskId: 2,
-          agreeWithResultLevel: true,
-          resultLevel: "high",
+          agree: true,
         },
       ],
     }) as never,
@@ -357,6 +355,7 @@ test("submit human review handler writes manual risk review calibration samples 
     riskAgreementCount: 1,
     riskDisagreementCount: 1,
     datasetItemCount: 2,
+    hasOverallComment: false,
   });
 
   const samples = (
@@ -381,15 +380,11 @@ test("submit human review handler writes manual risk review calibration samples 
     evidence: "entry/src/main/ets/pages/Index.ets: console.error(error)",
   });
   assert.deepEqual(samples[0]?.humanReview, {
-    agreeWithResultLevel: false,
+    agree: false,
     correctedLevel: "low",
     reason: "该风险只影响异常态提示，不影响主流程功能。",
-    comment: "边界体验问题。",
   });
-  assert.equal(
-    (samples[1]?.humanReview as { agreeWithResultLevel?: unknown }).agreeWithResultLevel,
-    true,
-  );
+  assert.equal((samples[1]?.humanReview as { agree?: unknown }).agree, true);
 });
 
 test("submit human review handler writes simplified item review calibration samples by item id", async (t) => {
@@ -401,14 +396,14 @@ test("submit human review handler writes simplified item review calibration samp
 
   await handler(
     createReviewRequest(88, "remote-token", {
+      reviewer: "qa-user-1",
+      overallComment: "Agent 未发现异常态缺少 toast 提示。",
       itemReviews: [
         {
           itemId: 1,
-          agreeWithResultAssessment: false,
-          resultAssessment: "需要确认是否使用真实接口。",
+          agree: false,
           correctedAssessment: "确认使用 mockData 替代真实接口。",
           reason: "代码中存在 const mockData = []。",
-          comment: "接口接入问题成立。",
         },
       ],
     }) as never,
@@ -426,6 +421,7 @@ test("submit human review handler writes simplified item review calibration samp
     riskAgreementCount: 0,
     riskDisagreementCount: 0,
     datasetItemCount: 1,
+    hasOverallComment: true,
   });
 
   const samples = (
@@ -450,10 +446,10 @@ test("submit human review handler writes simplified item review calibration samp
     suggested_focus: "检查是否仍依赖 mockData。",
   });
   assert.deepEqual(samples[0]?.humanReview, {
-    agreeWithResultAssessment: false,
+    agree: false,
     correctedAssessment: "确认使用 mockData 替代真实接口。",
     reason: "代码中存在 const mockData = []。",
-    comment: "接口接入问题成立。",
+    overallComment: "Agent 未发现异常态缺少 toast 提示。",
   });
   await assert.rejects(fs.stat(path.join(root, "raw")), /ENOENT/);
 });
@@ -470,8 +466,7 @@ test("submit human review handler recalculates scores from risk level review", a
       riskReviews: [
         {
           riskId: 1,
-          agreeWithResultLevel: false,
-          resultLevel: "high",
+          agree: false,
           correctedLevel: "medium",
           reason: "风险存在，但影响范围低于 high。",
         },
@@ -526,8 +521,7 @@ test("submit human review handler recalculates score cap from hard gate item rev
       itemReviews: [
         {
           itemId: 1,
-          agreeWithResultAssessment: false,
-          resultAssessment: "G3",
+          agree: false,
           correctedAssessment: "none",
           reason: "该 forbidden_pattern 证据不足，不应触发 G3。",
         },
@@ -596,7 +590,7 @@ test("submit human review handler keeps pending hard gate candidates inactive du
 
   await handler(
     createReviewRequest(88, undefined, {
-      riskReviews: [{ riskId: 1, agreeWithResultLevel: true, resultLevel: "medium" }],
+      riskReviews: [{ riskId: 1, agree: true }],
     }) as never,
     response as never,
   );
@@ -625,15 +619,13 @@ test("submit human review handler maps result review ids from array position whe
       itemReviews: [
         {
           itemId: 1,
-          agreeWithResultAssessment: true,
-          resultAssessment: "需要确认是否使用真实接口。",
+          agree: true,
         },
       ],
       riskReviews: [
         {
           riskId: 1,
-          agreeWithResultLevel: true,
-          resultLevel: "medium",
+          agree: true,
         },
       ],
     }) as never,
@@ -647,6 +639,7 @@ test("submit human review handler maps result review ids from array position whe
     riskAgreementCount: 1,
     riskDisagreementCount: 0,
     datasetItemCount: 2,
+    hasOverallComment: false,
   });
 
   const itemSamples = (
@@ -680,7 +673,7 @@ test("submit human review handler maps result review ids from array position whe
   });
 });
 
-test("submit human review handler rejects duplicate ids and stale result values", async (t) => {
+test("submit human review handler rejects duplicate ids", async (t) => {
   const { registry } = await writeCompletedTask(t);
   const root = await makeTempDir(t);
   const store = createHumanReviewEvidenceStore(root);
@@ -690,8 +683,8 @@ test("submit human review handler rejects duplicate ids and stale result values"
   await handler(
     createReviewRequest(88, undefined, {
       itemReviews: [
-        { itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" },
-        { itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" },
+        { itemId: 1, agree: true },
+        { itemId: 1, agree: true },
       ],
     }) as never,
     duplicateItem.response as never,
@@ -702,31 +695,14 @@ test("submit human review handler rejects duplicate ids and stale result values"
   await handler(
     createReviewRequest(88, undefined, {
       riskReviews: [
-        { riskId: 1, agreeWithResultLevel: true, resultLevel: "medium" },
-        { riskId: 1, agreeWithResultLevel: true, resultLevel: "medium" },
+        { riskId: 1, agree: true },
+        { riskId: 1, agree: true },
       ],
     }) as never,
     duplicateRisk.response as never,
   );
   assert.equal(duplicateRisk.state.statusCode, 400);
 
-  const staleItem = createResponse();
-  await handler(
-    createReviewRequest(88, undefined, {
-      itemReviews: [{ itemId: 1, agreeWithResultAssessment: true, resultAssessment: "过期判断" }],
-    }) as never,
-    staleItem.response as never,
-  );
-  assert.equal(staleItem.state.statusCode, 409);
-
-  const staleRisk = createResponse();
-  await handler(
-    createReviewRequest(88, undefined, {
-      riskReviews: [{ riskId: 1, agreeWithResultLevel: true, resultLevel: "high" }],
-    }) as never,
-    staleRisk.response as never,
-  );
-  assert.equal(staleRisk.state.statusCode, 409);
 });
 
 test("submit human review handler rejects running, missing, and invalid review requests", async (t) => {
@@ -738,7 +714,7 @@ test("submit human review handler rejects running, missing, and invalid review r
   const invalidRisk = createResponse();
   await handler(
     createReviewRequest(88, undefined, {
-      riskReviews: [{ riskId: 1, agreeWithResultLevel: false, resultLevel: "medium" }],
+      riskReviews: [{ riskId: 1, agree: false }],
     }) as never,
     invalidRisk.response as never,
   );
@@ -750,8 +726,7 @@ test("submit human review handler rejects running, missing, and invalid review r
       itemReviews: [
         {
           itemId: 1,
-          agreeWithResultAssessment: false,
-          resultAssessment: "需要确认是否使用真实接口。",
+          agree: false,
         },
       ],
     }) as never,
@@ -762,7 +737,7 @@ test("submit human review handler rejects running, missing, and invalid review r
   const running = createResponse();
   await handler(
     createReviewRequest(88, undefined, {
-      itemReviews: [{ itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" }],
+      itemReviews: [{ itemId: 1, agree: true }],
     }) as never,
     running.response as never,
   );
@@ -771,7 +746,7 @@ test("submit human review handler rejects running, missing, and invalid review r
   const missing = createResponse();
   await handler(
     createReviewRequest(999, undefined, {
-      itemReviews: [{ itemId: 1, agreeWithResultAssessment: true, resultAssessment: "需要确认是否使用真实接口。" }],
+      itemReviews: [{ itemId: 1, agree: true }],
     }) as never,
     missing.response as never,
   );
@@ -882,7 +857,7 @@ test("api definitions document human review submission endpoint", () => {
   );
   assert.equal(
     Object.keys(humanReviewDefinition.request?.body?.properties ?? {}).sort().join(","),
-    "itemReviews,riskReviews",
+    "itemReviews,overallComment,reviewer,riskReviews",
   );
   assert.equal(
     Object.hasOwn(humanReviewDefinition.responses[0]?.body.properties ?? {}, "summary"),
