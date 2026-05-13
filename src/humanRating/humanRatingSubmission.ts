@@ -46,6 +46,7 @@ export async function processHumanRatingSubmission(input: {
   manualLevel: HumanManualRating;
   basis: string;
   analyzeGap?: ManualRatingAnalyzer;
+  asyncGapAnalysis?: boolean;
 }): Promise<HumanRatingSubmissionResult> {
   const autoScore = readAutoScore(input.resultJson);
   if (autoScore === undefined) {
@@ -86,40 +87,62 @@ export async function processHumanRatingSubmission(input: {
     };
   }
 
-  const analysis = await (input.analyzeGap ?? defaultAnalyzeGap)({
-    caseDir: input.caseDir,
-    manualRatingRecord,
-    resultJson: input.resultJson,
-  });
-  const analysisRecord: HumanRatingAnalysisRecord = {
-    ...manualRatingRecord,
-    analysis,
+  const runAnalysis = async (): Promise<void> => {
+    const analysis = await (input.analyzeGap ?? defaultAnalyzeGap)({
+      caseDir: input.caseDir,
+      manualRatingRecord,
+      resultJson: input.resultJson,
+    });
+    const analysisRecord: HumanRatingAnalysisRecord = {
+      ...manualRatingRecord,
+      analysis,
+    };
+    await writeHumanRatingAnalysis(input.caseDir, analysisRecord);
+    await input.store.upsertDatasetSample(
+      "human_rating_gap_analysis",
+      {
+        type: "human_rating_gap_analysis",
+        taskId: input.taskId,
+        testCaseId: input.testCaseId,
+        caseName: manualRatingRecord.caseName,
+        reviewedAt: input.reviewedAt,
+        reviewer: input.reviewer,
+        manualRating: input.manualLevel,
+        manualBasis: input.basis,
+        autoScore,
+        autoRating: decision.autoRating,
+        gapRule: decision.gapRule,
+        primaryConclusion: analysis.primaryConclusion,
+        confidence: analysis.confidence,
+        reasonSummary: analysis.reasonSummary,
+        humanNeedsImprovement: analysis.humanRatingReview.needsImprovement,
+        scoringNeedsImprovement: analysis.scoringSystemReview.needsImprovement,
+        recommendedActions: analysis.recommendedActions,
+        artifactPath: "human-rating/analysis.json",
+      },
+      { taskId: input.taskId },
+    );
   };
-  await writeHumanRatingAnalysis(input.caseDir, analysisRecord);
-  await input.store.upsertDatasetSample(
-    "human_rating_gap_analysis",
-    {
-      type: "human_rating_gap_analysis",
-      taskId: input.taskId,
-      testCaseId: input.testCaseId,
-      caseName: manualRatingRecord.caseName,
-      reviewedAt: input.reviewedAt,
-      reviewer: input.reviewer,
-      manualRating: input.manualLevel,
-      manualBasis: input.basis,
-      autoScore,
-      autoRating: decision.autoRating,
-      gapRule: decision.gapRule,
-      primaryConclusion: analysis.primaryConclusion,
-      confidence: analysis.confidence,
-      reasonSummary: analysis.reasonSummary,
-      humanNeedsImprovement: analysis.humanRatingReview.needsImprovement,
-      scoringNeedsImprovement: analysis.scoringSystemReview.needsImprovement,
-      recommendedActions: analysis.recommendedActions,
-      artifactPath: "human-rating/analysis.json",
-    },
-    { taskId: input.taskId },
-  );
+
+  if (input.asyncGapAnalysis) {
+    void runAnalysis().catch((error) => {
+      console.error(
+        `human_rating_gap_analysis_failed taskId=${String(input.taskId)} testCaseId=${String(input.testCaseId ?? "unknown")} error=${formatError(error)}`,
+      );
+    });
+    return {
+      summary: {
+        manualLevel: input.manualLevel,
+        autoScore,
+        autoRating: decision.autoRating,
+        gapQualified: true,
+        analysisStatus: "completed",
+      },
+      message: "人工评级已接收，评分差异较大，差异原因分析已转入后台执行。",
+    };
+  }
+
+  await runAnalysis();
 
   return {
     summary: {
@@ -131,6 +154,10 @@ export async function processHumanRatingSubmission(input: {
     },
     message: "人工评级已接收，评分差异较大，已完成差异原因分析。",
   };
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

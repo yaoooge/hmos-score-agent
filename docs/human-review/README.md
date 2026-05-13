@@ -131,8 +131,9 @@ Content-Type: application/json
 5. 将逐项复核样本追加写入人工复核数据集。
 6. 如果有逐项复核，调用重算逻辑。
 7. 如果重算成功，将修正后的 `outputs/result.json` 原子写回。
-8. 按 `manualLevel` 和最新总分执行人工评级差异分析；`overallComment` 作为评级依据。
-9. 返回同步处理摘要。
+8. 按 `manualLevel` 和最新总分判断是否需要人工评级差异分析；`overallComment` 作为评级依据。
+9. 如果达到差异分析阈值，接口返回 `analysisStatus: "completed"`，并在 `message` 中说明差异分析已转入后台执行；后台继续执行 `hmos-human-rating-gap-analysis` 并写入分析产物。
+10. 返回同步处理摘要。
 
 成功响应示例：
 
@@ -162,6 +163,8 @@ Content-Type: application/json
   "message": "人工复核结果已接收，结果分数已重新计算。"
 }
 ```
+
+当返回 message 提示“差异原因分析已转入后台执行”时，说明人工复核、最新打分和人工评级记录已经完成，差异分析不会阻塞接口；后台完成后会写入 `human-rating/analysis.json`，并更新 `human_rating_gap_analyses.jsonl` 汇总数据集。
 
 ## 数据集写入
 

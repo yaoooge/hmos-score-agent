@@ -120,6 +120,28 @@ function analysisFixture(): HumanRatingGapAnalysis {
   };
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForFile(filePath: string, timeoutMs = 1000): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await fs.access(filePath);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      await delay(10);
+    }
+  }
+  throw new Error(`Timed out waiting for ${filePath}`);
+}
+
 async function writeRecalculableCompletedTask(t: test.TestContext) {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case");
@@ -550,10 +572,13 @@ test("submit human review handler processes manual level with overall comment as
   assert.equal(analyzerCallCount, 1);
   assert.equal((state.body?.summary as Record<string, unknown>).manualLevel, "L1");
   assert.equal((state.body?.summary as Record<string, unknown>).analysisStatus, "completed");
+  assert.match(String(state.body?.message), /差异原因分析已转入后台执行/);
 
   const manualRating = JSON.parse(
     await fs.readFile(path.join(caseDir, "human-rating", "manual-rating.json"), "utf-8"),
   ) as Record<string, unknown>;
+  await waitForFile(path.join(caseDir, "human-rating", "analysis.json"));
+  await waitForFile(path.join(root, "datasets", "human_rating_gap_analyses.jsonl"));
   const datasetLines = (
     await fs.readFile(path.join(root, "datasets", "human_rating_gap_analyses.jsonl"), "utf-8")
   )
@@ -565,6 +590,52 @@ test("submit human review handler processes manual level with overall comment as
   assert.equal(manualRating.basis, "无法编译运行。");
   assert.equal(sample.manualRating, "L1");
   assert.equal(sample.manualBasis, "无法编译运行。");
+});
+
+test("submit human review handler returns before qualified gap analysis finishes", async (t) => {
+  const { registry, caseDir } = await writeCompletedTask(t, { autoScore: 92 });
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  let resolveAnalysis: ((analysis: HumanRatingGapAnalysis) => void) | undefined;
+  let analyzerCallCount = 0;
+  const analysisPromise = new Promise<HumanRatingGapAnalysis>((resolve) => {
+    resolveAnalysis = resolve;
+  });
+  const handler = createSubmitHumanReviewHandler({
+    registry,
+    store,
+    analyzeGap: async () => {
+      analyzerCallCount += 1;
+      return await analysisPromise;
+    },
+  });
+  const { response, state } = createResponse();
+
+  const handlerPromise = handler(
+    createReviewRequest(88, undefined, {
+      reviewer: "qa-user-1",
+      manualLevel: "L1",
+      overallComment: "无法编译运行。",
+    }) as never,
+    response as never,
+  );
+
+  const firstResult = await Promise.race([
+    handlerPromise.then(() => "returned" as const),
+    delay(20).then(() => "timeout" as const),
+  ]);
+
+  assert.equal(firstResult, "returned");
+  assert.equal(state.statusCode, 200);
+  assert.equal(state.body?.success, true);
+  assert.equal((state.body?.summary as Record<string, unknown>).analysisStatus, "completed");
+  assert.equal((state.body?.summary as Record<string, unknown>).gapQualified, true);
+  assert.match(String(state.body?.message), /差异原因分析已转入后台执行/);
+  assert.equal(analyzerCallCount, 1);
+
+  resolveAnalysis?.(analysisFixture());
+  await waitForFile(path.join(caseDir, "human-rating", "analysis.json"));
+  await waitForFile(path.join(root, "datasets", "human_rating_gap_analyses.jsonl"));
 });
 
 test("submit human review handler accepts manual level without overall comment basis", async (t) => {
@@ -811,6 +882,44 @@ test("submit human review handler keeps pending hard gate candidates inactive du
     total_score: 90,
     hard_gate_triggered: false,
     summary: "自动评分未触发硬门槛。",
+  });
+});
+
+test("submit human review handler preserves triggered hard gate when review item is missing", async (t) => {
+  const { registry, caseDir } = await writeRecalculableCompletedTask(t);
+  const resultPath = path.join(caseDir, "outputs", "result.json");
+  const resultJson = JSON.parse(await fs.readFile(resultPath, "utf-8")) as Record<string, unknown>;
+  resultJson.overall_conclusion = {
+    total_score: 60,
+    hard_gate_triggered: true,
+    summary: "自动评分命中 G1，应用 60 分 cap。",
+  };
+  resultJson.human_review_items = [];
+  const risks = resultJson.risks as Array<Record<string, unknown>>;
+  delete risks[0]?.score_effect;
+  await fs.writeFile(resultPath, `${JSON.stringify(resultJson, null, 2)}\n`);
+
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      riskReviews: [{ riskId: 1, agree: true }],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  const revisedResultJson = JSON.parse(await fs.readFile(resultPath, "utf-8")) as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual(revisedResultJson.overall_conclusion, {
+    total_score: 60,
+    hard_gate_triggered: true,
+    summary: "自动评分命中 G1，应用 60 分 cap。",
   });
 });
 

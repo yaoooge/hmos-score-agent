@@ -45,7 +45,7 @@
 | `correctedLevel` | enum | 不同意风险等级时填写的新等级：`high`、`medium`、`low`、`none`。 |
 | `reason` | string | 不同意时必填的原因。 |
 
-提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的风险项进行重算。再次提交会覆盖 `result.json` 中的最新 `human_review_revision`。同时，服务会记录 `manualLevel` 到 `human-rating/manual-rating.json`；当人工评级为 `L1` 且自动分 `>= 70`，或人工评级为 `L2` 且自动分 `>= 80` 时，会调用 `hmos-human-rating-gap-analysis` 生成差异分析，并写入 `human-rating/analysis.json`。响应 `summary` 会返回逐项复核数量、数据集写入数量、`hasOverallComment` 和人工评级差异分析状态；发生分数变化时额外返回重算前后总分和变更计数。
+提交后，后端会把复核结果写入 `human-review/`，并对带有 `score_effect` 的风险项进行重算。再次提交会覆盖 `result.json` 中的最新 `human_review_revision`。同时，服务会记录 `manualLevel` 到 `human-rating/manual-rating.json`；当人工评级为 `L1` 且自动分 `>= 70`，或人工评级为 `L2` 且自动分 `>= 80` 时，会将 `hmos-human-rating-gap-analysis` 差异分析转入后台执行，接口仍返回 `analysisStatus: "completed"`，并在 `message` 中说明差异分析已转入后台执行。分析完成后写入 `human-rating/analysis.json` 和汇总数据集。响应 `summary` 会返回逐项复核数量、数据集写入数量、`hasOverallComment` 和人工评级差异分析状态；发生分数变化时额外返回重算前后总分和变更计数。
 
 ## 远端回调
 

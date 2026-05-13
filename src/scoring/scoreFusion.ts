@@ -381,6 +381,19 @@ function selectUncertainHardGateCandidates(input: FuseRubricScoreWithRulesInput)
   });
 }
 
+function selectTriggeredHardGateCandidates(input: FuseRubricScoreWithRulesInput): Array<{
+  gateIds: Array<"G1" | "G2" | "G3" | "G4">;
+  rule: RuleAuditResult;
+}> {
+  return input.ruleAuditResults.flatMap((rule) => {
+    if (rule.result !== "不满足") {
+      return [];
+    }
+    const gateIds = selectRuleTriggeredGateIds(input, rule);
+    return gateIds.length > 0 ? [{ gateIds, rule }] : [];
+  });
+}
+
 function formatHardGateRule(input: FuseRubricScoreWithRulesInput, gateId: string): string {
   const gate = input.rubric.hardGates.find((item) => item.id === gateId);
   if (!gate) {
@@ -391,17 +404,29 @@ function formatHardGateRule(input: FuseRubricScoreWithRulesInput, gateId: string
   return `${title}（总分上限 ${gate.scoreCap}）${signals}`;
 }
 
-function buildUncertainHardGateSuggestedFocus(
+function buildHardGateSuggestedFocus(
   input: FuseRubricScoreWithRulesInput,
-  candidates: Array<{ gateIds: string[]; rule: RuleAuditResult }>,
+  inputCandidates: {
+    triggered: Array<{ gateIds: string[]; rule: RuleAuditResult }>;
+    uncertain: Array<{ gateIds: string[]; rule: RuleAuditResult }>;
+  },
 ): string {
+  const candidates = [...inputCandidates.triggered, ...inputCandidates.uncertain];
   const gateRules = Array.from(new Set(candidates.flatMap((candidate) => candidate.gateIds)))
     .map((gateId) => formatHardGateRule(input, gateId))
     .join("；");
-  const pendingRules = candidates
+  const triggeredRules = inputCandidates.triggered
     .map((candidate) => `${candidate.rule.rule_id}：${candidate.rule.conclusion}`)
     .join("；");
-  return `硬门槛规则：${gateRules}。待确认规则：${pendingRules}。请确认这些待复核规则是否真实成立，以及是否需要触发对应硬门槛。`;
+  const pendingRules = inputCandidates.uncertain
+    .map((candidate) => `${candidate.rule.rule_id}：${candidate.rule.conclusion}`)
+    .join("；");
+  return [
+    `硬门槛规则：${gateRules}。`,
+    triggeredRules ? `已触发规则：${triggeredRules}。` : "",
+    pendingRules ? `待确认规则：${pendingRules}。` : "",
+    "请确认这些规则判断是否真实成立，以及是否需要保留或触发对应硬门槛。",
+  ].join("");
 }
 
 function buildRiskScoreEffect(input: {
@@ -656,6 +681,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
   const hvigorConclusionDetail = hvigorHardGateTriggered
     ? buildHvigorBuildConclusionDetail(input.hvigorBuildCheckSummary)
     : undefined;
+  const triggeredHardGateCandidates = selectTriggeredHardGateCandidates(input);
   const uncertainHardGateCandidates = selectUncertainHardGateCandidates(input);
   const humanReviewItems: HumanReviewItem[] =
     input.rubricAgentRunStatus === "success"
@@ -669,18 +695,33 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
             suggested_focus: "人工复核 rubric 逐项评分是否合理。",
           },
         ];
-  if (uncertainHardGateCandidates.length > 0) {
+  if (triggeredHardGateCandidates.length > 0 || uncertainHardGateCandidates.length > 0) {
     const candidateGateIds = Array.from(
-      new Set(uncertainHardGateCandidates.flatMap((candidate) => candidate.gateIds)),
+      new Set(
+        [...triggeredHardGateCandidates, ...uncertainHardGateCandidates].flatMap(
+          (candidate) => candidate.gateIds,
+        ),
+      ),
+    );
+    const currentGateIds = Array.from(
+      new Set(triggeredHardGateCandidates.flatMap((candidate) => candidate.gateIds)),
     );
     humanReviewItems.push({
       id: humanReviewItems.length + 1,
       item: "硬门槛复核",
-      current_assessment: "none",
-      uncertainty_reason: `以下规则可能触发硬门槛但 agent 无法确认：${uncertainHardGateCandidates
-        .map((candidate) => candidate.rule.rule_id)
-        .join(", ")}。`,
-      suggested_focus: buildUncertainHardGateSuggestedFocus(input, uncertainHardGateCandidates),
+      current_assessment: currentGateIds.length > 0 ? currentGateIds.join(",") : "none",
+      uncertainty_reason:
+        currentGateIds.length > 0
+          ? `以下规则已触发硬门槛：${triggeredHardGateCandidates
+              .map((candidate) => candidate.rule.rule_id)
+              .join(", ")}。`
+          : `以下规则可能触发硬门槛但 agent 无法确认：${uncertainHardGateCandidates
+              .map((candidate) => candidate.rule.rule_id)
+              .join(", ")}。`,
+      suggested_focus: buildHardGateSuggestedFocus(input, {
+        triggered: triggeredHardGateCandidates,
+        uncertain: uncertainHardGateCandidates,
+      }),
       score_effect: {
         type: "hard_gate",
         gate_ids: candidateGateIds,

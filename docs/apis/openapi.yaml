@@ -955,7 +955,7 @@ components:
           enum:
             - completed
             - skipped
-          description: 人工评级差异分析状态。
+          description: 人工评级差异分析状态；human-review 接口达到差异分析阈值时仍返回 completed，message 会说明差异分析已转入后台执行。
         scoreRecalculationApplied:
           type: boolean
           description: 存在分数变化时返回，表示已应用重算。

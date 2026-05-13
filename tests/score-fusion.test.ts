@@ -133,6 +133,87 @@ test("fuseRubricScoreWithRules records rule impacts on affected rubric items", a
   );
 });
 
+test("fuseRubricScoreWithRules creates hard gate review item for triggered G1", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "基础评分较高。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "high" as const,
+      review_required: false,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础评分较高。", overall_confidence: "high" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "CASE-P0-001",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "P0 需求未实现。",
+      },
+    ],
+    caseRuleDefinitions: [
+      {
+        pack_id: "case-pack",
+        rule_id: "CASE-P0-001",
+        rule_name: "P0 需求",
+        rule_source: "must_rule",
+        summary: "P0 需求必须满足。",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/*.ets"],
+          astSignals: [],
+          llmPrompt: "检查 P0 需求。",
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  assert.equal(result.hardGateTriggered, true);
+  assert.match(result.hardGateReason ?? "", /G1/);
+  const hardGateReview = result.humanReviewItems.find((item) => item.item === "硬门槛复核") as
+    | (typeof result.humanReviewItems[number] & { score_effect?: Record<string, unknown> })
+    | undefined;
+  assert.ok(hardGateReview);
+  assert.equal(hardGateReview.current_assessment, "G1");
+  assert.match(hardGateReview.uncertainty_reason, /CASE-P0-001/);
+  assert.deepEqual(hardGateReview.score_effect, {
+    type: "hard_gate",
+    gate_ids: ["G1"],
+    gate_caps: { G1: 69 },
+  });
+});
+
 test("fuseRubricScoreWithRules maps official unsafe crypto linter rules to security boundary penalties", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
@@ -530,7 +611,7 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
   assert.equal(result.hardGateTriggered, true);
   assert.equal(
     result.humanReviewItems.some((item) => item.item === "硬门槛复核"),
-    false,
+    true,
   );
 });
 

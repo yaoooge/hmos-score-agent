@@ -52,7 +52,10 @@ export function applyHumanReviewRecalculation(input: {
     return { status: 409, message: "overall_conclusion.total_score is required for recalculation" };
   }
   const originalHardGateTriggered = readHardGateTriggered(resultJson);
-  const activeGateCaps = collectInitialGateCaps(resultJson);
+  const activeGateCaps = collectInitialGateCaps(resultJson, {
+    originalHardGateTriggered,
+    originalTotalScore,
+  });
   const touchedRuleIds = new Set<string>();
   let applied = false;
   let changedRiskCount = 0;
@@ -253,7 +256,10 @@ function recalculateScores(
   };
 }
 
-function collectInitialGateCaps(resultJson: Record<string, unknown>): Map<string, number> {
+function collectInitialGateCaps(
+  resultJson: Record<string, unknown>,
+  fallback: { originalHardGateTriggered: boolean; originalTotalScore: number },
+): Map<string, number> {
   const active = new Map<string, number>();
   for (const risk of readRecords(resultJson.risks)) {
     const effect = asRecord(risk.score_effect);
@@ -277,6 +283,9 @@ function collectInitialGateCaps(resultJson: Record<string, unknown>): Map<string
           : parseHardGateAssessment(currentAssessment);
       addGates(gateIds, asRecord(effect.gate_caps), active);
     }
+  }
+  if (active.size === 0 && fallback.originalHardGateTriggered) {
+    active.set("legacy-hard-gate", fallback.originalTotalScore);
   }
   return active;
 }

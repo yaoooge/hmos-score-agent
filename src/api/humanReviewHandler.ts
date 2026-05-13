@@ -176,6 +176,7 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       manualLevel: payload.manualLevel,
       basis: sanitizeOverallComment(payload.overallComment) ?? "",
       analyzeGap: deps.analyzeGap,
+      asyncGapAnalysis: true,
     });
     if ("status" in manualRating) {
       await sendHumanReviewResponse(
