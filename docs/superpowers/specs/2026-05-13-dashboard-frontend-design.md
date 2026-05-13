@@ -19,6 +19,7 @@ Date: 2026-05-13
 - 提供三个一级菜单：评测任务、用例报表、结果分析。
 - 评测任务展示已接收、正在执行、正在排队、已执行任务列表，包含 `taskId`、名称、分数等基础信息，不展示报告详情。
 - 评测任务顶部增加概览，展示每个状态的任务个数和每个任务类型的任务个数。
+- 评测任务列表提供查看运行日志按钮，点击后可查看当前任务的运行日志。
 - 用例报表展示每日任务个数、完成/失败趋势、平均分趋势、已完成任务分数分布区间。
 - 结果分析展示人工评分差异分析和负向结果分析。
 - 新增 `/dashboard/xxx` 只读后端聚合接口，避免前端直接扫描本地文件或逐个调用结果接口。
@@ -138,6 +139,7 @@ hmos-score-agent/
 - `createdAt`
 - `updatedAt`
 - `error`
+- 操作列：查看日志
 
 筛选项：
 
@@ -148,6 +150,15 @@ hmos-score-agent/
 - 时间范围，默认最近 7 天；也支持全部。
 
 表格不展示报告详情。完成任务可显示基础评分信息，但不提供完整报告入口。
+
+任务表格操作列提供“查看日志”按钮：
+
+- 点击后打开 Element Plus Drawer 或 Dialog。
+- Drawer 标题显示 `taskId`、任务名称和当前状态。
+- 内容展示 `caseDir/logs/run.log` 的文本内容，使用等宽字体、保留换行、支持横向滚动。
+- 默认读取日志尾部内容，避免大日志一次性返回过多数据。
+- 支持刷新按钮重新拉取最新日志。
+- 日志不存在时展示空状态或“日志暂不可用”，不影响任务列表展示。
 
 ### 用例报表页
 
@@ -302,6 +313,38 @@ hmos-score-agent/
 ### GET /dashboard/tasks/status-counts
 
 用途：只取状态计数，供前端局部刷新。返回结构与 `/dashboard/summary.statusCounts` 一致。
+
+### GET /dashboard/tasks/:taskId/logs
+
+用途：读取单个任务的运行日志，供评测任务页“查看日志”按钮使用。
+
+查询参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `tailBytes` | number | 可选，默认 65536，最大 1048576。只返回日志末尾指定字节数。 |
+
+响应：
+
+```json
+{
+  "success": true,
+  "taskId": 88,
+  "status": "completed",
+  "logPath": "logs/run.log",
+  "available": true,
+  "truncated": true,
+  "tailBytes": 65536,
+  "content": "run log tail..."
+}
+```
+
+错误和空状态：
+
+- 任务不存在返回 `404`。
+- 任务存在但 `caseDir` 缺失或 `logs/run.log` 不存在时返回 `200`，`available: false`，`content: ""`。
+- `tailBytes` 非法返回 `400`。
+- 不返回 `caseDir` 绝对路径，避免暴露本地文件系统结构。
 
 ### GET /dashboard/reports/daily
 
@@ -495,6 +538,8 @@ list(): Promise<RemoteTaskRecord[]>;
 - 查询参数非法返回 `400`，说明具体字段。
 - 索引文件不存在时返回空集合，不视为错误。
 - 单个任务 `result.json` 缺失、非法 JSON 或字段缺失时，该任务返回 `resultAvailable: false`、`score: null`、`resultError`。
+- 单个任务日志缺失时 `/dashboard/tasks/:taskId/logs` 返回 `available: false`，前端展示空状态。
+- 日志内容按 `tailBytes` 限制读取，避免大文件拖慢接口或页面。
 - JSONL 某一行解析失败时跳过，并在响应中返回 `skippedRows`。
 - 未预期文件系统错误返回 `500`，日志记录实际错误，响应使用稳定 message。
 
@@ -574,6 +619,7 @@ http://<server-host>:3000/dashboard/
 - `RemoteTaskRegistry.list()` 能读取并稳定排序所有任务。
 - `/dashboard/summary` 返回正确状态计数和类型计数。
 - `/dashboard/tasks` 支持分页、状态筛选、任务类型筛选、关键词、分数区间和排序。
+- `/dashboard/tasks/:taskId/logs` 能读取 `logs/run.log` 尾部内容，任务不存在返回 `404`，日志缺失返回 `available: false`，超大日志按 `tailBytes` 截断。
 - `/dashboard/reports/daily` 正确按日期聚合任务数、完成数、失败数和平均分。
 - `/dashboard/reports/score-distribution` 正确落入固定分数区间。
 - `/dashboard/analysis/human-rating-gaps` 正确读取 JSONL、分页、过滤，并统计坏行。
@@ -584,6 +630,7 @@ http://<server-host>:3000/dashboard/
 
 - `npm run build:dashboard` 通过。
 - API client 格式化和查询参数拼接可用。
+- 任务列表“查看日志”按钮能打开 Drawer/Dialog，展示日志、空状态和刷新状态。
 - `EChartPanel` 在空数据、loading 和正常数据下渲染状态正确。
 - 任务表格在窄屏下不发生文字重叠，关键列可横向滚动。
 
