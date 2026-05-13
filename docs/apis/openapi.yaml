@@ -1,0 +1,1003 @@
+openapi: 3.0.3
+info:
+  title: hmos-score-agent API
+  version: 0.1.0
+  description: HarmonyOS 代码评分服务对外 HTTP 接口和远端 callback 契约。
+servers:
+  - url: http://localhost:3000
+    description: 本地开发服务，默认 PORT=3000。
+tags:
+  - name: Health
+    description: 服务健康检查。
+  - name: Score
+    description: 远端任务接收、结果查询、规则统计和人工复核。
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: 健康检查
+      description: 检查 API 进程是否可用。
+      operationId: getHealth
+      responses:
+        "200":
+          description: 服务可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                ok: true
+
+  /score/run-remote-task:
+    post:
+      tags:
+        - Score
+      summary: 接收远端评分任务
+      description: 接收远端任务并异步执行评分。HTTP 响应只表示任务已接收，后续进度和最终结果通过请求体中的 callback 地址回调。
+      operationId: runRemoteTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunRemoteTaskRequest"
+            example:
+              taskId: 4
+              testCase:
+                id: 101
+                name: "电视台云服务新增全屏播放"
+                type: "bug_fix"
+                description: "修复全屏播放入口不可用的问题。"
+                input: "请在现有 HarmonyOS 工程中完成全屏播放能力。"
+                expectedOutput: "点击全屏按钮后进入横屏全屏播放。"
+                fileUrl: "https://example.com/original-manifest.json"
+              executionResult:
+                isBuildSuccess: true
+                outputCodeUrl: "https://example.com/generated-manifest.json"
+                diffFileUrl: "https://example.com/changes.patch"
+              callback: "https://example.com/callback"
+      responses:
+        "200":
+          description: 远端任务已接收并进入异步执行流程。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunRemoteTaskAcceptedResponse"
+              example:
+                success: true
+                taskId: 4
+                message: "任务接收成功，结果将通过 callback 返回"
+        "500":
+          description: 任务接收失败。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                message: "download failed"
+      callbacks:
+        remoteTaskCallback:
+          "{$request.body#/callback}":
+            post:
+              summary: 远端任务进度和结果回调
+              description: 队列等待、执行中、完成或失败时，服务向调用方提供的 callback 地址发送状态。
+              operationId: remoteTaskCallback
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/RemoteTaskCallbackPayload"
+                    examples:
+                      pending:
+                        summary: 任务排队中
+                        value:
+                          taskId: 4
+                          status: pending
+                      completed:
+                        summary: 任务完成
+                        value:
+                          success: true
+                          taskId: 4
+                          status: completed
+                          totalScore: 88
+                          maxScore: 100
+                          resultData:
+                            basic_info:
+                              task_type: "bug_fix"
+                            overall_conclusion:
+                              total_score: 88
+                              hard_gate_triggered: false
+                              summary: "评分完成。"
+                      failed:
+                        summary: 任务失败
+                        value:
+                          success: false
+                          taskId: 4
+                          status: failed
+                          errorMessage: "workflow failed"
+              responses:
+                "200":
+                  description: 回调接收方成功接收。
+
+  /score/remote-tasks/{taskId}/result:
+    get:
+      tags:
+        - Score
+      summary: 查询完整评分结果
+      description: 读取已完成远端任务的 outputs/result.json 内容；响应会剥离少量内部辅助字段后返回完整 resultData。
+      operationId: getRemoteTaskResult
+      parameters:
+        - $ref: "#/components/parameters/TaskIdPath"
+      responses:
+        "200":
+          description: 任务已完成，完整评分结果可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteTaskResultResponse"
+              example:
+                success: true
+                taskId: 4
+                status: completed
+                resultData:
+                  basic_info:
+                    task_type: "bug_fix"
+                    case_name: "电视台云服务新增全屏播放"
+                  overall_conclusion:
+                    total_score: 88
+                    hard_gate_triggered: false
+                    summary: "整体满足需求，存在少量可优化问题。"
+                  risks: []
+                  human_review_items: []
+        "404":
+          description: 任务记录或结果文件不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteTaskNotFoundResponse"
+              examples:
+                taskNotFound:
+                  value:
+                    success: false
+                    taskId: 4
+                    message: "Remote task not found"
+                resultNotFound:
+                  value:
+                    success: false
+                    taskId: 4
+                    status: completed
+                    message: "Result file not found"
+        "409":
+          description: 任务存在但尚未完成。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteTaskUnavailableResponse"
+              example:
+                success: false
+                taskId: 4
+                status: running
+                message: "Result is not available yet"
+
+  /score/rule-violation-stats:
+    get:
+      tags:
+        - Score
+      summary: 查询静态规则违反聚合统计
+      description: 按用例、测试用例、规则包和完成时间过滤静态规则违反统计。响应只返回规则维度聚合，不返回 case 明细。
+      operationId: getRuleViolationStats
+      parameters:
+        - name: caseId
+          in: query
+          required: false
+          description: 按本地 caseId 过滤。
+          schema:
+            type: string
+        - name: testCaseId
+          in: query
+          required: false
+          description: 按远端测试用例 ID 过滤，必须是数字。
+          schema:
+            type: number
+        - name: packId
+          in: query
+          required: false
+          description: 按静态规则包 ID 过滤。
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: 只统计 completedAt 大于等于该 ISO 时间戳的运行。
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: 只统计 completedAt 小于等于该 ISO 时间戳的运行。
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: 静态规则违反聚合统计。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleViolationStatsResponse"
+              example:
+                success: true
+                filters:
+                  packId: "arkts-language"
+                summary:
+                  totalRuns: 3
+                  caseCount: 2
+                  violatedRuleCount: 1
+                  totalViolationEvents: 3
+                rules:
+                  - pack_id: "arkts-language"
+                    rule_id: "ARKTS-LANG-001"
+                    rule_summary: "禁止使用 ArkTS 不支持的语法。"
+                    rule_source: "must_rule"
+                    violationCount: 3
+                    affectedCaseCount: 2
+                    affectedRunCount: 3
+                    affectedCaseIds:
+                      - "case-a"
+                      - "case-b"
+                    affectedTaskIds:
+                      - 4
+                      - 5
+                      - 6
+                    lastViolatedAt: "2026-05-13T08:30:00.000Z"
+        "400":
+          description: 查询参数非法。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                message: "Invalid query parameter: from must be an ISO timestamp"
+        "500":
+          description: 统计索引不可读取。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                success: false
+                message: "Rule violation stats are unavailable"
+
+  /score/remote-tasks/{taskId}/human-review:
+    post:
+      tags:
+        - Score
+      summary: 提交人工复核和整单人工评级
+      description: 提交逐条复核结论和整单人工评级，并根据复核结果重算分数。重复提交会覆盖 result.json 中的最新 human_review_revision。
+      operationId: submitHumanReview
+      parameters:
+        - $ref: "#/components/parameters/TaskIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HumanReviewRequest"
+            example:
+              reviewer: "reviewer-001"
+              manualLevel: "L2"
+              overallComment: "自动评分漏掉了全屏态返回路径的问题。"
+              itemReviews:
+                - itemId: 1
+                  agree: false
+                  reason: "该复核项判断过轻，问题会影响主流程。"
+              riskReviews:
+                - riskId: 1
+                  agree: false
+                  correctedLevel: "medium"
+                  reason: "当前风险应降为中风险。"
+      responses:
+        "200":
+          description: 人工复核已接收，数据集样本已写入；存在 score_effect 时会同步重算分数。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HumanReviewResponse"
+              example:
+                success: true
+                taskId: 4
+                status: completed
+                summary:
+                  itemReviewCount: 1
+                  riskReviewCount: 1
+                  riskAgreementCount: 0
+                  riskDisagreementCount: 1
+                  datasetItemCount: 2
+                  hasOverallComment: true
+                  manualLevel: "L2"
+                  autoScore: 88
+                  autoRating: "L3"
+                  gapQualified: true
+                  analysisStatus: "completed"
+                  scoreRecalculationApplied: true
+                  originalTotalScore: 88
+                  revisedTotalScore: 80
+                  changedItemScoreCount: 0
+                  changedDimensionScoreCount: 1
+                message: "人工复核结果已接收，结果分数已重新计算。人工评级已接收，评分差异较大，已完成差异原因分析。"
+        "400":
+          description: 人工复核请求体非法，或 itemId/riskId 无法匹配当前 result.json。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseWithOptionalTaskId"
+              examples:
+                invalidManualLevel:
+                  value:
+                    success: false
+                    message: "manualLevel must be one of L1, L2, L3, L4, L5, L6"
+                invalidRiskId:
+                  value:
+                    success: false
+                    taskId: 4
+                    message: "riskReviews[0].riskId does not match result risks"
+        "404":
+          description: 任务记录或结果文件不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseWithOptionalTaskId"
+              example:
+                success: false
+                taskId: 4
+                message: "Remote task not found"
+        "409":
+          description: 任务未完成，或 result.json 缺少重算/评级所需字段。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseWithOptionalTaskIdAndStatus"
+              examples:
+                notCompleted:
+                  value:
+                    success: false
+                    taskId: 4
+                    status: running
+                    message: "Remote task is not completed yet"
+                missingScore:
+                  value:
+                    success: false
+                    taskId: 4
+                    message: "overall_conclusion.total_score is required for manual rating gap analysis"
+
+components:
+  parameters:
+    TaskIdPath:
+      name: taskId
+      in: path
+      required: true
+      description: 远端评分任务 ID。
+      schema:
+        type: number
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          description: 服务可用时固定为 true。
+
+    RunRemoteTaskRequest:
+      type: object
+      required:
+        - taskId
+        - testCase
+        - executionResult
+        - callback
+      properties:
+        taskId:
+          type: number
+          description: 远端任务 ID。
+        testCase:
+          $ref: "#/components/schemas/RemoteTestCase"
+        executionResult:
+          $ref: "#/components/schemas/RemoteExecutionResult"
+        token:
+          type: string
+          description: 兼容字段，当前服务不再依赖。
+        callback:
+          type: string
+          description: 接收任务进度和最终结果的远端 callback 地址。
+
+    RemoteTestCase:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - description
+        - input
+        - expectedOutput
+        - fileUrl
+      properties:
+        id:
+          type: number
+          description: 远端测试用例 ID。
+        name:
+          type: string
+          description: 远端测试用例名称。
+        type:
+          type: string
+          description: 远端测试用例类型。
+        description:
+          type: string
+          description: 需求描述。
+        input:
+          type: string
+          description: 原始任务输入 prompt。
+        expectedOutput:
+          type: string
+          description: 远端平台给出的预期输出说明。
+        fileUrl:
+          type: string
+          description: 原始工程文件 manifest JSON 地址。
+
+    RemoteExecutionResult:
+      type: object
+      required:
+        - isBuildSuccess
+        - outputCodeUrl
+      properties:
+        isBuildSuccess:
+          type: boolean
+          description: 远端提交工程是否构建成功。
+        outputCodeUrl:
+          type: string
+          description: 生成工程文件 manifest JSON 地址。
+        diffFileUrl:
+          type: string
+          description: 可选 patch/diff 文件地址。
+
+    RunRemoteTaskAcceptedResponse:
+      type: object
+      required:
+        - success
+        - taskId
+        - message
+      properties:
+        success:
+          type: boolean
+          description: 请求是否处理成功。
+        taskId:
+          type: number
+          description: 远端任务 ID。
+        message:
+          type: string
+          description: 任务接收结果说明。
+
+    RemoteTaskCallbackPayload:
+      type: object
+      required:
+        - taskId
+        - status
+      properties:
+        success:
+          type: boolean
+          description: 完成回调为 true，失败回调为 false 或缺失。
+        taskId:
+          type: number
+          description: 远端任务 ID。
+        status:
+          $ref: "#/components/schemas/RemoteCallbackStatus"
+        totalScore:
+          type: number
+          description: 完成回调时的总分。
+        maxScore:
+          type: number
+          description: 完成回调时的满分。
+        resultData:
+          $ref: "#/components/schemas/RemoteTaskCallbackResultData"
+        errorMessage:
+          type: string
+          description: 失败回调时的错误说明。
+
+    RemoteCallbackStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - completed
+        - failed
+      description: 远端任务 callback 状态。
+
+    RemoteTaskRecordStatus:
+      type: string
+      enum:
+        - preparing
+        - queued
+        - running
+        - completed
+        - failed
+        - timed_out
+      description: 服务记录的远端任务状态。
+
+    RemoteTaskCallbackResultData:
+      type: object
+      description: 完成回调只保留完整评分结果中的 basic_info 和 overall_conclusion 子集。
+      required:
+        - basic_info
+        - overall_conclusion
+      properties:
+        basic_info:
+          type: object
+          description: 评分结果基础信息。
+          additionalProperties: true
+        overall_conclusion:
+          $ref: "#/components/schemas/OverallConclusion"
+
+    RemoteTaskResultResponse:
+      type: object
+      required:
+        - success
+        - taskId
+        - status
+        - resultData
+      properties:
+        success:
+          type: boolean
+          description: 请求是否成功。
+        taskId:
+          type: number
+          description: 远端任务 ID。
+        status:
+          $ref: "#/components/schemas/RemoteTaskRecordStatus"
+        resultData:
+          $ref: "#/components/schemas/ScoringResultData"
+
+    ScoringResultData:
+      type: object
+      description: outputs/result.json 的公开内容。接口会移除内部 testExecution 字段，其余评分结果字段按原样返回。
+      required:
+        - basic_info
+        - overall_conclusion
+      additionalProperties: true
+      properties:
+        basic_info:
+          type: object
+          description: 评分基础信息，例如任务类型、用例名称和目标说明。
+          additionalProperties: true
+        overall_conclusion:
+          $ref: "#/components/schemas/OverallConclusion"
+        risks:
+          type: array
+          description: 风险项及当前风险等级。
+          items:
+            $ref: "#/components/schemas/ResultRisk"
+        human_review_items:
+          type: array
+          description: 待人工确认的逐条复核项。
+          items:
+            $ref: "#/components/schemas/ResultHumanReviewItem"
+        human_review_revision:
+          type: object
+          description: 最近一次人工复核写回的修订信息。
+          additionalProperties: true
+
+    OverallConclusion:
+      type: object
+      description: 评分整体结论。
+      additionalProperties: true
+      properties:
+        total_score:
+          type: number
+          description: 自动评分总分。
+        max_score:
+          type: number
+          description: 满分。
+        hard_gate_triggered:
+          type: boolean
+          description: 是否触发硬门槛。
+        summary:
+          type: string
+          description: 整体评价摘要。
+
+    ResultRisk:
+      type: object
+      required:
+        - level
+        - title
+        - description
+        - evidence
+      additionalProperties: true
+      properties:
+        id:
+          type: number
+          description: 风险项 ID；缺失时服务按数组下标从 1 推导。
+        level:
+          $ref: "#/components/schemas/HumanRiskLevel"
+        title:
+          type: string
+          description: 风险标题。
+        description:
+          type: string
+          description: 风险描述。
+        evidence:
+          type: string
+          description: 风险证据。
+        score_effect:
+          type: object
+          description: 风险复核可能触发的分数影响元数据。
+          additionalProperties: true
+
+    ResultHumanReviewItem:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: number
+          description: 复核项 ID；缺失时服务按数组下标从 1 推导。
+        item:
+          type: string
+          description: 复核项名称。
+        current_assessment:
+          type: string
+          description: 当前系统判断。
+        uncertainty_reason:
+          type: string
+          description: 不确定原因。
+        suggested_focus:
+          type: string
+          description: 建议人工关注点。
+
+    RemoteTaskNotFoundResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+        taskId:
+          type: number
+          description: 如果路径参数可解析则返回。
+        status:
+          $ref: "#/components/schemas/RemoteTaskRecordStatus"
+        message:
+          type: string
+
+    RemoteTaskUnavailableResponse:
+      type: object
+      required:
+        - success
+        - taskId
+        - status
+        - message
+      properties:
+        success:
+          type: boolean
+        taskId:
+          type: number
+        status:
+          $ref: "#/components/schemas/RemoteTaskRecordStatus"
+        message:
+          type: string
+
+    RuleViolationStatsResponse:
+      type: object
+      required:
+        - success
+        - filters
+        - summary
+        - rules
+      properties:
+        success:
+          type: boolean
+          description: 固定为 true。
+        filters:
+          $ref: "#/components/schemas/RuleViolationStatsFilters"
+        summary:
+          $ref: "#/components/schemas/RuleViolationStatsSummary"
+        rules:
+          type: array
+          description: 静态规则违反聚合列表，按违反次数降序排列。
+          items:
+            $ref: "#/components/schemas/RuleViolationStatsRule"
+
+    RuleViolationStatsFilters:
+      type: object
+      additionalProperties: false
+      properties:
+        caseId:
+          type: string
+        testCaseId:
+          type: number
+        packId:
+          type: string
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+
+    RuleViolationStatsSummary:
+      type: object
+      required:
+        - totalRuns
+        - caseCount
+        - violatedRuleCount
+        - totalViolationEvents
+      properties:
+        totalRuns:
+          type: number
+          description: 过滤后的运行总数。
+        caseCount:
+          type: number
+          description: 过滤后的不同 case 数量。
+        violatedRuleCount:
+          type: number
+          description: 发生违反的静态规则数量。
+        totalViolationEvents:
+          type: number
+          description: 静态规则违反事件总数。
+
+    RuleViolationStatsRule:
+      type: object
+      required:
+        - pack_id
+        - rule_id
+        - rule_summary
+        - rule_source
+        - violationCount
+        - affectedCaseCount
+        - affectedRunCount
+        - affectedCaseIds
+        - affectedTaskIds
+        - lastViolatedAt
+      properties:
+        pack_id:
+          type: string
+          description: 规则包 ID。
+        rule_id:
+          type: string
+          description: 规则 ID。
+        rule_summary:
+          type: string
+          description: 规则摘要。
+        rule_source:
+          type: string
+          enum:
+            - must_rule
+            - should_rule
+            - forbidden_pattern
+          description: 规则来源类型。
+        violationCount:
+          type: number
+          description: 违反次数。
+        affectedCaseCount:
+          type: number
+          description: 受影响 case 数量。
+        affectedRunCount:
+          type: number
+          description: 受影响任务运行数量。
+        affectedCaseIds:
+          type: array
+          items:
+            type: string
+          description: 受影响 caseId 列表。
+        affectedTaskIds:
+          type: array
+          items:
+            type: number
+          description: 受影响 taskId 列表。
+        lastViolatedAt:
+          type: string
+          format: date-time
+          description: 最近一次违反时间。
+
+    HumanReviewRequest:
+      type: object
+      required:
+        - manualLevel
+      properties:
+        reviewer:
+          type: string
+          description: 可选复核人标识。
+        manualLevel:
+          $ref: "#/components/schemas/HumanManualLevel"
+        overallComment:
+          type: string
+          description: 可选整体评价；人工评级差异分析会将它作为评级依据。
+        itemReviews:
+          type: array
+          description: 对 result.json.human_review_items[] 的逐条复核。缺失或空数组合法。
+          items:
+            $ref: "#/components/schemas/HumanReviewItemReview"
+        riskReviews:
+          type: array
+          description: 对 result.json.risks[] 的风险等级复核。缺失或空数组合法。
+          items:
+            $ref: "#/components/schemas/HumanRiskReview"
+
+    HumanReviewItemReview:
+      type: object
+      required:
+        - itemId
+        - agree
+      properties:
+        itemId:
+          type: number
+          description: result.json.human_review_items[] 中的复核项 ID；必须为正整数且不可重复。
+        agree:
+          type: boolean
+          description: 是否同意系统当前判断。
+        reason:
+          type: string
+          description: agree=false 时必填的原因。
+
+    HumanRiskReview:
+      type: object
+      required:
+        - riskId
+        - agree
+      properties:
+        riskId:
+          type: number
+          description: result.json.risks[] 中的风险项 ID；必须为正整数且不可重复。
+        agree:
+          type: boolean
+          description: 是否同意系统当前风险等级。
+        correctedLevel:
+          $ref: "#/components/schemas/HumanRiskLevel"
+        reason:
+          type: string
+          description: agree=false 时必填的原因。
+
+    HumanManualLevel:
+      type: string
+      enum:
+        - L1
+        - L2
+        - L3
+        - L4
+        - L5
+        - L6
+      description: 整单人工评级。
+
+    HumanRiskLevel:
+      type: string
+      enum:
+        - high
+        - medium
+        - low
+        - none
+      description: 人工修正后的风险等级。
+
+    HumanReviewResponse:
+      type: object
+      required:
+        - success
+        - taskId
+        - status
+        - summary
+        - message
+      properties:
+        success:
+          type: boolean
+          description: 请求是否处理成功。
+        taskId:
+          type: number
+          description: 远端任务 ID。
+        status:
+          type: string
+          enum:
+            - completed
+          description: 人工复核处理状态，当前为同步完成。
+        summary:
+          $ref: "#/components/schemas/HumanReviewSummary"
+        message:
+          type: string
+          description: 处理结果说明。
+
+    HumanReviewSummary:
+      type: object
+      required:
+        - itemReviewCount
+        - riskReviewCount
+        - riskAgreementCount
+        - riskDisagreementCount
+        - datasetItemCount
+        - hasOverallComment
+        - manualLevel
+        - autoScore
+        - autoRating
+        - gapQualified
+        - analysisStatus
+      properties:
+        itemReviewCount:
+          type: number
+          description: 本次提交的评分项复核数量。
+        riskReviewCount:
+          type: number
+          description: 本次提交的风险项复核数量。
+        riskAgreementCount:
+          type: number
+          description: 同意系统风险等级的数量。
+        riskDisagreementCount:
+          type: number
+          description: 不同意系统风险等级的数量。
+        datasetItemCount:
+          type: number
+          description: 写入人工复核数据集的样本数量。
+        hasOverallComment:
+          type: boolean
+          description: 是否提供非空整体评价。
+        manualLevel:
+          $ref: "#/components/schemas/HumanManualLevel"
+        autoScore:
+          type: number
+          description: result.json 中的自动评分总分。
+        autoRating:
+          $ref: "#/components/schemas/HumanManualLevel"
+        gapQualified:
+          type: boolean
+          description: 是否达到人工评级差异分析阈值。
+        analysisStatus:
+          type: string
+          enum:
+            - completed
+            - skipped
+          description: 人工评级差异分析状态。
+        scoreRecalculationApplied:
+          type: boolean
+          description: 存在分数变化时返回，表示已应用重算。
+        originalTotalScore:
+          type: number
+          description: 重算前总分；发生分数变化时返回。
+        revisedTotalScore:
+          type: number
+          description: 重算后总分；发生分数变化时返回。
+        changedItemScoreCount:
+          type: number
+          description: 分数变化的评分项数量；发生分数变化时返回。
+        changedDimensionScoreCount:
+          type: number
+          description: 分数变化的维度数量；发生分数变化时返回。
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          description: 固定为 false。
+        message:
+          type: string
+          description: 错误说明。
+
+    ErrorResponseWithOptionalTaskId:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            taskId:
+              type: number
+              description: 如果路径参数可解析则返回。
+
+    ErrorResponseWithOptionalTaskIdAndStatus:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponseWithOptionalTaskId"
+        - type: object
+          properties:
+            status:
+              $ref: "#/components/schemas/RemoteTaskRecordStatus"

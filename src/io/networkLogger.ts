@@ -2,6 +2,30 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+async function readResponseMessage(response: Response): Promise<string> {
+  try {
+    const text = await response.clone().text();
+    if (!text) {
+      return response.statusText || "HTTP request failed";
+    }
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        typeof (parsed as { message?: unknown }).message === "string"
+      ) {
+        return (parsed as { message: string }).message;
+      }
+    } catch {
+      // Fall through to raw response text.
+    }
+    return text.length > 500 ? `${text.slice(0, 500)}...` : text;
+  } catch (error) {
+    return formatError(error);
+  }
+}
+
 function getRequestUrl(input: Parameters<typeof fetch>[0]): string {
   return typeof input === "string" || input instanceof URL ? String(input) : input.url;
 }
@@ -28,10 +52,16 @@ export async function fetchWithNetworkLogging(
     console.info(
       `network_response_received method=${method} url=${url} status=${response.status} ok=${String(response.ok)} elapsedMs=${String(Date.now() - startedAt)}`,
     );
+    if (!response.ok) {
+      const message = await readResponseMessage(response);
+      console.error(
+        `network_request_failed method=${method} url=${url} code=${String(response.status)} message=${message} elapsedMs=${String(Date.now() - startedAt)}`,
+      );
+    }
     return response;
   } catch (error) {
     console.error(
-      `network_request_failed method=${method} url=${url} error=${formatError(error)} elapsedMs=${String(Date.now() - startedAt)}`,
+      `network_request_failed method=${method} url=${url} code=FETCH_ERROR message=${formatError(error)} elapsedMs=${String(Date.now() - startedAt)}`,
     );
     throw error;
   }
