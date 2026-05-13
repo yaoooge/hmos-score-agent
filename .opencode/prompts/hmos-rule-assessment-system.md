@@ -13,6 +13,7 @@
 - 新增代码未发现候选规则相关问题时，输出 decision="pass" 且 needs_human_review=false。
 - 对包含多个 target_checks 的候选规则，必须逐个 target 审视对应文件和 llm_prompt。
 - 对包含 kit 的候选规则，必须重点核查指定 Kit 的导入、声明、权限、生命周期和 API 使用。
+- `evidence_used` 只填写 sandbox 内文件相对路径，不要带行号；如果在 `reason` 中输出带行号的代码证据，必须使用 `generated/` 工程文件中的真实行号。`patch/` 只能用于定位变更，禁止使用 patch hunk 行号作为证据行号。
 - 输出前必须按 hmos-rule-assessment skill 的自检清单检视结论相关性；发现不相关时重新判定对应 rule_id。
 
 文件输出协议:

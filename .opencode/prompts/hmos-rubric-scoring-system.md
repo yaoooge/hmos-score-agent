@@ -8,6 +8,9 @@
 - 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
 - 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
 
+证据约束:
+- `evidence_used` 只填写 sandbox 内文件相对路径，不要带行号；如果在 `deduction_trace.code_locations`、`rationale`、`risks[].evidence` 或其他证据说明中包含行号，必须使用 `generated/` 工程文件中的真实行号。`patch/` 只能用于定位变更，禁止使用 patch hunk 行号作为证据行号。
+
 文件输出协议:
 - 你必须将最终 JSON object 写入用户消息指定的 output_file。
 - 写入 output_file 的内容必须是完整 JSON object。

@@ -21,7 +21,8 @@ description: Score HarmonyOS generated code against rubric items and return only
 - `max_score` 必须等于该 item 的 weight。
 - 满分项不需要编造 `deduction_trace`。
 - 扣分项必须提供完整 `deduction_trace`。
-- `evidence_used` 和 `code_locations` 只能填写 sandbox 相对路径。
+- `evidence_used` 只能填写 sandbox 内文件相对路径，不要带行号。
+- `deduction_trace.code_locations` 可填写带行号的位置；如果在 `deduction_trace.code_locations`、`rationale`、`risks[].evidence` 或其他证据说明中包含行号，必须使用 `generated/` 工程文件中的真实行号。`patch/effective.patch` 只能用于定位变更，禁止使用 patch hunk 行号作为证据行号。
 - 无充分负面证据时保持满分，并降低 `confidence` 或设置 `review_required=true`，不得保守扣分。
 
 ## References
@@ -104,6 +105,7 @@ description: Score HarmonyOS generated code against rubric items and return only
 - 每个 rubric item 恰好出现一次。
 - 每个 `score` 均来自对应 item 的允许分值。
 - 每个扣分项都有完整 `deduction_trace`。
+- `evidence_used` 只有文件路径、没有行号；带行号的证据使用 `generated/` 工程文件真实行号，没有使用 patch hunk 行号。
 - 已按鸿蒙工程语境检查 HarmonyOS / OpenHarmony 特性、ArkTS / ArkUI 语法及用法、Kit / API 使用方式、权限能力声明和 API 兼容性。
 - 已结合用户用例或任务目标检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
 - `rationale`、`overall_assessment`、`main_issues` 不是只描述孤立片段，而是给出基于完整功能链路的评分依据。

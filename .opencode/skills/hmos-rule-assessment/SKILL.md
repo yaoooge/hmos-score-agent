@@ -23,7 +23,8 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - `local_preliminary_signal` 或 `why_uncertain` 中的“未接入静态判定器”只表示本地规则引擎需要你辅助判定，本身不是人工复核理由。
 - 如果你阅读新增代码、补丁和必要上下文后未发现该候选规则相关问题，必须输出 `decision="pass"` 且 `needs_human_review=false`。
 - 无法确认时使用 `decision="uncertain"`，并设置 `needs_human_review=true`。
-- `evidence_used` 只能填写 sandbox `generated/`、`original/`、`patch/`、`metadata/` 下的相对路径。
+- `evidence_used` 只能填写 sandbox `generated/`、`original/`、`patch/`、`metadata/` 下的文件相对路径，不要带行号。
+- 输出文件证据时，如果在 `reason` 中包含行号，必须使用 `generated/` 工程文件中的真实行号；`patch/effective.patch` 只能用于定位变更，禁止使用 patch hunk 行号作为证据行号。
 - 输出 JSON 后必须再进行一轮结论相关性检视：逐条核对 `rule_id`、候选规则语义、任务期望、`decision`、`reason` 和 `evidence_used` 是否一致。
 - 若发现 `reason` 与候选规则语义、任务期望或 `evidence_used` 不相关，例如期望声明路由与系统权限但 `reason` 却写表单重置完整，必须重新阅读该候选规则并重新判定后再写入最终 JSON。
 
@@ -89,6 +90,7 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 每个 `reason` 都与对应候选规则语义、任务期望、`decision` 和 `evidence_used` 直接相关；若不相关，已重新判定该条规则。
 - `decision`、`confidence`、`overall_confidence` 均为允许枚举。
 - `evidence_used` 是字符串数组。
+- `evidence_used` 只有文件路径、没有行号；带行号的证据使用 `generated/` 工程文件真实行号，没有使用 patch hunk 行号。
 - 文案类字符串均为中文；英文枚举值、文件路径、代码标识符和原始专有名词除外。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
 - JSON 语法完整，所有 `{}`、`[]`、字符串和逗号都正确闭合。
