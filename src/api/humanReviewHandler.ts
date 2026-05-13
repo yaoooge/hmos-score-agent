@@ -37,6 +37,7 @@ type NormalizedResultReviewItem = {
 
 const RISK_LEVELS = new Set(["high", "medium", "low", "none"]);
 const MANUAL_LEVELS = new Set(["L1", "L2", "L3", "L4", "L5", "L6"]);
+const HUMAN_REVIEW_ROUTE = "POST /score/remote-tasks/:taskId/human-review";
 
 export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
   return async (req: Request, res: Response) => {
@@ -57,8 +58,11 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       res.status(404).json({ success: false, taskId, message: "Remote task not found" });
       return;
     }
+    if (record.caseDir) {
+      await logHumanReviewApiRequest(record.caseDir, taskId, record.testCaseId, payload);
+    }
     if (record.status !== "completed") {
-      res.status(409).json({
+      await sendHumanReviewResponse(res, 409, record.caseDir, taskId, record.testCaseId, {
         success: false,
         taskId,
         status: record.status,
@@ -78,7 +82,11 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       ) as Record<string, unknown>;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        res.status(404).json({ success: false, taskId, message: "Result file not found" });
+        await sendHumanReviewResponse(res, 404, record.caseDir, taskId, record.testCaseId, {
+          success: false,
+          taskId,
+          message: "Result file not found",
+        });
         return;
       }
       throw error;
@@ -86,11 +94,18 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
 
     const reviewValidation = validateReviewsWithResult(payload, resultJson);
     if (reviewValidation) {
-      res.status(reviewValidation.status).json({
+      await sendHumanReviewResponse(
+        res,
+        reviewValidation.status,
+        record.caseDir,
+        taskId,
+        record.testCaseId,
+        {
         success: false,
         taskId,
         message: reviewValidation.message,
-      });
+        },
+      );
       return;
     }
 
@@ -114,11 +129,18 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
         reviewedAt,
       });
       if ("status" in recalculation) {
-        res.status(recalculation.status).json({
+        await sendHumanReviewResponse(
+          res,
+          recalculation.status,
+          record.caseDir,
+          taskId,
+          record.testCaseId,
+          {
           success: false,
           taskId,
           message: recalculation.message,
-        });
+          },
+        );
         return;
       }
       recalculatedResultJson = recalculation.resultJson;
@@ -156,11 +178,18 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       analyzeGap: deps.analyzeGap,
     });
     if ("status" in manualRating) {
-      res.status(manualRating.status).json({
+      await sendHumanReviewResponse(
+        res,
+        manualRating.status,
+        record.caseDir,
+        taskId,
+        record.testCaseId,
+        {
         success: false,
         taskId,
         message: manualRating.message,
-      });
+        },
+      );
       return;
     }
     const itemReviewCount = payload.itemReviews?.length ?? 0;
@@ -179,7 +208,7 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
       ...(recalculationSummary?.scoreRecalculationApplied ? recalculationSummary : {}),
     };
 
-    res.json({
+    await sendHumanReviewResponse(res, 200, record.caseDir, taskId, record.testCaseId, {
       success: true,
       taskId,
       status: "completed",
@@ -189,6 +218,85 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
         : `人工复核结果已接收。${manualRating.message}`,
     });
   };
+}
+
+async function sendHumanReviewResponse(
+  res: Response,
+  status: number,
+  caseDir: string | undefined,
+  taskId: number,
+  testCaseId: number | undefined,
+  body: Record<string, unknown>,
+): Promise<void> {
+  if (caseDir) {
+    await logHumanReviewApiResponse(caseDir, status, taskId, testCaseId, body);
+  }
+  if (status === 200) {
+    res.json(body);
+    return;
+  }
+  res.status(status).json(body);
+}
+
+async function logHumanReviewApiRequest(
+  caseDir: string,
+  taskId: number,
+  testCaseId: number | undefined,
+  payload: HumanReviewSubmissionPayload,
+): Promise<void> {
+  await appendCaseLog(
+    caseDir,
+    "INFO",
+    [
+      "api_request_triggered",
+      `route=${HUMAN_REVIEW_ROUTE}`,
+      formatHumanReviewLogContext(taskId, testCaseId),
+      `reviewer=${formatLogValue(payload.reviewer ?? "unknown")}`,
+      `manualLevel=${payload.manualLevel}`,
+      `itemReviewCount=${String(payload.itemReviews?.length ?? 0)}`,
+      `riskReviewCount=${String(payload.riskReviews?.length ?? 0)}`,
+    ].join(" "),
+  );
+}
+
+async function logHumanReviewApiResponse(
+  caseDir: string,
+  status: number,
+  taskId: number,
+  testCaseId: number | undefined,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const level = status >= 500 ? "ERROR" : status >= 400 ? "WARN" : "INFO";
+  await appendCaseLog(
+    caseDir,
+    level,
+    [
+      "api_response_sent",
+      `route=${HUMAN_REVIEW_ROUTE}`,
+      formatHumanReviewLogContext(taskId, testCaseId),
+      `status=${String(status)}`,
+      `success=${String(body.success)}`,
+      `message=${formatLogValue(typeof body.message === "string" ? body.message : "none")}`,
+    ].join(" "),
+  );
+}
+
+async function appendCaseLog(
+  caseDir: string,
+  level: "INFO" | "WARN" | "ERROR",
+  message: string,
+): Promise<void> {
+  const logPath = path.join(caseDir, "logs", "run.log");
+  await fs.mkdir(path.dirname(logPath), { recursive: true });
+  await fs.appendFile(logPath, `[${new Date().toISOString()}] [${level}] ${message}\n`, "utf-8");
+}
+
+function formatHumanReviewLogContext(taskId: number, testCaseId: number | undefined): string {
+  return `taskId=${String(taskId)} testCaseId=${String(testCaseId ?? "unknown")}`;
+}
+
+function formatLogValue(value: string): string {
+  return value.replace(/\s+/g, "_").slice(0, 200);
 }
 
 function readRouteTaskId(req: Request): number | undefined {

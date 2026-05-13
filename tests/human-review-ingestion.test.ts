@@ -349,6 +349,35 @@ test("submit human review handler accepts empty first-version payload", async (t
   );
 });
 
+test("submit human review handler writes request and response logs to case logs", async (t) => {
+  const { registry, caseDir } = await writeCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      reviewer: "reviewer-001",
+      manualLevel: "L2",
+      itemReviews: [{ itemId: 1, agree: true }],
+      riskReviews: [{ riskId: 1, agree: false, correctedLevel: "low", reason: "风险已降低。" }],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  const logText = await fs.readFile(path.join(caseDir, "logs", "run.log"), "utf-8");
+  assert.match(
+    logText,
+    /api_request_triggered route=POST \/score\/remote-tasks\/:taskId\/human-review taskId=88 testCaseId=188 reviewer=reviewer-001 manualLevel=L2 itemReviewCount=1 riskReviewCount=1/,
+  );
+  assert.match(
+    logText,
+    /api_response_sent route=POST \/score\/remote-tasks\/:taskId\/human-review taskId=88 testCaseId=188 status=200 success=true/,
+  );
+});
+
 test("submit human review handler writes manual risk review calibration samples by risk id", async (t) => {
   const { registry } = await writeCompletedTask(t);
   const root = await makeTempDir(t);
