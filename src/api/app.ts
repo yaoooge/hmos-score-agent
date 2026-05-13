@@ -24,6 +24,7 @@ import {
   prepareRemoteEvaluationTask,
 } from "../service.js";
 import type { RemoteEvaluationTask } from "../types.js";
+import { createDashboardRouter } from "../dashboard/dashboardHandlers.js";
 
 type AppDeps = {
   acceptRemoteEvaluationTask: typeof acceptRemoteEvaluationTask;
@@ -49,6 +50,8 @@ type RemoteTaskRecord = {
   caseDir?: string;
   token?: string;
   testCaseId?: number;
+  testCaseName?: string;
+  testCaseType?: string;
   error?: string;
 };
 
@@ -77,6 +80,18 @@ function readRemoteTestCaseId(body: unknown): number | undefined {
   }
   const testCaseId = (testCase as { id?: unknown }).id;
   return typeof testCaseId === "number" && Number.isFinite(testCaseId) ? testCaseId : undefined;
+}
+
+function readRemoteTestCaseString(body: unknown, key: "name" | "type"): string | undefined {
+  if (typeof body !== "object" || body === null) {
+    return undefined;
+  }
+  const testCase = (body as { testCase?: unknown }).testCase;
+  if (typeof testCase !== "object" || testCase === null) {
+    return undefined;
+  }
+  const value = (testCase as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function formatError(error: unknown): string {
@@ -122,7 +137,9 @@ function sendRemoteApiResponse(
   res.status(status).json(body);
 }
 
-async function uploadQueuedPendingCallback(acceptedTask: AcceptedRemoteEvaluationTask): Promise<void> {
+async function uploadQueuedPendingCallback(
+  acceptedTask: AcceptedRemoteEvaluationTask,
+): Promise<void> {
   const upload = await uploadTaskCallback(
     acceptedTask.remoteTask.callback,
     acceptedTask.remoteTask.token,
@@ -166,6 +183,8 @@ export function createRunRemoteTaskHandler(
       caseDir: patch.caseDir ?? existing?.caseDir,
       token: patch.token ?? existing?.token,
       testCaseId: patch.testCaseId ?? existing?.testCaseId,
+      testCaseName: patch.testCaseName ?? existing?.testCaseName,
+      testCaseType: patch.testCaseType ?? existing?.testCaseType,
       error: patch.error ?? existing?.error,
     };
     remoteTaskRecords.set(taskId, record);
@@ -177,6 +196,8 @@ export function createRunRemoteTaskHandler(
           caseDir: record.caseDir,
           token: record.token,
           testCaseId: record.testCaseId,
+          testCaseName: record.testCaseName,
+          testCaseType: record.testCaseType,
           error: record.error,
         })
         .catch((error) => {
@@ -205,6 +226,8 @@ export function createRunRemoteTaskHandler(
       caseDir: acceptedTask.caseDir,
       token: acceptedTask.remoteTask.token,
       testCaseId: acceptedTask.remoteTask.testCase.id,
+      testCaseName: acceptedTask.remoteTask.testCase.name,
+      testCaseType: acceptedTask.remoteTask.testCase.type,
     });
     try {
       await deps.executeAcceptedRemoteEvaluationTask(acceptedTask, {
@@ -238,12 +261,16 @@ export function createRunRemoteTaskHandler(
         caseDir: acceptedTask.caseDir,
         token: acceptedTask.remoteTask.token,
         testCaseId: acceptedTask.remoteTask.testCase.id,
+        testCaseName: acceptedTask.remoteTask.testCase.name,
+        testCaseType: acceptedTask.remoteTask.testCase.type,
       });
     } catch (error) {
       upsertTaskRecord(acceptedTask.taskId, "failed", {
         caseDir: acceptedTask.caseDir,
         token: acceptedTask.remoteTask.token,
         testCaseId: acceptedTask.remoteTask.testCase.id,
+        testCaseName: acceptedTask.remoteTask.testCase.name,
+        testCaseType: acceptedTask.remoteTask.testCase.type,
         error: formatError(error),
       });
       throw error;
@@ -272,6 +299,8 @@ export function createRunRemoteTaskHandler(
       caseDir: acceptedTask.caseDir,
       token: acceptedTask.remoteTask.token,
       testCaseId: acceptedTask.remoteTask.testCase.id,
+      testCaseName: acceptedTask.remoteTask.testCase.name,
+      testCaseType: acceptedTask.remoteTask.testCase.type,
     });
     return new Promise<void>((resolve, reject) => {
       pendingRemoteTaskExecutions.push({ acceptedTask, resolve, reject });
@@ -300,6 +329,8 @@ export function createRunRemoteTaskHandler(
         upsertTaskRecord(taskId, "preparing", {
           token: typeof req.body?.token === "string" ? req.body.token : undefined,
           testCaseId: readRemoteTestCaseId(req.body),
+          testCaseName: readRemoteTestCaseString(req.body, "name"),
+          testCaseType: readRemoteTestCaseString(req.body, "type"),
         });
       }
       const acceptedTask = await deps.acceptRemoteEvaluationTask(req.body as RemoteEvaluationTask);
@@ -308,6 +339,8 @@ export function createRunRemoteTaskHandler(
         caseDir: acceptedTask.caseDir,
         token: acceptedTask.remoteTask.token,
         testCaseId: acceptedTask.remoteTask.testCase.id,
+        testCaseName: acceptedTask.remoteTask.testCase.name,
+        testCaseType: acceptedTask.remoteTask.testCase.type,
       });
       const executionPromise = enqueueRemoteTaskExecution(acceptedTask);
       const shouldUploadQueuedPendingCallback = queuedTaskIds.has(acceptedTask.taskId);
@@ -519,9 +552,17 @@ export function createApp(
     createGetRuleViolationStatsHandler(ruleViolationStatsStore),
   );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
+  app.use(
+    createDashboardRouter({
+      registry,
+      ruleViolationStatsStore,
+      humanReviewEvidenceRoot: config.humanReviewEvidenceRoot,
+    }),
+  );
   app.post(
     API_PATHS.humanReview,
     createSubmitHumanReviewHandler({ registry, store: humanReviewEvidenceStore }),
   );
+  app.use("/dashboard", express.static(path.resolve(process.cwd(), "web", "dist")));
   return app;
 }

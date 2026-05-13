@@ -17,6 +17,8 @@ export type RemoteTaskRecord = {
   caseDir?: string;
   token?: string;
   testCaseId?: number;
+  testCaseName?: string;
+  testCaseType?: string;
   error?: string;
 };
 
@@ -26,11 +28,14 @@ export type RemoteTaskRecordPatch = {
   caseDir?: string;
   token?: string;
   testCaseId?: number;
+  testCaseName?: string;
+  testCaseType?: string;
   error?: string;
 };
 
 export type RemoteTaskRegistry = {
   get(taskId: number): Promise<RemoteTaskRecord | undefined>;
+  list(): Promise<RemoteTaskRecord[]>;
   upsert(patch: RemoteTaskRecordPatch): Promise<RemoteTaskRecord>;
 };
 
@@ -61,7 +66,9 @@ export function createRemoteTaskRegistry(localCaseRoot: string): RemoteTaskRegis
       const parsed = JSON.parse(text) as unknown;
       const items = Array.isArray(parsed)
         ? parsed
-        : typeof parsed === "object" && parsed !== null && Array.isArray((parsed as { records?: unknown }).records)
+        : typeof parsed === "object" &&
+            parsed !== null &&
+            Array.isArray((parsed as { records?: unknown }).records)
           ? (parsed as { records: unknown[] }).records
           : [];
       for (const item of items) {
@@ -105,6 +112,13 @@ export function createRemoteTaskRegistry(localCaseRoot: string): RemoteTaskRegis
       });
     },
 
+    async list(): Promise<RemoteTaskRecord[]> {
+      return await runExclusive(async () => {
+        await load();
+        return Array.from(records.values()).sort((left, right) => left.taskId - right.taskId);
+      });
+    },
+
     async upsert(patch: RemoteTaskRecordPatch): Promise<RemoteTaskRecord> {
       return await runExclusive(async () => {
         await load();
@@ -118,6 +132,8 @@ export function createRemoteTaskRegistry(localCaseRoot: string): RemoteTaskRegis
           caseDir: patch.caseDir ?? existing?.caseDir,
           token: patch.token ?? existing?.token,
           testCaseId: patch.testCaseId ?? existing?.testCaseId,
+          testCaseName: patch.testCaseName ?? existing?.testCaseName,
+          testCaseType: patch.testCaseType ?? existing?.testCaseType,
           error: patch.error ?? existing?.error,
         };
         records.set(record.taskId, record);

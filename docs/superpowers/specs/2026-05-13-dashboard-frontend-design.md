@@ -8,8 +8,10 @@ Date: 2026-05-13
 
 - `<LOCAL_CASE_ROOT>/remote-task-index.json`：远程任务状态、创建时间、更新时间、caseDir、testCaseId 和错误信息。
 - `<LOCAL_CASE_ROOT>/rule-violation-stats.json`：已完成任务的静态规则违反聚合快照。
+- `caseDir/inputs/case-info.json`：远程任务的输入元数据，保留 `remote_test_case_id`、`remote_test_case_name`、`remote_test_case_type`，并记录阶段性任务信息。
 - `caseDir/outputs/result.json`：完成任务的评分结果、总分、任务类型、风险项、hard gate、报告元数据。
 - `<HUMAN_REVIEW_EVIDENCE_ROOT>/datasets/human_rating_gap_analyses.jsonl`：人工评级与自动评分差异分析结果。
+- `<HUMAN_REVIEW_EVIDENCE_ROOT>/datasets/risk_review_calibrations.jsonl`：风险项人工复核样本，用于风险项分析页。
 
 本设计新增同仓 Vue3 + Element Plus 前端和只读 Dashboard API。所有前端专用接口统一使用 `/dashboard/xxx` 前缀。
 
@@ -22,6 +24,7 @@ Date: 2026-05-13
 - 评测任务列表提供查看运行日志按钮，点击后可查看当前任务的运行日志。
 - 用例报表展示每日任务个数、完成/失败趋势、平均分趋势、已完成任务分数分布区间。
 - 结果分析展示人工评分差异分析和负向结果分析。
+- 结果分析新增风险项分析页签，展示 `risk_review_calibrations.jsonl` 的人工风险复核样本。
 - 新增 `/dashboard/xxx` 只读后端聚合接口，避免前端直接扫描本地文件或逐个调用结果接口。
 - 新增前端服务启动和构建脚本，部署后可访问 Dashboard 页面。
 
@@ -211,6 +214,19 @@ hmos-score-agent/
 - hard gate 触发任务列表。
 - 风险项聚合：按 `risk.level` 聚合 high/medium/low 数量，列出高风险任务。
 - 规则违反 Top 列表：复用 `rule-violation-stats.json` 的规则聚合结果。
+
+风险项分析展示：
+
+- `taskId`
+- `testCaseId`
+- `caseName`
+- `taskSummary`
+- `resultRisk.level`
+- `resultRisk.title`
+- `humanReview.agreeWithResultLevel`
+- `humanReview.correctedLevel`
+- `humanReview.reason`
+- `evidenceId`
 
 负向结果定义：
 
@@ -649,7 +665,7 @@ http://<server-host>:3000/dashboard/
 - `/dashboard/` 静态页面和 `/dashboard/xxx` API 前缀重合时，路由注册顺序必须明确：API handler 先注册，静态资源后注册。前端使用 hash history，不需要 Express history fallback。
 - 时间过滤统一使用任务 `createdAt`，人工评分差异使用 `reviewedAt`。
 - `createdAt`、`updatedAt` 当前是毫秒时间戳，API 输出统一转换为 ISO 字符串。
-- 任务名称优先级：`result.json.basic_info.case_name`、`remoteTaskRecord.testCaseName`、`Task <taskId>`。
+- 任务名称优先级：`result.json.basic_info.case_name`、`case-info.json.remote_test_case_name`、`remoteTaskRecord.testCaseName`、`Task <taskId>`；人工评分差异与风险项分析数据集若缺少 `caseName`，由 Dashboard API 使用该优先级按 `taskId` 补齐。
 - 任务类型优先级：`result.json.basic_info.task_type`、`remoteTaskRecord.testCaseType`、`unknown`。
 
 ## Open Decisions Resolved

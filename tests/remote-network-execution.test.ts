@@ -155,6 +155,44 @@ test("acceptRemoteEvaluationTask uses a neutral case label before remote classif
   assert.equal(path.basename(accepted.caseDir).includes("_full_generation_"), false);
 });
 
+test("acceptRemoteEvaluationTask persists remote test case name in case info", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  t.after(() => {
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+  });
+
+  const accepted = await acceptRemoteEvaluationTask({
+    taskId: 43,
+    testCase: {
+      id: 1002,
+      name: "停车缴费元服务修复常去地址",
+      type: "bug_fix",
+      description: "修复常去地址路由问题",
+      input: "点击回家或者上班应路由到已设置地址",
+      expectedOutput: "",
+      fileUrl: "",
+    },
+    executionResult: {
+      isBuildSuccess: true,
+      outputCodeUrl: "https://remote.example.com/workspace.json",
+    },
+    callback: "https://remote.example.com/callback",
+  });
+
+  const caseInfo = JSON.parse(
+    await fs.readFile(path.join(accepted.caseDir, "inputs", "case-info.json"), "utf-8"),
+  ) as Record<string, unknown>;
+
+  assert.equal(caseInfo.remote_test_case_name, "停车缴费元服务修复常去地址");
+  assert.equal(caseInfo.remote_test_case_type, "bug_fix");
+});
+
 async function waitForAssertion(assertion: () => Promise<void>, attempts = 20): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {

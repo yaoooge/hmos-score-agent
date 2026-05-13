@@ -180,12 +180,15 @@ EOF
 install_app_dependencies() {
   log "安装项目依赖并构建"
   run_as_app_user npm --prefix "${APP_DIR}" ci
+  run_as_app_user npm --prefix "${APP_DIR}/web" install
   run_as_app_user npm --prefix "${APP_DIR}" run build
+  run_as_app_user npm --prefix "${APP_DIR}" run build:dashboard
 }
 
 build_app() {
   log "构建项目"
   run_as_app_user npm --prefix "${APP_DIR}" run build
+  run_as_app_user npm --prefix "${APP_DIR}" run build:dashboard
 }
 
 write_systemd_service() {
