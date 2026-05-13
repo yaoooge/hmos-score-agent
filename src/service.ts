@@ -281,6 +281,8 @@ function buildRemoteCaseInfoBase(
     input_mode: "remote_task",
     remote_task_id: remoteTask.taskId,
     remote_test_case_id: remoteTask.testCase.id,
+    remote_test_case_name: remoteTask.testCase.name,
+    remote_test_case_type: remoteTask.testCase.type,
   };
 }
 

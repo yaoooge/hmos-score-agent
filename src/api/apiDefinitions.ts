@@ -57,6 +57,15 @@ export const API_PATHS = {
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
   ruleViolationStats: "/score/rule-violation-stats",
   humanReview: "/score/remote-tasks/:taskId/human-review",
+  dashboardSummary: "/dashboard/summary",
+  dashboardTasks: "/dashboard/tasks",
+  dashboardTaskLogs: "/dashboard/tasks/:taskId/logs",
+  dashboardTaskStatusCounts: "/dashboard/tasks/status-counts",
+  dashboardReportsDaily: "/dashboard/reports/daily",
+  dashboardReportsScoreDistribution: "/dashboard/reports/score-distribution",
+  dashboardAnalysisHumanRatingGaps: "/dashboard/analysis/human-rating-gaps",
+  dashboardAnalysisRiskReviewCalibrations: "/dashboard/analysis/risk-review-calibrations",
+  dashboardAnalysisNegativeResults: "/dashboard/analysis/negative-results",
 } as const;
 
 const successField = {
@@ -387,7 +396,8 @@ export const API_DEFINITIONS: ApiDefinition[] = [
           itemReviews: {
             type: "array",
             required: false,
-            description: "Optional per-item human review results. Missing or empty arrays are valid.",
+            description:
+              "Optional per-item human review results. Missing or empty arrays are valid.",
             items: {
               type: "object",
               description:
@@ -422,7 +432,8 @@ export const API_DEFINITIONS: ApiDefinition[] = [
             status: {
               type: "string",
               required: true,
-              description: "Submission processing status. Completed for first-version synchronous handling.",
+              description:
+                "Submission processing status. Completed for first-version synchronous handling.",
             },
             summary: {
               type: "object",
