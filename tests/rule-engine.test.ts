@@ -193,6 +193,75 @@ test("ARKTS-FORBID-021 flags real in membership checks", () => {
   assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
 });
 
+test("ARKTS-FORBID-026 ignores control flow after a safe finally block", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-026");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "components/module_secure_checkin/src/main/ets/viewmodels/CheckinPageVM.ets",
+        content: [
+          "async function submit(): Promise<void> {",
+          "  try {",
+          "    await sendRequest();",
+          "  } finally {",
+          "    this.isLoading = false;",
+          "  }",
+          "  throw new Error('outside finally');",
+          "}",
+        ].join("\n"),
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, []);
+});
+
+test("ARKTS-FORBID-026 flags control flow inside a finally block", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-026");
+  assert.ok(rule);
+
+  const result = runTextPatternRule(rule, {
+    workspaceFiles: [
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content: [
+          "function load(): void {",
+          "  try {",
+          "    run();",
+          "  } finally {",
+          "    throw new Error('inside finally');",
+          "  }",
+          "}",
+        ].join("\n"),
+      },
+    ],
+    originalFiles: [],
+    changedFiles: [],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 0,
+      changedFiles: [],
+      hasPatch: false,
+    },
+  });
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:5"]);
+});
+
 test("ARKTS-FORBID-003 ignores hex colors inside string literals", () => {
   const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-003");
   assert.ok(rule);

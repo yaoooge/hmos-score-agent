@@ -276,12 +276,58 @@ function findMatchingLineNumbers(
   return Array.from(lineNumbers).sort((left, right) => left - right);
 }
 
+function findFinallyBlockControlFlowLineNumbers(content: string): number[] {
+  const lineStarts = buildLineStarts(content);
+  const lineNumbers = new Set<number>();
+  const finallyPattern = /\bfinally\s*\{/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = finallyPattern.exec(content)) !== null) {
+    const blockStart = match.index + match[0].lastIndexOf("{");
+    let depth = 1;
+    let index = blockStart + 1;
+
+    while (index < content.length && depth > 0) {
+      const current = content[index] ?? "";
+      if (current === "{") {
+        depth += 1;
+        index += 1;
+        continue;
+      }
+      if (current === "}") {
+        depth -= 1;
+        index += 1;
+        continue;
+      }
+      if (depth > 0) {
+        const tokenMatch = /\b(?:return|break|continue|throw)\b/.exec(content.slice(index));
+        if (!tokenMatch) {
+          break;
+        }
+        const tokenIndex = index + tokenMatch.index;
+        const nextBraceIndex = content.slice(index).search(/[{}]/);
+        if (nextBraceIndex !== -1 && index + nextBraceIndex < tokenIndex) {
+          index += nextBraceIndex;
+          continue;
+        }
+        lineNumbers.add(findLineNumber(lineStarts, tokenIndex));
+        index = tokenIndex + tokenMatch[0].length;
+        continue;
+      }
+      index += 1;
+    }
+  }
+
+  return Array.from(lineNumbers).sort((left, right) => left - right);
+}
+
 function findTextPatternMatch(
   file: CollectedEvidence["workspaceFiles"][number],
   patterns: RegExp[],
   keepComments: boolean,
   ignoreStringLiteralMatches: boolean,
   stripStringLiteralContents: boolean,
+  finallyBlockControlFlowOnly: boolean,
 ): TextPatternMatch | undefined {
   const commentNormalizedContent = keepComments
     ? file.content
@@ -291,10 +337,10 @@ function findTextPatternMatch(
     : commentNormalizedContent;
   const allowedLineNumbers =
     file.patchLineNumbers === undefined ? undefined : new Set(file.patchLineNumbers);
-  const matchingLineNumbers = findMatchingLineNumbers(
-    patterns,
-    normalizedContent,
-    ignoreStringLiteralMatches,
+  const matchingLineNumbers = (
+    finallyBlockControlFlowOnly
+      ? findFinallyBlockControlFlowLineNumbers(normalizedContent)
+      : findMatchingLineNumbers(patterns, normalizedContent, ignoreStringLiteralMatches)
   ).filter((lineNumber) => allowedLineNumbers === undefined || allowedLineNumbers.has(lineNumber));
 
   if (matchingLineNumbers.length === 0) {
@@ -343,6 +389,7 @@ export function runTextPatternRule(
   const keepComments = shouldKeepComments([...applicabilityPatternTexts, ...patternTexts]);
   const ignoreStringLiteralMatches = rule.detector_config.ignoreStringLiteralMatches === true;
   const stripStringLiteralContents = rule.detector_config.stripStringLiteralContents === true;
+  const finallyBlockControlFlowOnly = rule.detector_config.finallyBlockControlFlowOnly === true;
   const candidateFiles = evidence.workspaceFiles.filter((file) =>
     fileExtensions.includes(path.extname(file.relativePath).toLowerCase()),
   );
@@ -354,6 +401,7 @@ export function runTextPatternRule(
         keepComments,
         ignoreStringLiteralMatches,
         stripStringLiteralContents,
+        finallyBlockControlFlowOnly,
       ),
     )
     .filter((match): match is TextPatternMatch => Boolean(match));
@@ -378,6 +426,7 @@ export function runTextPatternRule(
         keepComments,
         ignoreStringLiteralMatches,
         stripStringLiteralContents,
+        finallyBlockControlFlowOnly,
       ),
     )
     .filter((match): match is TextPatternMatch => Boolean(match));

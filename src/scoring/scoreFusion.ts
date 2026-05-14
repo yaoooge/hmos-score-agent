@@ -214,6 +214,22 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
   return [];
 }
 
+function riskLevelFromRuleImpact(
+  rule: RuleAuditResult,
+  penaltyRules: MetricPenaltyRule[],
+): string {
+  if (penaltyRules.some((penalty) => penalty.severity === "heavy")) {
+    return "high";
+  }
+  if (penaltyRules.some((penalty) => penalty.severity === "medium")) {
+    return "medium";
+  }
+  if (penaltyRules.some((penalty) => penalty.severity === "light")) {
+    return "low";
+  }
+  return rule.rule_source === "forbidden_pattern" ? "high" : "medium";
+}
+
 function buildCriteriaByMetric(rubricSnapshot: LoadedRubricSnapshot): Map<string, string> {
   return new Map(
     rubricSnapshot.dimension_summaries.flatMap((dimension) =>
@@ -589,7 +605,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     }
 
     if (rule.result === "不满足") {
-      const level = rule.rule_source === "forbidden_pattern" ? "high" : "medium";
+      const level = riskLevelFromRuleImpact(rule, penaltyRules);
       const gateIds = selectRuleTriggeredGateIds(input, rule);
       risks.push({
         id: risks.length + 1,

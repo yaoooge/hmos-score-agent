@@ -28,7 +28,11 @@ export function createTextRule(
   summary: string,
   patterns: string[],
   applicabilityPatterns?: string[],
-  options: { ignoreStringLiteralMatches?: boolean; stripStringLiteralContents?: boolean } = {},
+  options: {
+    ignoreStringLiteralMatches?: boolean;
+    stripStringLiteralContents?: boolean;
+    finallyBlockControlFlowOnly?: boolean;
+  } = {},
 ): RegisteredRule {
   return {
     pack_id,
@@ -42,6 +46,7 @@ export function createTextRule(
       ...(applicabilityPatterns?.length ? { applicabilityPatterns } : {}),
       ...(options.ignoreStringLiteralMatches ? { ignoreStringLiteralMatches: true } : {}),
       ...(options.stripStringLiteralContents ? { stripStringLiteralContents: true } : {}),
+      ...(options.finallyBlockControlFlowOnly ? { finallyBlockControlFlowOnly: true } : {}),
     },
     fallback_policy: "agent_assisted",
   };

@@ -191,6 +191,8 @@ export const arktsForbiddenRules: RegisteredRule[] = [
     "forbidden_pattern",
     "ARKTS-FORBID-026",
     "禁止在 finally 代码块中使用 return、break、continue 或抛出未处理异常。",
-    ["\\bfinally\\s*\\{[\\s\\S]*\\b(?:return|break|continue|throw)\\b"],
+    ["\\bfinally\\s*\\{"],
+    undefined,
+    { stripStringLiteralContents: true, finallyBlockControlFlowOnly: true },
   ),
 ];

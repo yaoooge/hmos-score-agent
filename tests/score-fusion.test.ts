@@ -327,8 +327,13 @@ test("fuseRubricScoreWithRules maps official performance linter rules to perform
     performanceDetail.rule_impacts[0]?.rule_id,
     "OFFICIAL-LINTER:@performance/foreach-args-check",
   );
-  assert.equal(performanceDetail.rule_impacts[0]?.severity, "medium");
+  assert.equal(performanceDetail.rule_impacts[0]?.severity, "light");
   assert.ok((performanceDetail.rule_impacts[0]?.score_delta ?? 0) < 0);
+  assert.equal(
+    result.risks.find((risk) => risk.title === "规则违规：OFFICIAL-LINTER:@performance/foreach-args-check")
+      ?.level,
+    "low",
+  );
 });
 
 test("fuseRubricScoreWithRules maps official max-len linter rule to one static quality penalty", async () => {
@@ -370,6 +375,11 @@ test("fuseRubricScoreWithRules maps official max-len linter rule to one static q
   );
   assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "light");
   assert.ok((impactedDetails[0]?.rule_impacts[0]?.score_delta ?? 0) < 0);
+  assert.equal(
+    result.risks.find((risk) => risk.title === "规则违规：OFFICIAL-LINTER:@hw-stylistic/max-len")
+      ?.level,
+    "low",
+  );
 });
 
 test("fuseRubricScoreWithRules maps official cross-device linter rules to platform rubric items", async () => {

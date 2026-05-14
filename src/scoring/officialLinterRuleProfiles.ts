@@ -136,7 +136,7 @@ export const officialLinterRuleProfiles = [
       ruleId,
       metricNames: performanceRiskMetrics,
       ratio: 0.12,
-      severity: "medium",
+      severity: "light",
     }),
   ),
   ...crossDeviceVisualAdaptationRuleIds.map((ruleId) =>

@@ -30,6 +30,7 @@ type MetricPenaltyRule = {
   ratio: number;
   confidence: "medium" | "low";
   reviewRequired: boolean;
+  severity?: RuleImpactDetail["severity"];
 };
 
 type GateTrigger = {
@@ -290,6 +291,23 @@ function getRuleImpactSeverity(rule: RuleAuditResult): RuleImpactDetail["severit
   return "light";
 }
 
+function riskLevelFromRuleImpact(
+  rule: RuleAuditResult,
+  penaltyRules: MetricPenaltyRule[],
+): string {
+  const severities = penaltyRules.map((penalty) => penalty.severity ?? getRuleImpactSeverity(rule));
+  if (severities.some((severity) => severity === "heavy")) {
+    return "high";
+  }
+  if (severities.some((severity) => severity === "medium")) {
+    return "medium";
+  }
+  if (severities.some((severity) => severity === "light")) {
+    return "low";
+  }
+  return rule.rule_source === "forbidden_pattern" ? "high" : "medium";
+}
+
 function shouldForceReview(
   score: number,
   scoreBands: Array<{ min: number; max: number }>,
@@ -395,7 +413,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
           rule_id: rule.rule_id,
           rule_source: rule.rule_source,
           result: "不满足",
-          severity: getRuleImpactSeverity(rule),
+          severity: penalty.severity ?? getRuleImpactSeverity(rule),
           score_delta: -roundScore(maxScore * penalty.ratio),
           reason: rule.conclusion,
           evidence: rule.conclusion,
@@ -407,7 +425,7 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
 
     risks.push({
       id: risks.length + 1,
-      level: rule.rule_source === "forbidden_pattern" ? "high" : "medium",
+      level: riskLevelFromRuleImpact(rule, penaltyRules),
       title: `规则违规：${rule.rule_id}`,
       description: rule.conclusion,
       evidence: rule.conclusion,

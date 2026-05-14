@@ -110,6 +110,18 @@ test("official linter rule profiles map every cross-device recommended rule expl
   }
 });
 
+test("official linter performance and stylistic rules are low priority", () => {
+  const lowPriorityPrefixes = ["@performance/", "@hw-stylistic/"];
+  const lowPriorityProfiles = officialLinterRuleProfiles.filter((profile) =>
+    lowPriorityPrefixes.some((prefix) => profile.ruleId.startsWith(prefix)),
+  );
+
+  assert.ok(lowPriorityProfiles.length > 0);
+  for (const profile of lowPriorityProfiles) {
+    assert.equal(profile.severity, "light", `${profile.ruleId} should be light severity`);
+  }
+});
+
 test("official linter rule profiles do not use prefix fallback for unknown cross-device rules", () => {
   assert.equal(
     findOfficialLinterRuleProfile("OFFICIAL-LINTER:@cross-device-app-dev/unknown-rule"),
