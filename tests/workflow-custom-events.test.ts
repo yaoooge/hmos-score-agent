@@ -19,6 +19,11 @@ function createTaskUnderstandingOpencodeMock() {
           contextualConstraints: ["保持工程结构"],
           implicitConstraints: ["基于 patch 评估"],
           classificationHints: ["full_generation", "has_patch"],
+          crossDeviceAdaptation: {
+            applicability: "not_involved",
+            confidence: "high",
+            reasons: ["需求未出现多设备、多屏或设备形态适配要求"],
+          },
         }),
         elapsedMs: 1,
       };

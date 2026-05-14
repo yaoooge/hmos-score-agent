@@ -257,6 +257,7 @@ function createOpencodeRunnerMock(): OpencodeRunner {
             contextualConstraints: ["保持工程结构"],
             implicitConstraints: ["基于 patch 评估"],
             classificationHints: ["continuation", "has_patch"],
+            crossDeviceAdaptation: notInvolvedCrossDevice(),
           }),
           rawEvents: "",
           elapsedMs: 1,
@@ -303,6 +304,14 @@ function createOpencodeRunnerMock(): OpencodeRunner {
 
       throw new Error(`unexpected opencode requestTag=${request.requestTag}`);
     },
+  };
+}
+
+function notInvolvedCrossDevice() {
+  return {
+    applicability: "not_involved",
+    confidence: "high",
+    reasons: ["需求未出现多设备、多屏或设备形态适配要求"],
   };
 }
 

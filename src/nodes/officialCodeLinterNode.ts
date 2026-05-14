@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getConfig } from "../config.js";
-import { officialCodeLinterRecommendedRuleSets } from "../rules/officialCodeLinter/recommendedRuleSets.js";
+import { findOfficialLinterRuleProfile } from "../scoring/officialLinterRuleProfiles.js";
+import { resolveOfficialCodeLinterRecommendedRuleSets } from "../rules/officialCodeLinter/recommendedRuleSets.js";
 import { parseOfficialCodeLinterOutput } from "../rules/officialCodeLinter/parser.js";
 import { mapOfficialCodeLinterFindings } from "../rules/officialCodeLinter/resultMapper.js";
 import { runOfficialCodeLinter } from "../rules/officialCodeLinter/runner.js";
@@ -66,17 +67,35 @@ function makeSummary(input: {
   runStatus: OfficialLinterRunStatus;
   effectiveFindingCount: number;
   durationMs: number;
+  configuredRuleSets: string[];
   exitCode?: number;
   diagnostics?: string;
 }): OfficialLinterSummary {
   return {
-    configuredRuleSets: [...officialCodeLinterRecommendedRuleSets],
+    configuredRuleSets: [...input.configuredRuleSets],
     effectiveFindingCount: input.effectiveFindingCount,
     runStatus: input.runStatus,
     exitCode: input.exitCode,
     durationMs: input.durationMs,
     diagnostics: input.diagnostics,
   };
+}
+
+function appendDiagnostics(...messages: Array<string | undefined>): string | undefined {
+  const diagnostics = messages.filter((message): message is string => Boolean(message?.trim()));
+  return diagnostics.length > 0 ? diagnostics.join("; ") : undefined;
+}
+
+function summarizeMissingOfficialRuleProfiles(ruleResults: Array<{ rule_id: string }>): string | undefined {
+  const missingCrossDeviceRuleIds = ruleResults
+    .map((rule) => rule.rule_id)
+    .filter((ruleId) => ruleId.startsWith("OFFICIAL-LINTER:@cross-device-app-dev/"))
+    .filter((ruleId) => !findOfficialLinterRuleProfile(ruleId));
+  const uniqueRuleIds = Array.from(new Set(missingCrossDeviceRuleIds));
+  if (uniqueRuleIds.length === 0) {
+    return undefined;
+  }
+  return `official linter profile missing: ${uniqueRuleIds.join(", ")}`;
 }
 
 export async function officialCodeLinterNode(
@@ -106,6 +125,14 @@ export async function officialCodeLinterNode(
     const hvigorTimeoutMs = deps.hvigorTimeoutMs ?? config.hvigorBuildCheckTimeoutMs;
     const caseDir = state.caseDir;
     const generatedProjectPath = state.caseInput?.generatedProjectPath;
+    const crossDeviceAdaptation = state.constraintSummary?.crossDeviceAdaptation;
+    const crossDeviceMissingDiagnostic =
+      state.constraintSummary && !crossDeviceAdaptation
+        ? "cross-device applicability missing; treated as not_involved"
+        : undefined;
+    const configuredRuleSets = resolveOfficialCodeLinterRecommendedRuleSets({
+      crossDeviceAdaptation,
+    });
 
     if (!enabled && !hvigorEnabled) {
       const hvigorSummary = await runHvigorBuildCheck({
@@ -118,7 +145,11 @@ export async function officialCodeLinterNode(
         runStatus: "not_enabled",
         effectiveFindingCount: 0,
         durationMs: Date.now() - startedAt,
-        diagnostics: "official Code Linter is disabled by HMOS_CODE_LINTER_ENABLED",
+        configuredRuleSets,
+        diagnostics: appendDiagnostics(
+          "official Code Linter is disabled by HMOS_CODE_LINTER_ENABLED",
+          crossDeviceMissingDiagnostic,
+        ),
       });
       return {
         officialLinterRunStatus: "not_enabled",
@@ -138,7 +169,8 @@ export async function officialCodeLinterNode(
       runStatus: unavailableRunStatus,
       effectiveFindingCount: 0,
       durationMs: Date.now() - startedAt,
-      diagnostics: unavailableDiagnostics,
+      configuredRuleSets,
+      diagnostics: appendDiagnostics(unavailableDiagnostics, crossDeviceMissingDiagnostic),
     });
     if (!caseDir || !generatedProjectPath) {
       const hvigorSummary = await runHvigorBuildCheck({
@@ -172,7 +204,11 @@ export async function officialCodeLinterNode(
       };
     }
 
-    const workspace = await prepareOfficialCodeLinterWorkspace({ generatedProjectPath, caseDir });
+    const workspace = await prepareOfficialCodeLinterWorkspace({
+      generatedProjectPath,
+      caseDir,
+      ruleSets: configuredRuleSets,
+    });
     const hvigorSummary = await runHvigorBuildCheck({
       enabled: hvigorEnabled,
       hvigorRunDir,
@@ -218,17 +254,22 @@ export async function officialCodeLinterNode(
             : "invalid_output";
     const effectiveFindings = runStatus === "success" ? mapped.effectiveFindings : [];
     const ruleResults = runStatus === "success" ? mapped.ruleResults : [];
+    const missingProfileDiagnostics = summarizeMissingOfficialRuleProfiles(ruleResults);
     const summary = makeSummary({
       runStatus,
       effectiveFindingCount: effectiveFindings.length,
       durationMs: runResult?.durationMs ?? Date.now() - startedAt,
+      configuredRuleSets,
       exitCode: runResult?.exitCode,
-      diagnostics:
+      diagnostics: appendDiagnostics(
         runStatus === "success"
           ? undefined
           : runStatus === "not_enabled"
             ? "official Code Linter is disabled by HMOS_CODE_LINTER_ENABLED"
             : `official Code Linter status=${runStatus}`,
+        missingProfileDiagnostics,
+        crossDeviceMissingDiagnostic,
+      ),
     });
     const sanitizedStdout = sanitizeOfficialCodeLinterOutput({
       text: runResult?.stdout ?? summary.diagnostics ?? "",

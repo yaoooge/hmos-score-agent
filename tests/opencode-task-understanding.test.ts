@@ -37,6 +37,14 @@ function inputWithLongPrompt(): TaskUnderstandingAgentInput {
   };
 }
 
+function notInvolvedCrossDevice() {
+  return {
+    applicability: "not_involved",
+    confidence: "high",
+    reasons: ["需求未出现多设备、多屏或设备形态适配要求"],
+  };
+}
+
 test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode output", async () => {
   let prompt = "";
   let requestTag = "";
@@ -61,6 +69,7 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
           contextualConstraints: ["ArkTS 页面实现"],
           implicitConstraints: ["低侵入修改"],
           classificationHints: ["bug_fix", "has_patch"],
+          crossDeviceAdaptation: notInvolvedCrossDevice(),
         }),
         elapsedMs: 5,
       };
@@ -88,7 +97,43 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   assert.equal(outputFile, "metadata/agent-output/task-understanding.json");
   assert.equal(result.outcome, "success");
   assert.deepEqual(result.summary?.classificationHints, ["bug_fix", "has_patch"]);
+  assert.equal(result.summary?.crossDeviceAdaptation.applicability, "not_involved");
   assert.equal(result.raw_events, "{}\n");
+});
+
+test("runOpencodeTaskUnderstanding prompt requires cross-device adaptation judgement", async () => {
+  let prompt = "";
+  const result = await runOpencodeTaskUnderstanding({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    agentInput: {
+      ...input(),
+      promptText: "请适配手机和平板双端展示",
+    },
+    runPrompt: async (request) => {
+      prompt = request.prompt;
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify({
+          explicitConstraints: ["目标: 适配手机和平板双端展示"],
+          contextualConstraints: ["ArkTS 页面实现"],
+          implicitConstraints: ["布局适配"],
+          classificationHints: ["full_generation", "multi_device_adaptation"],
+          crossDeviceAdaptation: {
+            applicability: "involved",
+            confidence: "high",
+            reasons: ["需求明确要求手机和平板布局适配"],
+          },
+        }),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.match(prompt, /crossDeviceAdaptation/);
+  assert.match(prompt, /多设备适配/);
+  assert.equal(result.summary?.crossDeviceAdaptation.applicability, "involved");
 });
 
 test("runOpencodeTaskUnderstanding rejects invalid constraint summary", async () => {
@@ -129,6 +174,7 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
                 contextualConstraints: ["ArkTS 页面实现"],
                 implicitConstraints: ["低侵入修改"],
                 classificationHints: ["bug_fix", "has_patch"],
+                crossDeviceAdaptation: notInvolvedCrossDevice(),
               }),
         elapsedMs: 1,
       };
@@ -152,6 +198,7 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.match(calls[1]?.prompt ?? "", /只根据 constraint_draft 输出最终 JSON/);
   assert.match(calls[1]?.prompt ?? "", /explicitConstraints/);
   assert.match(calls[1]?.prompt ?? "", /classificationHints/);
+  assert.match(calls[1]?.prompt ?? "", /crossDeviceAdaptation/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /representativeFiles/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /代表文件/);
 });
@@ -174,6 +221,7 @@ test("runOpencodeTaskUnderstanding retry prompt omits raw agent input", async ()
                 contextualConstraints: ["ArkTS 页面实现"],
                 implicitConstraints: ["低侵入修改"],
                 classificationHints: ["bug_fix", "has_patch"],
+                crossDeviceAdaptation: notInvolvedCrossDevice(),
               }),
         elapsedMs: 1,
       };
@@ -190,6 +238,7 @@ test("runOpencodeTaskUnderstanding retry prompt omits raw agent input", async ()
   assert.doesNotMatch(retryPrompt, /stdoutBytes/);
   assert.match(retryPrompt, /constraint_draft/);
   assert.match(retryPrompt, /只根据 constraint_draft 输出最终 JSON/);
+  assert.match(retryPrompt, /crossDeviceAdaptation/);
 });
 
 test("runOpencodeTaskUnderstanding retries once with strict output format after request failure", async () => {
@@ -210,6 +259,7 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
           contextualConstraints: ["ArkTS 页面实现"],
           implicitConstraints: ["低侵入修改"],
           classificationHints: ["bug_fix", "has_patch"],
+          crossDeviceAdaptation: notInvolvedCrossDevice(),
         }),
         elapsedMs: 1,
       };
@@ -248,6 +298,7 @@ test("runOpencodeTaskUnderstanding retries once after initial opencode timeout",
           contextualConstraints: ["ArkTS 页面实现"],
           implicitConstraints: ["低侵入修改"],
           classificationHints: ["bug_fix", "has_patch"],
+          crossDeviceAdaptation: notInvolvedCrossDevice(),
         }),
         elapsedMs: 1,
       };

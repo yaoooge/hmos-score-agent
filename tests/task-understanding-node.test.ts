@@ -25,10 +25,19 @@ function createTaskUnderstandingOpencodeMock() {
           contextualConstraints: ["保持工程结构"],
           implicitConstraints: ["基于 patch 评估"],
           classificationHints: ["full_generation", "has_patch"],
+          crossDeviceAdaptation: notInvolvedCrossDevice(),
         }),
         elapsedMs: 1,
       };
     },
+  };
+}
+
+function notInvolvedCrossDevice() {
+  return {
+    applicability: "not_involved",
+    confidence: "high",
+    reasons: ["需求未出现多设备、多屏或设备形态适配要求"],
   };
 }
 
@@ -116,6 +125,7 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
           "改动类型: UI 接入与筛选逻辑",
         ],
         classificationHints: ["bug_fix", "has_patch"],
+        crossDeviceAdaptation: notInvolvedCrossDevice(),
         }),
         elapsedMs: 1,
       };
@@ -156,6 +166,7 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     "侵入程度: 中等",
     "改动类型: UI 接入与筛选逻辑",
   ]);
+  assert.deepEqual(result.constraintSummary?.crossDeviceAdaptation, notInvolvedCrossDevice());
   assert.equal(Object.hasOwn(result.workspaceProjectStructure ?? {}, "representativeFiles"), false);
   assert.equal(typeof result.opencodeSandboxRoot, "string");
 

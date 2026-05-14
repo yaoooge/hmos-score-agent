@@ -33,6 +33,9 @@ function sourceRuleSetFrom(ruleId: string): string {
   if (ruleId.startsWith("@typescript-eslint/")) {
     return "plugin:@typescript-eslint/recommended";
   }
+  if (ruleId.startsWith("@cross-device-app-dev/")) {
+    return "plugin:@cross-device-app-dev/recommended";
+  }
   return "unknown";
 }
 

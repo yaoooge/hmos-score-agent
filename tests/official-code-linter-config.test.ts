@@ -5,25 +5,65 @@ import {
   buildOfficialCodeLinterConfig,
   serializeOfficialCodeLinterConfig,
 } from "../src/rules/officialCodeLinter/configWriter.js";
-import { officialCodeLinterRecommendedRuleSets } from "../src/rules/officialCodeLinter/recommendedRuleSets.js";
+import {
+  officialCodeLinterBaseRecommendedRuleSets,
+  officialCodeLinterCrossDeviceRecommendedRuleSet,
+  resolveOfficialCodeLinterRecommendedRuleSets,
+} from "../src/rules/officialCodeLinter/recommendedRuleSets.js";
 
 test("official Code Linter v1 uses exactly four recommended rule sets", () => {
-  assert.deepEqual(officialCodeLinterRecommendedRuleSets, [
+  assert.deepEqual(officialCodeLinterBaseRecommendedRuleSets, [
     "plugin:@typescript-eslint/recommended",
     "plugin:@security/recommended",
     "plugin:@performance/recommended",
     "plugin:@hw-stylistic/recommended",
   ]);
-  assert.equal(officialCodeLinterRecommendedRuleSets.includes("plugin:@previewer/recommended"), false);
+  assert.equal(officialCodeLinterBaseRecommendedRuleSets.includes("plugin:@previewer/recommended"), false);
   assert.equal(
-    officialCodeLinterRecommendedRuleSets.includes("plugin:@cross-device-app-dev/recommended"),
+    officialCodeLinterBaseRecommendedRuleSets.includes("plugin:@cross-device-app-dev/recommended"),
     false,
+  );
+});
+
+test("official Code Linter appends cross-device rule set only when involved", () => {
+  assert.deepEqual(resolveOfficialCodeLinterRecommendedRuleSets({}), [
+    ...officialCodeLinterBaseRecommendedRuleSets,
+  ]);
+  assert.deepEqual(
+    resolveOfficialCodeLinterRecommendedRuleSets({
+      crossDeviceAdaptation: {
+        applicability: "not_involved",
+        confidence: "high",
+        reasons: ["需求未出现多设备适配要求"],
+      },
+    }),
+    [...officialCodeLinterBaseRecommendedRuleSets],
+  );
+  assert.deepEqual(
+    resolveOfficialCodeLinterRecommendedRuleSets({
+      crossDeviceAdaptation: {
+        applicability: "uncertain",
+        confidence: "low",
+        reasons: ["缺少设备形态适配证据"],
+      },
+    }),
+    [...officialCodeLinterBaseRecommendedRuleSets],
+  );
+  assert.deepEqual(
+    resolveOfficialCodeLinterRecommendedRuleSets({
+      crossDeviceAdaptation: {
+        applicability: "involved",
+        confidence: "high",
+        reasons: ["需求明确要求手机和平板布局适配"],
+      },
+    }),
+    [...officialCodeLinterBaseRecommendedRuleSets, officialCodeLinterCrossDeviceRecommendedRuleSet],
   );
 });
 
 test("generated code-linter config explicitly includes the four v1 recommended rule sets", () => {
   const config = buildOfficialCodeLinterConfig();
-  assert.deepEqual(config.ruleSet, officialCodeLinterRecommendedRuleSets);
+  assert.deepEqual(config.ruleSet, officialCodeLinterBaseRecommendedRuleSets);
   assert.ok(config.files.includes("**/*.ets"));
   assert.ok(config.files.includes("**/*.json5"));
   assert.ok(config.ignore.includes("node_modules/**/*"));
@@ -34,6 +74,18 @@ test("generated code-linter config explicitly includes the four v1 recommended r
   assert.match(text, /plugin:@security\/recommended/);
   assert.match(text, /plugin:@performance\/recommended/);
   assert.match(text, /plugin:@hw-stylistic\/recommended/);
+});
+
+test("generated code-linter config can use resolved cross-device rule sets", () => {
+  const config = buildOfficialCodeLinterConfig({
+    ruleSets: [...officialCodeLinterBaseRecommendedRuleSets, officialCodeLinterCrossDeviceRecommendedRuleSet],
+  });
+
+  assert.deepEqual(config.ruleSet, [
+    ...officialCodeLinterBaseRecommendedRuleSets,
+    officialCodeLinterCrossDeviceRecommendedRuleSet,
+  ]);
+  assert.match(serializeOfficialCodeLinterConfig(config), /plugin:@cross-device-app-dev\/recommended/);
 });
 
 test("official Code Linter config defaults to global node with optional run dir", () => {

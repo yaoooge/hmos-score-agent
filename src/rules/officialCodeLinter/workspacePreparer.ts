@@ -13,6 +13,7 @@ export interface OfficialCodeLinterWorkspace {
 export async function prepareOfficialCodeLinterWorkspace(input: {
   generatedProjectPath: string;
   caseDir: string;
+  ruleSets?: string[];
 }): Promise<OfficialCodeLinterWorkspace> {
   const artifactDir = path.join(input.caseDir, "intermediate", "code-linter");
   const workspaceDir = path.join(artifactDir, "workspace");
@@ -38,7 +39,9 @@ export async function prepareOfficialCodeLinterWorkspace(input: {
     await fs.copyFile(sourcePath, targetPath);
   }
 
-  const configPath = await writeOfficialCodeLinterConfig(path.join(artifactDir, "code-linter.json5"));
+  const configPath = await writeOfficialCodeLinterConfig(path.join(artifactDir, "code-linter.json5"), {
+    ruleSets: input.ruleSets,
+  });
   const workspaceConfigPath = path.join(workspaceDir, "code-linter.json5");
   await fs.copyFile(configPath, workspaceConfigPath);
 
@@ -49,4 +52,3 @@ export async function prepareOfficialCodeLinterWorkspace(input: {
     copiedFiles,
   };
 }
-

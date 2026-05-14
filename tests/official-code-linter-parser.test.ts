@@ -70,6 +70,29 @@ test("parseOfficialCodeLinterOutput parses common text output", () => {
   assert.equal(parsed.findings[0]?.message, "Avoid unnecessary foreach argument");
 });
 
+test("parseOfficialCodeLinterOutput maps cross-device rule set source", () => {
+  const parsed = parseOfficialCodeLinterOutput({
+    stdout: JSON.stringify([
+      {
+        filePath: "/tmp/workspace/entry/src/main/ets/pages/Index.ets",
+        messages: [
+          {
+            ruleId: "@cross-device-app-dev/size-unit",
+            message: "width should use vp unit.",
+            severity: 1,
+            line: 12,
+            column: 4,
+          },
+        ],
+      },
+    ]),
+    stderr: "",
+  });
+
+  assert.equal(parsed.status, "parsed");
+  assert.equal(parsed.findings[0]?.source_rule_set, "plugin:@cross-device-app-dev/recommended");
+});
+
 test("parseOfficialCodeLinterOutput reports unparsed output without fabricating findings", () => {
   const parsed = parseOfficialCodeLinterOutput({
     stdout: "Code Linter finished with an unexpected banner",

@@ -372,6 +372,46 @@ test("fuseRubricScoreWithRules maps official max-len linter rule to one static q
   assert.ok((impactedDetails[0]?.rule_impacts[0]?.score_delta ?? 0) < 0);
 });
 
+test("fuseRubricScoreWithRules maps official cross-device linter rules to platform rubric items", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "OFFICIAL-LINTER:@cross-device-app-dev/size-unit",
+        rule_source: "should_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 @cross-device-app-dev/size-unit use vp",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const impactedDetails = result.scoreFusionDetails.filter((detail) =>
+    detail.rule_impacts.some(
+      (impact) => impact.rule_id === "OFFICIAL-LINTER:@cross-device-app-dev/size-unit",
+    ),
+  );
+
+  assert.deepEqual(
+    impactedDetails.map((detail) => detail.item_name).sort(),
+    ["ArkUI组织方式合理性", "HarmonyOS工程实践符合度"].sort(),
+  );
+  assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "medium");
+});
+
 test("fuseRubricScoreWithRules does not apply prefix fallback for unmapped official linter rules", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);

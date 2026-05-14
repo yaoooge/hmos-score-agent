@@ -2,7 +2,7 @@ import { extractFinalJsonObject } from "../opencode/finalJson.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
 import type { ConstraintSummary, TaskUnderstandingAgentInput } from "../types.js";
 import { buildOpencodeRequestTag } from "./opencodeRequestTag.js";
-import { parseConstraintSummary } from "./taskUnderstanding.js";
+import { inferCrossDeviceAdaptation, parseConstraintSummary } from "./taskUnderstanding.js";
 
 export type OpencodeTaskUnderstandingOutcome = "success" | "request_failed" | "protocol_error";
 
@@ -77,6 +77,7 @@ function buildRetryConstraintDraft(input: TaskUnderstandingAgentInput): Constrai
       ],
       8,
     ),
+    crossDeviceAdaptation: inferCrossDeviceAdaptation(input),
   };
 }
 
@@ -110,9 +111,10 @@ function renderRetryTaskUnderstandingPrompt(input: {
     "",
     "任务:",
     "1. 将 constraint_draft 原样整理为合法 JSON object。",
-    "2. 顶层只能包含 explicitConstraints、contextualConstraints、implicitConstraints、classificationHints。",
-    "3. 四个字段都必须是中文短句数组，可以包含英文分类标签。",
-    "4. 不要补充分析过程，不要输出 Markdown，不要输出工具调用意图。",
+    "2. 顶层只能包含 explicitConstraints、contextualConstraints、implicitConstraints、classificationHints、crossDeviceAdaptation。",
+    "3. 前四个字段都必须是中文短句数组，可以包含英文分类标签。",
+    "4. crossDeviceAdaptation 必须包含 applicability、confidence、reasons；uncertain 必须使用 low confidence。",
+    "5. 不要补充分析过程，不要输出 Markdown，不要输出工具调用意图。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",
@@ -160,6 +162,8 @@ function renderTaskUnderstandingPrompt(input: {
     "3. contextualConstraints: 从 projectStructure、implementationHints、modulePaths 提取模块、分层、技术栈和实现边界。",
     "4. implicitConstraints: 从 patchSummary 提取修改范围、侵入程度、改动类型和隐含风险。",
     "5. classificationHints: 给后续任务分类使用的短标签，例如 full_generation、continuation、bug_fix、has_patch。",
+    "6. crossDeviceAdaptation: 判断当前任务是否涉及多设备适配。只有 prompt、工程结构或 patch 摘要明确出现多设备、多端、多屏、跨设备、手机/平板/折叠屏/智慧屏/手表/车机组合、响应式布局、自适应、断点、横竖屏或窗口尺寸变化时，applicability 才能为 involved。",
+    "7. 如果只是设备信息、设备权限、HarmonyOS、ArkUI 或普通页面布局，不自动视为多设备适配；信息不足时使用 uncertain 且 confidence 为 low。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",

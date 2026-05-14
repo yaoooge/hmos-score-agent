@@ -134,6 +134,14 @@ function buildOpencodeRubricFinalAnswer(
   };
 }
 
+function notInvolvedCrossDevice() {
+  return {
+    applicability: "not_involved",
+    confidence: "high",
+    reasons: ["需求未出现多设备、多屏或设备形态适配要求"],
+  };
+}
+
 function createOpencodeRunnerMock() {
   function parsePromptPayload<T>(prompt: string, marker: string): T {
     const index = prompt.lastIndexOf(`${marker}:\n`);
@@ -159,6 +167,7 @@ function createOpencodeRunnerMock() {
             contextualConstraints: ["保持工程结构"],
             implicitConstraints: ["基于补丁评估"],
             classificationHints: ["bug_fix", "has_patch"],
+            crossDeviceAdaptation: notInvolvedCrossDevice(),
           }),
           elapsedMs: 1,
         };

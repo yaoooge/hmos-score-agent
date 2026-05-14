@@ -102,6 +102,36 @@ test("official linter workspace only contains copied project files and code-lint
   assert.equal(workspaceFiles.some((item) => item.startsWith("inputs/")), false);
 });
 
+test("official linter workspace writes caller-provided rule sets into config", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-workspace-rules-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const generated = path.join(root, "generated");
+  const caseDir = path.join(root, "case-1");
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+
+  const result = await prepareOfficialCodeLinterWorkspace({
+    generatedProjectPath: generated,
+    caseDir,
+    ruleSets: [
+      "plugin:@typescript-eslint/recommended",
+      "plugin:@cross-device-app-dev/recommended",
+    ],
+  });
+  const config = JSON.parse(await fs.readFile(result.configPath, "utf-8")) as { ruleSet: string[] };
+  const workspaceConfig = JSON.parse(await fs.readFile(result.workspaceConfigPath, "utf-8")) as {
+    ruleSet: string[];
+  };
+
+  assert.deepEqual(config.ruleSet, [
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@cross-device-app-dev/recommended",
+  ]);
+  assert.deepEqual(workspaceConfig.ruleSet, config.ruleSet);
+});
+
 test("officialCodeLinterNode returns not_installed without rule results when run dir is absent", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-node-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -135,6 +165,102 @@ test("officialCodeLinterNode returns not_installed without rule results when run
   assert.equal(result.officialLinterRunStatus, "not_installed");
   assert.deepEqual(result.officialLinterFindings, []);
   assert.deepEqual(result.officialLinterRuleResults, []);
+});
+
+test("officialCodeLinterNode configures cross-device rule set from constraint summary", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-cross-device-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const caseDir = path.join(root, "case-1");
+  const generated = path.join(root, "generated");
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+
+  const result = await officialCodeLinterNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-1",
+        promptText: "适配手机和平板双端展示",
+        originalProjectPath: generated,
+        generatedProjectPath: generated,
+      },
+      constraintSummary: {
+        explicitConstraints: ["目标: 适配手机和平板双端展示"],
+        contextualConstraints: ["模块: entry"],
+        implicitConstraints: ["布局适配"],
+        classificationHints: ["full_generation", "multi_device_adaptation"],
+        crossDeviceAdaptation: {
+          applicability: "involved",
+          confidence: "high",
+          reasons: ["需求明确要求手机和平板布局适配"],
+        },
+      },
+      hasPatch: false,
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 0,
+        changedFileCount: 0,
+        changedFiles: [],
+        hasPatch: false,
+      },
+    } as ScoreGraphState,
+    { enabled: true, runDir: "", timeoutMs: 120000, hvigorEnabled: false },
+  );
+  const config = JSON.parse(
+    await fs.readFile(path.join(caseDir, "intermediate", "code-linter", "code-linter.json5"), "utf-8"),
+  ) as { ruleSet: string[] };
+
+  assert.ok(config.ruleSet.includes("plugin:@cross-device-app-dev/recommended"));
+  assert.deepEqual(result.officialLinterSummary?.configuredRuleSets, config.ruleSet);
+});
+
+test("officialCodeLinterNode treats prepared state missing cross-device field as not involved", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-cross-device-missing-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const caseDir = path.join(root, "case-1");
+  const generated = path.join(root, "generated");
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+
+  const result = await officialCodeLinterNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-1",
+        promptText: "旧 prepared state",
+        originalProjectPath: generated,
+        generatedProjectPath: generated,
+      },
+      constraintSummary: {
+        explicitConstraints: ["旧约束"],
+        contextualConstraints: ["模块: entry"],
+        implicitConstraints: ["修改范围: 未知"],
+        classificationHints: ["continuation"],
+      },
+      hasPatch: false,
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 0,
+        changedFileCount: 0,
+        changedFiles: [],
+        hasPatch: false,
+      },
+    } as never,
+    { enabled: true, runDir: "", timeoutMs: 120000, hvigorEnabled: false },
+  );
+
+  assert.equal(
+    result.officialLinterSummary?.configuredRuleSets.includes("plugin:@cross-device-app-dev/recommended"),
+    false,
+  );
+  assert.match(
+    result.officialLinterSummary?.diagnostics ?? "",
+    /cross-device applicability missing; treated as not_involved/,
+  );
 });
 
 test("officialCodeLinterNode does not invoke configured linter when disabled", async (t) => {
@@ -825,4 +951,66 @@ test("officialCodeLinterNode writes only effective findings and diagnostics outs
   assert.equal(workspaceFiles.includes("stdout.sanitized.txt"), false);
   assert.equal(workspaceFiles.includes("stderr.sanitized.txt"), false);
   assert.equal(workspaceFiles.includes("exit-code.txt"), false);
+});
+
+test("officialCodeLinterNode reports missing profile for unknown cross-device rules", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-unknown-cross-device-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const caseDir = path.join(root, "case-1");
+  const generated = path.join(root, "generated");
+  const runDir = path.join(root, "tools", "codelinter");
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
+  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+  const fakeLinterBin = path.join(runDir, "bin", "codelinter");
+  await fs.writeFile(
+    fakeLinterBin,
+    [
+      "#!/usr/bin/env node",
+      "const workspace = process.cwd();",
+      "console.log(JSON.stringify([",
+      "{filePath: workspace + '/entry/src/main/ets/pages/Index.ets', messages: [{ ruleId: '@cross-device-app-dev/future-rule', message: 'future issue', severity: 1, line: 1, column: 1 }]}",
+      "]));",
+    ].join("\n"),
+  );
+  await fs.chmod(fakeLinterBin, 0o755);
+
+  const result = await officialCodeLinterNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-1",
+        promptText: "适配手机和平板双端展示",
+        originalProjectPath: generated,
+        generatedProjectPath: generated,
+      },
+      constraintSummary: {
+        explicitConstraints: ["目标: 适配手机和平板双端展示"],
+        contextualConstraints: ["模块: entry"],
+        implicitConstraints: ["布局适配"],
+        classificationHints: ["full_generation", "multi_device_adaptation"],
+        crossDeviceAdaptation: {
+          applicability: "involved",
+          confidence: "high",
+          reasons: ["需求明确要求手机和平板布局适配"],
+        },
+      },
+      hasPatch: false,
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 0,
+        changedFileCount: 0,
+        changedFiles: [],
+        hasPatch: false,
+      },
+    } as ScoreGraphState,
+    { enabled: true, runDir, timeoutMs: 120000, hvigorEnabled: false },
+  );
+
+  assert.equal(result.officialLinterRunStatus, "success");
+  assert.equal(result.officialLinterRuleResults?.[0]?.rule_id, "OFFICIAL-LINTER:@cross-device-app-dev/future-rule");
+  assert.match(result.officialLinterSummary?.diagnostics ?? "", /profile missing/);
+  assert.match(result.officialLinterSummary?.diagnostics ?? "", /@cross-device-app-dev\/future-rule/);
 });

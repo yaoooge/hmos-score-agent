@@ -11,6 +11,8 @@ const typeSafetyMetrics = ["ArkTS/ArkUI语法与类型安全"];
 const staticQualityMetrics = ["静态坏味道控制"];
 const securityBoundaryMetrics = ["安全与边界意识", "安全/边界意识"];
 const performanceRiskMetrics = ["性能风险"];
+const arkuiOrganizationMetrics = ["ArkUI组织方式合理性"];
+const harmonyPracticeMetrics = ["HarmonyOS工程实践符合度"];
 
 function profile(input: OfficialLinterRuleProfile): OfficialLinterRuleProfile {
   return input;
@@ -88,6 +90,22 @@ const performanceRuleIds = [
   "@performance/web-on-active-check",
 ];
 
+const crossDeviceVisualAdaptationRuleIds = [
+  "@cross-device-app-dev/color-contrast",
+  "@cross-device-app-dev/color-value",
+  "@cross-device-app-dev/font-size",
+  "@cross-device-app-dev/font-size-unit",
+  "@cross-device-app-dev/size-unit",
+  "@cross-device-app-dev/touch-target-size",
+];
+
+const crossDeviceLayoutAdaptationRuleIds = [
+  "@cross-device-app-dev/grid-columns-span",
+  "@cross-device-app-dev/grid-span-value",
+  "@cross-device-app-dev/sidebar-navigation",
+  "@cross-device-app-dev/one-multi-breakpoint-check",
+];
+
 export const officialLinterRuleProfiles = [
   ...typeSafetyRuleIds.map((ruleId) =>
     profile({
@@ -117,6 +135,22 @@ export const officialLinterRuleProfiles = [
     profile({
       ruleId,
       metricNames: performanceRiskMetrics,
+      ratio: 0.12,
+      severity: "medium",
+    }),
+  ),
+  ...crossDeviceVisualAdaptationRuleIds.map((ruleId) =>
+    profile({
+      ruleId,
+      metricNames: [...arkuiOrganizationMetrics, ...harmonyPracticeMetrics],
+      ratio: 0.1,
+      severity: "medium",
+    }),
+  ),
+  ...crossDeviceLayoutAdaptationRuleIds.map((ruleId) =>
+    profile({
+      ruleId,
+      metricNames: [...arkuiOrganizationMetrics, ...harmonyPracticeMetrics],
       ratio: 0.12,
       severity: "medium",
     }),

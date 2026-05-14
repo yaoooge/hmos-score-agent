@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { officialCodeLinterRecommendedRuleSets } from "./recommendedRuleSets.js";
+import { resolveOfficialCodeLinterRecommendedRuleSets } from "./recommendedRuleSets.js";
 
 export interface OfficialCodeLinterConfig {
   files: string[];
@@ -8,7 +8,7 @@ export interface OfficialCodeLinterConfig {
   ruleSet: string[];
 }
 
-export function buildOfficialCodeLinterConfig(): OfficialCodeLinterConfig {
+export function buildOfficialCodeLinterConfig(input?: { ruleSets?: string[] }): OfficialCodeLinterConfig {
   return {
     files: ["**/*.ets", "**/*.ts", "**/*.js", "**/*.json", "**/*.json5"],
     ignore: [
@@ -22,7 +22,7 @@ export function buildOfficialCodeLinterConfig(): OfficialCodeLinterConfig {
       "hvigorfile.js",
       "BuildProfile.ets",
     ],
-    ruleSet: [...officialCodeLinterRecommendedRuleSets],
+    ruleSet: input?.ruleSets ?? resolveOfficialCodeLinterRecommendedRuleSets({}),
   };
 }
 
@@ -32,9 +32,11 @@ export function serializeOfficialCodeLinterConfig(
   return `${JSON.stringify(config, null, 2)}\n`;
 }
 
-export async function writeOfficialCodeLinterConfig(filePath: string): Promise<string> {
+export async function writeOfficialCodeLinterConfig(
+  filePath: string,
+  input?: { ruleSets?: string[] },
+): Promise<string> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, serializeOfficialCodeLinterConfig(), "utf-8");
+  await fs.writeFile(filePath, serializeOfficialCodeLinterConfig(buildOfficialCodeLinterConfig(input)), "utf-8");
   return filePath;
 }
-

@@ -18,6 +18,9 @@ description: Extract task constraints from preprocessed case input and return on
 - `contextualConstraints` 从工程结构摘要提取模块、分层、技术栈和实现边界。
 - `implicitConstraints` 从 patch 摘要提取修改范围、侵入程度、改动类型和隐含风险。
 - `classificationHints` 输出给后续分类使用的短标签，例如 `full_generation`、`continuation`、`bug_fix`、`has_patch`、`no_patch`。
+- `crossDeviceAdaptation` 判断当前任务是否涉及多设备适配。
+- 只有 prompt、工程结构摘要或 patch 摘要明确出现多设备、多端、多屏、跨设备、手机/平板/折叠屏/智慧屏/手表/车机组合、响应式布局、自适应、断点、横竖屏或窗口尺寸变化时，`applicability` 才能为 `involved`。
+- “设备当前位置”“设备信息”“设备权限”、普通 ArkTS 适配、HarmonyOS、ArkUI 或单页面布局本身不自动触发多设备适配。
 
 ## References
 
@@ -28,9 +31,12 @@ description: Extract task constraints from preprocessed case input and return on
 - 只输出一个 JSON object，不要 Markdown，不要代码块，不要解释文字，不要自然语言前后缀。
 - 最终 JSON 的第一个非空字符必须是 `{`。
 - 最终 JSON 的最后一个非空字符必须是 `}`。
-- 顶层只能包含 `explicitConstraints`、`contextualConstraints`、`implicitConstraints`、`classificationHints`。
-- 四个字段都必须是数组。
+- 顶层只能包含 `explicitConstraints`、`contextualConstraints`、`implicitConstraints`、`classificationHints`、`crossDeviceAdaptation`。
+- 前四个字段都必须是数组。
 - 数组元素必须是短字符串；前三个字段以中文短句为主，`classificationHints` 可以包含英文分类标签。
+- `crossDeviceAdaptation.applicability` 只能是 `involved`、`not_involved` 或 `uncertain`。
+- `crossDeviceAdaptation.confidence` 只能是 `high`、`medium` 或 `low`；如果 `applicability` 为 `uncertain`，`confidence` 必须为 `low`。
+- `crossDeviceAdaptation.reasons` 必须包含 1 到 5 条中文短句。
 - 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
 - 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
 
@@ -49,7 +55,14 @@ description: Extract task constraints from preprocessed case input and return on
   ],
   "classificationHints": [
     "full_generation"
-  ]
+  ],
+  "crossDeviceAdaptation": {
+    "applicability": "not_involved",
+    "confidence": "high",
+    "reasons": [
+      "需求未出现多设备、多屏或设备形态适配要求"
+    ]
+  }
 }
 ```
 
@@ -64,9 +77,10 @@ description: Extract task constraints from preprocessed case input and return on
 
 ## 输出前自检
 
-- 顶层字段恰好是四个 contract 字段。
-- 四个字段都是数组。
+- 顶层字段恰好是五个 contract 字段。
+- 前四个字段都是数组。
 - 数组元素都是字符串。
+- `crossDeviceAdaptation` 字段完整且枚举值合法。
 - 文案类字符串均为中文；英文分类标签、文件路径、代码标识符和原始专有名词除外。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
 - JSON 语法完整，所有 `{}`、`[]`、字符串和逗号都正确闭合。

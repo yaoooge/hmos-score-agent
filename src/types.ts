@@ -82,6 +82,15 @@ export interface ConstraintSummary {
   contextualConstraints: string[];
   implicitConstraints: string[];
   classificationHints: string[];
+  crossDeviceAdaptation: CrossDeviceAdaptationUnderstanding;
+}
+
+export type CrossDeviceAdaptationApplicability = "involved" | "not_involved" | "uncertain";
+
+export interface CrossDeviceAdaptationUnderstanding {
+  applicability: CrossDeviceAdaptationApplicability;
+  confidence: ConfidenceLevel;
+  reasons: string[];
 }
 
 export interface ProjectStructureSummary {
