@@ -23,7 +23,17 @@
           <h1>{{ title }}</h1>
           <p>{{ subtitle }}</p>
         </div>
-        <el-button :icon="Refresh" @click="reloadPage">刷新</el-button>
+        <div class="topbar-actions">
+          <el-date-picker
+            v-if="titleControls.dateRange"
+            v-model="titleDateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始"
+            end-placeholder="结束"
+          />
+          <el-button :icon="Refresh" @click="reloadPage">刷新</el-button>
+        </div>
       </header>
       <router-view />
     </main>
@@ -31,11 +41,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, provide, shallowRef, type Ref } from "vue";
 import { useRoute } from "vue-router";
 import { DataAnalysis, List, Refresh, TrendCharts } from "@element-plus/icons-vue";
 
+type DashboardTitleControls = {
+  dateRange?: {
+    model: Ref<[Date, Date] | null>;
+  };
+};
+
 const route = useRoute();
+const titleControls = shallowRef<DashboardTitleControls>({});
+const titleDateRange = computed({
+  get: () => titleControls.value.dateRange?.model.value ?? null,
+  set: (value: [Date, Date] | null) => {
+    if (titleControls.value.dateRange) {
+      titleControls.value.dateRange.model.value = value;
+    }
+  },
+});
 
 const activePath = computed(() => route.path);
 const title = computed(() => {
@@ -60,4 +85,8 @@ const subtitle = computed(() => {
 function reloadPage() {
   window.dispatchEvent(new CustomEvent("dashboard:refresh"));
 }
+
+provide("setDashboardTitleControls", (controls: DashboardTitleControls | null) => {
+  titleControls.value = controls ?? {};
+});
 </script>

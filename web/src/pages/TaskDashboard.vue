@@ -1,16 +1,5 @@
 <template>
   <div class="page-stack">
-    <div class="toolbar">
-      <el-date-picker
-        v-model="range"
-        type="daterange"
-        range-separator="至"
-        start-placeholder="开始"
-        end-placeholder="结束"
-      />
-      <el-button :icon="Refresh" @click="loadData">刷新</el-button>
-    </div>
-
     <div class="metrics-grid">
       <MetricCard label="已接收" :value="summary?.statusCounts.received ?? 0" />
       <MetricCard label="排队中" :value="summary?.statusCounts.queued ?? 0" />
@@ -25,6 +14,7 @@
         :key="item.label"
         :label="item.label"
         :value="item.value"
+        :accent="item.accent"
       />
     </div>
 
@@ -109,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, inject, onMounted, onBeforeUnmount, reactive, ref, watch, type Ref } from "vue";
 import { Refresh } from "@element-plus/icons-vue";
 import MetricCard from "../components/MetricCard.vue";
 import TaskStatusTag from "../components/TaskStatusTag.vue";
@@ -131,6 +121,25 @@ const drawerVisible = ref(false);
 const drawerTask = ref<DashboardTask | null>(null);
 const logState = reactive({ available: false, content: "", truncated: false });
 const range = ref<[Date, Date] | null>(null);
+const taskTypeAccentPalette = [
+  "#2563eb",
+  "#16a34a",
+  "#dc2626",
+  "#7c3aed",
+  "#0891b2",
+  "#ea580c",
+  "#be123c",
+  "#4f46e5",
+];
+
+type DashboardTitleControls = {
+  dateRange?: {
+    model: Ref<[Date, Date] | null>;
+  };
+};
+
+const setTitleControls =
+  inject<(controls: DashboardTitleControls | null) => void>("setDashboardTitleControls");
 
 const filters = reactive({
   status: "" as string,
@@ -149,6 +158,7 @@ const taskTypeMetrics = computed(() => [
   ...((summary.value?.taskTypeCounts ?? []).map((item) => ({
     label: `${item.taskType} 个数`,
     value: item.count,
+    accent: taskTypeAccent(item.taskType),
   })) ?? []),
 ]);
 
@@ -183,6 +193,14 @@ async function loadData() {
   } finally {
     loading.value = false;
   }
+}
+
+function taskTypeAccent(taskType: string): string {
+  let hash = 0;
+  for (const character of taskType) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  return taskTypeAccentPalette[hash % taskTypeAccentPalette.length] ?? taskTypeAccentPalette[0];
 }
 
 async function openLog(task: DashboardTask) {
@@ -220,11 +238,13 @@ onMounted(() => {
   const start = new Date();
   start.setDate(start.getDate() - 7);
   range.value = [start, end];
+  setTitleControls?.({ dateRange: { model: range } });
   loadData();
   window.addEventListener("dashboard:refresh", onRefresh as EventListener);
 });
 
 onBeforeUnmount(() => {
+  setTitleControls?.(null);
   window.removeEventListener("dashboard:refresh", onRefresh as EventListener);
 });
 </script>

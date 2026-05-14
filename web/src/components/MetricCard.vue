@@ -1,15 +1,22 @@
 <template>
-  <div class="metric-card">
+  <div class="metric-card" :style="cardStyle">
     <div class="metric-label">{{ label }}</div>
     <div class="metric-value">{{ value }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed } from "vue";
+
+const props = defineProps<{
   label: string;
   value: string | number;
+  accent?: string;
 }>();
+
+const cardStyle = computed(() => ({
+  "--metric-accent": props.accent ?? "#1f2937",
+}));
 </script>
 
 <style scoped>
@@ -28,6 +35,7 @@ defineProps<{
 
 .metric-value {
   margin-top: 10px;
+  color: var(--metric-accent);
   font-size: 24px;
   font-weight: 700;
 }

@@ -53,6 +53,14 @@ body {
   margin-bottom: 18px;
 }
 
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: center;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 22px;
@@ -116,5 +124,15 @@ body {
 
   .main-panel {
     padding: 16px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+    width: 100%;
   }
 }

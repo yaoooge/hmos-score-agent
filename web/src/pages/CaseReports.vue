@@ -1,17 +1,9 @@
 <template>
   <div class="page-stack">
     <div class="toolbar">
-      <el-date-picker
-        v-model="range"
-        type="daterange"
-        range-separator="至"
-        start-placeholder="开始"
-        end-placeholder="结束"
-      />
       <el-select v-model="taskType" placeholder="任务类型" clearable style="width: 180px">
         <el-option v-for="item in taskTypeOptions" :key="item" :label="item" :value="item" />
       </el-select>
-      <el-button :icon="Refresh" @click="loadData">刷新</el-button>
     </div>
 
     <EChartPanel title="每日任务数" :option="dailyTaskOption" :empty="dailyItems.length === 0" />
@@ -26,8 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Refresh } from "@element-plus/icons-vue";
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
 import type { EChartsOption } from "echarts";
 import EChartPanel from "../components/EChartPanel.vue";
 import { fetchDailyReport, fetchScoreDistribution, fetchSummary } from "../api/dashboard";
@@ -47,6 +38,15 @@ const dailyItems = ref<
 >([]);
 const scoreBuckets = ref<{ label: string; count: number }[]>([]);
 const taskTypeOptions = ref<string[]>([]);
+
+type DashboardTitleControls = {
+  dateRange?: {
+    model: Ref<[Date, Date] | null>;
+  };
+};
+
+const setTitleControls =
+  inject<(controls: DashboardTitleControls | null) => void>("setDashboardTitleControls");
 
 async function loadData() {
   const params = {
@@ -121,11 +121,13 @@ onMounted(() => {
   const start = new Date();
   start.setDate(start.getDate() - 7);
   range.value = [start, end];
+  setTitleControls?.({ dateRange: { model: range } });
   loadData();
   window.addEventListener("dashboard:refresh", loadData as EventListener);
 });
 
 onBeforeUnmount(() => {
+  setTitleControls?.(null);
   window.removeEventListener("dashboard:refresh", loadData as EventListener);
 });
 </script>
