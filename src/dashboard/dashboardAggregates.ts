@@ -243,6 +243,54 @@ function matchesDashboardAnalysisKeyword(
     .includes(keyword);
 }
 
+function parseTime(value: string | undefined): number {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
+
+function compareRecentFirst(
+  left: { taskId: number },
+  right: { taskId: number },
+  leftTime: number,
+  rightTime: number,
+): number {
+  if (leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+  return right.taskId - left.taskId;
+}
+
+function sortTasksByCreatedAtDesc(tasks: DashboardTaskSummary[]): DashboardTaskSummary[] {
+  return [...tasks].sort((left, right) =>
+    compareRecentFirst(left, right, parseTime(left.createdAt), parseTime(right.createdAt)),
+  );
+}
+
+export function sortHumanRatingGapsByReviewedAtDesc(
+  gaps: HumanRatingGapDashboardItem[],
+): HumanRatingGapDashboardItem[] {
+  return [...gaps].sort((left, right) =>
+    compareRecentFirst(left, right, parseTime(left.reviewedAt), parseTime(right.reviewedAt)),
+  );
+}
+
+export function sortRiskReviewCalibrationsByTaskTimeDesc(
+  items: RiskReviewCalibrationDashboardItem[],
+  taskCreatedAtById: Map<number, string>,
+): RiskReviewCalibrationDashboardItem[] {
+  return [...items].sort((left, right) =>
+    compareRecentFirst(
+      left,
+      right,
+      parseTime(taskCreatedAtById.get(left.taskId)),
+      parseTime(taskCreatedAtById.get(right.taskId)),
+    ),
+  );
+}
+
 function readHumanReviewAgreement(review: Record<string, unknown> | undefined): boolean | null {
   const agreed = review?.agreeWithResultLevel ?? review?.agree;
   return typeof agreed === "boolean" ? agreed : null;
@@ -269,11 +317,15 @@ export function buildNegativeResults(
   ruleRuns: RuleViolationRunSnapshot[],
   scoreThreshold: number,
 ) {
-  const failedTasks = tasks.filter((task) => task.statusCategory === "failed");
-  const lowScoreTasks = tasks.filter(
-    (task) => typeof task.score === "number" && task.score < scoreThreshold,
+  const failedTasks = sortTasksByCreatedAtDesc(
+    tasks.filter((task) => task.statusCategory === "failed"),
   );
-  const hardGateTasks = tasks.filter((task) => task.hardGateTriggered === true);
+  const lowScoreTasks = sortTasksByCreatedAtDesc(
+    tasks.filter((task) => typeof task.score === "number" && task.score < scoreThreshold),
+  );
+  const hardGateTasks = sortTasksByCreatedAtDesc(
+    tasks.filter((task) => task.hardGateTriggered === true),
+  );
   const highRiskTasks = tasks.filter((task) => task.risks.some((risk) => risk.level === "high"));
   const riskCounts = new Map<string, number>();
   for (const task of tasks) {

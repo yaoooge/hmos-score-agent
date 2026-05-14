@@ -194,7 +194,9 @@ const negativeFocusTasks = computed(() => {
     negative.value?.lowScoreTasks.map((task) => ({ ...task, reason: "低分" })) ?? [];
   const hardGateTasks =
     negative.value?.hardGateTasks.map((task) => ({ ...task, reason: "hard gate" })) ?? [];
-  return [...lowScoreTasks, ...hardGateTasks].sort((left, right) => left.taskId - right.taskId);
+  return [...lowScoreTasks, ...hardGateTasks].sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+  );
 });
 
 const gapConclusionOptions = computed(() => {

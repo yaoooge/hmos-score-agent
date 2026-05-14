@@ -314,8 +314,8 @@ test("ARKTS-FORBID-003 flags real private field syntax", () => {
   assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:2"]);
 });
 
-test("ARKTS-SHOULD-016 ignores numbered list text inside string literals", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-016");
+test("ARKTS-SHOULD-011 ignores numbered list text inside string literals", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-011");
   assert.ok(rule);
 
   const result = runTextPatternRule(rule, {
@@ -340,8 +340,8 @@ test("ARKTS-SHOULD-016 ignores numbered list text inside string literals", () =>
   assert.deepEqual(result.matchedLocations, []);
 });
 
-test("ARKTS-SHOULD-016 flags omitted leading or trailing zero in numeric literals", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-016");
+test("ARKTS-SHOULD-011 flags omitted leading or trailing zero in numeric literals", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-011");
   assert.ok(rule);
 
   const result = runTextPatternRule(rule, {
@@ -430,39 +430,6 @@ test("ARKTS-FORBID-025 ignores strict equality against equals string literal", (
       {
         relativePath: "entry/src/main/ets/pages/Index.ets",
         content: "if (button.value === '=') {\n  result = calcModel.calculate();\n}\n",
-      },
-    ],
-    originalFiles: [],
-    changedFiles: [],
-    summary: {
-      workspaceFileCount: 1,
-      originalFileCount: 0,
-      changedFileCount: 0,
-      changedFiles: [],
-      hasPatch: false,
-    },
-  });
-
-  assert.equal(result.result, "满足");
-  assert.deepEqual(result.matchedLocations, []);
-});
-
-test("ARKTS-SHOULD-011 accepts consecutive case labels and indented case bodies", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-SHOULD-011");
-  assert.ok(rule);
-
-  const result = runTextPatternRule(rule, {
-    workspaceFiles: [
-      {
-        relativePath: "entry/src/main/ets/pages/Index.ets",
-        content: [
-          "switch (button.type) {",
-          "  case CalcButtonType.OPERATOR:",
-          "  case CalcButtonType.CONSTANT:",
-          "    expression = calcModel.getDisplayExpression();",
-          "    break;",
-          "}",
-        ].join("\n"),
       },
     ],
     originalFiles: [],
@@ -1088,7 +1055,7 @@ test("runRuleEngine ignores block comment numbering when evaluating float litera
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-SHOULD-016" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-SHOULD-011" && item.result === "不满足",
     ),
     false,
   );
@@ -1186,7 +1153,6 @@ test("runRuleEngine avoids known false positives from valid ArkTS syntax", async
     "ARKTS-FORBID-001",
     "ARKTS-FORBID-016",
     "ARKTS-MUST-008",
-    "ARKTS-SHOULD-010",
     "ARKTS-FORBID-025",
     "ARKTS-PERF-FORBID-001",
   ]) {
@@ -1478,10 +1444,10 @@ test("runRuleEngine reports text-pattern violations with concrete line locations
   });
 
   const ruleResult = result.deterministicRuleResults.find(
-    (item) => item.rule_id === "ARKTS-SHOULD-016",
+    (item) => item.rule_id === "ARKTS-SHOULD-011",
   );
-  const violation = result.ruleViolations.find((item) => item.rule_id === "ARKTS-SHOULD-016");
-  const evidence = result.ruleEvidenceIndex["ARKTS-SHOULD-016"];
+  const violation = result.ruleViolations.find((item) => item.rule_id === "ARKTS-SHOULD-011");
+  const evidence = result.ruleEvidenceIndex["ARKTS-SHOULD-011"];
 
   assert.equal(ruleResult?.result, "不满足");
   assert.match(ruleResult?.conclusion ?? "", /entry\/src\/main\/ets\/pages\/Index\.ets:2/);
@@ -1728,11 +1694,7 @@ test("runRuleEngine flags dynamic property access and common style should-rules"
   for (const ruleId of [
     "ARKTS-FORBID-001",
     "ARKTS-SHOULD-001",
-    "ARKTS-SHOULD-009",
-    "ARKTS-SHOULD-010",
-    "ARKTS-SHOULD-013",
-    "ARKTS-SHOULD-014",
-    "ARKTS-SHOULD-016",
+    "ARKTS-SHOULD-011",
   ]) {
     assert.equal(
       result.deterministicRuleResults.some(
@@ -1840,28 +1802,4 @@ test("runRuleEngine keeps AST-related unsupported rules in agent-assisted state"
       ruleId,
     );
   }
-});
-
-test("runRuleEngine flags switch indentation should-rule", async (t) => {
-  const caseDir = await createRuleFixture(t, {
-    "entry/src/main/ets/pages/Index.ets": [
-      "switch (mode) {",
-      "case 'A':",
-      "console.info('a');",
-      "}",
-    ].join("\n"),
-  });
-
-  const result = await runRuleEngine({
-    referenceRoot,
-    caseInput: makeCaseInput(caseDir),
-    taskType: "continuation",
-  });
-
-  assert.equal(
-    result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-SHOULD-011" && item.result === "不满足",
-    ),
-    true,
-  );
 });

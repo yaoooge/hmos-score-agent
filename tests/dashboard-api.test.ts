@@ -29,6 +29,7 @@ async function createFixture(t: test.TestContext) {
   const ruleStatsStore = createRuleViolationStatsStore(localCaseRoot);
   const completedCaseDir = path.join(localCaseRoot, "case-completed");
   const failedCaseDir = path.join(localCaseRoot, "case-failed");
+  const olderFailedCaseDir = path.join(localCaseRoot, "case-older-failed");
   const runningCaseDir = path.join(localCaseRoot, "case-running");
 
   await writeJson(path.join(completedCaseDir, "outputs", "result.json"), {
@@ -73,6 +74,21 @@ async function createFixture(t: test.TestContext) {
     remote_test_case_name: "低分中文用例",
   });
 
+  await writeJson(path.join(olderFailedCaseDir, "outputs", "result.json"), {
+    basic_info: {
+      case_name: "更早负向用例",
+      task_type: "full_generation",
+    },
+    overall_conclusion: {
+      total_score: 41,
+      hard_gate_triggered: true,
+      summary: "较早失败任务。",
+    },
+    risks: [],
+  });
+
+  const dateNow = t.mock.method(Date, "now");
+  dateNow.mock.mockImplementation(() => Date.parse("2026-05-13T08:00:00.000Z"));
   await registry.upsert({
     taskId: 88,
     status: "completed",
@@ -81,6 +97,7 @@ async function createFixture(t: test.TestContext) {
     testCaseName: "远端名称会被结果名称覆盖",
     testCaseType: "remote_bug_fix",
   });
+  dateNow.mock.mockImplementation(() => Date.parse("2026-05-13T11:00:00.000Z"));
   await registry.upsert({
     taskId: 89,
     status: "failed",
@@ -90,6 +107,17 @@ async function createFixture(t: test.TestContext) {
     testCaseType: "full_generation",
     error: "workflow failed",
   });
+  dateNow.mock.mockImplementation(() => Date.parse("2026-05-13T07:00:00.000Z"));
+  await registry.upsert({
+    taskId: 87,
+    status: "failed",
+    caseDir: olderFailedCaseDir,
+    testCaseId: 187,
+    testCaseName: "更早失败任务",
+    testCaseType: "full_generation",
+    error: "older workflow failed",
+  });
+  dateNow.mock.mockImplementation(() => Date.parse("2026-05-13T12:00:00.000Z"));
   await registry.upsert({
     taskId: 90,
     status: "running",
@@ -176,6 +204,23 @@ async function createFixture(t: test.TestContext) {
           agreeWithResultLevel: false,
           correctedLevel: "medium",
           reason: "应该降到中风险。",
+        },
+      }),
+      JSON.stringify({
+        type: "risk_review_calibration",
+        taskId: 89,
+        testCaseId: 189,
+        riskId: 2,
+        taskSummary: "remote-task-89 | full_generation",
+        resultRisk: {
+          level: "medium",
+          title: "低分风险",
+          description: "失败任务风险。",
+          evidence: "outputs/result.json",
+        },
+        humanReview: {
+          agreeWithResultLevel: true,
+          reason: "风险判断合理。",
         },
       }),
       "{bad-json",
@@ -314,19 +359,19 @@ test("dashboard summary and task list aggregate registry and result data", async
   const taskTypeCounts = summary.taskTypeCounts as Array<Record<string, unknown>>;
 
   assert.equal(statusCounts.completed, 1);
-  assert.equal(statusCounts.failed, 1);
+  assert.equal(statusCounts.failed, 2);
   assert.equal(statusCounts.running, 1);
   assert.deepEqual(
     taskTypeCounts.map((item) => [item.taskType, item.count]),
     [
       ["bug_fix", 1],
       ["continuation", 1],
-      ["full_generation", 1],
+      ["full_generation", 2],
     ],
   );
 
   const tasks = await getJson(app, "/dashboard/tasks?sortBy=taskId&sortOrder=asc&pageSize=2");
-  assert.equal(tasks.total, 3);
+  assert.equal(tasks.total, 4);
   const items = tasks.items as Array<Record<string, unknown>>;
   assert.deepEqual(
     items.map((item) => ({
@@ -338,18 +383,18 @@ test("dashboard summary and task list aggregate registry and result data", async
     })),
     [
       {
+        taskId: 87,
+        name: "更早负向用例",
+        taskType: "full_generation",
+        score: 41,
+        statusCategory: "failed",
+      },
+      {
         taskId: 88,
         name: "电视台云服务新增全屏播放",
         taskType: "bug_fix",
         score: 88,
         statusCategory: "completed",
-      },
-      {
-        taskId: 89,
-        name: "低分中文用例",
-        taskType: "full_generation",
-        score: 52,
-        statusCategory: "failed",
       },
     ],
   );
@@ -380,9 +425,9 @@ test("dashboard reports expose daily counts and score distribution", async (t) =
   const daily = await getJson(app, "/dashboard/reports/daily");
   const dailyItems = daily.items as Array<Record<string, unknown>>;
   assert.equal(dailyItems.length, 1);
-  assert.equal(dailyItems[0]?.received, 3);
+  assert.equal(dailyItems[0]?.received, 4);
   assert.equal(dailyItems[0]?.completed, 1);
-  assert.equal(dailyItems[0]?.failed, 1);
+  assert.equal(dailyItems[0]?.failed, 2);
   assert.equal(dailyItems[0]?.averageScore, 88);
 
   const distribution = await getJson(app, "/dashboard/reports/score-distribution");
@@ -390,7 +435,7 @@ test("dashboard reports expose daily counts and score distribution", async (t) =
   assert.deepEqual(
     buckets.map((bucket) => [bucket.label, bucket.count]),
     [
-      ["0-59", 1],
+      ["0-59", 2],
       ["60-69", 0],
       ["70-79", 0],
       ["80-89", 1],
@@ -406,19 +451,31 @@ test("dashboard analysis exposes human rating gaps and negative results", async 
   const gaps = await getJson(app, "/dashboard/analysis/human-rating-gaps");
   assert.equal(gaps.total, 2);
   assert.equal(gaps.skippedRows, 1);
-  assert.equal(
-    (gaps.items as Array<Record<string, unknown>>)[0]?.primaryConclusion,
-    "scoring_system_needs_improvement",
+  assert.deepEqual(
+    (gaps.items as Array<Record<string, unknown>>).map((item) => item.taskId),
+    [89, 88],
   );
-  assert.equal((gaps.items as Array<Record<string, unknown>>)[1]?.caseName, "低分中文用例");
+  assert.equal((gaps.items as Array<Record<string, unknown>>)[0]?.caseName, "低分中文用例");
 
   const negative = await getJson(app, "/dashboard/analysis/negative-results");
   const negativeSummary = negative.summary as Record<string, unknown>;
-  assert.equal(negativeSummary.failedTaskCount, 1);
-  assert.equal(negativeSummary.lowScoreTaskCount, 1);
-  assert.equal(negativeSummary.hardGateTaskCount, 1);
+  assert.equal(negativeSummary.failedTaskCount, 2);
+  assert.equal(negativeSummary.lowScoreTaskCount, 2);
+  assert.equal(negativeSummary.hardGateTaskCount, 2);
   assert.equal(negativeSummary.highRiskTaskCount, 1);
   assert.equal(negativeSummary.violatedRuleCount, 1);
+  assert.deepEqual(
+    (negative.failedTasks as Array<Record<string, unknown>>).map((item) => item.taskId),
+    [89, 87],
+  );
+  assert.deepEqual(
+    (negative.lowScoreTasks as Array<Record<string, unknown>>).map((item) => item.taskId),
+    [89, 87],
+  );
+  assert.deepEqual(
+    (negative.hardGateTasks as Array<Record<string, unknown>>).map((item) => item.taskId),
+    [89, 87],
+  );
   assert.equal(
     (negative.topRuleViolations as Array<Record<string, unknown>>)[0]?.rule_id,
     "ARKTS-MUST-001",
@@ -456,13 +513,18 @@ test("dashboard risk review calibrations expose case names and review details", 
   const app = createDashboardTestApp(fixture);
 
   const response = await getJson(app, "/dashboard/analysis/risk-review-calibrations");
-  assert.equal(response.total, 1);
+  assert.equal(response.total, 2);
   assert.equal(response.skippedRows, 1);
-  const item = (response.items as Array<Record<string, unknown>>)[0];
-  assert.equal(item?.caseName, "电视台云服务新增全屏播放");
-  assert.equal(item?.taskSummary, "remote-task-88 | bug_fix");
-  assert.equal((item?.resultRisk as Record<string, unknown>).title, "构建风险");
-  assert.equal((item?.humanReview as Record<string, unknown>).correctedLevel, "medium");
+  const items = response.items as Array<Record<string, unknown>>;
+  assert.deepEqual(
+    items.map((item) => item.taskId),
+    [89, 88],
+  );
+  assert.equal(items[0]?.caseName, "低分中文用例");
+  assert.equal(items[1]?.caseName, "电视台云服务新增全屏播放");
+  assert.equal(items[1]?.taskSummary, "remote-task-88 | bug_fix");
+  assert.equal((items[1]?.resultRisk as Record<string, unknown>).title, "构建风险");
+  assert.equal((items[1]?.humanReview as Record<string, unknown>).correctedLevel, "medium");
 });
 
 test("dashboard risk review calibrations support keyword and agreement filters", async (t) => {
@@ -486,7 +548,8 @@ test("dashboard risk review calibrations support keyword and agreement filters",
     app,
     "/dashboard/analysis/risk-review-calibrations?agreement=agreed",
   );
-  assert.equal(agreed.total, 0);
+  assert.equal(agreed.total, 1);
+  assert.equal((agreed.items as Array<Record<string, unknown>>)[0]?.taskId, 89);
 
   const invalid = await invokeExpressGet(
     app,

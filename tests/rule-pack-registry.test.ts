@@ -14,9 +14,9 @@ test("arkts-language pack registers all rules from current source set", () => {
   assert.ok(arktsPack);
   const rules = arktsPack.rules;
   assert.equal(rules.filter((item) => item.rule_source === "must_rule").length, 10);
-  assert.equal(rules.filter((item) => item.rule_source === "should_rule").length, 16);
+  assert.equal(rules.filter((item) => item.rule_source === "should_rule").length, 11);
   assert.equal(rules.filter((item) => item.rule_source === "forbidden_pattern").length, 26);
-  assert.equal(rules.length, 52);
+  assert.equal(rules.length, 47);
 });
 
 test("arkts-performance pack registers PDF-derived performance rules", () => {
@@ -37,27 +37,38 @@ test("arkts-performance pack registers PDF-derived performance rules", () => {
   );
 
   const rules = listRegisteredRules();
-  assert.equal(rules.length, 63);
+  assert.equal(rules.length, 58);
 });
 
-test("arkts-language should rules are renumbered contiguously after removals", () => {
+test("arkts-language should rules are renumbered contiguously after official-linter duplicate removals", () => {
   const rules = listRegisteredRules().filter(
     (item) => item.pack_id === "arkts-language" && item.rule_source === "should_rule",
   );
 
   assert.deepEqual(
     rules.map((item) => item.rule_id),
-    Array.from({ length: 16 }, (_, index) => `ARKTS-SHOULD-${String(index + 1).padStart(3, "0")}`),
+    [
+      "ARKTS-SHOULD-001",
+      "ARKTS-SHOULD-002",
+      "ARKTS-SHOULD-003",
+      "ARKTS-SHOULD-004",
+      "ARKTS-SHOULD-005",
+      "ARKTS-SHOULD-006",
+      "ARKTS-SHOULD-007",
+      "ARKTS-SHOULD-008",
+      "ARKTS-SHOULD-009",
+      "ARKTS-SHOULD-010",
+      "ARKTS-SHOULD-011",
+    ],
   );
 });
 
 test("registered rules carry real summaries and detector configs instead of placeholder entries", () => {
   const rules = listRegisteredRules();
   const movedMust002 = rules.find((item) => item.rule_id === "ARKTS-FORBID-002");
-  const should016 = rules.find((item) => item.rule_id === "ARKTS-SHOULD-016");
+  const should011 = rules.find((item) => item.rule_id === "ARKTS-SHOULD-011");
   const forbid002 = rules.find((item) => item.rule_id === "ARKTS-FORBID-021");
   const must004 = rules.find((item) => item.rule_id === "ARKTS-MUST-001");
-  const should011 = rules.find((item) => item.rule_id === "ARKTS-SHOULD-011");
 
   assert.ok(movedMust002);
   assert.equal(movedMust002.rule_source, "forbidden_pattern");
@@ -65,9 +76,9 @@ test("registered rules carry real summaries and detector configs instead of plac
   assert.match(movedMust002.summary, /Symbol/);
   assert.deepEqual(movedMust002.detector_config.fileExtensions, [".ets"]);
 
-  assert.ok(should016);
-  assert.equal(should016.detector_kind, "text_pattern");
-  assert.match(should016.summary, /浮点数小数点/);
+  assert.ok(should011);
+  assert.equal(should011.detector_kind, "text_pattern");
+  assert.match(should011.summary, /浮点数小数点/);
 
   assert.ok(forbid002);
   assert.equal(forbid002.detector_kind, "text_pattern");
@@ -78,9 +89,7 @@ test("registered rules carry real summaries and detector configs instead of plac
   assert.equal(must004.detector_kind, "not_implemented");
   assert.doesNotMatch(must004.summary, /当前默认进入静态规则包/);
 
-  assert.ok(should011);
-  assert.equal(should011.detector_kind, "text_pattern");
-  assert.deepEqual(should011.detector_config.fileExtensions, [".ets"]);
+  assert.equal(rules.some((item) => /单引号|switch 语句|大括号/.test(item.summary)), false);
 });
 
 test("registered rules carry performance-pack summaries and detector configs", () => {

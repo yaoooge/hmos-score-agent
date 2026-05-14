@@ -142,7 +142,7 @@ test("computeScoreBreakdown maps class property modifier rules only to type-rela
     rubric,
     ruleAuditResults: [
       {
-        rule_id: "ARKTS-SHOULD-015",
+        rule_id: "ARKTS-SHOULD-010",
         rule_source: "should_rule",
         result: "不满足",
         conclusion: "建议为class的类属性添加明确的可访问修饰符。",
@@ -174,7 +174,7 @@ test("computeScoreBreakdown maps class property modifier rules only to type-rela
   assert.equal(complexityMetric?.score, 5);
   assert.equal(complexityMetric?.rationale, "按 rubric 基线满分初始化。");
   assert.equal(arktsMetric?.score, 6);
-  assert.match(arktsMetric?.rationale ?? "", /ARKTS-SHOULD-015/);
+  assert.match(arktsMetric?.rationale ?? "", /ARKTS-SHOULD-010/);
 });
 
 test("computeScoreBreakdown triggers hard gate when case P0 rule fails", async () => {

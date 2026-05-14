@@ -12,6 +12,8 @@ import {
   filterRiskReviewCalibrations,
   filterTasks,
   paginate,
+  sortHumanRatingGapsByReviewedAtDesc,
+  sortRiskReviewCalibrationsByTaskTimeDesc,
 } from "./dashboardAggregates.js";
 import {
   listDashboardTasks,
@@ -231,17 +233,18 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       return;
     }
     try {
-      const taskNameIndex = new Map(
-        (await getTaskSummaries(deps)).map((task) => [task.taskId, task.name]),
-      );
+      const taskSummaries = await getTaskSummaries(deps);
+      const taskNameIndex = new Map(taskSummaries.map((task) => [task.taskId, task.name]));
       const dataset = await readHumanRatingGapDataset(deps.humanReviewEvidenceRoot, taskNameIndex);
-      const filtered = filterHumanRatingGaps(dataset.items, {
-        from: readString(req.query.from),
-        to: readString(req.query.to),
-        manualRating: readString(req.query.manualRating),
-        primaryConclusion: readString(req.query.primaryConclusion),
-        keyword: readString(req.query.keyword),
-      });
+      const filtered = sortHumanRatingGapsByReviewedAtDesc(
+        filterHumanRatingGaps(dataset.items, {
+          from: readString(req.query.from),
+          to: readString(req.query.to),
+          manualRating: readString(req.query.manualRating),
+          primaryConclusion: readString(req.query.primaryConclusion),
+          keyword: readString(req.query.keyword),
+        }),
+      );
       const paged = paginate(filtered, page, pageSize);
       res.json({
         success: true,
@@ -273,17 +276,22 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       return;
     }
     try {
-      const taskNameIndex = new Map(
-        (await getTaskSummaries(deps)).map((task) => [task.taskId, task.name]),
+      const taskSummaries = await getTaskSummaries(deps);
+      const taskNameIndex = new Map(taskSummaries.map((task) => [task.taskId, task.name]));
+      const taskCreatedAtById = new Map(
+        taskSummaries.map((task) => [task.taskId, task.createdAt]),
       );
       const dataset = await readRiskReviewCalibrationDataset(
         deps.humanReviewEvidenceRoot,
         taskNameIndex,
       );
-      const filtered = filterRiskReviewCalibrations(dataset.items, {
-        keyword: readString(req.query.keyword),
-        agreement: agreement as "agreed" | "disagreed" | undefined,
-      });
+      const filtered = sortRiskReviewCalibrationsByTaskTimeDesc(
+        filterRiskReviewCalibrations(dataset.items, {
+          keyword: readString(req.query.keyword),
+          agreement: agreement as "agreed" | "disagreed" | undefined,
+        }),
+        taskCreatedAtById,
+      );
       const paged = paginate(filtered, page, pageSize);
       res.json({
         success: true,

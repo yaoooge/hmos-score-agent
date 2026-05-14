@@ -119,62 +119,16 @@ should_rules:
     detector_config: {}
     fallback_policy: agent_assisted
   - id: ARKTS-SHOULD-009
-    rule: 使用空格缩进，禁止使用 tab。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - \t
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-010
-    rule: 条件语句和循环语句建议使用大括号。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - ^\s*(?:if|for|while)\s*\((?:[^()]|\([^()]*\))*\)\s*(?!\{)\S
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-011
-    rule: switch 语句中的 case 和 default 需按层级缩进。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - (^[ \t]*)switch\b[^\n]*\{\r?\n\1(?:case|default)\b
-        - (^[ \t]*)(?:case\b[^\n]*|default)\s*:[ \t]*\r?\n\1(?!case\b|default\b)\S
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-012
     rule: 空格应突出关键字和重要信息，避免不必要空格和多个连续空格。
     detector_kind: not_implemented
     detector_config: {}
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-013
-    rule: 建议字符串统一使用单引号。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - '"[^"\n]*"'
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-014
-    rule: 大括号应与控制语句或声明语句位于同一行。
-    detector_kind: text_pattern
-    detector_config:
-      fileExtensions:
-        - .ets
-      patterns:
-        - \b(?:if|for|while|switch|else|catch|class|interface|enum|struct|function)\b[^\n{]*\n\s*\{
-    fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-015
+  - id: ARKTS-SHOULD-010
     rule: 建议为class的类属性添加明确的可访问修饰符。
     detector_kind: not_implemented
     detector_config: {}
     fallback_policy: agent_assisted
-  - id: ARKTS-SHOULD-016
+  - id: ARKTS-SHOULD-011
     rule: 不建议省略浮点数小数点前后的 0。
     detector_kind: text_pattern
     detector_config:
