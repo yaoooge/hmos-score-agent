@@ -3,6 +3,7 @@ import type {
   DashboardStatusCategory,
   DashboardTaskSummary,
   HumanRatingGapDashboardItem,
+  RiskReviewCalibrationDashboardItem,
 } from "./dashboardTypes.js";
 
 type TaskQuery = {
@@ -200,9 +201,19 @@ export function buildScoreDistribution(tasks: DashboardTaskSummary[]) {
 
 export function filterHumanRatingGaps(
   gaps: HumanRatingGapDashboardItem[],
-  query: { from?: string; to?: string; manualRating?: string; primaryConclusion?: string },
+  query: {
+    from?: string;
+    to?: string;
+    manualRating?: string;
+    primaryConclusion?: string;
+    keyword?: string;
+  },
 ) {
+  const keyword = query.keyword?.trim().toLowerCase();
   return gaps.filter((gap) => {
+    if (!matchesDashboardAnalysisKeyword(gap, keyword)) {
+      return false;
+    }
     if (query.manualRating && gap.manualRating !== query.manualRating) {
       return false;
     }
@@ -217,6 +228,40 @@ export function filterHumanRatingGaps(
     }
     return true;
   });
+}
+
+function matchesDashboardAnalysisKeyword(
+  item: { taskId: number; testCaseId?: number; caseName?: string },
+  keyword?: string,
+): boolean {
+  if (!keyword) {
+    return true;
+  }
+  return [String(item.taskId), String(item.testCaseId ?? ""), item.caseName ?? ""]
+    .join(" ")
+    .toLowerCase()
+    .includes(keyword);
+}
+
+function readHumanReviewAgreement(review: Record<string, unknown> | undefined): boolean | null {
+  const agreed = review?.agreeWithResultLevel ?? review?.agree;
+  return typeof agreed === "boolean" ? agreed : null;
+}
+
+export function filterRiskReviewCalibrations(
+  items: RiskReviewCalibrationDashboardItem[],
+  query: { keyword?: string; agreement?: "agreed" | "disagreed" },
+) {
+  const keyword = query.keyword?.trim().toLowerCase();
+  return items
+    .filter((item) => matchesDashboardAnalysisKeyword(item, keyword))
+    .filter((item) => {
+      if (!query.agreement) {
+        return true;
+      }
+      const agreed = readHumanReviewAgreement(item.humanReview);
+      return query.agreement === "agreed" ? agreed === true : agreed === false;
+    });
 }
 
 export function buildNegativeResults(

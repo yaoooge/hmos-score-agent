@@ -425,6 +425,32 @@ test("dashboard analysis exposes human rating gaps and negative results", async 
   );
 });
 
+test("dashboard human rating gaps support keyword and conclusion filters", async (t) => {
+  const fixture = await createFixture(t);
+  const app = createDashboardTestApp(fixture);
+
+  const byName = await getJson(
+    app,
+    "/dashboard/analysis/human-rating-gaps?keyword=%E4%BD%8E%E5%88%86",
+  );
+  assert.equal(byName.total, 1);
+  assert.equal((byName.items as Array<Record<string, unknown>>)[0]?.taskId, 89);
+
+  const byTaskId = await getJson(app, "/dashboard/analysis/human-rating-gaps?keyword=88");
+  assert.equal(byTaskId.total, 1);
+  assert.equal(
+    (byTaskId.items as Array<Record<string, unknown>>)[0]?.caseName,
+    "电视台云服务新增全屏播放",
+  );
+
+  const byConclusion = await getJson(
+    app,
+    "/dashboard/analysis/human-rating-gaps?primaryConclusion=aligned",
+  );
+  assert.equal(byConclusion.total, 1);
+  assert.equal((byConclusion.items as Array<Record<string, unknown>>)[0]?.taskId, 89);
+});
+
 test("dashboard risk review calibrations expose case names and review details", async (t) => {
   const fixture = await createFixture(t);
   const app = createDashboardTestApp(fixture);
@@ -437,6 +463,37 @@ test("dashboard risk review calibrations expose case names and review details", 
   assert.equal(item?.taskSummary, "remote-task-88 | bug_fix");
   assert.equal((item?.resultRisk as Record<string, unknown>).title, "构建风险");
   assert.equal((item?.humanReview as Record<string, unknown>).correctedLevel, "medium");
+});
+
+test("dashboard risk review calibrations support keyword and agreement filters", async (t) => {
+  const fixture = await createFixture(t);
+  const app = createDashboardTestApp(fixture);
+
+  const byName = await getJson(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?keyword=%E7%94%B5%E8%A7%86%E5%8F%B0",
+  );
+  assert.equal(byName.total, 1);
+  assert.equal((byName.items as Array<Record<string, unknown>>)[0]?.taskId, 88);
+
+  const disagreed = await getJson(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?agreement=disagreed",
+  );
+  assert.equal(disagreed.total, 1);
+
+  const agreed = await getJson(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?agreement=agreed",
+  );
+  assert.equal(agreed.total, 0);
+
+  const invalid = await invokeExpressGet(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?agreement=unknown",
+  );
+  assert.equal(invalid.statusCode, 400);
+  assert.match(invalid.body, /agreement must be one of agreed, disagreed/);
 });
 
 test("api paths expose dashboard endpoints", () => {

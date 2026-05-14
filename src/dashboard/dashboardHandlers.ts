@@ -9,6 +9,7 @@ import {
   buildStatusCounts,
   buildTaskTypeCounts,
   filterHumanRatingGaps,
+  filterRiskReviewCalibrations,
   filterTasks,
   paginate,
 } from "./dashboardAggregates.js";
@@ -28,6 +29,7 @@ export type DashboardRouterDeps = {
 
 const STATUS_CATEGORIES = new Set(["received", "queued", "running", "completed", "failed"]);
 const SORT_FIELDS = new Set(["createdAt", "updatedAt", "score", "taskId"]);
+const RISK_REVIEW_AGREEMENTS = new Set(["agreed", "disagreed"]);
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -238,6 +240,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
         to: readString(req.query.to),
         manualRating: readString(req.query.manualRating),
         primaryConclusion: readString(req.query.primaryConclusion),
+        keyword: readString(req.query.keyword),
       });
       const paged = paginate(filtered, page, pageSize);
       res.json({
@@ -264,6 +267,11 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       sendError(res, 400, "page and pageSize must be positive integers");
       return;
     }
+    const agreement = readString(req.query.agreement);
+    if (agreement !== undefined && !RISK_REVIEW_AGREEMENTS.has(agreement)) {
+      sendError(res, 400, "agreement must be one of agreed, disagreed");
+      return;
+    }
     try {
       const taskNameIndex = new Map(
         (await getTaskSummaries(deps)).map((task) => [task.taskId, task.name]),
@@ -272,7 +280,11 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
         deps.humanReviewEvidenceRoot,
         taskNameIndex,
       );
-      const paged = paginate(dataset.items, page, pageSize);
+      const filtered = filterRiskReviewCalibrations(dataset.items, {
+        keyword: readString(req.query.keyword),
+        agreement: agreement as "agreed" | "disagreed" | undefined,
+      });
+      const paged = paginate(filtered, page, pageSize);
       res.json({
         success: true,
         page,
