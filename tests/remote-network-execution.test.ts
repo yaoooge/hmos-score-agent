@@ -1593,7 +1593,7 @@ test("remote fetch helpers log request, response, and error details", async () =
   );
   assert.match(
     logs.join("\n"),
-    /network_request_failed method=GET url=https:\/\/remote\.example\.com\/fail\.json error=network down/,
+    /network_request_failed method=GET url=https:\/\/remote\.example\.com\/fail\.json code=FETCH_ERROR message=network down/,
   );
 });
 
