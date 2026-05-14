@@ -14,6 +14,8 @@ Human rating gaps currently support date, manual rating, and conclusion filters 
 ## Goals
 
 - Show task type count numbers in distinct highlight colors in the task dashboard.
+- Remove duplicate refresh buttons from the task dashboard and case reports pages.
+- Move the date range picker for the task dashboard and case reports pages to the right side of the page title bar.
 - Let users search human rating gap rows by task name and task id.
 - Let users filter human rating gap rows by conclusion.
 - Let users search risk review calibration rows by task id and task name.
@@ -30,9 +32,17 @@ Human rating gaps currently support date, manual rating, and conclusion filters 
 
 ### Task Dashboard
 
+The task dashboard should use the shared page title bar for global controls. The date range picker moves from the page content toolbar to the title bar's right side, next to the existing refresh button. The page-level refresh button is removed so the page has one refresh entry point.
+
 The task type metric cards continue to appear in the existing metric grid. Each type count uses a stable accent color derived from the task type name. The color should remain stable even if the task type order changes between API responses.
 
 The base card styling remains restrained and consistent with the existing Element Plus dashboard. Only the number/accent treatment changes.
+
+### Case Reports
+
+The case reports page follows the same title bar control pattern as the task dashboard. Its date range picker moves to the right side of the page title bar, and the page-level refresh button is removed. The task type select remains in the page content area because it is specific to the report charts rather than a global page time range control.
+
+The title bar refresh button continues to dispatch the existing `dashboard:refresh` event. The active page remains responsible for reloading its own data when that event fires.
 
 ### Human Rating Gap Analysis
 
@@ -102,6 +112,8 @@ Invalid `agreement` values return `400` with a clear message.
 - Add a dedicated `filterRiskReviewCalibrations` helper in `dashboardAggregates.ts` to keep route handlers small and testable.
 - Extend `MetricCard` with an optional `accent` prop and apply the accent through a CSS custom property.
 - In `TaskDashboard.vue`, derive each task type card accent from a stable palette using a deterministic hash of the task type string.
+- Add a small route-aware title bar control surface in `App.vue` for task/report date range controls, or an equivalent local pattern that visually places those controls in the title bar without duplicating refresh behavior.
+- Keep `dashboard:refresh` as the shared refresh mechanism so removing page-level refresh buttons does not change data reload semantics.
 - In `ResultAnalysis.vue`, keep separate reactive filter/page state for human rating gaps and risk review calibrations.
 - Fetch only the active table's API data when filters change where practical, while initial page load can still load all three analysis sections.
 
@@ -115,6 +127,9 @@ Invalid `agreement` values return `400` with a clear message.
 ## Acceptance Criteria
 
 - Task type metric numbers show visually distinct highlight colors.
+- Task dashboard and case reports no longer show duplicate refresh buttons.
+- Task dashboard and case reports show their date range picker on the right side of the title bar.
+- The remaining title bar refresh button reloads the active page data.
 - Human rating gaps can be searched by name, task id, and test case id.
 - Human rating gaps can be filtered by conclusion.
 - Risk review rows can be searched by name, task id, and test case id.
