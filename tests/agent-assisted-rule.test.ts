@@ -608,6 +608,46 @@ test("mergeRuleAuditResults preserves per-rule agent judgement details", () => {
   assert.match(merged.mergedRuleAuditResults[0]?.conclusion ?? "", /未发现 Location Kit 调用/);
 });
 
+test("mergeRuleAuditResults blocks irrelevant agent conclusions before merge", () => {
+  const merged = mergeRuleAuditResults({
+    deterministicRuleResults: [],
+    assistedRuleCandidates: [
+      {
+        rule_id: "SIZE-07",
+        rule_summary: "字体缩放与显示密度变化必须通过onConfigurationUpdate全局同步",
+        rule_source: "must_rule",
+        why_uncertain: "需要结合上下文判断字体缩放与显示密度同步能力是否完成",
+        local_preliminary_signal: "unknown",
+        evidence_files: ["generated/entry/src/main/ets/pages/Index.ets"],
+        evidence_snippets: ["window.on('windowSizeChange', callback)"],
+        rule_name: "字体缩放与显示密度变化必须通过onConfigurationUpdate全局同步",
+        priority: "P0",
+        llm_prompt:
+          "检查涉及字体缩放或显示密度变化的代码是否订阅了 onConfigurationUpdate 并通过 AppStorage 全局同步。遗漏环境变量响应不通过。",
+        is_case_rule: true,
+      },
+    ],
+    agentFinalAnswer: makeFinalAnswer([
+      {
+        rule_id: "SIZE-07",
+        decision: "pass",
+        confidence: "high",
+        reason:
+          "各文件import数量为1-6个，依赖关系清晰：Index.ets导入6个模块为最多，均为本工程内部模块或Kit导入，无过度依赖。",
+        evidence_used: ["generated/entry/src/main/ets/pages/Index.ets"],
+        needs_human_review: false,
+      },
+    ]),
+  });
+
+  assert.equal(merged.ruleAgentRunStatus, "success");
+  assert.equal(merged.mergedRuleAuditResults[0]?.result, "待人工复核");
+  assert.equal(
+    merged.mergedRuleAuditResults[0]?.conclusion,
+    "Agent 输出结论与规则描述不相关，已阻断自动合并。建议重新执行本用例以获得可信规则判定",
+  );
+});
+
 test("mergeRuleAuditResults falls back when canonical final answer omits a candidate", () => {
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [],

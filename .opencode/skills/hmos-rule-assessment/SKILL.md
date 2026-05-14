@@ -18,6 +18,10 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 如果同一候选规则包含多个 `target_checks`，必须逐个 target 阅读或检索对应文件，分别按各自 `llm_prompt` 审视后，再汇总为该 `rule_id` 的最终判定。
 - 对用户提供的用例、规则语义或任务目标，要审视其功能特性是否真正落地：入口是否可达、核心流程是否闭环、边界状态是否处理、用户交互是否完整、数据流是否连贯、异常和空状态是否有合理表现。
 - 不要只根据零散代码片段输出判定结论。判定 `violation`、`pass`、`not_applicable` 或 `uncertain` 前，应把 patch、相关上下文、候选规则语义、用例目标、功能流程和鸿蒙特性放在一起判断；`reason` 必须说明完整功能链路上的依据。
+- 每条 `reason` 必须直接回答当前 `rule_id` 的 `rule_summary` / `rule_name` / `llm_prompt`。判定依据必须围绕规则文本中的核心对象、API、Kit、组件、状态、场景、适用条件或禁止事项展开。
+- 禁止用通用工程质量、代码规模、文件行数、方法长度、组件大小、依赖数量、配置完整性、命名规范、重复代码等内容替代当前候选规则判断，除非这些内容本身就是该候选规则的要求。
+- 如果规则要求某个 API / Kit / 设备形态 / 输入方式 / 硬件能力 / 避让区域 / 方向或折展场景，而工程不涉及该能力，`reason` 必须说明“不涉及”的规则原因和证据；不能转而评价其他无关问题。
+- 如果无法写出与当前规则直接相关的依据，必须输出 `decision="uncertain"` 且 `needs_human_review=true`。
 - 必须覆盖 `assisted_rule_candidates` 中的每一个 `rule_id`，不能新增、遗漏或重复。
 - 只判断候选规则，不输出未请求规则。
 - `local_preliminary_signal` 或 `why_uncertain` 中的“未接入静态判定器”只表示本地规则引擎需要你辅助判定，本身不是人工复核理由。
@@ -26,7 +30,7 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - `evidence_used` 只能填写 sandbox `generated/`、`original/`、`patch/`、`metadata/` 下的文件相对路径，不要带行号。
 - 输出文件证据时，如果在 `reason` 中包含行号，必须使用 `generated/` 工程文件中的真实行号；`patch/effective.patch` 只能用于定位变更，禁止使用 patch hunk 行号作为证据行号。
 - 输出 JSON 后必须再进行一轮结论相关性检视：逐条核对 `rule_id`、候选规则语义、任务期望、`decision`、`reason` 和 `evidence_used` 是否一致。
-- 若发现 `reason` 与候选规则语义、任务期望或 `evidence_used` 不相关，例如期望声明路由与系统权限但 `reason` 却写表单重置完整，必须重新阅读该候选规则并重新判定后再写入最终 JSON。
+- 若发现 `reason` 与候选规则语义、任务期望或 `evidence_used` 不相关，例如规则要求折痕坐标系但 `reason` 只写普通断点适配、规则要求避让区但 `reason` 只写字体硬编码、规则要求相机枚举但 `reason` 只写工程配置完整，必须重新阅读该候选规则并重新判定后再写入最终 JSON。
 
 ## References
 
@@ -88,6 +92,7 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - 已结合用户用例或规则语义检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
 - 每个 `reason` 都不是孤立片段结论，而是基于候选规则、相关上下文和完整功能链路的判定依据。
 - 每个 `reason` 都与对应候选规则语义、任务期望、`decision` 和 `evidence_used` 直接相关；若不相关，已重新判定该条规则。
+- 每个 `reason` 都至少触及当前规则的核心对象、API、Kit、组件、状态、场景、适用条件或禁止事项；没有相关依据时已输出 `uncertain`，没有改写成无关的通用工程质量评价。
 - `decision`、`confidence`、`overall_confidence` 均为允许枚举。
 - `evidence_used` 是字符串数组。
 - `evidence_used` 只有文件路径、没有行号；带行号的证据使用 `generated/` 工程文件真实行号，没有使用 patch hunk 行号。

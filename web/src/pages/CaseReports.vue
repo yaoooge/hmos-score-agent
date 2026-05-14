@@ -22,6 +22,7 @@ import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } fr
 import type { EChartsOption } from "echarts";
 import EChartPanel from "../components/EChartPanel.vue";
 import { fetchDailyReport, fetchScoreDistribution, fetchSummary } from "../api/dashboard";
+import { buildTaskTypeOptions } from "../taskTypes";
 
 const range = ref<[Date, Date] | null>(null);
 const taskType = ref("");
@@ -55,7 +56,7 @@ async function loadData() {
     taskType: taskType.value || undefined,
   };
   const summary = await fetchSummary(params);
-  taskTypeOptions.value = summary.taskTypeCounts.map((item) => item.taskType);
+  taskTypeOptions.value = buildTaskTypeOptions(summary.taskTypeCounts);
   const daily = await fetchDailyReport(params);
   dailyItems.value = daily.items;
   const distribution = await fetchScoreDistribution(params);

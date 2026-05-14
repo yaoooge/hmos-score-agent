@@ -14,7 +14,10 @@
 - 对包含多个 target_checks 的候选规则，必须逐个 target 审视对应文件和 llm_prompt。
 - 对包含 kit 的候选规则，必须重点核查指定 Kit 的导入、声明、权限、生命周期和 API 使用。
 - `evidence_used` 只填写 sandbox 内文件相对路径，不要带行号；如果在 `reason` 中输出带行号的代码证据，必须使用 `generated/` 工程文件中的真实行号。`patch/` 只能用于定位变更，禁止使用 patch hunk 行号作为证据行号。
-- 输出前必须按 hmos-rule-assessment skill 的自检清单检视结论相关性；发现不相关时重新判定对应 rule_id。
+- 每条 `reason` 必须直接回答该 rule_id 的 rule_summary/llm_prompt，且至少围绕规则文本中的核心对象、API、Kit、组件、状态、场景、适用条件或禁止事项展开。
+- 禁止用通用工程质量、代码规模、复杂度、配置完整性等内容替代当前候选规则判断，除非这些内容本身就是该候选规则的要求。
+- 若规则要求某 API/Kit/场景但工程不涉及，必须说明不涉及该 API/Kit/场景的证据；不能转而评价其他无关问题。
+- 输出前必须按 hmos-rule-assessment skill 的自检清单检视结论相关性；发现不相关时重新判定对应 rule_id。无法给出相关依据时输出 decision="uncertain" 且 needs_human_review=true。
 
 文件输出协议:
 - 你必须将最终 JSON object 写入用户消息指定的 output_file。

@@ -70,8 +70,8 @@ function retryFailureGuidance(reason: string): string[] {
   const guidance = [
     "协议错误修复清单:",
     `- listed protocol errors: ${summarizeRetryFailureReason(reason)}`,
-    "- 只修复 listed protocol errors，禁止重新判定，禁止改变未列出的 rule 判断。",
-    "- 若 listed protocol errors 指向结论不相关，按 hmos-rule-assessment skill 重新判定相关 rule_id，并只改动这些 rule_id。",
+    "- 只修复 listed protocol errors；但若任一已有 rule 判断的 reason 与该 rule_id 的候选规则语义不相关，必须按 hmos-rule-assessment skill 重新判定该 rule_id。",
+    "- 相关性修正不视为违规重判。禁止改变与 listed protocol errors 无关且结论相关的 rule 判断。",
   ];
   if (reason.includes("missing=")) {
     guidance.push("- missing: 只补齐列出的候选 rule_id；无法确认时 decision=\"uncertain\" 且 needs_human_review=true。");
@@ -168,7 +168,9 @@ function renderRuleAssessmentPrompt(input: {
     "8. 候选规则包含 kit 时，必须重点核查指定 Kit 的导入、声明、权限、生命周期和 API 使用是否与规则要求一致。",
     "9. evidence_used 只能填写 sandbox 内文件相对路径，不要带行号，例如 generated/、original/、patch/、metadata/ 下的路径。",
     "10. 如果在 reason 中输出带行号的代码证据，必须使用 generated/ 工程文件中的真实行号；patch 只能用于定位变更，禁止使用 patch hunk 行号作为证据行号。",
-    "11. 输出前按 hmos-rule-assessment skill 自检结论相关性；发现不相关时重新判定对应 rule_id。",
+    "11. 每条 reason 必须直接回答该 rule_id 的 rule_summary/llm_prompt，且至少围绕规则文本中的核心对象、API、组件、场景或适用条件展开；禁止用通用工程质量、代码规模、复杂度、配置完整性等内容替代规则判断。",
+    "12. 若规则要求某 API/Kit/场景但工程不涉及，必须说明不涉及该 API/Kit/场景的证据；不能转而评价其他无关问题。",
+    "13. 输出前按 hmos-rule-assessment skill 自检结论相关性；发现不相关时重新判定对应 rule_id，无法给出相关依据时输出 decision=\"uncertain\" 且 needs_human_review=true。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",

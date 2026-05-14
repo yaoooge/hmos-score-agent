@@ -193,8 +193,8 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after p
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rule-assessment skill/);
   assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
-  assert.match(calls[1]?.prompt ?? "", /若 listed protocol errors 指向结论不相关/);
-  assert.match(calls[1]?.prompt ?? "", /按 hmos-rule-assessment skill 重新判定相关 rule_id/);
+  assert.match(calls[1]?.prompt ?? "", /reason 与该 rule_id 的候选规则语义不相关/);
+  assert.match(calls[1]?.prompt ?? "", /相关性修正不视为违规重判/);
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.match(calls[1]?.prompt ?? "", /candidate_rule_ids/);

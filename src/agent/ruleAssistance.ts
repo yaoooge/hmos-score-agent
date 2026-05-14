@@ -299,6 +299,109 @@ function mapAgentDecisionToRuleResult(
   }
 }
 
+const IRRELEVANT_AGENT_CONCLUSION =
+  "Agent 输出结论与规则描述不相关，已阻断自动合并。建议重新执行本用例以获得可信规则判定";
+
+const CODE_ANCHOR_STOP_WORDS = new Set([
+  "target",
+  "rules",
+  "rule",
+  "true",
+  "false",
+  "null",
+  "undefined",
+  "current",
+  "generated",
+  "original",
+  "metadata",
+  "patch",
+]);
+
+const CHINESE_ANCHOR_STOP_PATTERN =
+  /必须|不得|禁止|检查|是否|方案|代码|规则|当前|新增|存在|使用|通过|说明|明确|优先|涉及|需要|应当|应该|要求|支持|实现|处理|判断|判定|输出|完成|完整|相关|对应|目标|文件|函数|方法|逻辑|能力|场景|状态|策略|结构|系统|统一|修复|根因|原因|不能|只|未|给出|如果|当|时|前|后|中|下|上|并|且|和|与|或|的|为|到/g;
+
+function normalizeForRelevance(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, "");
+}
+
+function collectRuleText(candidate: AssistedRuleCandidate): string {
+  const parts = [
+    candidate.rule_summary,
+    candidate.rule_name,
+    candidate.llm_prompt,
+    ...(candidate.kit ?? []),
+    ...(candidate.ast_signals ?? []).map((signal) => signal.name),
+    ...(candidate.target_checks ?? []).flatMap((check) => [
+      check.target,
+      check.llm_prompt,
+      ...(check.ast_signals ?? []).map((signal) => signal.name),
+    ]),
+  ];
+  return parts.filter((part): part is string => Boolean(part)).join(" ");
+}
+
+function extractCodeAnchors(text: string): string[] {
+  const anchors = new Set<string>();
+  const matches = text.match(/[A-Za-z_$@][A-Za-z0-9_$@.:-]{2,}/g) ?? [];
+  for (const match of matches) {
+    const normalized = match.replace(/^@+/, "").toLowerCase();
+    if (normalized.length < 4 || CODE_ANCHOR_STOP_WORDS.has(normalized)) {
+      continue;
+    }
+    if (/^\d+$/.test(normalized)) {
+      continue;
+    }
+    anchors.add(normalized);
+  }
+  return [...anchors];
+}
+
+function extractChineseAnchors(text: string): string[] {
+  const anchors = new Set<string>();
+  const chineseRuns = text.match(/[\u4e00-\u9fff]{2,}/g) ?? [];
+  for (const run of chineseRuns) {
+    const candidates = run
+      .replace(CHINESE_ANCHOR_STOP_PATTERN, " ")
+      .split(/\s+/)
+      .map((item) => item.trim())
+      .filter((item) => item.length >= 2 && item.length <= 12);
+    for (const candidate of candidates) {
+      anchors.add(candidate);
+    }
+  }
+  return [...anchors];
+}
+
+function hasAnyAnchorHit(anchors: string[], text: string): boolean {
+  return anchors.some((anchor) => text.includes(normalizeForRelevance(anchor)));
+}
+
+function isAgentAssessmentIrrelevantToRule(
+  candidate: AssistedRuleCandidate,
+  assessment: AgentAssistedRuleResult["rule_assessments"][number],
+): boolean {
+  if (!candidate.is_case_rule || assessment.decision === "uncertain") {
+    return false;
+  }
+
+  const ruleText = collectRuleText(candidate);
+  if (!ruleText) {
+    return false;
+  }
+
+  const assessmentText = normalizeForRelevance(
+    `${assessment.reason} ${assessment.evidence_used.join(" ")}`,
+  );
+  const codeAnchors = extractCodeAnchors(ruleText);
+  const chineseAnchors = extractChineseAnchors(ruleText);
+
+  if (codeAnchors.length === 0 && chineseAnchors.length === 0) {
+    return false;
+  }
+
+  return !hasAnyAnchorHit(codeAnchors, assessmentText) && !hasAnyAnchorHit(chineseAnchors, assessmentText);
+}
+
 function isNonCaseMustRuleAbsentFromPatch(
   candidate: AssistedRuleCandidate,
   assessment: AgentAssistedRuleResult["rule_assessments"][number],
@@ -346,6 +449,16 @@ function mapAgentAssessmentToRuleResult(
   candidate: AssistedRuleCandidate,
   assessment: AgentAssistedRuleResult["rule_assessments"][number],
 ): RuleAuditResult {
+  if (isAgentAssessmentIrrelevantToRule(candidate, assessment)) {
+    return {
+      rule_id: candidate.rule_id,
+      rule_summary: candidate.rule_summary ?? candidate.rule_name,
+      rule_source: candidate.rule_source,
+      result: "待人工复核",
+      conclusion: IRRELEVANT_AGENT_CONCLUSION,
+    };
+  }
+
   if (isNonCaseMustRuleAbsentFromPatch(candidate, assessment)) {
     return {
       rule_id: candidate.rule_id,

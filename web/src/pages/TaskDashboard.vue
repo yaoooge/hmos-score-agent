@@ -110,6 +110,11 @@ import {
   type DashboardTask,
   type DashboardSummary,
 } from "../api/dashboard";
+import {
+  buildTaskTypeOptions,
+  normalizeDashboardTask,
+  summarizeTaskTypeCounts,
+} from "../taskTypes";
 
 const loading = ref(false);
 const summary = ref<DashboardSummary | null>(null);
@@ -150,12 +155,11 @@ const filters = reactive({
 });
 
 const taskTypeOptions = computed(() => {
-  const fromSummary = summary.value?.taskTypeCounts.map((item) => item.taskType) ?? [];
-  return Array.from(new Set(fromSummary)).sort();
+  return buildTaskTypeOptions(summary.value?.taskTypeCounts ?? []);
 });
 
 const taskTypeMetrics = computed(() => [
-  ...((summary.value?.taskTypeCounts ?? []).map((item) => ({
+  ...(summarizeTaskTypeCounts(summary.value?.taskTypeCounts ?? []).map((item) => ({
     label: `${item.taskType} 个数`,
     value: item.count,
     accent: taskTypeAccent(item.taskType),
@@ -188,7 +192,7 @@ async function loadData() {
       sortBy: "updatedAt",
       sortOrder: "desc",
     });
-    tasks.value = response.items;
+    tasks.value = response.items.map(normalizeDashboardTask);
     total.value = response.total;
   } finally {
     loading.value = false;
