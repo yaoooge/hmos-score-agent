@@ -402,6 +402,7 @@ test("officialCodeLinterNode can run hvigor when codelinter is disabled", async 
         generatedProjectPath: generated,
       },
       hasPatch: true,
+      remoteBuildSuccess: false,
       evidenceSummary: {
         workspaceFileCount: 1,
         originalFileCount: 0,
@@ -423,6 +424,48 @@ test("officialCodeLinterNode can run hvigor when codelinter is disabled", async 
   assert.deepEqual(commandCalls[0], ["hvigor", "--version"]);
   assert.deepEqual(commandCalls[1], ["ohpm", "install"]);
   assert.deepEqual(commandCalls.at(-1), ["hvigor", "assembleApp", "--no-daemon"]);
+});
+
+test("officialCodeLinterNode uses remote build result when hvigor build check is disabled", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-remote-build-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const caseDir = path.join(root, "case-1");
+  const generated = path.join(root, "generated");
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "let a = 1;\n",
+  );
+
+  const result = await officialCodeLinterNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-1",
+        promptText: "",
+        originalProjectPath: generated,
+        generatedProjectPath: generated,
+      },
+      hasPatch: true,
+      remoteBuildSuccess: false,
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 0,
+        changedFileCount: 1,
+        changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+        hasPatch: true,
+      },
+    } as ScoreGraphState,
+    { enabled: false, hvigorEnabled: false, timeoutMs: 120000, hvigorTimeoutMs: 120000 },
+  );
+
+  assert.equal(result.officialLinterRunStatus, "not_enabled");
+  assert.equal(result.hvigorBuildCheckStatus, "failed");
+  assert.equal(result.hvigorBuildCheckSummary?.buildCheckSource, "remote");
+  assert.equal(result.hvigorBuildCheckSummary?.hardGateTriggered, true);
+  assert.equal(result.hvigorBuildCheckSummary?.scoreCap, 59);
 });
 
 test("officialCodeLinterNode runs hvigor build check for changed modules and cleans artifacts", async (t) => {

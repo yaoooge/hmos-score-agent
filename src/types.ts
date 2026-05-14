@@ -118,6 +118,7 @@ export interface TaskUnderstandingAgentInput {
   originalProjectPath: string;
   generatedProjectPath: string;
   originalProjectProvided?: boolean;
+  taskType: TaskType;
   projectStructure: ProjectStructureSummary;
   patchSummary: PatchSummary;
 }
@@ -180,6 +181,7 @@ export interface HvigorBuildCheckModuleResult {
 export interface HvigorBuildCheckSummary {
   enabled: boolean;
   status: HvigorBuildCheckStatus;
+  buildCheckSource?: "remote" | "hvigor";
   hvigorRunDir?: string;
   checkedModules: string[];
   moduleResults: HvigorBuildCheckModuleResult[];

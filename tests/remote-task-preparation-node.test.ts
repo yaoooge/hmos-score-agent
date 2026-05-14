@@ -86,7 +86,7 @@ test("remoteTaskPreparationNode converts RemoteEvaluationTask into caseInput", a
       testCase: {
         id: 8,
         name: "remote-case",
-        type: "requirement",
+        type: "continuation",
         description: "新增登录页",
         input: "实现登录页",
         expectedOutput: "登录成功",
@@ -105,6 +105,176 @@ test("remoteTaskPreparationNode converts RemoteEvaluationTask into caseInput", a
   assert.equal(result.caseInput?.caseId, "remote-task-4");
   assert.equal(typeof result.sourceCasePath, "string");
   assert.equal(typeof result.remoteTaskRootDir, "string");
+  assert.equal(result.remoteBuildSuccess, true);
+});
+
+test("remoteTaskPreparationNode uses fixed remote task type without prompt inference", async (t) => {
+  const originalUrl = "https://remote.example.com/fixed-type-original.json";
+  const workspaceUrl = "https://remote.example.com/fixed-type-workspace.json";
+  const patchUrl = "https://remote.example.com/fixed-type.patch";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === originalUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: any = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === patchUrl) {
+      return new Response("diff --git a/a b/a\n", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  const result = await remoteTaskPreparationNode({
+    caseDir: tempCaseDir,
+    remoteTask: {
+      taskId: 44,
+      testCase: {
+        id: 88,
+        name: "fixed-type-case",
+        type: "full_generation",
+        description: "修复登录页按钮无响应",
+        input: "请修复登录失败问题",
+        expectedOutput: "",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: false,
+        outputCodeUrl: workspaceUrl,
+        diffFileUrl: patchUrl,
+      },
+      callback: "https://remote.example.com/callback",
+    },
+  } as never);
+
+  assert.equal(result.taskType, "full_generation");
+  assert.equal(result.remoteBuildSuccess, false);
+});
+
+test("remoteTaskPreparationNode maps management console task types", async (t) => {
+  const workspaceUrl = "https://remote.example.com/management-type-workspace.json";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  const cases = [
+    { remoteType: "new_development", taskType: "full_generation" },
+    { remoteType: "incremental", taskType: "continuation" },
+    { remoteType: "bugfix", taskType: "bug_fix" },
+  ] as const;
+
+  for (const item of cases) {
+    const result = await remoteTaskPreparationNode({
+      caseDir: tempCaseDir,
+      remoteTask: {
+        taskId: 90,
+        testCase: {
+          id: 190,
+          name: `management-${item.remoteType}`,
+          type: item.remoteType,
+          description: "管理台提交任务",
+          input: "按固定任务类型评分",
+          expectedOutput: "",
+          fileUrl: "",
+        },
+        executionResult: {
+          isBuildSuccess: true,
+          outputCodeUrl: workspaceUrl,
+        },
+        callback: "https://remote.example.com/callback",
+      },
+    } as never);
+
+    assert.equal(result.taskType, item.taskType);
+  }
+});
+
+test("remoteTaskPreparationNode rejects unsupported remote task type", async (t) => {
+  const workspaceUrl = "https://remote.example.com/unsupported-type-workspace.json";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  await assert.rejects(
+    () =>
+      remoteTaskPreparationNode({
+        caseDir: tempCaseDir,
+        remoteTask: {
+          taskId: 45,
+          testCase: {
+            id: 89,
+            name: "unsupported-type-case",
+            type: "requirement",
+            description: "新增登录页",
+            input: "实现登录页",
+            expectedOutput: "",
+            fileUrl: "",
+          },
+          executionResult: {
+            isBuildSuccess: true,
+            outputCodeUrl: workspaceUrl,
+          },
+          callback: "https://remote.example.com/callback",
+        },
+      } as never),
+    /Unsupported remote task type: requirement/,
+  );
 });
 
 test("remoteTaskPreparationNode supports full generation tasks without original project URL", async (t) => {
@@ -139,7 +309,7 @@ test("remoteTaskPreparationNode supports full generation tasks without original 
       testCase: {
         id: 45,
         name: "full_generation_007",
-        type: "new_development",
+        type: "full_generation",
         description: "从0到1生成茶饮元服务",
         input: "实现茶饮订单元服务",
         expectedOutput: "",
@@ -229,7 +399,7 @@ test("remoteTaskPreparationNode accepts zip archives for original and workspace 
       testCase: {
         id: 9,
         name: "remote-case-zip",
-        type: "requirement",
+        type: "continuation",
         description: "新增本地资讯",
         input: "实现本地资讯",
         expectedOutput: "本地资讯展示成功",
@@ -316,7 +486,7 @@ test("remoteTaskPreparationNode normalizes backslash zip entry paths", async (t)
       testCase: {
         id: 11,
         name: "remote-case-windows-zip",
-        type: "requirement",
+        type: "continuation",
         description: "新增本地资讯",
         input: "实现本地资讯",
         expectedOutput: "本地资讯展示成功",
@@ -397,7 +567,7 @@ test("remoteTaskPreparationNode materializes expected constraint yaml for remote
       testCase: {
         id: 10,
         name: "remote-case-with-constraints",
-        type: "requirement",
+        type: "continuation",
         description: "新增本地资讯",
         input: "实现本地资讯",
         expectedOutput: expectedConstraintsYaml,
@@ -463,7 +633,7 @@ test("remoteTaskPreparationNode materializes top-level list expected constraint 
       testCase: {
         id: 12,
         name: "remote-case-with-list-constraints",
-        type: "requirement",
+        type: "full_generation",
         description: "实现商城首页",
         input: "实现商城首页",
         expectedOutput: expectedConstraintsYaml,

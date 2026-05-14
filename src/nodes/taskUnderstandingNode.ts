@@ -8,6 +8,7 @@ import { generateCasePatch } from "../io/patchGenerator.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
 import { buildOpencodeSandbox } from "../opencode/sandboxBuilder.js";
 import { loadCaseConstraintRules } from "../rules/caseConstraintLoader.js";
+import { inferTaskTypeFromCaseInput } from "../service/runCaseId.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
 import type {
@@ -380,6 +381,7 @@ export async function taskUnderstandingNode(
     const effectivePatchPath = await ensureEffectivePatchPath(state, deps);
     const patchSummary = await readPatchSummary(effectivePatchPath);
     const caseRuleDefinitions = await loadCaseConstraintRules(state.caseInput);
+    const taskType = state.taskType ?? inferTaskTypeFromCaseInput(state.caseInput);
     const opencodeSandbox =
       deps.opencode && state.caseDir
         ? await buildOpencodeSandbox({
@@ -404,6 +406,7 @@ export async function taskUnderstandingNode(
       originalProjectPath: state.caseInput.originalProjectPath,
       generatedProjectPath: state.caseInput.generatedProjectPath,
       originalProjectProvided: state.caseInput.originalProjectProvided,
+      taskType,
       projectStructure,
       patchSummary,
     };
@@ -417,6 +420,7 @@ export async function taskUnderstandingNode(
         patchPath: effectivePatchPath,
       },
       effectivePatchPath,
+      taskType,
       opencodeSandboxRoot: opencodeSandbox?.root,
       caseRuleDefinitions,
       constraintSummary,

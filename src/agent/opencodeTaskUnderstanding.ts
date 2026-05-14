@@ -36,15 +36,10 @@ function uniqueShortList(values: string[], limit: number): string[] {
 }
 
 function buildRetryConstraintDraft(input: TaskUnderstandingAgentInput): ConstraintSummary {
-  const prefersFullGeneration = input.originalProjectProvided === false;
   return {
     explicitConstraints: uniqueShortList(
       [
-        prefersFullGeneration
-          ? "任务类型: 倾向 full_generation"
-          : input.patchSummary.hasPatch
-            ? "任务类型: 倾向 continuation 或 bug_fix"
-            : "任务类型: 倾向 full_generation",
+        `固定任务类型: ${input.taskType}`,
         "原始需求: 重试阶段已省略，按首轮预处理摘要输出约束",
       ],
       12,
@@ -72,8 +67,8 @@ function buildRetryConstraintDraft(input: TaskUnderstandingAgentInput): Constrai
       : ["修改范围: 未提供 patch", "侵入程度: none", "改动类型: 待从生成工程对比确认"],
     classificationHints: uniqueShortList(
       [
+        input.taskType,
         input.patchSummary.hasPatch ? "has_patch" : "no_patch",
-        prefersFullGeneration ? "full_generation" : input.patchSummary.hasPatch ? "continuation" : "full_generation",
       ],
       8,
     ),
@@ -114,7 +109,8 @@ function renderRetryTaskUnderstandingPrompt(input: {
     "2. 顶层只能包含 explicitConstraints、contextualConstraints、implicitConstraints、classificationHints、crossDeviceAdaptation。",
     "3. 前四个字段都必须是中文短句数组，可以包含英文分类标签。",
     "4. crossDeviceAdaptation 必须包含 applicability、confidence、reasons；uncertain 必须使用 low confidence。",
-    "5. 不要补充分析过程，不要输出 Markdown，不要输出工具调用意图。",
+    `5. 固定任务类型: ${input.agentInput.taskType}；不得重新识别、改写或替换该任务类型。`,
+    "6. 不要补充分析过程，不要输出 Markdown，不要输出工具调用意图。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",
@@ -157,13 +153,14 @@ function renderTaskUnderstandingPrompt(input: {
     "- 首轮和重试都禁止读取任何业务文件。",
     "",
     "任务:",
-    "1. 结合 agent_input 中的 promptText、工程结构和补丁摘要，提取任务约束摘要。",
-    "2. explicitConstraints: 从 prompt 提取任务类型、场景、目标和明确要求。",
-    "3. contextualConstraints: 从 projectStructure、implementationHints、modulePaths 提取模块、分层、技术栈和实现边界。",
-    "4. implicitConstraints: 从 patchSummary 提取修改范围、侵入程度、改动类型和隐含风险。",
-    "5. classificationHints: 给后续任务分类使用的短标签，例如 full_generation、continuation、bug_fix、has_patch。",
-    "6. crossDeviceAdaptation: 判断当前任务是否涉及多设备适配。只有 prompt、工程结构或 patch 摘要明确出现多设备、多端、多屏、跨设备、手机/平板/折叠屏/智慧屏/手表/车机组合、响应式布局、自适应、断点、横竖屏或窗口尺寸变化时，applicability 才能为 involved。",
-    "7. 如果只是设备信息、设备权限、HarmonyOS、ArkUI 或普通页面布局，不自动视为多设备适配；信息不足时使用 uncertain 且 confidence 为 low。",
+    "1. agent_input.taskType 是上游固定任务类型，必须直接使用；不得重新识别或改写任务类型。",
+    "2. 结合 agent_input 中的 promptText、taskType、工程结构和补丁摘要，提取任务约束摘要。",
+    "3. explicitConstraints: 写入固定任务类型、场景、目标和明确要求。",
+    "4. contextualConstraints: 从 projectStructure、implementationHints、modulePaths 提取模块、分层、技术栈和实现边界。",
+    "5. implicitConstraints: 从 patchSummary 提取修改范围、侵入程度、改动类型和隐含风险。",
+    "6. classificationHints: 必须包含 agent_input.taskType，再补充 has_patch/no_patch 等短标签。",
+    "7. crossDeviceAdaptation: 判断当前任务是否涉及多设备适配。只有 prompt、工程结构或 patch 摘要明确出现多设备、多端、多屏、跨设备、手机/平板/折叠屏/智慧屏/手表/车机组合、响应式布局、自适应、断点、横竖屏或窗口尺寸变化时，applicability 才能为 involved。",
+    "8. 如果只是设备信息、设备权限、HarmonyOS、ArkUI 或普通页面布局，不自动视为多设备适配；信息不足时使用 uncertain 且 confidence 为 low。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",

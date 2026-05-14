@@ -98,6 +98,74 @@ function summarizeMissingOfficialRuleProfiles(ruleResults: Array<{ rule_id: stri
   return `official linter profile missing: ${uniqueRuleIds.join(", ")}`;
 }
 
+function makeRemoteBuildCheckSummary(remoteBuildSuccess: boolean): HvigorBuildCheckSummary {
+  if (remoteBuildSuccess) {
+    return {
+      enabled: true,
+      status: "success",
+      buildCheckSource: "remote",
+      checkedModules: [],
+      moduleResults: [],
+      hardGateTriggered: false,
+      diagnostics: "远端平台构建成功，已跳过本地 hvigor 编译复验。",
+      durationMs: 0,
+      cleanup: {
+        attempted: false,
+        removedPaths: [],
+        failedPaths: [],
+      },
+    };
+  }
+
+  return {
+    enabled: true,
+    status: "failed",
+    buildCheckSource: "remote",
+    checkedModules: ["remote"],
+    moduleResults: [
+      {
+        modulePath: ".",
+        moduleName: "remote",
+        command: "assembleApp",
+        status: "failed",
+        durationMs: 0,
+        diagnostics: "远端平台构建失败。",
+      },
+    ],
+    hardGateTriggered: true,
+    scoreCap: 59,
+    diagnostics: "远端平台构建失败，已跳过本地 hvigor 编译复验。",
+    durationMs: 0,
+    cleanup: {
+      attempted: false,
+      removedPaths: [],
+      failedPaths: [],
+    },
+  };
+}
+
+async function resolveBuildCheckSummary(input: {
+  hvigorEnabled: boolean;
+  hvigorRunDir?: string;
+  workspaceDir?: string;
+  changedFiles: string[];
+  timeoutMs: number;
+  remoteBuildSuccess?: boolean;
+}): Promise<HvigorBuildCheckSummary> {
+  if (!input.hvigorEnabled && typeof input.remoteBuildSuccess === "boolean") {
+    return makeRemoteBuildCheckSummary(input.remoteBuildSuccess);
+  }
+
+  const summary = await runHvigorBuildCheck({
+    enabled: input.hvigorEnabled,
+    hvigorRunDir: input.hvigorRunDir,
+    workspaceDir: input.workspaceDir,
+    changedFiles: input.changedFiles,
+    timeoutMs: input.timeoutMs,
+  });
+  return { ...summary, buildCheckSource: "hvigor" };
+}
+
 export async function officialCodeLinterNode(
   state: ScoreGraphState,
   deps: {
@@ -135,11 +203,12 @@ export async function officialCodeLinterNode(
     });
 
     if (!enabled && !hvigorEnabled) {
-      const hvigorSummary = await runHvigorBuildCheck({
-        enabled: false,
+      const hvigorSummary = await resolveBuildCheckSummary({
+        hvigorEnabled,
         hvigorRunDir,
         changedFiles: [],
         timeoutMs: hvigorTimeoutMs,
+        remoteBuildSuccess: state.remoteBuildSuccess,
       });
       const notEnabledSummary = makeSummary({
         runStatus: "not_enabled",
@@ -173,11 +242,12 @@ export async function officialCodeLinterNode(
       diagnostics: appendDiagnostics(unavailableDiagnostics, crossDeviceMissingDiagnostic),
     });
     if (!caseDir || !generatedProjectPath) {
-      const hvigorSummary = await runHvigorBuildCheck({
-        enabled: hvigorEnabled,
+      const hvigorSummary = await resolveBuildCheckSummary({
+        hvigorEnabled,
         hvigorRunDir,
         changedFiles: state.evidenceSummary?.changedFiles ?? [],
         timeoutMs: hvigorTimeoutMs,
+        remoteBuildSuccess: state.remoteBuildSuccess,
       });
       if (caseDir) {
         const sanitized = sanitizeOfficialCodeLinterOutput({
@@ -209,12 +279,13 @@ export async function officialCodeLinterNode(
       caseDir,
       ruleSets: configuredRuleSets,
     });
-    const hvigorSummary = await runHvigorBuildCheck({
-      enabled: hvigorEnabled,
+    const hvigorSummary = await resolveBuildCheckSummary({
+      hvigorEnabled,
       hvigorRunDir,
       workspaceDir: workspace.workspaceDir,
       changedFiles: state.evidenceSummary?.changedFiles ?? [],
       timeoutMs: hvigorTimeoutMs,
+      remoteBuildSuccess: state.remoteBuildSuccess,
     });
 
     const linterInstalled = enabled

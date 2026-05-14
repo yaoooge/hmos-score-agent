@@ -481,6 +481,7 @@ function buildHvigorBuildRisk(summary: HvigorBuildCheckSummary): RiskItem {
   const failedModules = summary.moduleResults.filter(
     (result) => result.status === "failed" || result.status === "timeout",
   );
+  const sourceLabel = summary.buildCheckSource === "remote" ? "远端构建结果" : "hvigor 编译校验";
   const moduleText =
     failedModules.length > 0
       ? failedModules
@@ -491,7 +492,7 @@ function buildHvigorBuildRisk(summary: HvigorBuildCheckSummary): RiskItem {
     id: 0,
     level: "high",
     title: "工程编译校验未通过",
-    description: `hvigor 编译校验状态为 ${summary.status}，涉及模块：${moduleText}。${
+    description: `${sourceLabel}状态为 ${summary.status}，涉及模块：${moduleText}。${
       summary.diagnostics ? ` ${summary.diagnostics}` : ""
     }`,
     evidence: summary.diagnostics ?? moduleText,

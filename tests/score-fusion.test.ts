@@ -806,3 +806,77 @@ test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fa
   assert.ok(result.risks.some((risk) => /编译/.test(`${risk.title}${risk.description}`)));
   assert.ok(result.risks.some((risk) => /原代码问题，非新增修改引入/.test(risk.evidence)));
 });
+
+test("fuseRubricScoreWithRules caps total score at 59 when remote build check fails", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "基础评分较高。",
+      evidence_used: ["workspace/entry/src/main/ets/Index.ets"],
+      confidence: "high" as const,
+      review_required: false,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础分满分。", overall_confidence: "high" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/Index.ets"],
+      hasPatch: true,
+    },
+    hvigorBuildCheckSummary: {
+      enabled: true,
+      status: "failed",
+      buildCheckSource: "remote",
+      checkedModules: ["remote"],
+      hardGateTriggered: true,
+      scoreCap: 59,
+      diagnostics: "远端平台构建失败，已跳过本地 hvigor 编译复验。",
+      durationMs: 0,
+      moduleResults: [
+        {
+          modulePath: ".",
+          moduleName: "remote",
+          command: "assembleApp",
+          status: "failed",
+          durationMs: 0,
+          diagnostics: "远端平台构建失败。",
+        },
+      ],
+      cleanup: {
+        attempted: false,
+        removedPaths: [],
+        failedPaths: [],
+      },
+    },
+  });
+
+  assert.equal(result.totalScore, 59);
+  assert.equal(result.hardGateTriggered, true);
+  const buildRisk = result.risks.find((risk) => risk.title === "工程编译校验未通过");
+  assert.ok(buildRisk);
+  assert.match(buildRisk.description, /远端构建结果状态为 failed/);
+  assert.doesNotMatch(buildRisk.description, /hvigor 编译校验状态/);
+});

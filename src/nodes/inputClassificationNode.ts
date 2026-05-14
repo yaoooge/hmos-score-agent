@@ -7,6 +7,9 @@ export async function inputClassificationNode(
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("inputClassificationNode");
   try {
+    if (state.taskType) {
+      return { taskType: state.taskType };
+    }
     return { taskType: inferTaskTypeFromCaseInput(state.caseInput) };
   } catch (error) {
     emitNodeFailed("inputClassificationNode", error);

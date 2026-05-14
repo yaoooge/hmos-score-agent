@@ -10,6 +10,7 @@ function input(): TaskUnderstandingAgentInput {
     originalProjectPath: "/case/original",
     generatedProjectPath: "/case/generated",
     originalProjectProvided: true,
+    taskType: "bug_fix",
     projectStructure: {
       rootPath: "/case/generated",
       topLevelEntries: ["entry"],
@@ -80,6 +81,9 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   assert.match(prompt, /执行任务前必须使用 hmos-understanding skill/);
   assert.match(prompt, /该 skill 中的输出契约和自检清单是本次输出的强制要求/);
   assert.match(prompt, /任务理解阶段只能读取用户消息指定的 prompt 文件/);
+  assert.match(prompt, /agent_input\.taskType 是上游固定任务类型/);
+  assert.match(prompt, /不得重新识别或改写任务类型/);
+  assert.match(prompt, /"taskType": "bug_fix"/);
   assert.match(prompt, /只能基于本 prompt 中的 agent_input/);
   assert.match(prompt, /不要调用 glob、grep、list 或任何用于探索工程文件的工具/);
   assert.match(prompt, /不要读取 generated\//);
@@ -196,6 +200,7 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.doesNotMatch(calls[1]?.prompt ?? "", /本次重试禁止读取任何文件/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /agent_input:/);
   assert.match(calls[1]?.prompt ?? "", /只根据 constraint_draft 输出最终 JSON/);
+  assert.match(calls[1]?.prompt ?? "", /固定任务类型: bug_fix/);
   assert.match(calls[1]?.prompt ?? "", /explicitConstraints/);
   assert.match(calls[1]?.prompt ?? "", /classificationHints/);
   assert.match(calls[1]?.prompt ?? "", /crossDeviceAdaptation/);

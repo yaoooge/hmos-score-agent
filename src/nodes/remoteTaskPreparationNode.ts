@@ -4,6 +4,7 @@ import path from "node:path";
 import { load } from "js-yaml";
 import { loadCaseFromPath } from "../io/caseLoader.js";
 import { downloadManifestToDirectory, downloadToFile } from "../io/downloader.js";
+import { resolveRemoteTaskType } from "../service/runCaseId.js";
 import type { RemoteEvaluationTask } from "../types.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import type { ScoreGraphState } from "../workflow/state.js";
@@ -94,14 +95,19 @@ export async function remoteTaskPreparationNode(
       );
     }
 
+    const caseInput = await loadCaseFromPath(casePath);
+    const taskType = resolveRemoteTaskType(state.remoteTask.testCase.type);
+
     return {
-      caseInput: await loadCaseFromPath(casePath),
+      caseInput,
       sourceCasePath: casePath,
       remoteTaskRootDir: rootDir,
       inputMode: "remote",
       originalFileCount: originalFiles.length,
       workspaceFileCount: workspaceFiles.length,
       hasPatch,
+      remoteBuildSuccess: state.remoteTask.executionResult.isBuildSuccess,
+      taskType,
     };
   } catch (error) {
     if (rootDir && error instanceof Error) {

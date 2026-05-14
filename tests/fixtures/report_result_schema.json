@@ -852,6 +852,13 @@
         "hvigor_run_dir": {
           "type": "string"
         },
+        "build_check_source": {
+          "type": "string",
+          "enum": [
+            "remote",
+            "hvigor"
+          ]
+        },
         "checked_modules": {
           "type": "array",
           "items": {

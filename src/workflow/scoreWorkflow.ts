@@ -82,6 +82,7 @@ type PreparedWorkflowInput = {
     | "originalFileCount"
     | "workspaceFileCount"
     | "hasPatch"
+    | "remoteBuildSuccess"
     | "caseDir"
     | "effectivePatchPath"
     | "caseRuleDefinitions"

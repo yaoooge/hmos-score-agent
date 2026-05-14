@@ -39,6 +39,7 @@ export const ScoreState = Annotation.Root({
   originalFileCount: Annotation<number>(),
   workspaceFileCount: Annotation<number>(),
   hasPatch: Annotation<boolean>(),
+  remoteBuildSuccess: Annotation<boolean>(),
   caseDir: Annotation<string>(),
   effectivePatchPath: Annotation<string>(),
   caseRuleDefinitions: Annotation<CaseRuleDefinition[]>(),

@@ -313,6 +313,9 @@ function buildHvigorBuildCheckSummary(
   if (summary.hvigorRunDir !== undefined) {
     output.hvigor_run_dir = summary.hvigorRunDir;
   }
+  if (summary.buildCheckSource !== undefined) {
+    output.build_check_source = summary.buildCheckSource;
+  }
   if (summary.scoreCap !== undefined) {
     output.score_cap = summary.scoreCap;
   }

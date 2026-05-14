@@ -121,7 +121,7 @@ function assertCompletedCallbackSummary(
   assert.equal("rule_audit_results" in resultData, false);
 }
 
-test("acceptRemoteEvaluationTask uses a neutral case label before remote classification", async (t) => {
+test("acceptRemoteEvaluationTask uses a neutral case label before remote preparation", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
   process.env.LOCAL_CASE_ROOT = localCaseRoot;
@@ -138,7 +138,7 @@ test("acceptRemoteEvaluationTask uses a neutral case label before remote classif
     testCase: {
       id: 1001,
       name: "remote-case",
-      type: "requirement",
+      type: "bug_fix",
       description: "修复登录页",
       input: "请修复登录失败问题",
       expectedOutput: "",
@@ -685,7 +685,7 @@ test("runRemoteEvaluationTask executes a pushed remote task and uploads callback
       testCase: {
         id: 8,
         name: "remote-case",
-        type: "requirement",
+        type: "continuation",
         description: "新增页面",
         input: "请实现登录页",
         expectedOutput: "实现登录页",
@@ -832,7 +832,7 @@ test("prepareRemoteEvaluationTask accepts a pushed task before executeAcceptedRe
       testCase: {
         id: 9,
         name: "remote-case-prepare",
-        type: "requirement",
+        type: "continuation",
         description: "新增页面",
         input: "请实现登录页",
         expectedOutput: "实现登录页",
@@ -946,7 +946,7 @@ test("executeAcceptedRemoteEvaluationTask runs post-completed hook after complet
       testCase: {
         id: 10,
         name: "remote-case-post-completed-hook",
-        type: "requirement",
+        type: "full_generation",
         description: "新增页面",
         input: "请实现登录页",
         expectedOutput: "实现登录页",
@@ -1060,7 +1060,7 @@ test("executeAcceptedRemoteEvaluationTask still uploads completed callback when 
       testCase: {
         id: 11,
         name: "remote-case-hook-failure",
-        type: "requirement",
+        type: "full_generation",
         description: "新增页面",
         input: "请实现登录页",
         expectedOutput: "实现登录页",
@@ -1173,7 +1173,7 @@ test("executeAcceptedRemoteEvaluationTask uploads failed callback when workflow 
       testCase: {
         id: 10,
         name: "remote-case-execution-fails",
-        type: "requirement",
+        type: "continuation",
         description: "新增页面",
         input: "请实现登录页",
         expectedOutput: "实现登录页",
@@ -1271,7 +1271,7 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
         testCase: {
           id: 1,
           name: "x",
-          type: "requirement",
+          type: "continuation",
           description: "",
           input: "",
           expectedOutput: "",
@@ -1678,7 +1678,7 @@ test("createRunRemoteTaskHandler reports preprocessing failures through callback
         testCase: {
           id: 301,
           name: "remote-case-preprocess-failure",
-          type: "requirement",
+          type: "full_generation",
           description: "新增页面",
           input: "请实现登录页",
           expectedOutput: "实现登录页",

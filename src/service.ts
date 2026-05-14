@@ -102,7 +102,7 @@ async function runCaseInput(input: {
 
   await logger.info(`启动评分流程 sourceCasePath=${sourceCasePath}`);
   await logger.info(`用例加载完成 caseId=${caseInput.caseId}`);
-  await logger.info(`任务类型判定完成 taskType=${taskType}`);
+  await logger.info(`任务类型读取完成 taskType=${taskType}`);
   await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
     ...caseInfoBase,
     rubric_agent_run_status: "not_enabled",
@@ -240,6 +240,7 @@ type AcceptedRemoteWorkflowState = {
   originalFileCount: number;
   workspaceFileCount: number;
   hasPatch: boolean;
+  remoteBuildSuccess: boolean;
 };
 
 type InitialAcceptedRemoteWorkflowState = {
@@ -355,6 +356,9 @@ function toAcceptedRemoteWorkflowState(
   if (typeof state.hasPatch !== "boolean") {
     throw new Error("Accepted remote task is missing hasPatch.");
   }
+  if (typeof state.remoteBuildSuccess !== "boolean") {
+    throw new Error("Accepted remote task is missing remoteBuildSuccess.");
+  }
 
   return {
     caseDir: state.caseDir,
@@ -369,6 +373,7 @@ function toAcceptedRemoteWorkflowState(
     originalFileCount: state.originalFileCount,
     workspaceFileCount: state.workspaceFileCount,
     hasPatch: state.hasPatch,
+    remoteBuildSuccess: state.remoteBuildSuccess,
   };
 }
 
@@ -457,7 +462,7 @@ async function prepareAcceptedRemoteEvaluationTask(
     );
     await logger.info("初始任务分析完成");
     Object.assign(preparedState, await inputClassificationNode(preparedState as ScoreGraphState));
-    await logger.info(`任务类型判定完成 taskType=${String(preparedState.taskType ?? "")}`);
+    await logger.info(`任务类型读取完成 taskType=${String(preparedState.taskType ?? "")}`);
     await artifactStore.writeJson(
       acceptedTask.caseDir,
       "inputs/case-info.json",

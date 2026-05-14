@@ -1329,11 +1329,40 @@ test("reportGenerationNode only returns schema-valid resultJson without html rep
       deterministicRuleResults: [],
       scoreComputation: scoringResult.scoreComputation,
       ruleViolations: [],
+      hvigorBuildCheckSummary: {
+        enabled: true,
+        status: "failed",
+        buildCheckSource: "remote",
+        checkedModules: ["remote"],
+        moduleResults: [
+          {
+            modulePath: ".",
+            moduleName: "remote",
+            command: "assembleApp",
+            status: "failed",
+            durationMs: 0,
+            diagnostics: "远端平台构建失败。",
+          },
+        ],
+        hardGateTriggered: true,
+        scoreCap: 59,
+        diagnostics: "远端平台构建失败，已跳过本地 hvigor 编译复验。",
+        durationMs: 0,
+        cleanup: {
+          attempted: false,
+          removedPaths: [],
+          failedPaths: [],
+        },
+      },
     } as never,
     { referenceRoot },
   );
 
   assert.ok(reportResult.resultJson);
+  assert.equal(
+    (reportResult.resultJson.build_check_summary as Record<string, unknown>).build_check_source,
+    "remote",
+  );
   assert.equal(reportResult.htmlReport, undefined);
 });
 
