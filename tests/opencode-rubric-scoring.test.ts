@@ -64,6 +64,13 @@ function payload(): RubricScoringPayload {
   };
 }
 
+function extractScoringPayload(prompt: string): Record<string, unknown> {
+  const marker = "scoring_payload:\n";
+  const start = prompt.indexOf(marker);
+  assert.notEqual(start, -1);
+  return JSON.parse(prompt.slice(start + marker.length)) as Record<string, unknown>;
+}
+
 function finalAnswer(): RubricScoringResult {
   return {
     summary: {
@@ -151,6 +158,91 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   assert.equal(result.final_answer?.item_scores[0]?.dimension_name, "功能正确性");
   assert.equal(result.final_answer?.item_scores[0]?.score, 40);
   assert.equal(result.raw_events, "{}\n");
+});
+
+test("runOpencodeRubricScoring omits expected constraints from original prompt summary", async () => {
+  let prompt = "";
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: {
+      ...payload(),
+      case_context: {
+        ...payload().case_context,
+        original_prompt_summary: [
+          "任务描述：停车缴费元服务完成一多适配",
+          "",
+          "输入要求：帮我把当前的停车缴费元服务完成一多适配",
+          "",
+          "期望输出：constraints:",
+          "  - id: RSP-MUST-01",
+          "    name: 横向断点划分范围必须符合系统推荐值",
+          "    kit:",
+          "      - \"ArkUI: GridRow / WidthBreakpoint\"",
+        ].join("\n"),
+      },
+    },
+    runPrompt: async (request) => {
+      prompt = request.prompt;
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify(finalAnswer()),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  const scoringPayload = extractScoringPayload(prompt);
+  const caseContext = scoringPayload.case_context as Record<string, unknown>;
+
+  assert.equal(
+    caseContext.original_prompt_summary,
+    "任务描述：停车缴费元服务完成一多适配\n\n输入要求：帮我把当前的停车缴费元服务完成一多适配",
+  );
+  assert.doesNotMatch(prompt, /期望输出/);
+  assert.doesNotMatch(prompt, /RSP-MUST-01/);
+  assert.doesNotMatch(prompt, /GridRow \/ WidthBreakpoint/);
+});
+
+test("runOpencodeRubricScoring omits expected constraints with prompt label variants", async () => {
+  let prompt = "";
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: {
+      ...payload(),
+      case_context: {
+        ...payload().case_context,
+        original_prompt_summary: [
+          "任务描述：停车缴费元服务完成一多适配",
+          "",
+          "输入要求：帮我把当前的停车缴费元服务完成一多适配",
+          "",
+          "期望输出 : constraints:",
+          "  - id: RSP-MUST-01",
+        ].join("\n"),
+      },
+    },
+    runPrompt: async (request) => {
+      prompt = request.prompt;
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify(finalAnswer()),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  const scoringPayload = extractScoringPayload(prompt);
+  const caseContext = scoringPayload.case_context as Record<string, unknown>;
+
+  assert.equal(
+    caseContext.original_prompt_summary,
+    "任务描述：停车缴费元服务完成一多适配\n\n输入要求：帮我把当前的停车缴费元服务完成一多适配",
+  );
+  assert.doesNotMatch(prompt, /RSP-MUST-01/);
 });
 
 test("runOpencodeRubricScoring retries once with strict format guidance after protocol error", async () => {

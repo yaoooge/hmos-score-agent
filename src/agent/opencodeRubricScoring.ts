@@ -95,6 +95,25 @@ function stringifyForPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function trimExpectedOutputFromPromptSummary(summary: string): string {
+  return summary.replace(/\n{0,2}(?:期望输出|Expected\s+Output)\s*[：:][\s\S]*$/iu, "").trim();
+}
+
+function compactRubricScoringPayload(payload: RubricScoringPayload): Record<string, unknown> {
+  return {
+    case_context: {
+      ...payload.case_context,
+      original_prompt_summary: trimExpectedOutputFromPromptSummary(
+        payload.case_context.original_prompt_summary,
+      ),
+    },
+    task_understanding: payload.task_understanding,
+    rubric_summary: payload.rubric_summary,
+    workspace_project_structure: payload.workspace_project_structure,
+    workspace_project_structure_note: payload.workspace_project_structure_note,
+  };
+}
+
 function strictOutputInstructions(): string[] {
   return [
     "强制输出格式:",
@@ -227,13 +246,7 @@ function renderRubricScoringPrompt(input: {
     ...strictOutputInstructions(),
     "",
     "scoring_payload:",
-    stringifyForPrompt({
-      case_context: payload.case_context,
-      task_understanding: payload.task_understanding,
-      rubric_summary: payload.rubric_summary,
-      workspace_project_structure: payload.workspace_project_structure,
-      workspace_project_structure_note: payload.workspace_project_structure_note,
-    }),
+    stringifyForPrompt(compactRubricScoringPayload(payload)),
   ].join("\n");
 }
 

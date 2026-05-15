@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildScoringResultUrl,
   selectNegativeTaskList,
   type NegativeTaskSelectionKey,
 } from "../web/src/pages/resultAnalysisNegativeTaskSelection.js";
@@ -58,5 +59,29 @@ test("selectNegativeTaskList returns the low score task list for the low score c
   assert.deepEqual(
     selection.rows.map((row) => row.taskId),
     [2, 3],
+  );
+});
+
+test("selectNegativeTaskList paginates the selected negative task list", () => {
+  const selection = selectNegativeTaskList(
+    {
+      ...negativeResults(),
+      lowScoreTasks: [task(11), task(12), task(13), task(14), task(15)],
+    },
+    "lowScore",
+    { page: 2, pageSize: 2 },
+  );
+
+  assert.equal(selection.total, 5);
+  assert.deepEqual(
+    selection.rows.map((row) => row.taskId),
+    [13, 14],
+  );
+});
+
+test("buildScoringResultUrl points task names at the scoring result detail page", () => {
+  assert.equal(
+    buildScoringResultUrl(123),
+    "http://47.100.28.161:3000/web/dashboard/scoring-results/123",
   );
 });

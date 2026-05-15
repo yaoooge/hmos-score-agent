@@ -227,6 +227,38 @@ test("runOpencodePrompt removes stale output file before invoking opencode", asy
   await assert.rejects(() => fs.readFile(outputPath, "utf-8"), /ENOENT/);
 });
 
+test("runOpencodePrompt can preserve existing output file for retry repair", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-preserve-output-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-preserve-output-"));
+  const outputPath = path.join(sandboxRoot, "metadata", "agent-output", "rule-assessment.json");
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, '{"existing":true}\n', "utf-8");
+  const child = createFakeChild();
+
+  const result = await runOpencodePrompt({
+    runtime: runtimeConfig(runtimeDir),
+    request: {
+      prompt: "repair existing output",
+      sandboxRoot,
+      requestTag: "missing-output-retry",
+      outputFile: "metadata/agent-output/rule-assessment.json",
+      preserveOutputFileOnStart: true,
+    },
+    deps: {
+      spawnProcess: () => {
+        queueMicrotask(() => {
+          child.stdout.emit("data", Buffer.from('{"type":"text","part":{"type":"text","text":"done"}}\n'));
+          child.emit("exit", 0);
+        });
+        return child;
+      },
+    },
+  });
+
+  assert.equal(result.rawText, '{"existing":true}\n');
+  assert.equal(await fs.readFile(outputPath, "utf-8"), '{"existing":true}\n');
+});
+
 test("runOpencodePrompt reports non-zero exits with stderr snippets", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-exit-"));
   const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-exit-"));

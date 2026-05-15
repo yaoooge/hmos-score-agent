@@ -567,6 +567,51 @@ test("runRuleEngine routes all runtime case rules to agent candidates and keeps 
   );
 });
 
+test("runRuleEngine uses kit anchors for static precheck on runtime case rules", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "GridRow({",
+      "  breakpoints: { value: ['320vp', '600vp', '840vp', '1440vp'] },",
+      "}) {",
+      "  Text(WidthBreakpoint.MD)",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "case-requirement_rsp",
+        rule_id: "RSP-MUST-01",
+        rule_name: "横向断点划分范围必须符合系统推荐值",
+        rule_source: "must_rule",
+        summary: "横向断点划分范围必须符合系统推荐值",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/*.ets"],
+          astSignals: [],
+          llmPrompt:
+            "检查工程中自定义断点系统或 WidthBreakpointType 工具类的断点边界定义，横向断点划分必须为 xs:(0,320)、sm:[320,600)、md:[600,840)、lg:[840,1440)、xl:[1440,+∞)。若使用 GridRow 的 breakpoints.value，值必须为 ['320vp','600vp','840vp','1440vp']。",
+          kit: ["ArkUI: GridRow / WidthBreakpoint"],
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  const candidate = result.assistedRuleCandidates.find((item) => item.rule_id === "RSP-MUST-01");
+
+  assert.ok(candidate);
+  assert.equal(candidate.static_precheck?.signal_status, "all_matched");
+  assert.deepEqual(candidate.static_precheck?.matched_tokens, ["GridRow", "WidthBreakpoint"]);
+  assert.match(candidate.static_precheck?.summary ?? "", /Kit 静态锚点/);
+});
+
 test("runRuleEngine keeps missing case targets in agent candidates instead of static violations", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/Index.ets": "Text('plain')\n",

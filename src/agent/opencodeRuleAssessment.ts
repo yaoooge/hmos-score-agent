@@ -56,6 +56,78 @@ function stringifyForPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+const MAX_RULE_REPRESENTATIVE_FILES = 5;
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function pickRepresentativeFiles(input: {
+  evidenceFiles: string[];
+  targetFiles: string[];
+  matchedFiles: string[];
+}): string[] {
+  return uniqueStrings([...input.matchedFiles, ...input.evidenceFiles, ...input.targetFiles]).slice(
+    0,
+    MAX_RULE_REPRESENTATIVE_FILES,
+  );
+}
+
+function trimExpectedOutputFromPromptSummary(summary: string): string {
+  return summary.replace(/\n{0,2}(?:期望输出|Expected\s+Output)\s*[：:][\s\S]*$/iu, "").trim();
+}
+
+function compactRuleAssessmentPayload(payload: AgentBootstrapPayload): Record<string, unknown> {
+  return {
+    case_context: {
+      ...payload.case_context,
+      original_prompt_summary: trimExpectedOutputFromPromptSummary(
+        payload.case_context.original_prompt_summary,
+      ),
+    },
+    task_understanding: payload.task_understanding,
+    assisted_rule_candidates: payload.assisted_rule_candidates.map((candidate) => {
+      const { evidence_snippets: _evidenceSnippets, ...candidateWithoutSnippets } = candidate;
+      if (!candidate.is_case_rule) {
+        return candidateWithoutSnippets;
+      }
+
+      const {
+        evidence_files: evidenceFiles,
+        static_precheck: staticPrecheck,
+        ...caseCandidate
+      } = candidateWithoutSnippets;
+      const targetFiles = staticPrecheck?.target_files ?? [];
+      const matchedFiles = staticPrecheck?.matched_files ?? [];
+      const compactStaticPrecheck = staticPrecheck
+        ? (() => {
+            const {
+              target_files: _targetFiles,
+              matched_files: _matchedFiles,
+              ...restStaticPrecheck
+            } = staticPrecheck;
+            return restStaticPrecheck;
+          })()
+        : undefined;
+      const allTargetFiles = uniqueStrings([...evidenceFiles, ...targetFiles]);
+      return {
+        ...caseCandidate,
+        static_precheck: compactStaticPrecheck
+          ? {
+              ...compactStaticPrecheck,
+              target_file_count: allTargetFiles.length,
+              representative_files: pickRepresentativeFiles({
+                evidenceFiles,
+                targetFiles,
+                matchedFiles,
+              }),
+            }
+          : undefined,
+      };
+    }),
+  };
+}
+
 function summarizeRetryFailureReason(reason: string): string {
   if (reason.includes("缺少 assistant 最终文本")) {
     return "缺少 assistant 最终文本";
@@ -100,6 +172,7 @@ function renderRuleAssessmentRetryPrompt(input: {
   bootstrapPayload: AgentBootstrapPayload;
   retryContext: { failureReason: string; rawText: string };
 }): string {
+  const hasPreviousOutput = input.retryContext.rawText.trim().length > 0;
   return [
     "你是评分流程中的规则判定 agent。本次是重试，只修正最终 JSON 输出格式。",
     "本次是重试。仍必须使用 hmos-rule-assessment skill，但只修复 listed protocol errors，不重新判定。",
@@ -109,11 +182,14 @@ function renderRuleAssessmentRetryPrompt(input: {
     "输入边界（必须遵守）:",
     "- 不要重新读取原始 prompt、rubric 全量内容或大段上下文。",
     "- 不要输出分析过程、Markdown、代码块或自然语言前后缀。",
+    ...(hasPreviousOutput
+      ? ["- 先读取并修改已有 output_file，保留上一轮已完成且与候选规则相关的 rule_assessments。"]
+      : []),
     "- 只根据 candidate_rule_ids 覆盖所有候选 rule_id。",
     ...retryFailureGuidance(input.retryContext.failureReason),
     "",
     "任务:",
-    "1. 输出一个合法 JSON object。",
+    hasPreviousOutput ? "1. 在已有 output_file 内容基础上输出一个合法 JSON object。" : "1. 输出一个合法 JSON object。",
     "2. rule_assessments 必须覆盖 candidate_rule_ids 中每个 rule_id，不能新增、遗漏或重复。",
     "3. 无法确认时使用 decision=\"uncertain\"，并设置 needs_human_review=true。",
     "4. evidence_used 只能填写 sandbox 相对路径。",
@@ -158,7 +234,7 @@ function renderRuleAssessmentPrompt(input: {
     "- metadata/: 用例元数据。",
     "",
     "任务:",
-    "1. 阅读 bootstrap_payload 中的候选规则、任务理解和 rubric 摘要。",
+    "1. 阅读 bootstrap_payload 中的候选规则和任务理解。",
     "2. 优先阅读 patch/effective.patch，只基于 patch 内可见文件完成每条候选规则的判定；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文辅助理解。",
     "3. 必须覆盖 assisted_rule_candidates 中的每一个 rule_id，不能新增、遗漏或重复 rule_id。",
     "4. 无法确认时使用 decision=\"uncertain\"，并设置 needs_human_review=true。",
@@ -185,12 +261,7 @@ function renderRuleAssessmentPrompt(input: {
     "- 严格遵守 system prompt 中的正确输出格式。",
     "",
     "bootstrap_payload:",
-    stringifyForPrompt({
-      case_context: payload.case_context,
-      task_understanding: payload.task_understanding,
-      rubric_summary: payload.rubric_summary,
-      assisted_rule_candidates: payload.assisted_rule_candidates,
-    }),
+    stringifyForPrompt(compactRuleAssessmentPayload(payload)),
   ].join("\n");
 }
 
@@ -298,6 +369,8 @@ export async function runOpencodeRuleAssessment(
   let runResult: OpencodeRunResult;
 
   async function runOnce(inputRequestTag: string, retryContext?: { failureReason: string; rawText: string }) {
+    const preserveOutputFileOnStart =
+      retryContext && retryContext.rawText.trim().length > 0 ? true : undefined;
     return input.runPrompt({
       prompt: renderRuleAssessmentPrompt({
         sandboxRoot: input.sandboxRoot,
@@ -309,6 +382,7 @@ export async function runOpencodeRuleAssessment(
       title: inputRequestTag,
       agent: "hmos-rule-assessment",
       outputFile: RULE_ASSESSMENT_OUTPUT_FILE,
+      preserveOutputFileOnStart,
     });
   }
 

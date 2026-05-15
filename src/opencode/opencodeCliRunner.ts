@@ -11,6 +11,7 @@ export interface OpencodeRunRequest {
   title?: string;
   agent?: string;
   outputFile?: string;
+  preserveOutputFileOnStart?: boolean;
 }
 
 export interface OpencodeRunResult {
@@ -152,7 +153,9 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
     : undefined;
   if (outputPath) {
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.rm(outputPath, { force: true });
+    if (!input.request.preserveOutputFileOnStart) {
+      await fs.rm(outputPath, { force: true });
+    }
   }
 
   const args = [

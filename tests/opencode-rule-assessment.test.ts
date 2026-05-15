@@ -39,7 +39,7 @@ function payload(): AgentBootstrapPayload {
         why_uncertain: "需要上下文",
         local_preliminary_signal: "unknown",
         evidence_files: ["generated/entry/src/main.ets"],
-        evidence_snippets: [],
+        evidence_snippets: ["SHOULD_NOT_BE_SENT_TO_RULE_AGENT"],
         kit: ["ArkUI: Tabs / TabContent"],
         target_checks: [
           {
@@ -68,6 +68,13 @@ function payloadWithTwoRules(): AgentBootstrapPayload {
       },
     ],
   };
+}
+
+function extractPromptPayload(prompt: string): Record<string, unknown> {
+  const marker = "bootstrap_payload:\n";
+  const start = prompt.indexOf(marker);
+  assert.notEqual(start, -1);
+  return JSON.parse(prompt.slice(start + marker.length)) as Record<string, unknown>;
 }
 
 function finalAnswer() {
@@ -142,6 +149,9 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   assert.doesNotMatch(prompt, /references\//);
   assert.match(prompt, /优先阅读 patch\/effective\.patch/);
   assert.match(prompt, /根据 patch 中出现的文件路径继续阅读相关 generated\/ 或 original\/ 上下文/);
+  assert.doesNotMatch(prompt, /rubric_summary/);
+  assert.doesNotMatch(prompt, /evidence_snippets/);
+  assert.doesNotMatch(prompt, /SHOULD_NOT_BE_SENT_TO_RULE_AGENT/);
   assert.match(prompt, /未接入静态判定器本身不是人工复核理由/);
   assert.match(prompt, /新增代码未发现该规则相关问题时，必须输出 decision="pass" 且 needs_human_review=false/);
   assert.match(prompt, /同一候选规则包含多个 target_checks 时，必须逐个 target 审视/);
@@ -167,6 +177,119 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
     needs_human_review: false,
   });
   assert.equal(result.raw_events, "{}\n");
+});
+
+test("runOpencodeRuleAssessment compacts duplicate case rule file hints in prompt payload", async () => {
+  let prompt = "";
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/sandbox/case",
+    bootstrapPayload: {
+      ...payload(),
+      assisted_rule_candidates: [
+        {
+          ...payload().assisted_rule_candidates[0],
+          is_case_rule: true,
+          evidence_files: [
+            "generated/a.ets",
+            "generated/b.ets",
+            "generated/c.ets",
+            "generated/d.ets",
+            "generated/e.ets",
+            "generated/f.ets",
+            "generated/g.ets",
+            "generated/h.ets",
+          ],
+          static_precheck: {
+            target_matched: true,
+            target_files: [
+              "generated/a.ets",
+              "generated/b.ets",
+              "generated/c.ets",
+              "generated/d.ets",
+              "generated/e.ets",
+              "generated/f.ets",
+              "generated/g.ets",
+              "generated/h.ets",
+            ],
+            matched_files: ["generated/f.ets", "generated/b.ets"],
+            signal_status: "partial_matched",
+            matched_tokens: ["Tabs"],
+            summary: "Kit 静态锚点命中 1/2。",
+          },
+        },
+      ],
+    },
+    runPrompt: async (request) => {
+      prompt = request.prompt;
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify(finalAnswer()),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  const promptPayload = extractPromptPayload(prompt);
+  const candidates = promptPayload.assisted_rule_candidates as Array<Record<string, unknown>>;
+  const candidate = candidates[0] as Record<string, unknown>;
+  const staticPrecheck = candidate.static_precheck as Record<string, unknown>;
+
+  assert.equal("evidence_files" in candidate, false);
+  assert.equal("target_files" in staticPrecheck, false);
+  assert.equal(staticPrecheck.target_file_count, 8);
+  assert.deepEqual(staticPrecheck.representative_files, [
+    "generated/f.ets",
+    "generated/b.ets",
+    "generated/a.ets",
+    "generated/c.ets",
+    "generated/d.ets",
+  ]);
+});
+
+test("runOpencodeRuleAssessment omits expected constraints from original prompt summary", async () => {
+  let prompt = "";
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/sandbox/case",
+    bootstrapPayload: {
+      ...payload(),
+      case_context: {
+        ...payload().case_context,
+        original_prompt_summary: [
+          "任务描述：停车缴费元服务完成一多适配",
+          "",
+          "输入要求：帮我把当前的停车缴费元服务完成一多适配",
+          "",
+          "期望输出 : constraints:",
+          "  - id: RSP-MUST-01",
+          "    name: 横向断点划分范围必须符合系统推荐值",
+          "    kit:",
+          "      - \"ArkUI: GridRow / WidthBreakpoint\"",
+        ].join("\n"),
+      },
+    },
+    runPrompt: async (request) => {
+      prompt = request.prompt;
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify(finalAnswer()),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  const promptPayload = extractPromptPayload(prompt);
+  const caseContext = promptPayload.case_context as Record<string, unknown>;
+
+  assert.equal(
+    caseContext.original_prompt_summary,
+    "任务描述：停车缴费元服务完成一多适配\n\n输入要求：帮我把当前的停车缴费元服务完成一多适配",
+  );
+  assert.doesNotMatch(prompt, /RSP-MUST-01/);
+  assert.doesNotMatch(prompt, /GridRow \/ WidthBreakpoint/);
 });
 
 test("runOpencodeRuleAssessment retries once with strict format guidance after protocol error", async () => {
@@ -286,13 +409,17 @@ test("runOpencodeRuleAssessment fails when retry also times out", async () => {
   ]);
 });
 
-test("runOpencodeRuleAssessment retries when agent output omits candidate rules", async () => {
-  const calls: Array<{ requestTag: string; prompt: string }> = [];
+test("runOpencodeRuleAssessment retries missing rules by repairing the first output file", async () => {
+  const calls: Array<{ requestTag: string; prompt: string; preserveOutputFileOnStart?: boolean }> = [];
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/sandbox/case",
     bootstrapPayload: payloadWithTwoRules(),
     runPrompt: async (request) => {
-      calls.push({ requestTag: request.requestTag, prompt: request.prompt });
+      calls.push({
+        requestTag: request.requestTag,
+        prompt: request.prompt,
+        preserveOutputFileOnStart: request.preserveOutputFileOnStart,
+      });
       return {
         requestTag: request.requestTag,
         rawEvents: "",
@@ -304,7 +431,10 @@ test("runOpencodeRuleAssessment retries when agent output omits candidate rules"
 
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.preserveOutputFileOnStart, undefined);
+  assert.equal(calls[1]?.preserveOutputFileOnStart, true);
   assert.match(calls[1]?.prompt ?? "", /missing=R2/);
+  assert.match(calls[1]?.prompt ?? "", /读取并修改已有 output_file/);
   assert.match(calls[1]?.prompt ?? "", /只补齐列出的候选 rule_id/);
   assert.deepEqual(
     result.final_answer?.rule_assessments.map((assessment) => assessment.rule_id),

@@ -120,6 +120,7 @@ import {
   normalizeDashboardTask,
   summarizeTaskTypeCounts,
 } from "../taskTypes";
+import { createRecentDashboardRange, refreshDashboardRangeEnd } from "../dashboardDateRange";
 
 const loading = ref(false);
 const summary = ref<DashboardSummary | null>(null);
@@ -239,14 +240,16 @@ watch(
 );
 
 function onRefresh() {
+  const refreshedRange = refreshDashboardRangeEnd(range.value);
+  if (refreshedRange) {
+    range.value = refreshedRange;
+    return;
+  }
   loadData();
 }
 
 onMounted(() => {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - 7);
-  range.value = [start, end];
+  range.value = createRecentDashboardRange(7);
   setTitleControls?.({ dateRange: { model: range } });
   loadData();
   window.addEventListener("dashboard:refresh", onRefresh as EventListener);

@@ -94,7 +94,17 @@
               height="300"
             >
               <el-table-column prop="taskId" label="taskId" width="100" />
-              <el-table-column prop="name" label="名称" min-width="220" show-overflow-tooltip />
+              <el-table-column label="名称" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <el-link
+                    type="primary"
+                    :href="buildScoringResultUrl(row.taskId)"
+                    target="_blank"
+                  >
+                    {{ row.name }}
+                  </el-link>
+                </template>
+              </el-table-column>
               <el-table-column prop="taskType" label="类型" width="140" />
               <el-table-column prop="status" label="状态" width="120" />
               <el-table-column
@@ -111,6 +121,16 @@
                 show-overflow-tooltip
               />
             </el-table>
+            <div class="table-pagination">
+              <el-pagination
+                v-model:current-page="negativeTaskPage"
+                v-model:page-size="negativeTaskPageSize"
+                :total="selectedNegativeTaskListView.total"
+                :page-sizes="[10, 20, 50, 100]"
+                layout="total, sizes, prev, pager, next"
+                background
+              />
+            </div>
           </div>
           <div class="table-card">
             <el-table :data="negative?.topRuleViolations ?? []" stripe>
@@ -197,6 +217,7 @@ import {
   type RiskReviewCalibration,
 } from "../api/dashboard";
 import {
+  buildScoringResultUrl,
   selectNegativeTaskList,
   type NegativeTaskSelectionKey,
 } from "./resultAnalysisNegativeTaskSelection";
@@ -215,6 +236,8 @@ const riskPage = ref(1);
 const riskPageSize = ref(20);
 const riskTotal = ref(0);
 const selectedNegativeTaskList = ref<NegativeTaskSelectionKey>("failed");
+const negativeTaskPage = ref(1);
+const negativeTaskPageSize = ref(20);
 
 const gapFilters = reactive({
   keyword: "",
@@ -234,7 +257,10 @@ const baseGapConclusionOptions = [
 ];
 
 const selectedNegativeTaskListView = computed(() =>
-  selectNegativeTaskList(negative.value, selectedNegativeTaskList.value),
+  selectNegativeTaskList(negative.value, selectedNegativeTaskList.value, {
+    page: negativeTaskPage.value,
+    pageSize: negativeTaskPageSize.value,
+  }),
 );
 
 const gapConclusionOptions = computed(() => {
@@ -324,6 +350,18 @@ function reloadRiskReviewsFromFirstPage() {
 
 watch([gapPage, gapPageSize], loadGaps);
 watch([riskPage, riskPageSize], loadRiskReviews);
+watch([selectedNegativeTaskList, negativeTaskPageSize], () => {
+  negativeTaskPage.value = 1;
+});
+watch(
+  () => selectedNegativeTaskListView.value.total,
+  (total) => {
+    const maxPage = Math.max(1, Math.ceil(total / negativeTaskPageSize.value));
+    if (negativeTaskPage.value > maxPage) {
+      negativeTaskPage.value = maxPage;
+    }
+  },
+);
 watch(() => [gapFilters.keyword, gapFilters.primaryConclusion], reloadGapsFromFirstPage);
 watch(() => [riskFilters.keyword, riskFilters.agreement], reloadRiskReviewsFromFirstPage);
 

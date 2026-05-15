@@ -288,6 +288,7 @@ export interface EvidenceSummary {
 export interface CaseRuleStaticPrecheck {
   target_matched: boolean;
   target_files: string[];
+  matched_files?: string[];
   signal_status: "all_matched" | "partial_matched" | "none_matched" | "no_target_files";
   matched_tokens: string[];
   summary: string;
