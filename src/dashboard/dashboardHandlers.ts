@@ -16,6 +16,16 @@ import {
   sortRiskReviewCalibrationsByTaskTimeDesc,
 } from "./dashboardAggregates.js";
 import {
+  buildCrossDeviceRuleViolationStats,
+  filterCrossDeviceCases,
+  filterCrossDeviceRiskReviews,
+  sortCrossDeviceCases,
+} from "./crossDeviceAggregates.js";
+import {
+  listCrossDeviceRelatedTasks,
+  readCrossDeviceRiskReviewDataset,
+} from "./crossDeviceDataStore.js";
+import {
   listDashboardTasks,
   readHumanRatingGapDataset,
   readRiskReviewCalibrationDataset,
@@ -31,7 +41,9 @@ export type DashboardRouterDeps = {
 
 const STATUS_CATEGORIES = new Set(["received", "queued", "running", "completed", "failed"]);
 const SORT_FIELDS = new Set(["createdAt", "updatedAt", "score", "taskId"]);
+const CROSS_DEVICE_SORT_FIELDS = new Set(["updatedAt", "score", "taskId"]);
 const RISK_REVIEW_AGREEMENTS = new Set(["agreed", "disagreed"]);
+const RISK_LEVELS = new Set(["high", "medium", "low"]);
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -54,6 +66,10 @@ function readPositiveInteger(value: unknown, fallback: number, max: number): num
     return "must be a positive integer";
   }
   return Math.min(number, max);
+}
+
+function readBooleanFlag(value: unknown): boolean {
+  return value === "true" || value === true;
 }
 
 function sendError(res: Response, status: number, message: string): void {
@@ -109,6 +125,75 @@ function parseTaskQuery(req: Request) {
     pageSize,
     sortBy: sortBy as "createdAt" | "updatedAt" | "score" | "taskId",
     sortOrder: sortOrder as "asc" | "desc",
+  };
+}
+
+function parseCrossDeviceCaseQuery(req: Request) {
+  const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
+  const pageSize = readPositiveInteger(req.query.pageSize, 20, 100);
+  if (typeof page === "string" || typeof pageSize === "string") {
+    return "page and pageSize must be positive integers";
+  }
+  const sortBy = readString(req.query.sortBy) ?? "updatedAt";
+  if (!CROSS_DEVICE_SORT_FIELDS.has(sortBy)) {
+    return "sortBy must be one of updatedAt, score, taskId";
+  }
+  const sortOrder = readString(req.query.sortOrder) ?? "desc";
+  if (sortOrder !== "asc" && sortOrder !== "desc") {
+    return "sortOrder must be asc or desc";
+  }
+  return {
+    page,
+    pageSize,
+    keyword: readString(req.query.keyword),
+    from: readString(req.query.from),
+    to: readString(req.query.to),
+    taskType: readString(req.query.taskType),
+    scoreMin: readNumber(req.query.scoreMin),
+    scoreMax: readNumber(req.query.scoreMax),
+    sortBy: sortBy as "updatedAt" | "score" | "taskId",
+    sortOrder: sortOrder as "asc" | "desc",
+  };
+}
+
+function parseCrossDeviceRuleQuery(req: Request) {
+  const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
+  const pageSize = readPositiveInteger(req.query.pageSize, 50, 200);
+  if (typeof page === "string" || typeof pageSize === "string") {
+    return "page and pageSize must be positive integers";
+  }
+  return {
+    page,
+    pageSize,
+    keyword: readString(req.query.keyword),
+    from: readString(req.query.from),
+    to: readString(req.query.to),
+    includeOtherRules: readBooleanFlag(req.query.includeOtherRules),
+  };
+}
+
+function parseCrossDeviceRiskQuery(req: Request) {
+  const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
+  const pageSize = readPositiveInteger(req.query.pageSize, 20, 100);
+  if (typeof page === "string" || typeof pageSize === "string") {
+    return "page and pageSize must be positive integers";
+  }
+  const agreement = readString(req.query.agreement);
+  if (agreement !== undefined && !RISK_REVIEW_AGREEMENTS.has(agreement)) {
+    return "agreement must be one of agreed, disagreed";
+  }
+  const riskLevel = readString(req.query.riskLevel);
+  if (riskLevel !== undefined && !RISK_LEVELS.has(riskLevel)) {
+    return "riskLevel must be one of high, medium, low";
+  }
+  return {
+    page,
+    pageSize,
+    keyword: readString(req.query.keyword),
+    from: readString(req.query.from),
+    to: readString(req.query.to),
+    agreement: agreement as "agreed" | "disagreed" | undefined,
+    riskLevel: riskLevel as "high" | "medium" | "low" | undefined,
   };
 }
 
@@ -327,6 +412,103 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
         res,
         500,
         error instanceof Error ? error.message : "Dashboard analysis unavailable",
+      );
+    }
+  });
+
+  router.get("/dashboard/cross-device/cases", async (req, res) => {
+    const query = parseCrossDeviceCaseQuery(req);
+    if (typeof query === "string") {
+      sendError(res, 400, query);
+      return;
+    }
+    try {
+      const tasks = await listCrossDeviceRelatedTasks(deps.registry);
+      const filtered = sortCrossDeviceCases(filterCrossDeviceCases(tasks, query), query);
+      const page = paginate(filtered, query.page, query.pageSize);
+      res.json({
+        success: true,
+        page: query.page,
+        pageSize: query.pageSize,
+        total: page.total,
+        items: page.items.map(({ officialLinterResults, ruleAuditResults, risks, ...item }) => item),
+      });
+    } catch (error) {
+      sendError(
+        res,
+        500,
+        error instanceof Error ? error.message : "Dashboard cross-device cases unavailable",
+      );
+    }
+  });
+
+  router.get("/dashboard/cross-device/rule-violations", async (req, res) => {
+    const query = parseCrossDeviceRuleQuery(req);
+    if (typeof query === "string") {
+      sendError(res, 400, query);
+      return;
+    }
+    try {
+      const tasks = filterCrossDeviceCases(await listCrossDeviceRelatedTasks(deps.registry), {
+        from: query.from,
+        to: query.to,
+        sortBy: "updatedAt",
+        sortOrder: "desc",
+      });
+      const stats = buildCrossDeviceRuleViolationStats(tasks, query);
+      const page = paginate(stats.items, query.page, query.pageSize);
+      res.json({
+        success: true,
+        page: query.page,
+        pageSize: query.pageSize,
+        total: page.total,
+        summary: stats.summary,
+        items: page.items,
+      });
+    } catch (error) {
+      sendError(
+        res,
+        500,
+        error instanceof Error ? error.message : "Dashboard cross-device rules unavailable",
+      );
+    }
+  });
+
+  router.get("/dashboard/cross-device/risk-review-calibrations", async (req, res) => {
+    const query = parseCrossDeviceRiskQuery(req);
+    if (typeof query === "string") {
+      sendError(res, 400, query);
+      return;
+    }
+    try {
+      const tasks = filterCrossDeviceCases(await listCrossDeviceRelatedTasks(deps.registry), {
+        from: query.from,
+        to: query.to,
+        sortBy: "updatedAt",
+        sortOrder: "desc",
+      });
+      const relatedTaskIds = new Set(tasks.map((task) => task.taskId));
+      const taskNameIndex = new Map(tasks.map((task) => [task.taskId, task.name]));
+      const dataset = await readCrossDeviceRiskReviewDataset({
+        root: deps.humanReviewEvidenceRoot,
+        relatedTaskIds,
+        taskNames: taskNameIndex,
+      });
+      const filtered = filterCrossDeviceRiskReviews(dataset.items, query);
+      const page = paginate(filtered, query.page, query.pageSize);
+      res.json({
+        success: true,
+        page: query.page,
+        pageSize: query.pageSize,
+        total: page.total,
+        skippedRows: dataset.skippedRows,
+        items: page.items,
+      });
+    } catch (error) {
+      sendError(
+        res,
+        500,
+        error instanceof Error ? error.message : "Dashboard cross-device risks unavailable",
       );
     }
   });

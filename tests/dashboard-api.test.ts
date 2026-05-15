@@ -232,6 +232,196 @@ async function createFixture(t: test.TestContext) {
   return { localCaseRoot, evidenceRoot, registry, ruleStatsStore };
 }
 
+async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFixture>>) {
+  const crossDeviceCaseDir = path.join(fixture.localCaseRoot, "case-cross-device");
+  const notInvolvedCaseDir = path.join(fixture.localCaseRoot, "case-not-involved");
+  const missingSummaryCaseDir = path.join(fixture.localCaseRoot, "case-missing-cross-device-summary");
+
+  await writeJson(path.join(crossDeviceCaseDir, "intermediate", "constraint-summary.json"), {
+    explicitConstraints: ["目标: 手机和平板一多适配"],
+    contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+    implicitConstraints: ["修改范围: 涉及页面布局"],
+    classificationHints: ["full_generation", "multi_device_adaptation"],
+    crossDeviceAdaptation: {
+      applicability: "involved",
+      confidence: "high",
+      reasons: ["需求明确要求手机和平板布局适配"],
+    },
+  });
+  await writeJson(path.join(crossDeviceCaseDir, "outputs", "result.json"), {
+    basic_info: {
+      case_name: "手机平板一多适配用例",
+      task_type: "full_generation",
+    },
+    overall_conclusion: {
+      total_score: 72,
+      hard_gate_triggered: false,
+      summary: "一多适配评分完成。",
+    },
+    risks: [
+      {
+        id: 31,
+        level: "high",
+        title: "布局风险",
+        description: "一多适配布局存在风险。",
+        evidence: "outputs/result.json",
+      },
+    ],
+    official_linter_summary: {
+      configuredRuleSets: ["plugin:@cross-device-app-dev/recommended"],
+      effectiveFindingCount: 2,
+      runStatus: "success",
+      durationMs: 12,
+    },
+    official_linter_results: [
+      {
+        rule_id: "@cross-device-app-dev/font-size",
+        rule_result_id: "OFFICIAL-LINTER:@cross-device-app-dev/font-size",
+        source_rule_set: "plugin:@cross-device-app-dev/recommended",
+        severity: "warn",
+        result: "不满足",
+        finding_count: 2,
+        findings: [],
+        conclusion: "字号未适配多设备。",
+        score_delta: -1.2,
+        affected_items: [],
+      },
+    ],
+    rule_audit_results: [
+      {
+        rule_id: "ARKTS-MUST-001",
+        rule_summary: "必须遵循 ArkTS 语言约束",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "存在 ArkTS 规则违背。",
+      },
+    ],
+  });
+
+  await writeJson(path.join(notInvolvedCaseDir, "intermediate", "constraint-summary.json"), {
+    explicitConstraints: ["目标: 普通业务修复"],
+    contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+    implicitConstraints: ["修改范围: 普通页面逻辑"],
+    classificationHints: ["bug_fix"],
+    crossDeviceAdaptation: {
+      applicability: "not_involved",
+      confidence: "high",
+      reasons: ["需求未出现多设备、多屏或设备形态适配要求"],
+    },
+  });
+  await writeJson(path.join(notInvolvedCaseDir, "outputs", "result.json"), {
+    basic_info: {
+      case_name: "普通业务修复用例",
+      task_type: "bug_fix",
+    },
+    overall_conclusion: {
+      total_score: 91,
+      hard_gate_triggered: false,
+    },
+    risks: [],
+    official_linter_results: [
+      {
+        rule_id: "@cross-device-app-dev/size-unit",
+        rule_result_id: "OFFICIAL-LINTER:@cross-device-app-dev/size-unit",
+        source_rule_set: "plugin:@cross-device-app-dev/recommended",
+        severity: "warn",
+        result: "不满足",
+        finding_count: 5,
+        findings: [],
+        conclusion: "非一多任务中的规则命中不应进入一多分析。",
+        score_delta: -1,
+        affected_items: [],
+      },
+    ],
+  });
+
+  await writeJson(path.join(missingSummaryCaseDir, "outputs", "result.json"), {
+    basic_info: {
+      case_name: "历史缺少一多摘要用例",
+      task_type: "full_generation",
+    },
+    overall_conclusion: {
+      total_score: 63,
+      hard_gate_triggered: false,
+    },
+    risks: [],
+    official_linter_summary: {
+      configuredRuleSets: ["plugin:@cross-device-app-dev/recommended"],
+      effectiveFindingCount: 1,
+      runStatus: "success",
+      durationMs: 8,
+    },
+  });
+
+  await fixture.registry.upsert({
+    taskId: 101,
+    status: "completed",
+    caseDir: crossDeviceCaseDir,
+    testCaseId: 201,
+    testCaseName: "远端一多名称",
+    testCaseType: "full_generation",
+  });
+  await fixture.registry.upsert({
+    taskId: 102,
+    status: "completed",
+    caseDir: notInvolvedCaseDir,
+    testCaseId: 202,
+    testCaseName: "远端普通名称",
+    testCaseType: "bug_fix",
+  });
+  await fixture.registry.upsert({
+    taskId: 103,
+    status: "completed",
+    caseDir: missingSummaryCaseDir,
+    testCaseId: 203,
+    testCaseName: "历史缺少摘要",
+    testCaseType: "full_generation",
+  });
+
+  await fs.appendFile(
+    path.join(fixture.evidenceRoot, "datasets", "risk_review_calibrations.jsonl"),
+    [
+      JSON.stringify({
+        type: "risk_review_calibration",
+        taskId: 101,
+        testCaseId: 201,
+        riskId: 31,
+        taskSummary: "remote-task-101 | full_generation",
+        resultRisk: {
+          level: "high",
+          title: "布局风险",
+          description: "一多适配布局存在风险。",
+          evidence: "outputs/result.json",
+        },
+        humanReview: {
+          agreeWithResultLevel: false,
+          correctedLevel: "medium",
+          reason: "风险应降级。",
+        },
+      }),
+      JSON.stringify({
+        type: "risk_review_calibration",
+        taskId: 102,
+        testCaseId: 202,
+        riskId: 32,
+        taskSummary: "remote-task-102 | bug_fix",
+        resultRisk: {
+          level: "high",
+          title: "非一多风险",
+          description: "非一多风险不应进入一多分析。",
+          evidence: "outputs/result.json",
+        },
+        humanReview: {
+          agreeWithResultLevel: true,
+          reason: "风险判断合理。",
+        },
+      }),
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+}
+
 function createDashboardTestApp(fixture: Awaited<ReturnType<typeof createFixture>>): Express {
   const app = express();
   app.use(
@@ -559,6 +749,73 @@ test("dashboard risk review calibrations support keyword and agreement filters",
   assert.match(invalid.body, /agreement must be one of agreed, disagreed/);
 });
 
+test("dashboard cross-device cases list only involved tasks and support keyword filters", async (t) => {
+  const fixture = await createFixture(t);
+  await addCrossDeviceFixture(fixture);
+  const app = createDashboardTestApp(fixture);
+
+  const response = await getJson(app, "/dashboard/cross-device/cases?keyword=%E4%B8%80%E5%A4%9A");
+  assert.equal(response.success, true);
+  assert.equal(response.total, 1);
+  const items = response.items as Array<Record<string, unknown>>;
+  assert.equal(items[0]?.name, "手机平板一多适配用例");
+  assert.equal(items[0]?.taskId, 101);
+  assert.equal(items[0]?.testCaseId, 201);
+  assert.equal(items[0]?.crossDeviceRuleSetApplied, true);
+  assert.equal(items[0]?.crossDeviceFindingCount, 2);
+  assert.deepEqual(items[0]?.reasons, ["需求明确要求手机和平板布局适配"]);
+});
+
+test("dashboard cross-device rule violations aggregate related official rules", async (t) => {
+  const fixture = await createFixture(t);
+  await addCrossDeviceFixture(fixture);
+  const app = createDashboardTestApp(fixture);
+
+  const response = await getJson(app, "/dashboard/cross-device/rule-violations");
+  assert.equal(response.success, true);
+  const items = response.items as Array<Record<string, unknown>>;
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.ruleId, "@cross-device-app-dev/font-size");
+  assert.equal(items[0]?.violationCount, 2);
+  assert.equal(items[0]?.affectedTaskCount, 1);
+
+  const withOtherRules = await getJson(
+    app,
+    "/dashboard/cross-device/rule-violations?includeOtherRules=true",
+  );
+  const allItems = withOtherRules.items as Array<Record<string, unknown>>;
+  assert.ok(allItems.some((item) => item.ruleId === "ARKTS-MUST-001"));
+  assert.equal(allItems.some((item) => item.ruleId === "@cross-device-app-dev/size-unit"), false);
+});
+
+test("dashboard cross-device risk reviews filter to involved tasks", async (t) => {
+  const fixture = await createFixture(t);
+  await addCrossDeviceFixture(fixture);
+  const app = createDashboardTestApp(fixture);
+
+  const response = await getJson(
+    app,
+    "/dashboard/cross-device/risk-review-calibrations?riskLevel=high",
+  );
+  assert.equal(response.success, true);
+  assert.equal(response.total, 1);
+  const items = response.items as Array<Record<string, unknown>>;
+  assert.equal(items[0]?.taskId, 101);
+  assert.equal(items[0]?.caseName, "手机平板一多适配用例");
+
+  const disagreed = await getJson(
+    app,
+    "/dashboard/cross-device/risk-review-calibrations?agreement=disagreed",
+  );
+  assert.equal(disagreed.total, 1);
+
+  const agreed = await getJson(
+    app,
+    "/dashboard/cross-device/risk-review-calibrations?agreement=agreed",
+  );
+  assert.equal(agreed.total, 0);
+});
+
 test("api paths expose dashboard endpoints", () => {
   assert.equal(API_PATHS.dashboardSummary, "/dashboard/summary");
   assert.equal(API_PATHS.dashboardTasks, "/dashboard/tasks");
@@ -566,5 +823,14 @@ test("api paths expose dashboard endpoints", () => {
   assert.equal(
     API_PATHS.dashboardAnalysisRiskReviewCalibrations,
     "/dashboard/analysis/risk-review-calibrations",
+  );
+  assert.equal(API_PATHS.dashboardCrossDeviceCases, "/dashboard/cross-device/cases");
+  assert.equal(
+    API_PATHS.dashboardCrossDeviceRuleViolations,
+    "/dashboard/cross-device/rule-violations",
+  );
+  assert.equal(
+    API_PATHS.dashboardCrossDeviceRiskReviewCalibrations,
+    "/dashboard/cross-device/risk-review-calibrations",
   );
 });

@@ -114,6 +114,63 @@ export type RiskReviewCalibration = {
   };
 };
 
+export type CrossDeviceCase = {
+  taskId: number;
+  testCaseId?: number;
+  name: string;
+  status: string;
+  statusCategory: keyof StatusCounts;
+  taskType: string;
+  score: number | null;
+  hardGateTriggered: boolean | null;
+  createdAt: string;
+  updatedAt: string;
+  resultAvailable: boolean;
+  reasons: string[];
+  officialLinterRunStatus?: string;
+  crossDeviceRuleSetApplied: boolean;
+  crossDeviceFindingCount: number;
+  riskCount: number;
+  topRuleViolations: Array<{
+    ruleId: string;
+    sourceRuleSet: string;
+    findingCount: number;
+  }>;
+  riskLevelCounts: Array<{ level: string; count: number }>;
+};
+
+export type CrossDeviceCaseListResponse = {
+  success: true;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: CrossDeviceCase[];
+};
+
+export type CrossDeviceRuleViolation = {
+  ruleId: string;
+  ruleSummary?: string;
+  sourceRuleSet?: string;
+  severity?: string;
+  violationCount: number;
+  affectedTaskCount: number;
+  affectedTaskIds: number[];
+  lastViolatedAt: string;
+};
+
+export type CrossDeviceRuleViolationsResponse = {
+  success: true;
+  page: number;
+  pageSize: number;
+  total: number;
+  summary: {
+    relatedCaseCount: number;
+    violatedRuleCount: number;
+    totalViolationEvents: number;
+  };
+  items: CrossDeviceRuleViolation[];
+};
+
 export type NegativeResults = {
   success: true;
   summary: {
@@ -202,4 +259,30 @@ export function fetchRiskReviewCalibrations(
 
 export function fetchNegativeResults(params?: Record<string, string | number | undefined>) {
   return getJson<NegativeResults>("/dashboard/analysis/negative-results", params);
+}
+
+export function fetchCrossDeviceCases(params?: Record<string, string | number | undefined>) {
+  return getJson<CrossDeviceCaseListResponse>("/dashboard/cross-device/cases", params);
+}
+
+export function fetchCrossDeviceRuleViolations(
+  params?: Record<string, string | number | undefined>,
+) {
+  return getJson<CrossDeviceRuleViolationsResponse>(
+    "/dashboard/cross-device/rule-violations",
+    params,
+  );
+}
+
+export function fetchCrossDeviceRiskReviewCalibrations(
+  params?: Record<string, string | number | undefined>,
+) {
+  return getJson<{
+    success: true;
+    page: number;
+    pageSize: number;
+    total: number;
+    skippedRows: number;
+    items: RiskReviewCalibration[];
+  }>("/dashboard/cross-device/risk-review-calibrations", params);
 }

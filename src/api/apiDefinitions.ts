@@ -66,6 +66,9 @@ export const API_PATHS = {
   dashboardAnalysisHumanRatingGaps: "/dashboard/analysis/human-rating-gaps",
   dashboardAnalysisRiskReviewCalibrations: "/dashboard/analysis/risk-review-calibrations",
   dashboardAnalysisNegativeResults: "/dashboard/analysis/negative-results",
+  dashboardCrossDeviceCases: "/dashboard/cross-device/cases",
+  dashboardCrossDeviceRuleViolations: "/dashboard/cross-device/rule-violations",
+  dashboardCrossDeviceRiskReviewCalibrations: "/dashboard/cross-device/risk-review-calibrations",
 } as const;
 
 const successField = {

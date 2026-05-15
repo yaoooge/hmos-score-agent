@@ -15,6 +15,10 @@
           <el-icon><DataAnalysis /></el-icon>
           <span>结果分析</span>
         </el-menu-item>
+        <el-menu-item index="/cross-device">
+          <el-icon><Connection /></el-icon>
+          <span>一多适配</span>
+        </el-menu-item>
       </el-menu>
     </aside>
     <main class="main-panel">
@@ -43,7 +47,7 @@
 <script setup lang="ts">
 import { computed, provide, shallowRef, type Ref } from "vue";
 import { useRoute } from "vue-router";
-import { DataAnalysis, List, Refresh, TrendCharts } from "@element-plus/icons-vue";
+import { Connection, DataAnalysis, List, Refresh, TrendCharts } from "@element-plus/icons-vue";
 
 type DashboardTitleControls = {
   dateRange?: {
@@ -70,6 +74,9 @@ const title = computed(() => {
   if (route.path.startsWith("/analysis")) {
     return "结果分析";
   }
+  if (route.path.startsWith("/cross-device")) {
+    return "一多适配";
+  }
   return "评测任务";
 });
 const subtitle = computed(() => {
@@ -78,6 +85,9 @@ const subtitle = computed(() => {
   }
   if (route.path.startsWith("/analysis")) {
     return "人工评分差异和负向结果归因";
+  }
+  if (route.path.startsWith("/cross-device")) {
+    return "用例结果、规则违背和风险项分析";
   }
   return "任务状态、类型概览和执行日志";
 });
