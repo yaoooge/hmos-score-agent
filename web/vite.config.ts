@@ -16,6 +16,7 @@ export default defineConfig({
       "/dashboard/tasks": dashboardApiProxy,
       "/dashboard/reports": dashboardApiProxy,
       "/dashboard/analysis": dashboardApiProxy,
+      "/dashboard/cross-device": dashboardApiProxy,
     },
   },
 });

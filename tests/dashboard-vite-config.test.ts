@@ -30,6 +30,7 @@ test("dashboard dev proxy still forwards dashboard API routes", () => {
     "/dashboard/tasks",
     "/dashboard/reports",
     "/dashboard/analysis",
+    "/dashboard/cross-device",
   ]) {
     assert.equal(
       Object.prototype.hasOwnProperty.call(proxy, apiPath),

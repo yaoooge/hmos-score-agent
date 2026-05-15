@@ -295,6 +295,13 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
         result: "不满足",
         conclusion: "存在 ArkTS 规则违背。",
       },
+      {
+        rule_id: "OFFICIAL-LINTER:@cross-device-app-dev/font-size",
+        rule_summary: "官方 Code Linter：@cross-device-app-dev/font-size",
+        rule_source: "should_rule",
+        result: "不满足",
+        conclusion: "官方 linter 镜像规则不应和 official_linter_results 重复展示。",
+      },
     ],
   });
 
@@ -339,6 +346,7 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
     basic_info: {
       case_name: "历史缺少一多摘要用例",
       task_type: "full_generation",
+      task_type_basis: "continuation; has_patch; multi_device_adaptation; responsive_layout",
     },
     overall_conclusion: {
       total_score: 63,
@@ -754,7 +762,10 @@ test("dashboard cross-device cases list only involved tasks and support keyword 
   await addCrossDeviceFixture(fixture);
   const app = createDashboardTestApp(fixture);
 
-  const response = await getJson(app, "/dashboard/cross-device/cases?keyword=%E4%B8%80%E5%A4%9A");
+  const response = await getJson(
+    app,
+    "/dashboard/cross-device/cases?keyword=%E6%89%8B%E6%9C%BA%E5%B9%B3%E6%9D%BF",
+  );
   assert.equal(response.success, true);
   assert.equal(response.total, 1);
   const items = response.items as Array<Record<string, unknown>>;
@@ -764,6 +775,22 @@ test("dashboard cross-device cases list only involved tasks and support keyword 
   assert.equal(items[0]?.crossDeviceRuleSetApplied, true);
   assert.equal(items[0]?.crossDeviceFindingCount, 2);
   assert.deepEqual(items[0]?.reasons, ["需求明确要求手机和平板布局适配"]);
+});
+
+test("dashboard cross-device cases include historical results with multi-device task basis", async (t) => {
+  const fixture = await createFixture(t);
+  await addCrossDeviceFixture(fixture);
+  const app = createDashboardTestApp(fixture);
+
+  const response = await getJson(app, "/dashboard/cross-device/cases?keyword=%E5%8E%86%E5%8F%B2");
+  assert.equal(response.success, true);
+  assert.equal(response.total, 1);
+  const items = response.items as Array<Record<string, unknown>>;
+  assert.equal(items[0]?.name, "历史缺少一多摘要用例");
+  assert.equal(items[0]?.taskId, 103);
+  assert.deepEqual(items[0]?.reasons, [
+    "评分结果标记 task_type_basis 包含 multi_device_adaptation/responsive_layout",
+  ]);
 });
 
 test("dashboard cross-device rule violations aggregate related official rules", async (t) => {
@@ -786,6 +813,10 @@ test("dashboard cross-device rule violations aggregate related official rules", 
   const allItems = withOtherRules.items as Array<Record<string, unknown>>;
   assert.ok(allItems.some((item) => item.ruleId === "ARKTS-MUST-001"));
   assert.equal(allItems.some((item) => item.ruleId === "@cross-device-app-dev/size-unit"), false);
+  assert.equal(
+    allItems.some((item) => item.ruleId === "OFFICIAL-LINTER:@cross-device-app-dev/font-size"),
+    false,
+  );
 });
 
 test("dashboard cross-device risk reviews filter to involved tasks", async (t) => {

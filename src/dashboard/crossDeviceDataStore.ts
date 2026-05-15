@@ -53,6 +53,11 @@ function readTaskType(resultJson: Record<string, unknown> | undefined): string |
   return readString(basicInfo, "task_type");
 }
 
+function readTaskTypeBasis(resultJson: Record<string, unknown> | undefined): string | undefined {
+  const basicInfo = asRecord(resultJson?.basic_info);
+  return readString(basicInfo, "task_type_basis");
+}
+
 function readCrossDeviceReasons(
   constraintSummary: Record<string, unknown> | undefined,
 ): string[] | undefined {
@@ -64,6 +69,21 @@ function readCrossDeviceReasons(
   return Array.isArray(reasons)
     ? reasons.filter((reason): reason is string => typeof reason === "string" && reason.length > 0)
     : [];
+}
+
+function readCrossDeviceFallbackReasons(
+  resultJson: Record<string, unknown> | undefined,
+): string[] | undefined {
+  const taskTypeBasis = readTaskTypeBasis(resultJson)?.toLowerCase();
+  if (!taskTypeBasis) {
+    return undefined;
+  }
+  const hasMultiDeviceBasis =
+    taskTypeBasis.includes("multi_device_adaptation") ||
+    taskTypeBasis.includes("responsive_layout");
+  return hasMultiDeviceBasis
+    ? ["评分结果标记 task_type_basis 包含 multi_device_adaptation/responsive_layout"]
+    : undefined;
 }
 
 function readRisks(resultJson: Record<string, unknown> | undefined) {
@@ -175,12 +195,12 @@ async function readCrossDeviceTask(record: RemoteTaskRecord): Promise<CrossDevic
   const constraintSummary = await readJsonFile(
     path.join(record.caseDir, "intermediate", "constraint-summary.json"),
   );
-  const reasons = readCrossDeviceReasons(constraintSummary);
+  const resultJson = await readJsonFile(path.join(record.caseDir, "outputs", "result.json"));
+  const reasons = readCrossDeviceReasons(constraintSummary) ?? readCrossDeviceFallbackReasons(resultJson);
   if (!reasons) {
     return undefined;
   }
 
-  const resultJson = await readJsonFile(path.join(record.caseDir, "outputs", "result.json"));
   const caseInfo = await readJsonFile(path.join(record.caseDir, "inputs", "case-info.json"));
   const name =
     readCaseName(resultJson) ??

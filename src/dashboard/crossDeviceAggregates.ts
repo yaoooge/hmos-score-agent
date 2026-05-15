@@ -80,6 +80,10 @@ function matchesRuleKeyword(rule: { ruleId: string; ruleSummary?: string }, keyw
   return [rule.ruleId, rule.ruleSummary ?? ""].join(" ").toLowerCase().includes(normalized);
 }
 
+function isOfficialLinterMirrorRule(ruleId: string): boolean {
+  return ruleId.startsWith("OFFICIAL-LINTER:");
+}
+
 export function buildCrossDeviceRuleViolationStats(
   tasks: CrossDeviceRelatedTask[],
   query: CrossDeviceRuleViolationQuery,
@@ -124,7 +128,7 @@ export function buildCrossDeviceRuleViolationStats(
       continue;
     }
     for (const rule of task.ruleAuditResults) {
-      if (rule.result !== "不满足") {
+      if (rule.result !== "不满足" || isOfficialLinterMirrorRule(rule.ruleId)) {
         continue;
       }
       const existing = stats.get(rule.ruleId) ?? {
