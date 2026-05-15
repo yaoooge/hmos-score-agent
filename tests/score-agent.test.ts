@@ -1159,6 +1159,7 @@ test("reportGenerationNode includes official_linter_results with findings and sc
           rule_source: "forbidden_pattern",
           result: "不满足",
           conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
+          official_linter_severity: "warn",
         },
       ],
       officialLinterSummary: {
@@ -1232,6 +1233,11 @@ test("reportGenerationNode includes official_linter_results with findings and sc
     { referenceRoot },
   );
 
+  assert.equal(
+    "official_linter_severity" in
+      ((reportResult.resultJson?.rule_audit_results as Array<Record<string, unknown>>)[0] ?? {}),
+    false,
+  );
   assert.deepEqual(reportResult.resultJson?.official_linter_results, [
     {
       rule_id: "@security/no-commented-code",

@@ -1,11 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { hwStylisticRuleIds, performanceRuleIds } from "../../scoring/officialLinterRuleProfiles.js";
 import { resolveOfficialCodeLinterRecommendedRuleSets } from "./recommendedRuleSets.js";
 
 export interface OfficialCodeLinterConfig {
   files: string[];
   ignore: string[];
   ruleSet: string[];
+  rules: Record<string, "suggestion" | "warn" | "error">;
+}
+
+const suggestionRuleIds = [...performanceRuleIds, ...hwStylisticRuleIds];
+
+function buildSuggestionRules(): OfficialCodeLinterConfig["rules"] {
+  return Object.fromEntries(suggestionRuleIds.map((ruleId) => [ruleId, "suggestion"]));
 }
 
 export function buildOfficialCodeLinterConfig(input?: { ruleSets?: string[] }): OfficialCodeLinterConfig {
@@ -23,6 +31,7 @@ export function buildOfficialCodeLinterConfig(input?: { ruleSets?: string[] }): 
       "BuildProfile.ets",
     ],
     ruleSet: input?.ruleSets ?? resolveOfficialCodeLinterRecommendedRuleSets({}),
+    rules: buildSuggestionRules(),
   };
 }
 

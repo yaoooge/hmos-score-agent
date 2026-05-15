@@ -1,5 +1,8 @@
 import type { LoadedRubric } from "./rubricLoader.js";
-import { findOfficialLinterRuleProfile } from "./officialLinterRuleProfiles.js";
+import {
+  findOfficialLinterRuleProfile,
+  officialLinterSeverityToImpactSeverity,
+} from "./officialLinterRuleProfiles.js";
 import type {
   AgentRunStatus,
   CaseRuleDefinition,
@@ -76,10 +79,13 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
     if (!officialProfile) {
       return [];
     }
+    const severity =
+      officialLinterSeverityToImpactSeverity(rule.official_linter_severity) ??
+      officialProfile.severity;
     return makePenaltyRule({
       metricNames: officialProfile.metricNames,
       ratio: officialProfile.ratio,
-      severity: officialProfile.severity,
+      severity,
     });
   }
 

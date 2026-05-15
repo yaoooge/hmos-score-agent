@@ -1,4 +1,4 @@
-import type { RuleImpactDetail } from "../types.js";
+import type { OfficialLinterFinding, RuleImpactDetail } from "../types.js";
 
 export type OfficialLinterRuleProfile = {
   ruleId: string;
@@ -33,11 +33,14 @@ const typeSafetyRuleIds = [
   "@typescript-eslint/prefer-literal-enum-member",
 ];
 
-const staticQualityRuleIds = [
+const typescriptStaticQualityRuleIds = [
   "@typescript-eslint/no-dynamic-delete",
   "@typescript-eslint/no-this-alias",
   "@typescript-eslint/no-unnecessary-type-constraint",
   "@security/no-commented-code",
+];
+
+export const hwStylisticRuleIds = [
   "@hw-stylistic/array-bracket-spacing",
   "@hw-stylistic/brace-style",
   "@hw-stylistic/comma-spacing",
@@ -57,6 +60,8 @@ const staticQualityRuleIds = [
   "@hw-stylistic/space-infix-ops",
 ];
 
+const staticQualityRuleIds = [...typescriptStaticQualityRuleIds, ...hwStylisticRuleIds];
+
 const securityRuleIds = [
   "@security/no-unsafe-3des",
   "@security/no-unsafe-aes",
@@ -72,7 +77,7 @@ const securityRuleIds = [
   "@security/no-unsafe-rsa-sign",
 ];
 
-const performanceRuleIds = [
+export const performanceRuleIds = [
   "@performance/avoid-overusing-custom-component-check",
   "@performance/bad-deep-clone-check",
   "@performance/crypto-replacement-check",
@@ -163,4 +168,19 @@ const profilesByOfficialRuleId = new Map(
 
 export function findOfficialLinterRuleProfile(ruleId: string): OfficialLinterRuleProfile | undefined {
   return profilesByOfficialRuleId.get(ruleId);
+}
+
+export function officialLinterSeverityToImpactSeverity(
+  severity: OfficialLinterFinding["severity"] | undefined,
+): RuleImpactDetail["severity"] | undefined {
+  if (severity === "suggestion") {
+    return "light";
+  }
+  if (severity === "warn") {
+    return "medium";
+  }
+  if (severity === "error") {
+    return "heavy";
+  }
+  return undefined;
 }

@@ -47,37 +47,76 @@
       </el-tab-pane>
       <el-tab-pane label="负向结果分析" name="negative">
         <div class="page-stack" v-loading="negativeLoading">
-          <div class="metrics-grid">
-            <MetricCard label="失败任务" :value="negative?.summary.failedTaskCount ?? 0" />
-            <MetricCard label="低分任务" :value="negative?.summary.lowScoreTaskCount ?? 0" />
-            <MetricCard label="硬门槛" :value="negative?.summary.hardGateTaskCount ?? 0" />
-            <MetricCard label="高风险" :value="negative?.summary.highRiskTaskCount ?? 0" />
-            <MetricCard label="规则违反" :value="negative?.summary.violatedRuleCount ?? 0" />
+          <div class="negative-overview">
+            <div class="negative-task-selector">
+              <div class="section-title">任务列表</div>
+              <div class="negative-task-card-grid">
+                <MetricCard
+                  label="失败任务"
+                  :value="negative?.summary.failedTaskCount ?? 0"
+                  clickable
+                  :active="selectedNegativeTaskList === 'failed'"
+                  @select="selectedNegativeTaskList = 'failed'"
+                />
+                <MetricCard
+                  label="低分任务"
+                  :value="negative?.summary.lowScoreTaskCount ?? 0"
+                  clickable
+                  :active="selectedNegativeTaskList === 'lowScore'"
+                  @select="selectedNegativeTaskList = 'lowScore'"
+                />
+              </div>
+            </div>
+            <div class="negative-summary-panel">
+              <div class="section-title">其他负向指标</div>
+              <div class="negative-summary-list">
+                <div class="negative-summary-item">
+                  <span>硬门槛</span>
+                  <strong>{{ negative?.summary.hardGateTaskCount ?? 0 }}</strong>
+                </div>
+                <div class="negative-summary-item">
+                  <span>高风险</span>
+                  <strong>{{ negative?.summary.highRiskTaskCount ?? 0 }}</strong>
+                </div>
+                <div class="negative-summary-item">
+                  <span>规则违反</span>
+                  <strong>{{ negative?.summary.violatedRuleCount ?? 0 }}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="table-card">
+            <div class="section-title">{{ selectedNegativeTaskListView.title }}</div>
+            <el-table
+              :data="selectedNegativeTaskListView.rows"
+              :empty-text="selectedNegativeTaskListView.emptyText"
+              stripe
+              height="300"
+            >
+              <el-table-column prop="taskId" label="taskId" width="100" />
+              <el-table-column prop="name" label="名称" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="taskType" label="类型" width="140" />
+              <el-table-column prop="status" label="状态" width="120" />
+              <el-table-column
+                v-if="selectedNegativeTaskList === 'lowScore'"
+                prop="score"
+                label="分数"
+                width="90"
+              />
+              <el-table-column
+                v-if="selectedNegativeTaskList === 'failed'"
+                prop="error"
+                label="错误"
+                min-width="260"
+                show-overflow-tooltip
+              />
+            </el-table>
           </div>
           <div class="table-card">
             <el-table :data="negative?.topRuleViolations ?? []" stripe>
               <el-table-column prop="rule_id" label="规则" width="180" />
               <el-table-column prop="rule_summary" label="摘要" />
               <el-table-column prop="violationCount" label="次数" width="100" />
-            </el-table>
-          </div>
-          <div class="table-card">
-            <div class="section-title">失败任务</div>
-            <el-table :data="negative?.failedTasks ?? []" stripe height="260">
-              <el-table-column prop="taskId" label="taskId" width="100" />
-              <el-table-column prop="name" label="名称" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="taskType" label="类型" width="140" />
-              <el-table-column prop="error" label="错误" min-width="260" show-overflow-tooltip />
-            </el-table>
-          </div>
-          <div class="table-card">
-            <div class="section-title">低分 / hard gate 任务</div>
-            <el-table :data="negativeFocusTasks" stripe height="300">
-              <el-table-column prop="taskId" label="taskId" width="100" />
-              <el-table-column prop="name" label="名称" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="taskType" label="类型" width="140" />
-              <el-table-column prop="score" label="分数" width="90" />
-              <el-table-column prop="reason" label="原因" width="130" />
             </el-table>
           </div>
         </div>
@@ -157,6 +196,10 @@ import {
   type HumanRatingGap,
   type RiskReviewCalibration,
 } from "../api/dashboard";
+import {
+  selectNegativeTaskList,
+  type NegativeTaskSelectionKey,
+} from "./resultAnalysisNegativeTaskSelection";
 
 const tab = ref("gap");
 const gapLoading = ref(false);
@@ -171,6 +214,7 @@ const gapTotal = ref(0);
 const riskPage = ref(1);
 const riskPageSize = ref(20);
 const riskTotal = ref(0);
+const selectedNegativeTaskList = ref<NegativeTaskSelectionKey>("failed");
 
 const gapFilters = reactive({
   keyword: "",
@@ -189,15 +233,9 @@ const baseGapConclusionOptions = [
   "insufficient_evidence",
 ];
 
-const negativeFocusTasks = computed(() => {
-  const lowScoreTasks =
-    negative.value?.lowScoreTasks.map((task) => ({ ...task, reason: "低分" })) ?? [];
-  const hardGateTasks =
-    negative.value?.hardGateTasks.map((task) => ({ ...task, reason: "hard gate" })) ?? [];
-  return [...lowScoreTasks, ...hardGateTasks].sort(
-    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
-  );
-});
+const selectedNegativeTaskListView = computed(() =>
+  selectNegativeTaskList(negative.value, selectedNegativeTaskList.value),
+);
 
 const gapConclusionOptions = computed(() => {
   const conclusions = new Set([
@@ -310,5 +348,59 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.negative-overview {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.3fr) minmax(260px, 0.7fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.negative-task-selector,
+.negative-summary-panel {
+  padding: 14px;
+  border: 1px solid #e5e9ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.negative-task-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.negative-summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.negative-summary-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #edf0f4;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.negative-summary-item span {
+  color: #667085;
+  font-size: 13px;
+}
+
+.negative-summary-item strong {
+  color: #1f2937;
+  font-size: 18px;
+}
+
+@media (max-width: 900px) {
+  .negative-overview,
+  .negative-task-card-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -79,6 +79,19 @@ function dedupeFindings(findings: OfficialLinterFinding[]): OfficialLinterFindin
   return results;
 }
 
+function highestSeverity(findings: OfficialLinterFinding[]): OfficialLinterFinding["severity"] {
+  const rank: Record<OfficialLinterFinding["severity"], number> = {
+    unknown: 0,
+    suggestion: 1,
+    warn: 2,
+    error: 3,
+  };
+  return findings.reduce<OfficialLinterFinding["severity"]>(
+    (highest, finding) => (rank[finding.severity] > rank[highest] ? finding.severity : highest),
+    "unknown",
+  );
+}
+
 function normalizeChangedLineNumbersByFile(
   input: Record<string, number[]> | undefined,
   workspaceDir: string,
@@ -129,6 +142,7 @@ function aggregateRuleResults(findings: OfficialLinterFinding[]): RuleAuditResul
       rule_source: ruleSourceFrom(ruleId),
       result: "不满足",
       conclusion,
+      official_linter_severity: highestSeverity(group),
     };
   });
 }

@@ -61,19 +61,26 @@ test("ensureOpencodeCliAvailable fails when opencode cannot be resolved", async 
   );
 });
 
-test("serve manager reuses an already healthy server", async () => {
+test("serve manager replaces an already healthy server to apply the configured runtime", async () => {
   let spawnCount = 0;
+  let terminateCount = 0;
+  const healthResults = [true, false, true];
   const manager = createOpencodeServeManager(runtimeConfig(), {
-    checkHealth: async () => true,
+    checkHealth: async () => healthResults.shift() ?? true,
+    terminateExistingServer: async () => {
+      terminateCount += 1;
+    },
     spawnProcess: () => {
       spawnCount += 1;
       return createFakeChild();
     },
+    sleep: async () => undefined,
   });
 
   await manager.start();
 
-  assert.equal(spawnCount, 0);
+  assert.equal(terminateCount, 1);
+  assert.equal(spawnCount, 1);
   assert.equal(manager.serverUrl(), "http://127.0.0.1:4096");
 });
 
@@ -195,21 +202,6 @@ test("serve manager stop kills only the child process it started", async () => {
 
   assert.equal(child.killedWith, "SIGTERM");
   assert.equal(terminateCount, 1);
-});
-
-test("serve manager stop leaves a reused healthy server running", async () => {
-  let terminateCount = 0;
-  const manager = createOpencodeServeManager(runtimeConfig(), {
-    checkHealth: async () => true,
-    terminateExistingServer: async () => {
-      terminateCount += 1;
-    },
-  });
-
-  await manager.start();
-  await manager.stop();
-
-  assert.equal(terminateCount, 0);
 });
 
 test("serve manager escalates the owned child when stop cannot release the port", async () => {

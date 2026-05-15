@@ -14,6 +14,10 @@ import {
   TaskType,
 } from "../types.js";
 import { LoadedRubric } from "./rubricLoader.js";
+import {
+  findOfficialLinterRuleProfile,
+  officialLinterSeverityToImpactSeverity,
+} from "./officialLinterRuleProfiles.js";
 
 type ComputeScoreInput = {
   taskType: TaskType;
@@ -101,6 +105,25 @@ function makePenaltyRule(input: {
 }
 
 function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
+  if (rule.rule_id.startsWith("OFFICIAL-LINTER:")) {
+    const officialProfile = findOfficialLinterRuleProfile(rule.rule_id);
+    if (!officialProfile) {
+      return [];
+    }
+    const severity =
+      officialLinterSeverityToImpactSeverity(rule.official_linter_severity) ??
+      officialProfile.severity;
+    return [
+      {
+        metricNames: officialProfile.metricNames,
+        ratio: officialProfile.ratio,
+        confidence: severity === "heavy" ? "low" : "medium",
+        reviewRequired: severity !== "light",
+        severity,
+      },
+    ];
+  }
+
   const typeRuleIds = new Set([
     "ARKTS-FORBID-001",
     "ARKTS-FORBID-002",

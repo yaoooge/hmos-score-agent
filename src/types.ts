@@ -129,6 +129,7 @@ export interface RuleAuditResult {
   rule_source: "must_rule" | "should_rule" | "forbidden_pattern";
   result: "满足" | "不满足" | "不涉及" | "待人工复核";
   conclusion: string;
+  official_linter_severity?: OfficialLinterFinding["severity"];
 }
 
 export type OfficialLinterRunStatus =

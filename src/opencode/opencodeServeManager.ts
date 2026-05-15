@@ -252,7 +252,7 @@ export function createOpencodeServeManager(
 
   return {
     async start(): Promise<void> {
-      if (await health()) {
+      if (child && (await health())) {
         return;
       }
 

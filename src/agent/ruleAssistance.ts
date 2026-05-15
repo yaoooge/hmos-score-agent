@@ -300,7 +300,7 @@ function mapAgentDecisionToRuleResult(
 }
 
 const IRRELEVANT_AGENT_CONCLUSION =
-  "Agent 输出结论与规则描述不相关，已阻断自动合并。建议重新执行本用例以获得可信规则判定";
+  "Agent 输出结论与规则描述不相关，已阻断自动合并。建议人工复核或重新执行本用例以获得可信规则判定";
 
 const CODE_ANCHOR_STOP_WORDS = new Set([
   "target",

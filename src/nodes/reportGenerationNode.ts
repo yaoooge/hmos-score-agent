@@ -197,8 +197,11 @@ function enrichRuleAuditResultsWithSummary(
   );
 
   return ruleAuditResults.map((rule) => ({
-    ...rule,
+    rule_id: rule.rule_id,
     rule_summary: rule.rule_summary ?? ruleSummaryById.get(rule.rule_id) ?? "",
+    rule_source: rule.rule_source,
+    result: rule.result,
+    conclusion: rule.conclusion,
   }));
 }
 

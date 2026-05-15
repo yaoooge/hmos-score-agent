@@ -64,6 +64,11 @@ test("official Code Linter appends cross-device rule set only when involved", ()
 test("generated code-linter config explicitly includes the four v1 recommended rule sets", () => {
   const config = buildOfficialCodeLinterConfig();
   assert.deepEqual(config.ruleSet, officialCodeLinterBaseRecommendedRuleSets);
+  assert.equal(config.rules["@performance/foreach-args-check"], "suggestion");
+  assert.equal(config.rules["@performance/web-on-active-check"], "suggestion");
+  assert.equal(config.rules["@hw-stylistic/max-len"], "suggestion");
+  assert.equal(config.rules["@hw-stylistic/space-infix-ops"], "suggestion");
+  assert.equal(Object.hasOwn(config.rules, "@security/no-unsafe-aes"), false);
   assert.ok(config.files.includes("**/*.ets"));
   assert.ok(config.files.includes("**/*.json5"));
   assert.ok(config.ignore.includes("node_modules/**/*"));
@@ -74,6 +79,8 @@ test("generated code-linter config explicitly includes the four v1 recommended r
   assert.match(text, /plugin:@security\/recommended/);
   assert.match(text, /plugin:@performance\/recommended/);
   assert.match(text, /plugin:@hw-stylistic\/recommended/);
+  assert.match(text, /"@performance\/foreach-args-check": "suggestion"/);
+  assert.match(text, /"@hw-stylistic\/max-len": "suggestion"/);
 });
 
 test("generated code-linter config can use resolved cross-device rule sets", () => {

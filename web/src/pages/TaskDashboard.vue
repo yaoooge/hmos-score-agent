@@ -65,7 +65,11 @@
         <el-table-column prop="taskType" label="类型" width="140" />
         <el-table-column prop="score" label="分数" width="90" />
         <el-table-column prop="testCaseId" label="testCaseId" width="120" />
-        <el-table-column prop="updatedAt" label="更新时间" min-width="180" />
+        <el-table-column label="更新时间" min-width="180">
+          <template #default="{ row }">
+            {{ formatDashboardDateTime(row.updatedAt) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openLog(row)">查看日志</el-button>
@@ -110,6 +114,7 @@ import {
   type DashboardTask,
   type DashboardSummary,
 } from "../api/dashboard";
+import { formatDashboardDateTime } from "../dateTime";
 import {
   buildTaskTypeOptions,
   normalizeDashboardTask,

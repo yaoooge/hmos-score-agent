@@ -116,6 +116,36 @@ test("multiple findings for the same rule aggregate to one rule result", () => {
   assert.match(mapped.ruleResults[0]?.conclusion ?? "", /命中 2 处/);
 });
 
+test("aggregated official rule results preserve the highest linter severity", () => {
+  const mapped = mapOfficialCodeLinterFindings({
+    findings: [
+      {
+        rule_id: "@performance/foreach-args-check",
+        message: "suggestion issue",
+        severity: "suggestion",
+        file: "/tmp/workspace/entry/src/main/ets/pages/Changed.ets",
+        line: 2,
+        column: 1,
+        source_rule_set: "plugin:@performance/recommended",
+      },
+      {
+        rule_id: "@performance/foreach-args-check",
+        message: "warn issue",
+        severity: "warn",
+        file: "/tmp/workspace/entry/src/main/ets/pages/Changed.ets",
+        line: 4,
+        column: 1,
+        source_rule_set: "plugin:@performance/recommended",
+      },
+    ],
+    workspaceDir: "/tmp/workspace",
+    hasPatch: false,
+    changedFiles: [],
+  });
+
+  assert.equal(mapped.ruleResults[0]?.official_linter_severity, "warn");
+});
+
 test("sanitized diagnostics do not include finding detail lines or filtered counts", () => {
   const sanitized = sanitizeOfficialCodeLinterOutput({
     text:

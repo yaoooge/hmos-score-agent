@@ -336,6 +336,50 @@ test("fuseRubricScoreWithRules maps official performance linter rules to perform
   );
 });
 
+test("fuseRubricScoreWithRules maps official linter severity to emitted risk levels", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const cases = [
+    { severity: "suggestion" as const, expectedLevel: "low" },
+    { severity: "warn" as const, expectedLevel: "medium" },
+    { severity: "error" as const, expectedLevel: "high" },
+  ];
+
+  for (const item of cases) {
+    const result = fuseRubricScoreWithRules({
+      taskType: "full_generation",
+      rubric,
+      rubricSnapshot: snapshot,
+      rubricScoringResult: undefined,
+      rubricAgentRunStatus: "invalid_output",
+      ruleAuditResults: [
+        {
+          rule_id: "OFFICIAL-LINTER:@performance/foreach-args-check",
+          rule_source: "should_rule",
+          result: "不满足",
+          conclusion: `${item.severity} official linter finding`,
+          official_linter_severity: item.severity,
+        },
+      ],
+      ruleViolations: [],
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 1,
+        changedFileCount: 1,
+        changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+        hasPatch: true,
+      },
+    });
+
+    assert.equal(
+      result.risks.find(
+        (risk) => risk.title === "规则违规：OFFICIAL-LINTER:@performance/foreach-args-check",
+      )?.level,
+      item.expectedLevel,
+    );
+  }
+});
+
 test("fuseRubricScoreWithRules maps official max-len linter rule to one static quality penalty", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
