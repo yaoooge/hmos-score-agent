@@ -322,6 +322,39 @@ test("runOpencodePrompt reports event diagnostics when final text is missing", a
   );
 });
 
+test("runOpencodePrompt falls back to the output file when assistant text is missing", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-fallback-output-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-fallback-output-"));
+  const child = createFakeChild();
+  const outputPath = path.join(sandboxRoot, "metadata", "agent-output", "rule-assessment.json");
+
+  const result = await runOpencodePrompt({
+    runtime: runtimeConfig(runtimeDir),
+    request: {
+      prompt: "x",
+      sandboxRoot,
+      requestTag: "fallback-output",
+      agent: "hmos-rule-assessment",
+      outputFile: "metadata/agent-output/rule-assessment.json",
+    },
+    deps: {
+      spawnProcess: () => {
+        queueMicrotask(async () => {
+          await fs.mkdir(path.dirname(outputPath), { recursive: true });
+          await fs.writeFile(outputPath, '{"ok":true}\n', "utf-8");
+          child.stdout.emit("data", Buffer.from('{"type":"step_finish","part":{"type":"step-finish"}}\n'));
+          child.emit("exit", 0);
+        });
+        return child;
+      },
+    },
+  });
+
+  assert.equal(result.rawText, '{"ok":true}\n');
+  assert.equal(result.outputFileText, '{"ok":true}\n');
+  assert.equal(result.assistantText, undefined);
+});
+
 test("runOpencodePrompt kills the child when output exceeds the configured limit", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-output-"));
   const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-output-"));

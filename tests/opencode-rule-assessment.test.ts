@@ -161,6 +161,8 @@ test("runOpencodeRuleAssessment prompts opencode to inspect sandbox and returns 
   assert.doesNotMatch(prompt, /initial_target_files/);
   assert.match(prompt, /output_file: metadata\/agent-output\/rule-assessment\.json/);
   assert.match(prompt, /严格遵守 system prompt 中的正确输出格式/);
+  assert.match(prompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.match(prompt, /先改写为不含双引号的中文转述/);
   assert.doesNotMatch(prompt, /正确输出格式:/);
   assert.doesNotMatch(prompt, /"rule_assessments"\s*:/);
   assert.equal(requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a");

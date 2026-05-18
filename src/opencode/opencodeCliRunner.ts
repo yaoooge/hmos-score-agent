@@ -243,8 +243,20 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
         }
 
         const rawEvents = Buffer.concat(stdout).toString("utf-8");
-        const assistantText = extractAssistantText(rawEvents);
-        let rawText = assistantText;
+        let assistantText: string | undefined;
+        let assistantTextError: OpencodeRunError | undefined;
+        try {
+          assistantText = extractAssistantText(rawEvents);
+        } catch (error) {
+          assistantTextError =
+            error instanceof OpencodeRunError
+              ? error
+              : new OpencodeRunError(
+                  `opencode 输出中缺少 assistant 最终文本 stdoutBytes=${Buffer.byteLength(rawEvents, "utf-8")} eventTypes=${summarizeEventTypes(rawEvents)} stdoutTail=${stdoutTail(rawEvents)}`,
+                  { cause: error },
+                );
+        }
+        let rawText = assistantText ?? "";
         let outputFileText: string | undefined;
         if (input.request.outputFile && outputPath) {
           try {
@@ -256,6 +268,8 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
               { cause: error },
             );
           }
+        } else if (assistantTextError) {
+          throw assistantTextError;
         }
         succeed({
           requestTag: input.request.requestTag,

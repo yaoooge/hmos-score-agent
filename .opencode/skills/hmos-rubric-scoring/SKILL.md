@@ -41,6 +41,7 @@ description: Score HarmonyOS generated code against rubric items and return only
 - `risks` 必须是 array；其中每一项只能包含 `level`、`title`、`description`、`evidence` 四个 string 字段；如果没有风险，输出 `[]`。
 - 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
 - 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
+- JSON 字符串中的英文双引号必须转义；如果必须引用原文，先改写为不含双引号的中文转述再写入字段。
 
 正确输出格式:
 
@@ -111,5 +112,6 @@ description: Score HarmonyOS generated code against rubric items and return only
 - `rationale`、`overall_assessment`、`main_issues` 不是只描述孤立片段，而是给出基于完整功能链路的评分依据。
 - `risks` 是数组且字段名正确。
 - 文案类字符串均为中文；英文枚举值、文件路径、代码标识符和原始专有名词除外。
+- JSON 字符串中的英文双引号均已转义，或已改写为不含双引号的中文转述。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
 - JSON 语法完整，所有 `{}`、`[]`、字符串和逗号都正确闭合。

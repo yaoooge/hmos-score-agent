@@ -52,6 +52,7 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - `evidence_used` 必须是字符串数组；没有证据时输出 `[]`。
 - 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
 - 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
+- JSON 字符串中的英文双引号必须转义；如果必须引用原文，先改写为不含双引号的中文转述再写入字段。
 
 正确输出格式:
 
@@ -97,5 +98,6 @@ description: Assess assisted rule candidates in a read-only sandbox and return o
 - `evidence_used` 是字符串数组。
 - `evidence_used` 只有文件路径、没有行号；带行号的证据使用 `generated/` 工程文件真实行号，没有使用 patch hunk 行号。
 - 文案类字符串均为中文；英文枚举值、文件路径、代码标识符和原始专有名词除外。
+- JSON 字符串中的英文双引号均已转义，或已改写为不含双引号的中文转述。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。
 - JSON 语法完整，所有 `{}`、`[]`、字符串和逗号都正确闭合。

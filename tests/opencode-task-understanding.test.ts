@@ -90,6 +90,8 @@ test("runOpencodeTaskUnderstanding returns ConstraintSummary from opencode outpu
   assert.match(prompt, /不要读取 original\//);
   assert.match(prompt, /不要读取 patch\//);
   assert.match(prompt, /不要读取 references\//);
+  assert.match(prompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.match(prompt, /先改写为不含双引号的中文转述/);
   assert.doesNotMatch(prompt, /representativeFiles/);
   assert.doesNotMatch(prompt, /代表文件/);
   assert.match(prompt, /output_file: metadata\/agent-output\/task-understanding\.json/);

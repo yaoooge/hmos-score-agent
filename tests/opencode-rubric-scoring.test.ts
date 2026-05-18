@@ -144,6 +144,8 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   assert.match(prompt, /不要输出分析过程/);
   assert.match(prompt, /不要输出自然语言前后缀/);
   assert.match(prompt, /严格遵守 system prompt 中的正确输出格式/);
+  assert.match(prompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.match(prompt, /先改写为不含双引号的中文转述/);
   assert.doesNotMatch(prompt, /正确输出格式:/);
   assert.match(prompt, /输出前必须自检 JSON 语法/);
   assert.match(prompt, /item_scores 是数组/);

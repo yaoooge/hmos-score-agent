@@ -221,18 +221,27 @@ test("project opencode agent system prompts require matching skills", async () =
   const rubricPrompt = await readProjectFile(".opencode/prompts/hmos-rubric-scoring-system.md");
   const rulePrompt = await readProjectFile(".opencode/prompts/hmos-rule-assessment-system.md");
   const humanRatingPrompt = await readProjectFile(".opencode/prompts/hmos-human-rating-gap-analysis-system.md");
+  const taskSkill = await readProjectFile(".opencode/skills/hmos-understanding/SKILL.md");
+  const rubricSkill = await readProjectFile(".opencode/skills/hmos-rubric-scoring/SKILL.md");
+  const ruleSkill = await readProjectFile(".opencode/skills/hmos-rule-assessment/SKILL.md");
 
   assert.match(taskPrompt, /你是评分工作流中的任务理解 agent/);
   assert.match(taskPrompt, /必须使用 hmos-understanding skill/);
   assert.match(taskPrompt, /职责边界、JSON 输出契约和写入 output_file 协议/);
+  assert.match(taskPrompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.match(taskSkill, /JSON 字符串中的英文双引号必须转义/);
 
   assert.match(rubricPrompt, /你是评分流程中的 rubric 评分 agent/);
   assert.match(rubricPrompt, /必须使用 hmos-rubric-scoring skill/);
   assert.match(rubricPrompt, /职责边界、证据边界、JSON 输出契约和写入 output_file 协议/);
+  assert.match(rubricPrompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.match(rubricSkill, /JSON 字符串中的英文双引号必须转义/);
 
   assert.match(rulePrompt, /你是评分流程中的规则判定 agent/);
   assert.match(rulePrompt, /必须使用 hmos-rule-assessment skill/);
   assert.match(rulePrompt, /职责边界、证据边界、JSON 输出契约和写入 output_file 协议/);
+  assert.match(rulePrompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.match(ruleSkill, /JSON 字符串中的英文双引号必须转义/);
 
   assert.match(humanRatingPrompt, /你是评分流程中的人工评级差异分析 agent/);
   assert.match(humanRatingPrompt, /必须使用 hmos-human-rating-gap-analysis skill/);
