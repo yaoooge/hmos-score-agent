@@ -138,6 +138,34 @@ export type CrossDeviceCase = {
   crossDeviceRuleSetApplied: boolean;
   crossDeviceFindingCount: number;
   riskCount: number;
+  boundRulePacks: Array<{
+    packId: string;
+    displayName: string;
+  }>;
+  crossDeviceRuleAuditCounts: {
+    violated: number;
+    review: number;
+    satisfied: number;
+    notInvolved: number;
+    total: number;
+  };
+  crossDeviceRuleAuditResults: Array<{
+    packId?: string;
+    packDisplayName?: string;
+    ruleId: string;
+    ruleSummary?: string;
+    ruleSource?: string;
+    result?: string;
+    conclusion?: string;
+  }>;
+  crossDeviceOfficialLinterResults: Array<{
+    ruleId: string;
+    ruleResultId?: string;
+    sourceRuleSet?: string;
+    severity?: string;
+    findingCount: number;
+    conclusion?: string;
+  }>;
   topRuleViolations: Array<{
     ruleId: string;
     sourceRuleSet: string;

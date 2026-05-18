@@ -248,6 +248,20 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
       reasons: ["需求明确要求手机和平板布局适配"],
     },
   });
+  await writeJson(path.join(crossDeviceCaseDir, "opencode-sandbox", "metadata", "metadata.json"), {
+    case_id: "remote-task-101",
+    constraint_summary: {
+      explicitConstraints: ["目标: 手机和平板一多适配"],
+      contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+      implicitConstraints: ["修改范围: 涉及页面布局"],
+      classificationHints: ["full_generation", "multi_device_adaptation"],
+      crossDeviceAdaptation: {
+        applicability: "involved",
+        confidence: "high",
+        reasons: ["metadata 判定当前任务涉及手机和平板布局适配"],
+      },
+    },
+  });
   await writeJson(path.join(crossDeviceCaseDir, "outputs", "result.json"), {
     basic_info: {
       case_name: "手机平板一多适配用例",
@@ -265,6 +279,16 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
         title: "布局风险",
         description: "一多适配布局存在风险。",
         evidence: "outputs/result.json",
+      },
+    ],
+    bound_rule_packs: [
+      {
+        pack_id: "arkts-language",
+        display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+      },
+      {
+        pack_id: "cross-device-adaptation",
+        display_name: "HarmonyOS 一多适配通用规则",
       },
     ],
     official_linter_summary: {
@@ -288,6 +312,13 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
       },
     ],
     rule_audit_results: [
+      {
+        rule_id: "RSP-MUST-01",
+        rule_summary: "横向断点划分范围必须符合系统推荐值",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "一多适配断点定义不符合系统推荐值。",
+      },
       {
         rule_id: "ARKTS-MUST-001",
         rule_summary: "必须遵循 ArkTS 语言约束",
@@ -314,6 +345,20 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
       applicability: "not_involved",
       confidence: "high",
       reasons: ["需求未出现多设备、多屏或设备形态适配要求"],
+    },
+  });
+  await writeJson(path.join(notInvolvedCaseDir, "opencode-sandbox", "metadata", "metadata.json"), {
+    case_id: "remote-task-102",
+    constraint_summary: {
+      explicitConstraints: ["目标: 普通业务修复"],
+      contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+      implicitConstraints: ["修改范围: 普通页面逻辑"],
+      classificationHints: ["bug_fix"],
+      crossDeviceAdaptation: {
+        applicability: "not_involved",
+        confidence: "high",
+        reasons: ["metadata 判定未涉及一多适配"],
+      },
     },
   });
   await writeJson(path.join(notInvolvedCaseDir, "outputs", "result.json"), {
@@ -353,12 +398,27 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
       hard_gate_triggered: false,
     },
     risks: [],
+    bound_rule_packs: [
+      {
+        pack_id: "cross-device-adaptation",
+        display_name: "HarmonyOS 一多适配通用规则",
+      },
+    ],
     official_linter_summary: {
       configuredRuleSets: ["plugin:@cross-device-app-dev/recommended"],
       effectiveFindingCount: 1,
       runStatus: "success",
       durationMs: 8,
     },
+    rule_audit_results: [
+      {
+        rule_id: "RSP-MUST-01",
+        rule_summary: "横向断点划分范围必须符合系统推荐值",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "历史结果已有一多内置规则违背，但不能作为菜单入口。",
+      },
+    ],
   });
 
   await fixture.registry.upsert({
@@ -774,23 +834,60 @@ test("dashboard cross-device cases list only involved tasks and support keyword 
   assert.equal(items[0]?.testCaseId, 201);
   assert.equal(items[0]?.crossDeviceRuleSetApplied, true);
   assert.equal(items[0]?.crossDeviceFindingCount, 2);
-  assert.deepEqual(items[0]?.reasons, ["需求明确要求手机和平板布局适配"]);
+  assert.deepEqual(items[0]?.reasons, ["metadata 判定当前任务涉及手机和平板布局适配"]);
+  assert.deepEqual(items[0]?.boundRulePacks, [
+    {
+      packId: "arkts-language",
+      displayName: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+    },
+    {
+      packId: "cross-device-adaptation",
+      displayName: "HarmonyOS 一多适配通用规则",
+    },
+  ]);
+  assert.deepEqual(items[0]?.crossDeviceRuleAuditCounts, {
+    violated: 1,
+    review: 0,
+    satisfied: 0,
+    notInvolved: 0,
+    total: 1,
+  });
+  assert.deepEqual(items[0]?.crossDeviceRuleAuditResults, [
+    {
+      packId: "cross-device-adaptation",
+      packDisplayName: "HarmonyOS 一多适配通用规则",
+      ruleId: "RSP-MUST-01",
+      ruleSummary: "横向断点划分范围必须符合系统推荐值",
+      ruleSource: "must_rule",
+      result: "不满足",
+      conclusion: "一多适配断点定义不符合系统推荐值。",
+    },
+  ]);
+  assert.deepEqual(items[0]?.crossDeviceOfficialLinterResults, [
+    {
+      ruleId: "@cross-device-app-dev/font-size",
+      ruleResultId: "OFFICIAL-LINTER:@cross-device-app-dev/font-size",
+      sourceRuleSet: "plugin:@cross-device-app-dev/recommended",
+      severity: "warn",
+      findingCount: 2,
+      conclusion: "字号未适配多设备。",
+    },
+  ]);
 });
 
-test("dashboard cross-device cases include historical results with multi-device task basis", async (t) => {
+test("dashboard cross-device cases require involved constraint summary without fallback", async (t) => {
   const fixture = await createFixture(t);
   await addCrossDeviceFixture(fixture);
   const app = createDashboardTestApp(fixture);
 
   const response = await getJson(app, "/dashboard/cross-device/cases?keyword=%E5%8E%86%E5%8F%B2");
   assert.equal(response.success, true);
-  assert.equal(response.total, 1);
-  const items = response.items as Array<Record<string, unknown>>;
-  assert.equal(items[0]?.name, "历史缺少一多摘要用例");
-  assert.equal(items[0]?.taskId, 103);
-  assert.deepEqual(items[0]?.reasons, [
-    "评分结果标记 task_type_basis 包含 multi_device_adaptation/responsive_layout",
-  ]);
+  assert.equal(response.total, 0);
+
+  const allResponse = await getJson(app, "/dashboard/cross-device/cases");
+  assert.equal(allResponse.success, true);
+  const taskIds = (allResponse.items as Array<Record<string, unknown>>).map((item) => item.taskId);
+  assert.deepEqual(taskIds, [101]);
 });
 
 test("dashboard cross-device rule violations aggregate related official rules", async (t) => {
@@ -801,10 +898,15 @@ test("dashboard cross-device rule violations aggregate related official rules", 
   const response = await getJson(app, "/dashboard/cross-device/rule-violations");
   assert.equal(response.success, true);
   const items = response.items as Array<Record<string, unknown>>;
-  assert.equal(items.length, 1);
+  assert.equal(items.length, 2);
   assert.equal(items[0]?.ruleId, "@cross-device-app-dev/font-size");
   assert.equal(items[0]?.violationCount, 2);
   assert.equal(items[0]?.affectedTaskCount, 1);
+  assert.ok(items.some((item) => item.ruleId === "RSP-MUST-01"));
+  assert.equal(
+    items.find((item) => item.ruleId === "RSP-MUST-01")?.violationCount,
+    1,
+  );
 
   const withOtherRules = await getJson(
     app,
@@ -812,6 +914,7 @@ test("dashboard cross-device rule violations aggregate related official rules", 
   );
   const allItems = withOtherRules.items as Array<Record<string, unknown>>;
   assert.ok(allItems.some((item) => item.ruleId === "ARKTS-MUST-001"));
+  assert.ok(allItems.some((item) => item.ruleId === "RSP-MUST-01"));
   assert.equal(allItems.some((item) => item.ruleId === "@cross-device-app-dev/size-unit"), false);
   assert.equal(
     allItems.some((item) => item.ruleId === "OFFICIAL-LINTER:@cross-device-app-dev/font-size"),

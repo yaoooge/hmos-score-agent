@@ -664,6 +664,48 @@ test("runRuleEngine uses kit anchors for static precheck on runtime case rules",
   assert.match(candidate.static_precheck?.summary ?? "", /Kit 静态锚点/);
 });
 
+test("runRuleEngine does not expose unmatched case-constraint target files as evidence files", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "Text('plain page')\n",
+    "entry/src/main/ets/components/Card.ets": "Column() {}\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "case-requirement_rsp",
+        rule_id: "RSP-MUST-01",
+        rule_name: "横向断点划分范围必须符合系统推荐值",
+        rule_source: "must_rule",
+        summary: "横向断点划分范围必须符合系统推荐值",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/*.ets"],
+          astSignals: [],
+          llmPrompt: "检查工程中自定义断点系统或 WidthBreakpointType 工具类的断点边界定义",
+          kit: ["ArkUI: GridRow / WidthBreakpoint"],
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  const candidate = result.assistedRuleCandidates.find((item) => item.rule_id === "RSP-MUST-01");
+
+  assert.ok(candidate);
+  assert.equal(candidate.static_precheck?.signal_status, "none_matched");
+  assert.deepEqual(candidate.static_precheck?.target_files, [
+    "entry/src/main/ets/components/Card.ets",
+    "entry/src/main/ets/pages/Index.ets",
+  ]);
+  assert.deepEqual(candidate.evidence_files, []);
+});
+
 test("runRuleEngine treats ArkUI slash-separated kit components as OR evidence", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": [

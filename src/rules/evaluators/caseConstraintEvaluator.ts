@@ -323,7 +323,7 @@ export function runCaseConstraintRule(
     rule_source: rule.rule_source,
     result: "未接入判定器",
     conclusion: `${staticPrecheck.summary} 仅作为辅助证据，不作为最终结论。`,
-    matchedFiles: staticPrecheck.target_files,
+    matchedFiles: staticPrecheck.matched_files ?? [],
     preliminaryData: {
       static_precheck: staticPrecheck,
     },

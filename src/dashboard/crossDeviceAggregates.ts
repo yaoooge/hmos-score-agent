@@ -5,8 +5,16 @@ import type {
   CrossDeviceRiskReviewQuery,
   CrossDeviceRuleViolationQuery,
 } from "./crossDeviceTypes.js";
+import { getRegisteredRulePacks } from "../rules/engine/rulePackRegistry.js";
 
 const CROSS_DEVICE_RULE_SET = "plugin:@cross-device-app-dev/recommended";
+const CROSS_DEVICE_CONDITIONAL_RULE_PACK_ID = "cross-device-adaptation";
+
+const rulePackIdByRuleId = new Map<string, string>(
+  getRegisteredRulePacks().flatMap((pack) =>
+    pack.rules.map((rule) => [rule.rule_id, pack.packId] as const),
+  ),
+);
 
 function matchesKeyword(
   item: { taskId?: number; testCaseId?: number; name?: string; caseName?: string },
@@ -84,6 +92,10 @@ function isOfficialLinterMirrorRule(ruleId: string): boolean {
   return ruleId.startsWith("OFFICIAL-LINTER:");
 }
 
+function isCrossDeviceConditionalRule(ruleId: string): boolean {
+  return rulePackIdByRuleId.get(ruleId) === CROSS_DEVICE_CONDITIONAL_RULE_PACK_ID;
+}
+
 export function buildCrossDeviceRuleViolationStats(
   tasks: CrossDeviceRelatedTask[],
   query: CrossDeviceRuleViolationQuery,
@@ -124,11 +136,12 @@ export function buildCrossDeviceRuleViolationStats(
       }
     }
 
-    if (!query.includeOtherRules) {
-      continue;
-    }
     for (const rule of task.ruleAuditResults) {
-      if (rule.result !== "不满足" || isOfficialLinterMirrorRule(rule.ruleId)) {
+      if (
+        rule.result !== "不满足" ||
+        isOfficialLinterMirrorRule(rule.ruleId) ||
+        (!query.includeOtherRules && !isCrossDeviceConditionalRule(rule.ruleId))
+      ) {
         continue;
       }
       const existing = stats.get(rule.ruleId) ?? {

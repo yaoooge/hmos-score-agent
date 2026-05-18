@@ -1,10 +1,29 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { RemoteTaskRecord, RemoteTaskRegistry } from "../api/remoteTaskRegistry.js";
+import {
+  crossDeviceAdaptationRulePackId,
+  getRegisteredRulePacks,
+} from "../rules/engine/rulePackRegistry.js";
 import { statusCategory, readRiskReviewCalibrationDataset } from "./dashboardDataStore.js";
-import type { CrossDeviceRelatedTask, CrossDeviceRiskReviewItem } from "./crossDeviceTypes.js";
+import type {
+  CrossDeviceBoundRulePack,
+  CrossDeviceRelatedTask,
+  CrossDeviceRiskReviewItem,
+  CrossDeviceRuleAuditCounts,
+  CrossDeviceRuleAuditResult,
+} from "./crossDeviceTypes.js";
 
 const CROSS_DEVICE_RULE_SET = "plugin:@cross-device-app-dev/recommended";
+
+const rulePackDisplayNameById = new Map(
+  getRegisteredRulePacks().map((pack) => [pack.packId, pack.displayName] as const),
+);
+const rulePackIdByRuleId = new Map<string, string>(
+  getRegisteredRulePacks().flatMap((pack) =>
+    pack.rules.map((rule) => [rule.rule_id, pack.packId] as const),
+  ),
+);
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -53,11 +72,6 @@ function readTaskType(resultJson: Record<string, unknown> | undefined): string |
   return readString(basicInfo, "task_type");
 }
 
-function readTaskTypeBasis(resultJson: Record<string, unknown> | undefined): string | undefined {
-  const basicInfo = asRecord(resultJson?.basic_info);
-  return readString(basicInfo, "task_type_basis");
-}
-
 function readCrossDeviceReasons(
   constraintSummary: Record<string, unknown> | undefined,
 ): string[] | undefined {
@@ -71,19 +85,18 @@ function readCrossDeviceReasons(
     : [];
 }
 
-function readCrossDeviceFallbackReasons(
-  resultJson: Record<string, unknown> | undefined,
-): string[] | undefined {
-  const taskTypeBasis = readTaskTypeBasis(resultJson)?.toLowerCase();
-  if (!taskTypeBasis) {
-    return undefined;
+async function readCrossDeviceConstraintSummary(
+  caseDir: string,
+): Promise<Record<string, unknown> | undefined> {
+  const metadata = await readJsonFile(
+    path.join(caseDir, "opencode-sandbox", "metadata", "metadata.json"),
+  );
+  const metadataConstraintSummary = asRecord(metadata?.constraint_summary);
+  if (metadataConstraintSummary) {
+    return metadataConstraintSummary;
   }
-  const hasMultiDeviceBasis =
-    taskTypeBasis.includes("multi_device_adaptation") ||
-    taskTypeBasis.includes("responsive_layout");
-  return hasMultiDeviceBasis
-    ? ["评分结果标记 task_type_basis 包含 multi_device_adaptation/responsive_layout"]
-    : undefined;
+
+  return readJsonFile(path.join(caseDir, "intermediate", "constraint-summary.json"));
 }
 
 function readRisks(resultJson: Record<string, unknown> | undefined) {
@@ -114,6 +127,26 @@ function readCrossDeviceRuleSetApplied(resultJson: Record<string, unknown> | und
   return Array.isArray(configuredRuleSets) && configuredRuleSets.includes(CROSS_DEVICE_RULE_SET);
 }
 
+function readBoundRulePacks(resultJson: Record<string, unknown> | undefined): CrossDeviceBoundRulePack[] {
+  const packs = resultJson?.bound_rule_packs;
+  if (!Array.isArray(packs)) {
+    return [];
+  }
+  return packs
+    .map((item) => {
+      const record = asRecord(item);
+      const packId = readString(record, "pack_id");
+      if (!packId) {
+        return undefined;
+      }
+      return {
+        packId,
+        displayName: readString(record, "display_name") ?? rulePackDisplayNameById.get(packId) ?? packId,
+      };
+    })
+    .filter((item): item is CrossDeviceBoundRulePack => Boolean(item));
+}
+
 function readOfficialLinterResults(resultJson: Record<string, unknown> | undefined) {
   const results = resultJson?.official_linter_results;
   if (!Array.isArray(results)) {
@@ -139,6 +172,10 @@ function readOfficialLinterResults(resultJson: Record<string, unknown> | undefin
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
+function isCrossDeviceOfficialRule(rule: { ruleId: string; sourceRuleSet?: string }): boolean {
+  return rule.sourceRuleSet === CROSS_DEVICE_RULE_SET || rule.ruleId.startsWith("@cross-device-app-dev/");
+}
+
 function readRuleAuditResults(resultJson: Record<string, unknown> | undefined) {
   const results = resultJson?.rule_audit_results;
   if (!Array.isArray(results)) {
@@ -151,7 +188,10 @@ function readRuleAuditResults(resultJson: Record<string, unknown> | undefined) {
       if (!record || !ruleId) {
         return undefined;
       }
+      const packId = rulePackIdByRuleId.get(ruleId);
       return {
+        packId,
+        packDisplayName: packId ? rulePackDisplayNameById.get(packId) : undefined,
         ruleId,
         ruleSummary: readString(record, "rule_summary"),
         ruleSource: readString(record, "rule_source"),
@@ -162,13 +202,25 @@ function readRuleAuditResults(resultJson: Record<string, unknown> | undefined) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
+function filterCrossDeviceRuleAuditResults(
+  ruleAuditResults: CrossDeviceRuleAuditResult[],
+): CrossDeviceRuleAuditResult[] {
+  return ruleAuditResults.filter((rule) => rule.packId === crossDeviceAdaptationRulePackId);
+}
+
+function buildRuleAuditCounts(ruleAuditResults: CrossDeviceRuleAuditResult[]): CrossDeviceRuleAuditCounts {
+  return {
+    violated: ruleAuditResults.filter((rule) => rule.result === "不满足").length,
+    review: ruleAuditResults.filter((rule) => rule.result === "待人工复核").length,
+    satisfied: ruleAuditResults.filter((rule) => rule.result === "满足").length,
+    notInvolved: ruleAuditResults.filter((rule) => rule.result === "不涉及").length,
+    total: ruleAuditResults.length,
+  };
+}
+
 function buildTopCrossDeviceRules(officialLinterResults: ReturnType<typeof readOfficialLinterResults>) {
   return officialLinterResults
-    .filter(
-      (result) =>
-        result.sourceRuleSet === CROSS_DEVICE_RULE_SET ||
-        result.ruleId.startsWith("@cross-device-app-dev/"),
-    )
+    .filter(isCrossDeviceOfficialRule)
     .map((result) => ({
       ruleId: result.ruleId,
       sourceRuleSet: result.sourceRuleSet ?? "",
@@ -192,11 +244,9 @@ async function readCrossDeviceTask(record: RemoteTaskRecord): Promise<CrossDevic
   if (!record.caseDir) {
     return undefined;
   }
-  const constraintSummary = await readJsonFile(
-    path.join(record.caseDir, "intermediate", "constraint-summary.json"),
-  );
+  const constraintSummary = await readCrossDeviceConstraintSummary(record.caseDir);
   const resultJson = await readJsonFile(path.join(record.caseDir, "outputs", "result.json"));
-  const reasons = readCrossDeviceReasons(constraintSummary) ?? readCrossDeviceFallbackReasons(resultJson);
+  const reasons = readCrossDeviceReasons(constraintSummary);
   if (!reasons) {
     return undefined;
   }
@@ -217,6 +267,9 @@ async function readCrossDeviceTask(record: RemoteTaskRecord): Promise<CrossDevic
     "unknown";
   const risks = readRisks(resultJson);
   const officialLinterResults = readOfficialLinterResults(resultJson);
+  const crossDeviceOfficialLinterResults = officialLinterResults.filter(isCrossDeviceOfficialRule);
+  const ruleAuditResults = readRuleAuditResults(resultJson);
+  const crossDeviceRuleAuditResults = filterCrossDeviceRuleAuditResults(ruleAuditResults);
   const topRuleViolations = buildTopCrossDeviceRules(officialLinterResults);
 
   return {
@@ -236,11 +289,15 @@ async function readCrossDeviceTask(record: RemoteTaskRecord): Promise<CrossDevic
     crossDeviceRuleSetApplied: readCrossDeviceRuleSetApplied(resultJson),
     crossDeviceFindingCount: topRuleViolations.reduce((sum, rule) => sum + rule.findingCount, 0),
     riskCount: risks.length,
+    boundRulePacks: readBoundRulePacks(resultJson),
+    crossDeviceRuleAuditCounts: buildRuleAuditCounts(crossDeviceRuleAuditResults),
+    crossDeviceRuleAuditResults,
+    crossDeviceOfficialLinterResults,
     topRuleViolations,
     riskLevelCounts: buildRiskLevelCounts(risks),
     risks,
     officialLinterResults,
-    ruleAuditResults: readRuleAuditResults(resultJson),
+    ruleAuditResults,
   };
 }
 

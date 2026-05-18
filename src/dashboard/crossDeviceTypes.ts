@@ -10,11 +10,26 @@ export type CrossDeviceOfficialLinterResult = {
 };
 
 export type CrossDeviceRuleAuditResult = {
+  packId?: string;
+  packDisplayName?: string;
   ruleId: string;
   ruleSummary?: string;
   ruleSource?: string;
   result?: string;
   conclusion?: string;
+};
+
+export type CrossDeviceBoundRulePack = {
+  packId: string;
+  displayName: string;
+};
+
+export type CrossDeviceRuleAuditCounts = {
+  violated: number;
+  review: number;
+  satisfied: number;
+  notInvolved: number;
+  total: number;
 };
 
 export type CrossDeviceRiskSummary = {
@@ -39,6 +54,10 @@ export type CrossDeviceRelatedTask = {
   crossDeviceRuleSetApplied: boolean;
   crossDeviceFindingCount: number;
   riskCount: number;
+  boundRulePacks: CrossDeviceBoundRulePack[];
+  crossDeviceRuleAuditCounts: CrossDeviceRuleAuditCounts;
+  crossDeviceRuleAuditResults: CrossDeviceRuleAuditResult[];
+  crossDeviceOfficialLinterResults: CrossDeviceOfficialLinterResult[];
   topRuleViolations: Array<{
     ruleId: string;
     sourceRuleSet: string;

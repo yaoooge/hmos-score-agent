@@ -164,58 +164,206 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-drawer v-model="caseDrawerVisible" size="48%" :title="caseDrawerTitle">
-      <div v-if="selectedCase" class="case-detail-stack">
-        <section>
-          <div class="detail-section-title">基本信息</div>
-          <div class="detail-grid">
-            <span>taskId</span>
-            <strong>{{ selectedCase.taskId }}</strong>
-            <span>testCaseId</span>
-            <strong>{{ selectedCase.testCaseId ?? "-" }}</strong>
-            <span>类型</span>
-            <strong>{{ selectedCase.taskType }}</strong>
-            <span>分数</span>
-            <strong>{{ selectedCase.score ?? "-" }}</strong>
-            <span>状态</span>
-            <strong>{{ selectedCase.status }}</strong>
-            <span>更新时间</span>
-            <strong>{{ formatDashboardDateTime(selectedCase.updatedAt) }}</strong>
+    <el-drawer v-model="caseDrawerVisible" size="64%" :title="caseDrawerTitle">
+      <div v-if="selectedCase" class="case-report-drawer">
+        <section class="report-hero">
+          <div class="report-hero-main">
+            <div class="report-eyebrow">Cross-device evaluation</div>
+            <div class="score-row">
+              <span class="score-number">{{ formatScore(selectedCase.score) }}</span>
+              <el-tag :type="selectedCase.hardGateTriggered ? 'danger' : 'success'" effect="light">
+                {{ selectedCase.hardGateTriggered ? "触发硬门槛" : "未触发硬门槛" }}
+              </el-tag>
+            </div>
+            <div class="case-name">{{ selectedCase.name }}</div>
+            <div class="hero-meta">
+              <span>taskId {{ selectedCase.taskId }}</span>
+              <span>testCaseId {{ selectedCase.testCaseId ?? "-" }}</span>
+              <span>{{ selectedCase.taskType }}</span>
+              <span>{{ formatDashboardDateTime(selectedCase.updatedAt) }}</span>
+            </div>
+          </div>
+          <div class="report-stat-grid">
+            <div class="report-stat">
+              <span>内置规则违背</span>
+              <strong>{{ selectedCase.crossDeviceRuleAuditCounts.violated }}</strong>
+            </div>
+            <div class="report-stat">
+              <span>官方检查命中</span>
+              <strong>{{ selectedCase.crossDeviceFindingCount }}</strong>
+            </div>
+            <div class="report-stat">
+              <span>待复核规则</span>
+              <strong>{{ selectedCase.crossDeviceRuleAuditCounts.review }}</strong>
+            </div>
+            <div class="report-stat">
+              <span>风险项</span>
+              <strong>{{ selectedCase.riskCount }}</strong>
+            </div>
           </div>
         </section>
-        <section>
-          <div class="detail-section-title">一多原因</div>
-          <ul class="detail-list">
-            <li v-for="reason in selectedCase.reasons" :key="reason">{{ reason }}</li>
-          </ul>
-        </section>
-        <section>
-          <div class="detail-section-title">官方代码检查器</div>
-          <div class="detail-grid">
-            <span>状态</span>
-            <strong>{{ selectedCase.officialLinterRunStatus ?? "-" }}</strong>
-            <span>一多规则集</span>
-            <strong>{{ selectedCase.crossDeviceRuleSetApplied ? "已启用" : "未启用" }}</strong>
-            <span>命中数</span>
-            <strong>{{ selectedCase.crossDeviceFindingCount }}</strong>
+
+        <section class="report-section">
+          <div class="report-section-title">
+            <div>
+              <small>Rule packs</small>
+              <h3>启用规则集</h3>
+            </div>
+            <el-tag :type="selectedCase.crossDeviceRuleSetApplied ? 'success' : 'info'" effect="plain">
+              官方一多规则集{{ selectedCase.crossDeviceRuleSetApplied ? "已启用" : "未启用" }}
+            </el-tag>
+          </div>
+          <div class="pack-list">
+            <div
+              v-for="pack in selectedCase.boundRulePacks"
+              :key="pack.packId"
+              class="pack-row"
+              :class="{ 'pack-row-strong': isCrossDevicePack(pack.packId) }"
+            >
+              <div>
+                <strong>{{ pack.displayName }}</strong>
+                <span>{{ pack.packId }}</span>
+              </div>
+              <el-tag :type="isCrossDevicePack(pack.packId) ? 'primary' : 'info'" effect="light">
+                {{ isCrossDevicePack(pack.packId) ? "一多条件规则包" : "基础规则包" }}
+              </el-tag>
+            </div>
+            <div class="pack-row pack-row-strong">
+              <div>
+                <strong>官方 Code Linter 一多规则集</strong>
+                <span>plugin:@cross-device-app-dev/recommended</span>
+              </div>
+              <el-tag :type="selectedCase.crossDeviceRuleSetApplied ? 'success' : 'info'" effect="light">
+                {{ selectedCase.crossDeviceRuleSetApplied ? "已启用" : "未启用" }}
+              </el-tag>
+            </div>
           </div>
         </section>
-        <section>
-          <div class="detail-section-title">高频违背规则</div>
-          <el-table :data="selectedCase.topRuleViolations" size="small" stripe>
-            <el-table-column prop="ruleId" label="规则" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="findingCount" label="命中" width="80" />
+
+        <section class="report-section">
+          <div class="report-section-title">
+            <div>
+              <small>Built-in rule audit</small>
+              <h3>一多内置规则审计</h3>
+            </div>
+            <div class="result-chip-row">
+              <el-tag type="danger" effect="plain">
+                不满足 {{ selectedCase.crossDeviceRuleAuditCounts.violated }}
+              </el-tag>
+              <el-tag type="warning" effect="plain">
+                待复核 {{ selectedCase.crossDeviceRuleAuditCounts.review }}
+              </el-tag>
+              <el-tag type="success" effect="plain">
+                满足 {{ selectedCase.crossDeviceRuleAuditCounts.satisfied }}
+              </el-tag>
+              <el-tag effect="plain">
+                不涉及 {{ selectedCase.crossDeviceRuleAuditCounts.notInvolved }}
+              </el-tag>
+            </div>
+          </div>
+          <div class="audit-filter-row">
+            <el-radio-group v-model="ruleAuditFilter" size="small">
+              <el-radio-button
+                v-for="option in ruleAuditFilterOptions"
+                :key="option"
+                :label="option"
+              >
+                {{ option === "全部" ? "全部" : `${option} (${getRuleAuditCount(option)})` }}
+              </el-radio-button>
+            </el-radio-group>
+          </div>
+          <el-table
+            :data="filteredCrossDeviceRuleAuditResults"
+            size="small"
+            stripe
+            empty-text="暂无一多内置规则审计结果"
+          >
+            <el-table-column label="结果" width="96">
+              <template #default="{ row }">
+                <el-tag :type="formatRuleResultTag(row.result)" effect="light">
+                  {{ row.result ?? "-" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="规则" min-width="130">
+              <template #default="{ row }">
+                <OverflowTextTooltip :text="row.ruleId" />
+              </template>
+            </el-table-column>
+            <el-table-column label="类型" width="96">
+              <template #default="{ row }">
+                {{ formatRuleSource(row.ruleSource) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="摘要" min-width="230">
+              <template #default="{ row }">
+                <OverflowTextTooltip :text="row.ruleSummary" />
+              </template>
+            </el-table-column>
+            <el-table-column label="结论" min-width="260">
+              <template #default="{ row }">
+                <OverflowTextTooltip :text="row.conclusion" />
+              </template>
+            </el-table-column>
           </el-table>
         </section>
-        <section>
-          <div class="detail-section-title">风险摘要</div>
-          <div class="risk-summary-row">
-            <el-tag v-for="item in selectedCase.riskLevelCounts" :key="item.level" effect="plain">
-              {{ item.level }}: {{ item.count }}
-            </el-tag>
-            <span v-if="selectedCase.riskLevelCounts.length === 0" class="empty-inline">
-              暂无风险项
-            </span>
+
+        <section class="report-section">
+          <div class="report-section-title">
+            <div>
+              <small>Official linter</small>
+              <h3>官方一多检查结果</h3>
+            </div>
+            <el-tag effect="plain">状态 {{ selectedCase.officialLinterRunStatus ?? "-" }}</el-tag>
+          </div>
+          <el-table
+            :data="selectedCase.crossDeviceOfficialLinterResults"
+            size="small"
+            stripe
+            empty-text="暂无官方一多检查结果"
+          >
+            <el-table-column label="规则" min-width="220">
+              <template #default="{ row }">
+                <OverflowTextTooltip :text="row.ruleId" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="severity" label="级别" width="90" />
+            <el-table-column prop="findingCount" label="命中" width="80" />
+            <el-table-column label="结论" min-width="280">
+              <template #default="{ row }">
+                <OverflowTextTooltip :text="row.conclusion" />
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+
+        <section class="report-section report-two-column">
+          <div>
+            <div class="report-section-title compact">
+              <div>
+                <small>Understanding</small>
+                <h3>一多判定原因</h3>
+              </div>
+            </div>
+            <ul class="detail-list">
+              <li v-for="reason in selectedCase.reasons" :key="reason">{{ reason }}</li>
+            </ul>
+          </div>
+          <div>
+            <div class="report-section-title compact">
+              <div>
+                <small>Risks</small>
+                <h3>风险摘要</h3>
+              </div>
+            </div>
+            <div class="risk-summary-row">
+              <el-tag v-for="item in selectedCase.riskLevelCounts" :key="item.level" effect="plain">
+                {{ item.level }}: {{ item.count }}
+              </el-tag>
+              <span v-if="selectedCase.riskLevelCounts.length === 0" class="empty-inline">
+                暂无风险项
+              </span>
+            </div>
           </div>
         </section>
       </div>
@@ -233,6 +381,7 @@ import {
   type CrossDeviceRuleViolation,
   type RiskReviewCalibration,
 } from "../api/dashboard";
+import OverflowTextTooltip from "../components/OverflowTextTooltip.vue";
 import TaskStatusTag from "../components/TaskStatusTag.vue";
 import { formatDashboardDateTime } from "../dateTime";
 
@@ -264,6 +413,8 @@ const riskPageSize = ref(20);
 const riskTotal = ref(0);
 const caseDrawerVisible = ref(false);
 const selectedCase = ref<CrossDeviceCase | null>(null);
+const ruleAuditFilter = ref<"全部" | "不满足" | "待人工复核" | "满足" | "不涉及">("不满足");
+const ruleAuditFilterOptions = ["不满足", "待人工复核", "满足", "不涉及", "全部"] as const;
 
 const caseFilters = reactive({
   keyword: "",
@@ -363,6 +514,7 @@ async function loadActiveTab() {
 
 function openCaseDetail(row: CrossDeviceCase) {
   selectedCase.value = row;
+  ruleAuditFilter.value = "不满足";
   caseDrawerVisible.value = true;
 }
 
@@ -376,6 +528,73 @@ function formatAgreement(review: RiskReviewCalibration["humanReview"]): string {
   }
   return "-";
 }
+
+function formatScore(score: number | null): string {
+  return score === null ? "--" : String(score);
+}
+
+function isCrossDevicePack(packId: string): boolean {
+  return packId === "cross-device-adaptation";
+}
+
+function formatRuleSource(ruleSource?: string): string {
+  if (ruleSource === "must_rule") {
+    return "must";
+  }
+  if (ruleSource === "should_rule") {
+    return "should";
+  }
+  if (ruleSource === "forbidden_pattern") {
+    return "forbidden";
+  }
+  return ruleSource ?? "-";
+}
+
+function formatRuleResultTag(result?: string): "success" | "warning" | "danger" | "info" {
+  if (result === "不满足") {
+    return "danger";
+  }
+  if (result === "待人工复核") {
+    return "warning";
+  }
+  if (result === "满足") {
+    return "success";
+  }
+  return "info";
+}
+
+function getRuleAuditCount(
+  filter: (typeof ruleAuditFilterOptions)[number],
+): number {
+  if (!selectedCase.value) {
+    return 0;
+  }
+  if (filter === "全部") {
+    return selectedCase.value.crossDeviceRuleAuditCounts.total;
+  }
+  if (filter === "不满足") {
+    return selectedCase.value.crossDeviceRuleAuditCounts.violated;
+  }
+  if (filter === "待人工复核") {
+    return selectedCase.value.crossDeviceRuleAuditCounts.review;
+  }
+  if (filter === "满足") {
+    return selectedCase.value.crossDeviceRuleAuditCounts.satisfied;
+  }
+  return selectedCase.value.crossDeviceRuleAuditCounts.notInvolved;
+}
+
+const filteredCrossDeviceRuleAuditResults = computed(() => {
+  if (!selectedCase.value) {
+    return [];
+  }
+  if (ruleAuditFilter.value === "全部") {
+    return selectedCase.value.crossDeviceRuleAuditResults;
+  }
+  return selectedCase.value.crossDeviceRuleAuditResults.filter(
+    (item) => item.result === ruleAuditFilter.value,
+  );
+});
 
 function reloadCasesFromFirstPage() {
   if (casePage.value === 1) {
@@ -444,36 +663,177 @@ onBeforeUnmount(() => {
   margin-top: 12px;
 }
 
-.case-detail-stack {
+.case-report-drawer {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+  color: #142033;
 }
 
-.detail-section-title {
-  margin-bottom: 10px;
-  font-size: 15px;
+.report-hero,
+.report-section {
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(20, 32, 51, 0.06);
+}
+
+.report-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+  gap: 14px;
+  padding: 16px;
+}
+
+.report-hero-main {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #d6e5ff;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #f8fbff, #eef4ff);
+}
+
+.report-eyebrow,
+.report-section-title small {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.score-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 12px 0 8px;
+}
+
+.score-number {
+  font-size: 54px;
+  font-weight: 760;
+  line-height: 0.95;
+}
+
+.case-name {
+  overflow-wrap: anywhere;
+  font-size: 18px;
   font-weight: 700;
 }
 
-.detail-grid {
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 12px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.report-stat-grid {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 8px 12px;
-  padding: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.report-stat {
+  min-width: 0;
+  padding: 14px;
   border: 1px solid #e5e9ef;
   border-radius: 8px;
   background: #f8fafc;
 }
 
-.detail-grid span,
-.empty-inline {
+.report-stat span {
+  display: block;
   color: #667085;
+  font-size: 13px;
 }
 
-.detail-grid strong {
+.report-stat strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.report-section {
+  padding: 16px;
+}
+
+.report-section-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.report-section-title.compact {
+  margin-bottom: 10px;
+}
+
+.report-section-title h3 {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.result-chip-row,
+.pack-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.audit-filter-row {
+  margin-bottom: 12px;
+}
+
+.pack-list {
+  flex-direction: column;
+}
+
+.pack-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #e5e9ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.pack-row-strong {
+  border-color: #b8d2ff;
+  background: #f2f7ff;
+}
+
+.pack-row div {
+  min-width: 0;
+}
+
+.pack-row strong,
+.pack-row span {
+  display: block;
   overflow-wrap: anywhere;
+}
+
+.pack-row span {
+  margin-top: 4px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.report-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.empty-inline {
+  color: #667085;
 }
 
 .detail-list {
@@ -486,5 +846,16 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .report-hero,
+  .report-two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .report-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

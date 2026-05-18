@@ -67,6 +67,9 @@ function pickRepresentativeFiles(input: {
   targetFiles: string[];
   matchedFiles: string[];
 }): string[] {
+  if (input.matchedFiles.length === 0) {
+    return [];
+  }
   return uniqueStrings([...input.matchedFiles, ...input.evidenceFiles, ...input.targetFiles]).slice(
     0,
     MAX_RULE_REPRESENTATIVE_FILES,
@@ -88,7 +91,7 @@ function compactRuleAssessmentPayload(payload: AgentBootstrapPayload): Record<st
     task_understanding: payload.task_understanding,
     assisted_rule_candidates: payload.assisted_rule_candidates.map((candidate) => {
       const { evidence_snippets: _evidenceSnippets, ...candidateWithoutSnippets } = candidate;
-      if (!candidate.is_case_rule) {
+      if (!candidate.static_precheck) {
         return candidateWithoutSnippets;
       }
 

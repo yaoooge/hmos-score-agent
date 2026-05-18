@@ -252,6 +252,71 @@ test("runOpencodeRuleAssessment compacts duplicate case rule file hints in promp
   ]);
 });
 
+test("runOpencodeRuleAssessment compacts static-precheck candidates even when they are built-in rules", async () => {
+  let prompt = "";
+  const result = await runOpencodeRuleAssessment({
+    sandboxRoot: "/sandbox/case",
+    bootstrapPayload: {
+      ...payload(),
+      assisted_rule_candidates: [
+        {
+          ...payload().assisted_rule_candidates[0],
+          rule_id: "RSP-MUST-01",
+          rule_source: "must_rule",
+          rule_name: "横向断点划分范围必须符合系统推荐值",
+          priority: "P0",
+          evidence_files: [
+            "generated/commons/lib_common/Index.ets",
+            "generated/commons/lib_common/src/main/ets/constants/BreakpointConstants.ets",
+            "generated/features/home/src/main/ets/components/TelevisionLikeView.ets",
+          ],
+          static_precheck: {
+            target_matched: true,
+            target_files: [
+              "generated/commons/lib_common/Index.ets",
+              "generated/commons/lib_common/src/main/ets/constants/BreakpointConstants.ets",
+              "generated/features/home/src/main/ets/components/TelevisionLikeView.ets",
+            ],
+            matched_files: [],
+            signal_status: "none_matched",
+            matched_tokens: [],
+            summary:
+              "静态预判在目标文件中命中了 0/0 个 AST 信号。Kit 静态锚点强证据命中 0/1。",
+          },
+        },
+      ],
+    },
+    runPrompt: async (request) => {
+      prompt = request.prompt;
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "",
+        rawText: JSON.stringify({
+          summary: finalAnswer().summary,
+          rule_assessments: [
+            {
+              ...finalAnswer().rule_assessments[0],
+              rule_id: "RSP-MUST-01",
+            },
+          ],
+        }),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  const promptPayload = extractPromptPayload(prompt);
+  const candidates = promptPayload.assisted_rule_candidates as Array<Record<string, unknown>>;
+  const candidate = candidates[0] as Record<string, unknown>;
+  const staticPrecheck = candidate.static_precheck as Record<string, unknown>;
+
+  assert.equal("evidence_files" in candidate, false);
+  assert.equal("target_files" in staticPrecheck, false);
+  assert.equal(staticPrecheck.target_file_count, 3);
+  assert.deepEqual(staticPrecheck.representative_files, []);
+});
+
 test("runOpencodeRuleAssessment omits expected constraints from original prompt summary", async () => {
   let prompt = "";
   const result = await runOpencodeRuleAssessment({
