@@ -20,6 +20,9 @@ export type RemoteTaskRecord = {
   testCaseName?: string;
   testCaseType?: string;
   error?: string;
+  remoteTaskFile?: string;
+  recoveryAttemptCount?: number;
+  lastRecoveryAt?: number;
 };
 
 export type RemoteTaskRecordPatch = {
@@ -31,6 +34,9 @@ export type RemoteTaskRecordPatch = {
   testCaseName?: string;
   testCaseType?: string;
   error?: string;
+  remoteTaskFile?: string;
+  recoveryAttemptCount?: number;
+  lastRecoveryAt?: number;
 };
 
 export type RemoteTaskRegistry = {
@@ -135,6 +141,9 @@ export function createRemoteTaskRegistry(localCaseRoot: string): RemoteTaskRegis
           testCaseName: patch.testCaseName ?? existing?.testCaseName,
           testCaseType: patch.testCaseType ?? existing?.testCaseType,
           error: patch.error ?? existing?.error,
+          remoteTaskFile: patch.remoteTaskFile ?? existing?.remoteTaskFile,
+          recoveryAttemptCount: patch.recoveryAttemptCount ?? existing?.recoveryAttemptCount,
+          lastRecoveryAt: patch.lastRecoveryAt ?? existing?.lastRecoveryAt,
         };
         records.set(record.taskId, record);
         await save();

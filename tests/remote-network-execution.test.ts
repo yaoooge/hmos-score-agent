@@ -553,6 +553,40 @@ test("remote task registry reloads persisted records after restart", async (t) =
   assert.deepEqual(responseState.body?.resultData, resultJson);
 });
 
+test("remote task registry persists only lightweight recovery pointers", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-lightweight");
+  await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "inputs", "remote-task.json"),
+    JSON.stringify({ testCase: { input: "very long PRD text" } }),
+    "utf-8",
+  );
+
+  const firstRegistry = createRemoteTaskRegistry(localCaseRoot);
+  await firstRegistry.upsert({
+    taskId: 706,
+    status: "queued",
+    caseDir,
+    token: "remote-token",
+    testCaseId: 1706,
+    remoteTaskFile: "inputs/remote-task.json",
+    recoveryAttemptCount: 2,
+    lastRecoveryAt: 1710000000000,
+  });
+
+  const indexText = await fs.readFile(path.join(localCaseRoot, "remote-task-index.json"), "utf-8");
+  assert.match(indexText, /"remoteTaskFile": "inputs\/remote-task\.json"/);
+  assert.equal(indexText.includes("very long PRD text"), false);
+
+  const secondRegistry = createRemoteTaskRegistry(localCaseRoot);
+  const record = await secondRegistry.get(706);
+
+  assert.equal(record?.remoteTaskFile, "inputs/remote-task.json");
+  assert.equal(record?.recoveryAttemptCount, 2);
+  assert.equal(record?.lastRecoveryAt, 1710000000000);
+});
+
 test("createRunRemoteTaskHandler persists completed task for result handler", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case-handler-completed");
