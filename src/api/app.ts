@@ -19,9 +19,12 @@ import {
   type RuleViolationStatsStore,
 } from "./ruleViolationStatsStore.js";
 import {
+  REMOTE_TASK_PAYLOAD_FILE,
   acceptRemoteEvaluationTask,
   executeAcceptedRemoteEvaluationTask,
   prepareRemoteEvaluationTask,
+  replayCompletedRemoteTaskCallback,
+  restoreAcceptedRemoteEvaluationTask,
 } from "../service.js";
 import type { RemoteEvaluationTask } from "../types.js";
 import { createDashboardRouter } from "../dashboard/dashboardHandlers.js";
@@ -53,6 +56,9 @@ type RemoteTaskRecord = {
   testCaseName?: string;
   testCaseType?: string;
   error?: string;
+  remoteTaskFile?: string;
+  recoveryAttemptCount?: number;
+  lastRecoveryAt?: number;
 };
 
 type RemoteTaskLogContext = {
@@ -159,6 +165,85 @@ export function createRunRemoteTaskHandler(
   ruleViolationStatsStore?: RuleViolationStatsStore,
   humanReviewEvidenceStore?: HumanReviewEvidenceStore,
 ) {
+  const queue = createRemoteTaskExecutionQueue(
+    deps,
+    registry,
+    ruleViolationStatsStore,
+    humanReviewEvidenceStore,
+  );
+
+  function buildAcceptedTaskLogContext(
+    acceptedTask: AcceptedRemoteEvaluationTask,
+  ): RemoteTaskLogContext {
+    return {
+      taskId: acceptedTask.taskId,
+      testCaseId: acceptedTask.remoteTask.testCase.id,
+    };
+  }
+
+  return async (req: Request, res: Response) => {
+    const taskId = readTaskId(req.body);
+    const requestLogContext: RemoteTaskLogContext = {
+      taskId,
+      testCaseId: readRemoteTestCaseId(req.body),
+    };
+    logRemoteApiTriggered(requestLogContext);
+    try {
+      if (taskId !== undefined) {
+        queue.upsertTaskRecord(taskId, "preparing", {
+          token: typeof req.body?.token === "string" ? req.body.token : undefined,
+          testCaseId: readRemoteTestCaseId(req.body),
+          testCaseName: readRemoteTestCaseString(req.body, "name"),
+          testCaseType: readRemoteTestCaseString(req.body, "type"),
+        });
+      }
+      const acceptedTask = await deps.acceptRemoteEvaluationTask(req.body as RemoteEvaluationTask);
+      const acceptedTaskLogContext = buildAcceptedTaskLogContext(acceptedTask);
+      queue.upsertTaskRecord(acceptedTask.taskId, "preparing", {
+        caseDir: acceptedTask.caseDir,
+        token: acceptedTask.remoteTask.token,
+        testCaseId: acceptedTask.remoteTask.testCase.id,
+        testCaseName: acceptedTask.remoteTask.testCase.name,
+        testCaseType: acceptedTask.remoteTask.testCase.type,
+      });
+      const executionPromise = queue.enqueueRemoteTaskExecution(acceptedTask);
+      const shouldUploadQueuedPendingCallback = queue.isQueued(acceptedTask.taskId);
+      void executionPromise.catch((error) => {
+        console.error(
+          `run-remote-task background execution failed ${formatRemoteLogContext(acceptedTaskLogContext)} error=${formatError(error)}`,
+        );
+      });
+      sendRemoteApiResponse(res, 200, acceptedTaskLogContext, {
+        success: true,
+        taskId: acceptedTask.taskId,
+        message: acceptedTask.message,
+      });
+      if (shouldUploadQueuedPendingCallback) {
+        void uploadQueuedPendingCallback(acceptedTask).catch((error) => {
+          console.error(
+            `queued_remote_task_callback_failed ${formatAcceptedTaskLogContext(acceptedTask)} error=${formatError(error)}`,
+          );
+        });
+      }
+    } catch (error) {
+      if (taskId !== undefined) {
+        queue.upsertTaskRecord(taskId, "failed", { error: formatError(error) });
+      }
+      logRemoteApiFailed(requestLogContext, error);
+      sendRemoteApiResponse(res, 500, requestLogContext, {
+        success: false,
+        message: error instanceof Error ? error.message : "未知错误",
+      });
+    }
+  };
+}
+
+export function createRemoteTaskExecutionQueue(
+  deps: AppDeps,
+  registry?: RemoteTaskRegistry,
+  ruleViolationStatsStore?: RuleViolationStatsStore,
+  _humanReviewEvidenceStore?: HumanReviewEvidenceStore,
+) {
   const runningTaskIds = new Set<number>();
   const queuedTaskIds = new Set<number>();
   const remoteTaskRecords = new Map<number, RemoteTaskRecord>();
@@ -186,6 +271,9 @@ export function createRunRemoteTaskHandler(
       testCaseName: patch.testCaseName ?? existing?.testCaseName,
       testCaseType: patch.testCaseType ?? existing?.testCaseType,
       error: patch.error ?? existing?.error,
+      remoteTaskFile: patch.remoteTaskFile ?? existing?.remoteTaskFile,
+      recoveryAttemptCount: patch.recoveryAttemptCount ?? existing?.recoveryAttemptCount,
+      lastRecoveryAt: patch.lastRecoveryAt ?? existing?.lastRecoveryAt,
     };
     remoteTaskRecords.set(taskId, record);
     if (registry) {
@@ -199,6 +287,9 @@ export function createRunRemoteTaskHandler(
           testCaseName: record.testCaseName,
           testCaseType: record.testCaseType,
           error: record.error,
+          remoteTaskFile: record.remoteTaskFile,
+          recoveryAttemptCount: record.recoveryAttemptCount,
+          lastRecoveryAt: record.lastRecoveryAt,
         })
         .catch((error) => {
           console.error(
@@ -308,69 +399,111 @@ export function createRunRemoteTaskHandler(
     });
   }
 
-  function buildAcceptedTaskLogContext(
-    acceptedTask: AcceptedRemoteEvaluationTask,
-  ): RemoteTaskLogContext {
-    return {
-      taskId: acceptedTask.taskId,
-      testCaseId: acceptedTask.remoteTask.testCase.id,
-    };
-  }
-
-  return async (req: Request, res: Response) => {
-    const taskId = readTaskId(req.body);
-    const requestLogContext: RemoteTaskLogContext = {
-      taskId,
-      testCaseId: readRemoteTestCaseId(req.body),
-    };
-    logRemoteApiTriggered(requestLogContext);
-    try {
-      if (taskId !== undefined) {
-        upsertTaskRecord(taskId, "preparing", {
-          token: typeof req.body?.token === "string" ? req.body.token : undefined,
-          testCaseId: readRemoteTestCaseId(req.body),
-          testCaseName: readRemoteTestCaseString(req.body, "name"),
-          testCaseType: readRemoteTestCaseString(req.body, "type"),
-        });
+  async function recoverPendingRemoteTasks(): Promise<void> {
+    if (!registry) {
+      return;
+    }
+    const records = await registry.list();
+    for (const record of records) {
+      if (!["preparing", "queued", "running"].includes(record.status)) {
+        continue;
       }
-      const acceptedTask = await deps.acceptRemoteEvaluationTask(req.body as RemoteEvaluationTask);
-      const acceptedTaskLogContext = buildAcceptedTaskLogContext(acceptedTask);
-      upsertTaskRecord(acceptedTask.taskId, "preparing", {
-        caseDir: acceptedTask.caseDir,
-        token: acceptedTask.remoteTask.token,
-        testCaseId: acceptedTask.remoteTask.testCase.id,
-        testCaseName: acceptedTask.remoteTask.testCase.name,
-        testCaseType: acceptedTask.remoteTask.testCase.type,
+      if (!record.caseDir) {
+        await registry.upsert({
+          taskId: record.taskId,
+          status: "failed",
+          error: "missing persisted caseDir",
+        });
+        continue;
+      }
+      const remoteTaskFile = record.remoteTaskFile ?? REMOTE_TASK_PAYLOAD_FILE;
+      const recoveryAttemptCount = (record.recoveryAttemptCount ?? 0) + 1;
+      const lastRecoveryAt = Date.now();
+      await registry.upsert({
+        taskId: record.taskId,
+        status: record.status,
+        caseDir: record.caseDir,
+        remoteTaskFile,
+        recoveryAttemptCount,
+        lastRecoveryAt,
       });
-      const executionPromise = enqueueRemoteTaskExecution(acceptedTask);
-      const shouldUploadQueuedPendingCallback = queuedTaskIds.has(acceptedTask.taskId);
-      void executionPromise.catch((error) => {
-        console.error(
-          `run-remote-task background execution failed ${formatRemoteLogContext(acceptedTaskLogContext)} error=${formatError(error)}`,
-        );
-      });
-      sendRemoteApiResponse(res, 200, acceptedTaskLogContext, {
-        success: true,
-        taskId: acceptedTask.taskId,
-        message: acceptedTask.message,
-      });
-      if (shouldUploadQueuedPendingCallback) {
-        void uploadQueuedPendingCallback(acceptedTask).catch((error) => {
+
+      try {
+        await fs.access(path.join(record.caseDir, "outputs", "result.json"));
+        await replayCompletedRemoteTaskCallback({
+          taskId: record.taskId,
+          caseDir: record.caseDir,
+          remoteTaskFile,
+        });
+        await registry.upsert({
+          taskId: record.taskId,
+          status: "completed",
+          caseDir: record.caseDir,
+          testCaseId: record.testCaseId,
+          testCaseName: record.testCaseName,
+          testCaseType: record.testCaseType,
+          token: record.token,
+          remoteTaskFile,
+          recoveryAttemptCount,
+          lastRecoveryAt,
+        });
+        continue;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          await registry.upsert({
+            taskId: record.taskId,
+            status: "failed",
+            caseDir: record.caseDir,
+            testCaseId: record.testCaseId,
+            testCaseName: record.testCaseName,
+            testCaseType: record.testCaseType,
+            token: record.token,
+            remoteTaskFile,
+            error: formatError(error),
+            recoveryAttemptCount,
+            lastRecoveryAt,
+          });
+          continue;
+        }
+      }
+
+      try {
+        const acceptedTask = await restoreAcceptedRemoteEvaluationTask({
+          taskId: record.taskId,
+          caseDir: record.caseDir,
+          remoteTaskFile,
+        });
+        void enqueueRemoteTaskExecution(acceptedTask).catch((error) => {
           console.error(
-            `queued_remote_task_callback_failed ${formatAcceptedTaskLogContext(acceptedTask)} error=${formatError(error)}`,
+            `remote_task_recovery_execution_failed ${formatRemoteLogContext({ taskId: record.taskId, testCaseId: record.testCaseId })} error=${formatError(error)}`,
           );
         });
+      } catch (error) {
+        await registry.upsert({
+          taskId: record.taskId,
+          status: "failed",
+          caseDir: record.caseDir,
+          testCaseId: record.testCaseId,
+          testCaseName: record.testCaseName,
+          testCaseType: record.testCaseType,
+          token: record.token,
+          remoteTaskFile,
+          error: `missing persisted remote task file: ${formatError(error)}`,
+          recoveryAttemptCount,
+          lastRecoveryAt,
+        });
       }
-    } catch (error) {
-      if (taskId !== undefined) {
-        upsertTaskRecord(taskId, "failed", { error: formatError(error) });
-      }
-      logRemoteApiFailed(requestLogContext, error);
-      sendRemoteApiResponse(res, 500, requestLogContext, {
-        success: false,
-        message: error instanceof Error ? error.message : "未知错误",
-      });
     }
+  }
+
+  return {
+    enqueueRemoteTaskExecution,
+    recoverPendingRemoteTasks,
+    upsertTaskRecord,
+    isExecutingOrQueued,
+    isQueued(taskId: number): boolean {
+      return queuedTaskIds.has(taskId);
+    },
   };
 }
 

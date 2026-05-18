@@ -8,6 +8,7 @@ import {
   createApp,
   createCorsMiddleware,
   createGetRemoteTaskResultHandler,
+  createRemoteTaskExecutionQueue,
   createRunRemoteTaskHandler,
 } from "../src/api/app.js";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
@@ -1670,6 +1671,159 @@ test("createRunRemoteTaskHandler uploads pending callback for queued remote task
   releases.get(2)?.();
   releases.get(3)?.();
   releases.get(4)?.();
+});
+
+test("remote task queue recovery replays completed callback when result exists", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-recovered-completed");
+  const callbackUrl = "https://remote.example.com/callback/recovered-completed";
+  const resultJson = createStoredResultJson(93);
+  const callbackCalls: Array<Record<string, unknown>> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    callbackCalls.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "inputs", "remote-task.json"),
+    JSON.stringify({
+      taskId: 901,
+      testCase: {
+        id: 1901,
+        name: "remote-case-recovered-completed",
+        type: "full_generation",
+        description: "新增页面",
+        input: "完整 PRD 文本",
+        expectedOutput: "实现登录页",
+        fileUrl: "",
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: "https://remote.example.com/workspace.json",
+      },
+      callback: callbackUrl,
+    }),
+    "utf-8",
+  );
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(resultJson));
+
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 901,
+    status: "running",
+    caseDir,
+    testCaseId: 1901,
+    remoteTaskFile: "inputs/remote-task.json",
+  });
+  const queue = createRemoteTaskExecutionQueue(
+    {
+      acceptRemoteEvaluationTask,
+      prepareRemoteEvaluationTask,
+      executeAcceptedRemoteEvaluationTask: async () => {
+        throw new Error("completed recovery must not execute workflow");
+      },
+    },
+    registry,
+  );
+
+  await queue.recoverPendingRemoteTasks();
+
+  const record = await registry.get(901);
+  assert.equal(record?.status, "completed");
+  assert.equal(callbackCalls.length, 1);
+  assertCompletedCallbackSummary(callbackCalls[0] ?? {}, resultJson);
+});
+
+test("remote task queue recovery re-enqueues unfinished task payloads", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-recovered-queued");
+  const executedTaskIds: number[] = [];
+  await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "inputs", "remote-task.json"),
+    JSON.stringify({
+      taskId: 902,
+      testCase: {
+        id: 1902,
+        name: "remote-case-recovered-queued",
+        type: "full_generation",
+        description: "新增页面",
+        input: "完整 PRD 文本",
+        expectedOutput: "实现登录页",
+        fileUrl: "",
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: "https://remote.example.com/workspace.json",
+      },
+      callback: "https://remote.example.com/callback/recovered-queued",
+    }),
+    "utf-8",
+  );
+
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 902,
+    status: "queued",
+    caseDir,
+    testCaseId: 1902,
+    remoteTaskFile: "inputs/remote-task.json",
+  });
+  const queue = createRemoteTaskExecutionQueue(
+    {
+      acceptRemoteEvaluationTask,
+      prepareRemoteEvaluationTask,
+      executeAcceptedRemoteEvaluationTask: async (acceptedTask: { taskId: number }) => {
+        executedTaskIds.push(acceptedTask.taskId);
+      },
+    },
+    registry,
+  );
+
+  await queue.recoverPendingRemoteTasks();
+  await waitForAssertion(async () => {
+    assert.deepEqual(executedTaskIds, [902]);
+  });
+
+  const record = await registry.get(902);
+  assert.equal(record?.status, "completed");
+  assert.equal(record?.recoveryAttemptCount, 1);
+  assert.equal(typeof record?.lastRecoveryAt, "number");
+});
+
+test("remote task queue recovery fails unfinished records without payload file", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-missing-payload");
+  await fs.mkdir(caseDir, { recursive: true });
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 903,
+    status: "running",
+    caseDir,
+    testCaseId: 1903,
+    remoteTaskFile: "inputs/remote-task.json",
+  });
+  const queue = createRemoteTaskExecutionQueue(
+    {
+      acceptRemoteEvaluationTask,
+      prepareRemoteEvaluationTask,
+      executeAcceptedRemoteEvaluationTask: async () => {
+        throw new Error("missing payload recovery must not execute workflow");
+      },
+    },
+    registry,
+  );
+
+  await queue.recoverPendingRemoteTasks();
+
+  const record = await registry.get(903);
+  assert.equal(record?.status, "failed");
+  assert.match(record?.error ?? "", /missing persisted remote task file|ENOENT/);
 });
 
 test("createRunRemoteTaskHandler logs remote API request, response, and errors", async () => {
