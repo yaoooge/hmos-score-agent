@@ -244,6 +244,7 @@ test("project opencode agent system prompts require matching skills", async () =
   assert.doesNotMatch(rulePrompt, /JSON 字符串中的英文双引号必须转义/);
   assert.doesNotMatch(rulePrompt, /未接入静态判定器本身不是人工复核理由/);
   assert.match(ruleSkill, /JSON 字符串中的英文双引号必须转义/);
+  assert.match(ruleSkill, /none_matched.*必须复核目标文件及相关调用链是否存在真实 kit 来源证据/);
 
   assert.match(humanRatingPrompt, /你是评分流程中的人工评级差异分析 agent/);
   assert.match(humanRatingPrompt, /必须使用 hmos-human-rating-gap-analysis skill/);

@@ -140,7 +140,7 @@ src/rules/packs/cross-device-adaptation/
   forbidden.ts
 ```
 
-新增共享 factory，或扩展现有 `src/rules/packs/shared/ruleFactories.ts`：
+扩展现有 `src/rules/packs/shared/ruleFactories.ts`：
 
 ```ts
 export function createAgentAssistedTargetRule(input: {
