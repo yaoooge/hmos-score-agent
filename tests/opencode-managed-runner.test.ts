@@ -18,11 +18,11 @@ function runtimeConfig(): OpencodeRuntimeConfig {
   };
 }
 
-function request(): OpencodeRunRequest {
+function request(requestTag = "task-understanding"): OpencodeRunRequest {
   return {
     prompt: "x",
     sandboxRoot: "/sandbox",
-    requestTag: "task-understanding",
+    requestTag,
   };
 }
 
@@ -33,6 +33,24 @@ function result(input: OpencodeRunRequest): OpencodeRunResult {
     rawEvents: "",
     elapsedMs: 1,
   };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 test("managed opencode runner verifies serve health before each prompt", async () => {
@@ -61,6 +79,38 @@ test("managed opencode runner verifies serve health before each prompt", async (
   assert.equal(runCount, 2);
 });
 
+test("managed opencode runner allows concurrent prompts on the same serve session pool", async () => {
+  let activeRuns = 0;
+  let maxActiveRuns = 0;
+  const runner = createManagedOpencodeRunner({
+    runtime: runtimeConfig(),
+    serveManager: {
+      start: async () => undefined,
+      restart: async () => {
+        throw new Error("restart should not be called");
+      },
+    },
+    runPrompt: async ({ request: runRequest }) => {
+      activeRuns += 1;
+      maxActiveRuns = Math.max(maxActiveRuns, activeRuns);
+      await delay(20);
+      activeRuns -= 1;
+      return result(runRequest);
+    },
+  });
+
+  const outputs = await Promise.all([
+    runner.runPrompt(request("rubric-scoring")),
+    runner.runPrompt(request("rule-assessment")),
+  ]);
+
+  assert.deepEqual(
+    outputs.map((output) => output.requestTag).sort(),
+    ["rubric-scoring", "rule-assessment"],
+  );
+  assert.equal(maxActiveRuns, 2);
+});
+
 test("managed opencode runner restarts serve and retries Session not Found once", async () => {
   let startCount = 0;
   let restartCount = 0;
@@ -87,9 +137,57 @@ test("managed opencode runner restarts serve and retries Session not Found once"
   const output = await runner.runPrompt(request());
 
   assert.equal(output.rawText, '{"ok":true}');
-  assert.equal(startCount, 1);
+  assert.equal(startCount, 2);
   assert.equal(restartCount, 1);
   assert.equal(runCount, 2);
+});
+
+test("managed opencode runner waits for active prompts before restarting serve", async () => {
+  const slowStarted = deferred();
+  const releaseSlow = deferred();
+  let slowActive = false;
+  let restartCount = 0;
+  let restartedWhileSlowActive = false;
+  let failedAttemptCount = 0;
+
+  const runner = createManagedOpencodeRunner({
+    runtime: runtimeConfig(),
+    serveManager: {
+      start: async () => undefined,
+      restart: async () => {
+        restartCount += 1;
+        restartedWhileSlowActive = slowActive;
+      },
+    },
+    runPrompt: async ({ request: runRequest }) => {
+      if (runRequest.requestTag === "slow-rubric") {
+        slowActive = true;
+        slowStarted.resolve();
+        await releaseSlow.promise;
+        slowActive = false;
+        return result(runRequest);
+      }
+
+      failedAttemptCount += 1;
+      if (failedAttemptCount === 1) {
+        throw new Error("opencode 调用失败 request=rule exitCode=1 stderr=Session not Found");
+      }
+      return result(runRequest);
+    },
+  });
+
+  const slowRun = runner.runPrompt(request("slow-rubric"));
+  await slowStarted.promise;
+  const recoveredRun = runner.runPrompt(request("rule-assessment"));
+  await delay(10);
+
+  assert.equal(restartCount, 0);
+
+  releaseSlow.resolve();
+  await Promise.all([slowRun, recoveredRun]);
+
+  assert.equal(restartCount, 1);
+  assert.equal(restartedWhileSlowActive, false);
 });
 
 test("managed opencode runner does not retry non-runtime output errors", async () => {

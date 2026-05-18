@@ -369,6 +369,9 @@ export async function runOpencodeRuleAssessment(
       agent: "hmos-rule-assessment",
       outputFile: RULE_ASSESSMENT_OUTPUT_FILE,
       preserveOutputFileOnStart,
+      logger: input.logger?.info
+        ? { info: (message) => input.logger?.info?.(message) }
+        : undefined,
     });
   }
 

@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { validateReportResult } from "../report/schemaValidator.js";
-import { getRegisteredRulePacks, listRegisteredRules } from "../rules/engine/rulePackRegistry.js";
+import {
+  getEnabledRulePacks,
+  listRegisteredRules,
+  resolveEnabledRulePackIds,
+} from "../rules/engine/rulePackRegistry.js";
 import { officialCodeLinterRecommendedRuleSets } from "../rules/officialCodeLinter/recommendedRuleSets.js";
 import type {
   ConfidenceLevel,
@@ -161,10 +165,16 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
 }
 
 function buildBoundRulePacks(state: ScoreGraphState): Array<Record<string, string>> {
-  const builtInPacks = getRegisteredRulePacks().map((pack) => ({
-    pack_id: pack.packId,
-    display_name: pack.displayName,
-  }));
+  const builtInPacks =
+    state.enabledRulePacks ??
+    getEnabledRulePacks(
+      resolveEnabledRulePackIds({
+        crossDeviceAdaptation: state.constraintSummary?.crossDeviceAdaptation,
+      }),
+    ).map((pack) => ({
+      pack_id: pack.packId,
+      display_name: pack.displayName,
+    }));
   const seenPackIds = new Set(builtInPacks.map((pack) => pack.pack_id));
   const casePacks = Array.from(
     new Set((state.caseRuleDefinitions ?? []).map((definition) => definition.pack_id)),

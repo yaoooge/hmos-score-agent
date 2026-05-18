@@ -27,28 +27,70 @@ function isRecoverableOpencodeRuntimeError(error: unknown): boolean {
 
 export function createManagedOpencodeRunner(input: ManagedOpencodeRunnerInput): ManagedOpencodeRunner {
   const runPrompt = input.runPrompt ?? runOpencodePrompt;
-  let promptQueue: Promise<void> = Promise.resolve();
+  let activeRuns = 0;
+  let restartInProgress: Promise<void> | undefined;
+  const idleWaiters: Array<() => void> = [];
+
+  function releaseActiveRun(): void {
+    activeRuns -= 1;
+    if (activeRuns === 0) {
+      const waiters = idleWaiters.splice(0, idleWaiters.length);
+      waiters.forEach((resolve) => resolve());
+    }
+  }
+
+  async function waitForIdle(): Promise<void> {
+    if (activeRuns === 0) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      idleWaiters.push(resolve);
+    });
+  }
+
+  async function waitForRestart(): Promise<void> {
+    while (restartInProgress) {
+      await restartInProgress;
+    }
+  }
+
+  async function restartWhenIdle(): Promise<void> {
+    if (!restartInProgress) {
+      restartInProgress = (async () => {
+        await waitForIdle();
+        await input.serveManager.restart();
+      })();
+      try {
+        await restartInProgress;
+      } finally {
+        restartInProgress = undefined;
+      }
+      return;
+    }
+    await restartInProgress;
+  }
+
+  async function runAttempt(request: OpencodeRunRequest): Promise<OpencodeRunResult> {
+    await waitForRestart();
+    activeRuns += 1;
+    try {
+      await input.serveManager.start();
+      return await runPrompt({ runtime: input.runtime, request });
+    } finally {
+      releaseActiveRun();
+    }
+  }
+
   return {
     async runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult> {
-      const previous = promptQueue;
-      let releaseQueue!: () => void;
-      promptQueue = new Promise<void>((resolve) => {
-        releaseQueue = resolve;
-      });
-      await previous;
       try {
-        await input.serveManager.start();
-        try {
-          return await runPrompt({ runtime: input.runtime, request });
-        } catch (error) {
-          if (!isRecoverableOpencodeRuntimeError(error)) {
-            throw error;
-          }
-          await input.serveManager.restart();
-          return await runPrompt({ runtime: input.runtime, request });
+        return await runAttempt(request);
+      } catch (error) {
+        if (!isRecoverableOpencodeRuntimeError(error)) {
+          throw error;
         }
-      } finally {
-        releaseQueue();
+        await restartWhenIdle();
+        return await runAttempt(request);
       }
     },
   };

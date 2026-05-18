@@ -364,5 +364,7 @@ forbidden_patterns:
       fileExtensions:
         - .ets
       patterns:
-        - \bfinally\s*\{[\s\S]*\b(?:return|break|continue|throw)\b
+        - \bfinally\s*\{
+      stripStringLiteralContents: true
+      finallyBlockControlFlowOnly: true
     fallback_policy: agent_assisted

@@ -216,6 +216,9 @@ export async function runOpencodeTaskUnderstanding(
       title: inputRequestTag,
       agent: "hmos-understanding",
       outputFile: TASK_UNDERSTANDING_OUTPUT_FILE,
+      logger: input.logger?.info
+        ? { info: (message) => input.logger?.info?.(message) }
+        : undefined,
     });
   }
 

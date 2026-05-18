@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import {
+  defaultEnabledRulePackIds,
   getRegisteredRulePacks,
   listRegisteredRules,
 } from "../src/rules/engine/rulePackRegistry.js";
@@ -36,7 +37,7 @@ test("arkts-performance pack registers PDF-derived performance rules", () => {
     5,
   );
 
-  const rules = listRegisteredRules();
+  const rules = listRegisteredRules({ enabledPackIds: [...defaultEnabledRulePackIds] });
   assert.equal(rules.length, 58);
 });
 

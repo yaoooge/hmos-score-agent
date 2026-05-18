@@ -5,7 +5,12 @@ import path from "node:path";
 import test from "node:test";
 import { collectEvidence } from "../src/rules/evidenceCollector.js";
 import { runTextPatternRule } from "../src/rules/evaluators/textPatternEvaluator.js";
-import { listRegisteredRules } from "../src/rules/engine/rulePackRegistry.js";
+import {
+  defaultEnabledRulePackIds,
+  getEnabledRulePacks,
+  listRegisteredRules,
+  resolveEnabledRulePackIds,
+} from "../src/rules/engine/rulePackRegistry.js";
 import { runRuleEngine } from "../src/rules/ruleEngine.js";
 import type { CaseInput, CaseRuleDefinition } from "../src/types.js";
 
@@ -82,6 +87,53 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
     ),
   );
   assert.ok(result.ruleViolations.length >= 1);
+});
+
+test("resolveEnabledRulePackIds only enables cross-device pack for involved tasks", () => {
+  assert.deepEqual(resolveEnabledRulePackIds({}), ["arkts-language", "arkts-performance"]);
+  assert.deepEqual(
+    resolveEnabledRulePackIds({
+      crossDeviceAdaptation: {
+        applicability: "not_involved",
+        confidence: "high",
+        reasons: ["需求未涉及一多适配"],
+      },
+    }),
+    ["arkts-language", "arkts-performance"],
+  );
+  assert.deepEqual(
+    resolveEnabledRulePackIds({
+      crossDeviceAdaptation: {
+        applicability: "uncertain",
+        confidence: "low",
+        reasons: ["信息不足"],
+      },
+    }),
+    ["arkts-language", "arkts-performance"],
+  );
+  assert.deepEqual(
+    resolveEnabledRulePackIds({
+      crossDeviceAdaptation: {
+        applicability: "involved",
+        confidence: "high",
+        reasons: ["需求明确要求一多适配"],
+      },
+    }),
+    ["arkts-language", "arkts-performance", "cross-device-adaptation"],
+  );
+});
+
+test("rule pack registry filters built-in packs by enabled pack ids", () => {
+  assert.deepEqual(
+    getEnabledRulePacks(["arkts-language"]).map((pack) => pack.packId),
+    ["arkts-language"],
+  );
+  assert.equal(
+    listRegisteredRules({ enabledPackIds: ["arkts-language"] }).some(
+      (rule) => rule.pack_id === "arkts-performance",
+    ),
+    false,
+  );
 });
 
 test("ARKTS-FORBID-006 ignores typed arrow function callbacks", () => {
@@ -1536,10 +1588,14 @@ test("runRuleEngine classifies every registered rule from rule packs into determ
     taskType: "full_generation",
   });
 
-  assert.equal(result.staticRuleAuditResults.length, listRegisteredRules().length);
+  const defaultEnabledRuleCount = listRegisteredRules({
+    enabledPackIds: [...defaultEnabledRulePackIds],
+  }).length;
+
+  assert.equal(result.staticRuleAuditResults.length, defaultEnabledRuleCount);
   assert.equal(
     result.deterministicRuleResults.length + result.assistedRuleCandidates.length,
-    listRegisteredRules().length,
+    defaultEnabledRuleCount,
   );
 });
 

@@ -12,6 +12,9 @@ export interface OpencodeRunRequest {
   agent?: string;
   outputFile?: string;
   preserveOutputFileOnStart?: boolean;
+  logger?: {
+    info(message: string): Promise<void> | void;
+  };
 }
 
 export interface OpencodeRunResult {
@@ -136,6 +139,14 @@ function resolveAgentOutputPath(sandboxRoot: string, outputFile: string): string
   return resolved;
 }
 
+async function logInfo(request: OpencodeRunRequest, message: string): Promise<void> {
+  try {
+    await request.logger?.info(message);
+  } catch {
+    // Logging must not change scoring behavior.
+  }
+}
+
 export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunResult> {
   const startedAt = Date.now();
   const spawnProcess = input.deps?.spawnProcess ?? defaultSpawnProcess;
@@ -176,6 +187,17 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
     ? `Read and follow the prompt file at ${promptRelativePath}. Write the final JSON object to ${input.request.outputFile}. After writing the file, reply only with {"output_file":"${input.request.outputFile}"}.`
     : `Read and follow the prompt file at ${promptRelativePath}. Return only the requested final JSON object.`;
   args.push(runMessage);
+  await logInfo(
+    input.request,
+    [
+      `opencode 调用开始 request=${input.request.requestTag}`,
+      `agent=${input.request.agent ?? "default"}`,
+      `prompt=${promptRelativePath}`,
+      input.request.outputFile ? `outputFile=${input.request.outputFile}` : undefined,
+    ]
+      .filter((part): part is string => typeof part === "string")
+      .join(" "),
+  );
 
   return new Promise<OpencodeRunResult>((resolve, reject) => {
     const stdout: Buffer[] = [];
@@ -271,11 +293,22 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
         } else if (assistantTextError) {
           throw assistantTextError;
         }
+        const elapsedMs = Date.now() - startedAt;
+        await logInfo(
+          input.request,
+          [
+            `opencode 调用完成 request=${input.request.requestTag}`,
+            `elapsedMs=${String(elapsedMs)}`,
+            input.request.outputFile ? `outputFile=${input.request.outputFile}` : undefined,
+          ]
+            .filter((part): part is string => typeof part === "string")
+            .join(" "),
+        );
         succeed({
           requestTag: input.request.requestTag,
           rawText,
           rawEvents,
-          elapsedMs: Date.now() - startedAt,
+          elapsedMs,
           assistantText,
           outputFile: input.request.outputFile,
           outputFileText,

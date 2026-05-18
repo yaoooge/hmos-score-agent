@@ -1,5 +1,5 @@
 import { collectEvidence } from "./evidenceCollector.js";
-import { listRegisteredRules } from "./engine/rulePackRegistry.js";
+import { getEnabledRulePacks, listRegisteredRules } from "./engine/rulePackRegistry.js";
 import type { RegisteredRule } from "./engine/ruleTypes.js";
 import { runCaseConstraintRule } from "./evaluators/caseConstraintEvaluator.js";
 import { runProjectStructureRule } from "./evaluators/projectStructureEvaluator.js";
@@ -23,6 +23,7 @@ export interface RuleEngineOutput {
   caseRuleResults: RuleAuditResult[];
   assistedRuleCandidates: AssistedRuleCandidate[];
   ruleViolations: RuleViolation[];
+  enabledRulePacks: Array<{ pack_id: string; display_name: string }>;
   ruleEvidenceIndex: RuleEvidenceIndex;
   evidenceSummary: {
     workspaceFileCount: number;
@@ -56,10 +57,18 @@ export async function runRuleEngine(input: {
   caseInput: CaseInput;
   taskType: TaskType;
   runtimeRules?: CaseRuleDefinition[];
+  enabledRulePackIds?: string[];
 }): Promise<RuleEngineOutput> {
   const evidence = await collectEvidence(input.caseInput, { taskType: input.taskType });
-  const registeredRules = listRegisteredRules(input.runtimeRules ?? []);
+  const enabledRulePacks = input.enabledRulePackIds
+    ? getEnabledRulePacks(input.enabledRulePackIds)
+    : getEnabledRulePacks(["arkts-language", "arkts-performance"]);
+  const registeredRules = listRegisteredRules({
+    enabledPackIds: enabledRulePacks.map((pack) => pack.packId),
+    runtimeRules: input.runtimeRules ?? [],
+  });
   const ruleSummaryById = new Map(registeredRules.map((rule) => [rule.rule_id, rule.summary]));
+  const registeredRuleById = new Map(registeredRules.map((rule) => [rule.rule_id, rule]));
   const evaluatedRules = registeredRules.map((rule) => evaluateRegisteredRule(rule, evidence));
   const evaluatedRuleById = new Map(evaluatedRules.map((rule) => [rule.rule_id, rule]));
   const caseRuleIds = new Set((input.runtimeRules ?? []).map((rule) => rule.rule_id));
@@ -132,7 +141,7 @@ export async function runRuleEngine(input: {
   const assistedRuleCandidates: AssistedRuleCandidate[] = staticRuleAuditResults
     .filter((rule) => rule.result === "未接入判定器" || caseRuleIds.has(rule.rule_id))
     .map((rule) => {
-      const runtimeRule = (input.runtimeRules ?? []).find((item) => item.rule_id === rule.rule_id);
+      const registeredRule = registeredRuleById.get(rule.rule_id);
       const staticPrecheck = evaluatedRuleById.get(rule.rule_id)?.preliminaryData
         ?.static_precheck as AssistedRuleCandidate["static_precheck"] | undefined;
       return {
@@ -142,17 +151,20 @@ export async function runRuleEngine(input: {
         why_uncertain: rule.conclusion,
         local_preliminary_signal:
           staticPrecheck?.signal_status ??
-          (runtimeRule?.is_case_rule ? "unknown" : "未接入静态判定器，需要agent辅助判定"),
+          (registeredRule?.is_case_rule ? "unknown" : "未接入静态判定器，需要agent辅助判定"),
         evidence_files: ruleEvidenceIndex[rule.rule_id]?.evidenceFiles ?? [],
         evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
-        rule_name: runtimeRule?.rule_name,
-        priority: runtimeRule?.priority,
-        kit: readStringArray(runtimeRule?.detector_config.kit),
-        llm_prompt: runtimeRule?.detector_config.llmPrompt,
-        ast_signals: runtimeRule?.detector_config.astSignals,
-        target_checks: readTargetChecks(runtimeRule?.detector_config.targetChecks),
+        rule_name: registeredRule?.rule_name,
+        priority: registeredRule?.priority,
+        kit: readStringArray(registeredRule?.detector_config.kit),
+        llm_prompt:
+          typeof registeredRule?.detector_config.llmPrompt === "string"
+            ? registeredRule.detector_config.llmPrompt
+            : undefined,
+        ast_signals: readAstSignals(registeredRule?.detector_config.astSignals),
+        target_checks: readTargetChecks(registeredRule?.detector_config.targetChecks),
         static_precheck: staticPrecheck,
-        is_case_rule: runtimeRule?.is_case_rule,
+        is_case_rule: registeredRule?.is_case_rule,
       };
     });
 
@@ -162,6 +174,10 @@ export async function runRuleEngine(input: {
     caseRuleResults,
     assistedRuleCandidates,
     ruleViolations,
+    enabledRulePacks: enabledRulePacks.map((pack) => ({
+      pack_id: pack.packId,
+      display_name: pack.displayName,
+    })),
     ruleEvidenceIndex,
     evidenceSummary: evidence.summary,
   };
@@ -208,6 +224,14 @@ function readTargetChecks(value: unknown): AssistedRuleCandidate["target_checks"
   });
 
   return targetChecks.length > 0 ? targetChecks : undefined;
+}
+
+function readAstSignals(value: unknown): Array<Record<string, string>> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const astSignals = value.filter(isStringRecord);
+  return astSignals.length > 0 ? astSignals : undefined;
 }
 
 function evaluateRegisteredRule(

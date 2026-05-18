@@ -90,6 +90,59 @@ test("runOpencodePrompt invokes attached opencode run with the requested custom 
   assert.match(spawned[0]?.args.at(-1) ?? "", /metadata\/opencode-prompts\/rule-assessment\.md/);
 });
 
+test("runOpencodePrompt logs actual opencode invocation lifecycle", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-log-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-log-"));
+  const child = createFakeChild();
+  const messages: string[] = [];
+
+  const result = await runOpencodePrompt({
+    runtime: runtimeConfig(runtimeDir),
+    request: {
+      prompt: "请评分",
+      sandboxRoot,
+      requestTag: "rule-assessment",
+      agent: "hmos-rule-assessment",
+      outputFile: "metadata/agent-output/rule-assessment.json",
+      logger: {
+        info: (message) => {
+          messages.push(message);
+        },
+      },
+    },
+    deps: {
+      spawnProcess: () => {
+        queueMicrotask(async () => {
+          await fs.mkdir(path.join(sandboxRoot, "metadata", "agent-output"), { recursive: true });
+          await fs.writeFile(
+            path.join(sandboxRoot, "metadata", "agent-output", "rule-assessment.json"),
+            '{"ok":true}\n',
+            "utf-8",
+          );
+          child.stdout.emit(
+            "data",
+            Buffer.from(
+              '{"type":"text","part":{"type":"text","text":"{\\"output_file\\":\\"metadata/agent-output/rule-assessment.json\\"}"}}\n',
+            ),
+          );
+          child.emit("exit", 0);
+        });
+        return child;
+      },
+    },
+  });
+
+  assert.equal(result.rawText, '{"ok":true}\n');
+  assert.match(
+    messages[0] ?? "",
+    /opencode 调用开始 request=rule-assessment agent=hmos-rule-assessment prompt=metadata\/opencode-prompts\/rule-assessment\.md outputFile=metadata\/agent-output\/rule-assessment\.json/,
+  );
+  assert.match(
+    messages.at(-1) ?? "",
+    /opencode 调用完成 request=rule-assessment elapsedMs=\d+ outputFile=metadata\/agent-output\/rule-assessment\.json/,
+  );
+});
+
 test("runOpencodePrompt concatenates streamed opencode text part events", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-stream-text-"));
   const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-stream-text-"));

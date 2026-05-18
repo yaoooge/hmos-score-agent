@@ -437,6 +437,9 @@ export async function runOpencodeRubricScoring(
       title: inputRequestTag,
       agent: "hmos-rubric-scoring",
       outputFile: RUBRIC_SCORING_OUTPUT_FILE,
+      logger: input.logger?.info
+        ? { info: (message) => input.logger?.info?.(message) }
+        : undefined,
     });
   }
 

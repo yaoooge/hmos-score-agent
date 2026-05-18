@@ -17,7 +17,7 @@ test("builds minimal YAML documents for each registered rule pack", () => {
   const packs = getRegisteredRulePacks();
   const documents = buildRulePackYamlDocuments(packs);
 
-  assert.equal(documents.length, 2);
+  assert.equal(documents.length, 3);
 
   const arktsLanguage = documents.find((item) => item.packId === "arkts-language");
   assert.ok(arktsLanguage);
@@ -66,6 +66,32 @@ test("builds minimal YAML documents for each registered rule pack", () => {
   assert.equal(performance.document.must_rules.length, 0);
   assert.equal(performance.document.should_rules.length, 6);
   assert.equal(performance.document.forbidden_patterns.length, 5);
+
+  const crossDevice = documents.find((item) => item.packId === "cross-device-adaptation");
+  assert.ok(crossDevice);
+  assert.equal(crossDevice.fileName, "cross-device-adaptation.yaml");
+  assert.equal(crossDevice.document.name, "HarmonyOS 一多适配通用规则包");
+  assert.equal(crossDevice.document.rule_pack_meta.pack_id, "cross-device-adaptation");
+  assert.equal(crossDevice.document.must_rules.length, 36);
+  assert.equal(crossDevice.document.should_rules.length, 19);
+  assert.equal(crossDevice.document.forbidden_patterns.length, 0);
+
+  const breakpointRule = crossDevice.document.must_rules.find(
+    (item) => item.id === "RSP-MUST-01",
+  );
+  assert.ok(breakpointRule);
+  assert.equal(breakpointRule.detector_kind, "case_constraint");
+  assert.deepEqual(breakpointRule.detector_config.targetPatterns, ["**/*.ets"]);
+  assert.deepEqual(breakpointRule.detector_config.kit, ["ArkUI: GridRow / WidthBreakpoint"]);
+  assert.match(breakpointRule.detector_config.llmPrompt as string, /横向断点划分必须为/);
+  assert.deepEqual(breakpointRule.detector_config.targetChecks, [
+    {
+      target: "**/*.ets",
+      astSignals: [],
+      llmPrompt:
+        "检查工程中自定义断点系统或 WidthBreakpointType 工具类的断点边界定义，横向断点划分必须为 xs:(0,320)、sm:[320,600)、md:[600,840)、lg:[840,1440)、xl:[1440,+∞)。若使用 GridRow 的 breakpoints.value，值必须为 ['320vp','600vp','840vp','1440vp']。断点边界值与系统推荐不一致即判定失败",
+    },
+  ]);
 });
 
 test("serializes exported rule pack documents as parseable YAML", () => {
@@ -95,6 +121,7 @@ test("writes one YAML file per registered rule pack", async () => {
   assert.deepEqual(writtenFiles.map((filePath) => path.basename(filePath)).sort(), [
     "arkts-language.yaml",
     "arkts-performance.yaml",
+    "cross-device-adaptation.yaml",
   ]);
 
   const languageYaml = await fs.readFile(path.join(outputDirectory, "arkts-language.yaml"), "utf8");
@@ -109,6 +136,21 @@ test("writes one YAML file per registered rule pack", async () => {
   assert.equal(languageDocument.must_rules.length, 10);
   assert.equal(languageDocument.should_rules.length, 11);
   assert.equal(languageDocument.forbidden_patterns.length, 26);
+
+  const crossDeviceYaml = await fs.readFile(
+    path.join(outputDirectory, "cross-device-adaptation.yaml"),
+    "utf8",
+  );
+  const crossDeviceDocument = yaml.load(crossDeviceYaml) as {
+    rule_pack_meta: { pack_id: string };
+    must_rules: unknown[];
+    should_rules: unknown[];
+    forbidden_patterns: unknown[];
+  };
+  assert.equal(crossDeviceDocument.rule_pack_meta.pack_id, "cross-device-adaptation");
+  assert.equal(crossDeviceDocument.must_rules.length, 36);
+  assert.equal(crossDeviceDocument.should_rules.length, 19);
+  assert.equal(crossDeviceDocument.forbidden_patterns.length, 0);
 });
 
 test("package exposes a rule pack YAML export script", () => {

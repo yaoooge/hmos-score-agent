@@ -51,3 +51,44 @@ export function createTextRule(
     fallback_policy: "agent_assisted",
   };
 }
+
+export function createAgentAssistedTargetRule(input: {
+  packId: string;
+  ruleSource: Extract<RuleSource, "must_rule" | "should_rule">;
+  ruleId: string;
+  ruleName: string;
+  summary: string;
+  priority: "P0" | "P1";
+  kit?: string[];
+  targetChecks: Array<{
+    target: string;
+    llmPrompt: string;
+    astSignals?: Array<Record<string, string>>;
+  }>;
+}): RegisteredRule {
+  const targetChecks = input.targetChecks.map((check) => ({
+    target: check.target,
+    astSignals: check.astSignals ?? [],
+    llmPrompt: check.llmPrompt,
+  }));
+
+  return {
+    pack_id: input.packId,
+    rule_id: input.ruleId,
+    rule_source: input.ruleSource,
+    summary: input.summary,
+    detector_kind: "case_constraint",
+    detector_config: {
+      targetPatterns: Array.from(new Set(targetChecks.map((check) => check.target))),
+      ...(input.kit && input.kit.length > 0 ? { kit: input.kit } : {}),
+      targetChecks,
+      llmPrompt: targetChecks
+        .filter((check) => check.llmPrompt.length > 0)
+        .map((check) => check.llmPrompt)
+        .join("\n"),
+    },
+    fallback_policy: "agent_assisted",
+    rule_name: input.ruleName,
+    priority: input.priority,
+  };
+}
