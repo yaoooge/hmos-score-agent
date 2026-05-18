@@ -164,14 +164,13 @@ export function createRunRemoteTaskHandler(
   registry?: RemoteTaskRegistry,
   ruleViolationStatsStore?: RuleViolationStatsStore,
   humanReviewEvidenceStore?: HumanReviewEvidenceStore,
-) {
-  const queue = createRemoteTaskExecutionQueue(
+  queue = createRemoteTaskExecutionQueue(
     deps,
     registry,
     ruleViolationStatsStore,
     humanReviewEvidenceStore,
-  );
-
+  ),
+) {
   function buildAcceptedTaskLogContext(
     acceptedTask: AcceptedRemoteEvaluationTask,
   ): RemoteTaskLogContext {
@@ -205,6 +204,7 @@ export function createRunRemoteTaskHandler(
         testCaseId: acceptedTask.remoteTask.testCase.id,
         testCaseName: acceptedTask.remoteTask.testCase.name,
         testCaseType: acceptedTask.remoteTask.testCase.type,
+        remoteTaskFile: REMOTE_TASK_PAYLOAD_FILE,
       });
       const executionPromise = queue.enqueueRemoteTaskExecution(acceptedTask);
       const shouldUploadQueuedPendingCallback = queue.isQueued(acceptedTask.taskId);
@@ -319,6 +319,7 @@ export function createRemoteTaskExecutionQueue(
       testCaseId: acceptedTask.remoteTask.testCase.id,
       testCaseName: acceptedTask.remoteTask.testCase.name,
       testCaseType: acceptedTask.remoteTask.testCase.type,
+      remoteTaskFile: REMOTE_TASK_PAYLOAD_FILE,
     });
     try {
       await deps.executeAcceptedRemoteEvaluationTask(acceptedTask, {
@@ -354,6 +355,7 @@ export function createRemoteTaskExecutionQueue(
         testCaseId: acceptedTask.remoteTask.testCase.id,
         testCaseName: acceptedTask.remoteTask.testCase.name,
         testCaseType: acceptedTask.remoteTask.testCase.type,
+        remoteTaskFile: REMOTE_TASK_PAYLOAD_FILE,
       });
     } catch (error) {
       upsertTaskRecord(acceptedTask.taskId, "failed", {
@@ -362,6 +364,7 @@ export function createRemoteTaskExecutionQueue(
         testCaseId: acceptedTask.remoteTask.testCase.id,
         testCaseName: acceptedTask.remoteTask.testCase.name,
         testCaseType: acceptedTask.remoteTask.testCase.type,
+        remoteTaskFile: REMOTE_TASK_PAYLOAD_FILE,
         error: formatError(error),
       });
       throw error;
@@ -392,6 +395,7 @@ export function createRemoteTaskExecutionQueue(
       testCaseId: acceptedTask.remoteTask.testCase.id,
       testCaseName: acceptedTask.remoteTask.testCase.name,
       testCaseType: acceptedTask.remoteTask.testCase.type,
+      remoteTaskFile: REMOTE_TASK_PAYLOAD_FILE,
     });
     return new Promise<void>((resolve, reject) => {
       pendingRemoteTaskExecutions.push({ acceptedTask, resolve, reject });
@@ -669,6 +673,15 @@ export function createApp(
   const registry = createRemoteTaskRegistry(config.localCaseRoot);
   const ruleViolationStatsStore = createRuleViolationStatsStore(config.localCaseRoot);
   const humanReviewEvidenceStore = createHumanReviewEvidenceStore(config.humanReviewEvidenceRoot);
+  const remoteTaskQueue = createRemoteTaskExecutionQueue(
+    deps,
+    registry,
+    ruleViolationStatsStore,
+    humanReviewEvidenceStore,
+  );
+  void remoteTaskQueue.recoverPendingRemoteTasks().catch((error) => {
+    console.error(`remote_task_recovery_failed error=${formatError(error)}`);
+  });
   app.use(createCorsMiddleware());
   app.use(express.json());
 
@@ -678,7 +691,13 @@ export function createApp(
 
   app.post(
     API_PATHS.runRemoteTask,
-    createRunRemoteTaskHandler(deps, registry, ruleViolationStatsStore, humanReviewEvidenceStore),
+    createRunRemoteTaskHandler(
+      deps,
+      registry,
+      ruleViolationStatsStore,
+      humanReviewEvidenceStore,
+      remoteTaskQueue,
+    ),
   );
   app.get(
     API_PATHS.ruleViolationStats,

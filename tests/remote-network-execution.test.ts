@@ -773,6 +773,51 @@ test("createRunRemoteTaskHandler persists completed task for result handler", as
   });
 });
 
+test("createRunRemoteTaskHandler stores remote task file pointer without prompt in registry", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-handler-pointer");
+  await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "inputs", "remote-task.json"), JSON.stringify({}));
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  const deps = {
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => ({
+      taskId: Number(remoteTask.taskId),
+      caseDir,
+      message: "任务接收成功，结果将通过 callback 返回",
+      remoteTask: {
+        ...remoteTask,
+        callback: "https://remote.example.com/callback",
+        testCase: { id: 1810, name: "case", type: "full_generation", input: "large prompt text" },
+      } as never,
+      workflowState: { stage: "accepted", caseDir } as never,
+    }),
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+    executeAcceptedRemoteEvaluationTask: async () => undefined,
+  };
+  const runHandler = createRunRemoteTaskHandler(deps as never, registry);
+  const runResponse = createResponse();
+
+  await runHandler(
+    {
+      body: {
+        taskId: 810,
+        token: "remote-token",
+        testCase: { id: 1810, input: "large prompt text" },
+      },
+    } as never,
+    runResponse.response as never,
+  );
+
+  await waitForAssertion(async () => {
+    const record = await registry.get(810);
+    assert.equal(record?.remoteTaskFile, "inputs/remote-task.json");
+    const indexText = await fs.readFile(path.join(localCaseRoot, "remote-task-index.json"), "utf-8");
+    assert.equal(indexText.includes("large prompt text"), false);
+  });
+});
+
 test("runRemoteEvaluationTask executes a pushed remote task and uploads callback payload", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
@@ -1466,6 +1511,63 @@ test("createApp exposes POST /score/run-remote-task and removes the old download
   assert.equal(responseState.body?.message, "任务接收成功，结果将通过 callback 返回");
 
   resolveBackgroundExecution?.();
+});
+
+test("createApp starts remote task recovery in the background", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  t.after(() => {
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+  });
+  const caseDir = path.join(localCaseRoot, "remote-case-app-recovery");
+  await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "inputs", "remote-task.json"),
+    JSON.stringify({
+      taskId: 904,
+      testCase: {
+        id: 1904,
+        name: "remote-case-app-recovery",
+        type: "full_generation",
+        description: "新增页面",
+        input: "完整 PRD 文本",
+        expectedOutput: "实现登录页",
+        fileUrl: "",
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: "https://remote.example.com/workspace.json",
+      },
+      callback: "https://remote.example.com/callback/app-recovery",
+    }),
+    "utf-8",
+  );
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 904,
+    status: "queued",
+    caseDir,
+    testCaseId: 1904,
+    remoteTaskFile: "inputs/remote-task.json",
+  });
+  const executedTaskIds: number[] = [];
+
+  createApp({
+    acceptRemoteEvaluationTask,
+    prepareRemoteEvaluationTask,
+    executeAcceptedRemoteEvaluationTask: async (acceptedTask: { taskId: number }) => {
+      executedTaskIds.push(acceptedTask.taskId);
+    },
+  } as never);
+
+  await waitForAssertion(async () => {
+    assert.deepEqual(executedTaskIds, [904]);
+  });
 });
 
 test("createRunRemoteTaskHandler returns success before remote preprocessing finishes", async () => {
