@@ -261,6 +261,7 @@ export type AcceptedRemoteEvaluationTask = {
 };
 
 const REMOTE_TASK_ACCEPTED_MESSAGE = "任务接收成功，结果将通过 callback 返回";
+export const REMOTE_TASK_PAYLOAD_FILE = "inputs/remote-task.json";
 
 function formatRemoteTaskLogContext(remoteTask: RemoteEvaluationTask): string {
   return `taskId=${String(remoteTask.taskId)} testCaseId=${String(remoteTask.testCase.id)}`;
@@ -418,6 +419,8 @@ export async function acceptRemoteEvaluationTask(
     buildRemoteCaseInfoPayload(caseInfoBase, acceptedState),
   );
   await logger.info("输入元数据写入完成");
+  await artifactStore.writeJson(caseDir, REMOTE_TASK_PAYLOAD_FILE, remoteTask);
+  await logger.info("远端任务原始请求写入完成");
   await logger.info("远端任务预处理开始");
 
   return {

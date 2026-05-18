@@ -193,6 +193,47 @@ test("acceptRemoteEvaluationTask persists remote test case name in case info", a
   assert.equal(caseInfo.remote_test_case_type, "bug_fix");
 });
 
+test("acceptRemoteEvaluationTask writes remote task payload into case inputs", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  t.after(() => {
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+  });
+
+  const remoteTask = {
+    taskId: 44,
+    testCase: {
+      id: 1004,
+      name: "remote-case-payload",
+      type: "full_generation",
+      description: "新增页面",
+      input: "完整 PRD 文本",
+      expectedOutput: "实现登录页",
+      fileUrl: "",
+    },
+    executionResult: {
+      isBuildSuccess: true,
+      outputCodeUrl: "https://remote.example.com/workspace.json",
+    },
+    token: "remote-token",
+    callback: "https://remote.example.com/callback",
+  };
+
+  const accepted = await acceptRemoteEvaluationTask(remoteTask);
+  const payloadText = await fs.readFile(
+    path.join(accepted.caseDir, "inputs", "remote-task.json"),
+    "utf-8",
+  );
+  const payload = JSON.parse(payloadText) as Record<string, unknown>;
+
+  assert.deepEqual(payload, remoteTask);
+});
+
 async function waitForAssertion(assertion: () => Promise<void>, attempts = 20): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
