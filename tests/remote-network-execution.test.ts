@@ -15,6 +15,8 @@ import {
   acceptRemoteEvaluationTask,
   executeAcceptedRemoteEvaluationTask,
   prepareRemoteEvaluationTask,
+  replayCompletedRemoteTaskCallback,
+  restoreAcceptedRemoteEvaluationTask,
   runRemoteEvaluationTask,
 } from "../src/service.js";
 import type { LoadedRubricSnapshot } from "../src/types.js";
@@ -232,6 +234,98 @@ test("acceptRemoteEvaluationTask writes remote task payload into case inputs", a
   const payload = JSON.parse(payloadText) as Record<string, unknown>;
 
   assert.deepEqual(payload, remoteTask);
+});
+
+test("restoreAcceptedRemoteEvaluationTask rebuilds accepted task from case payload", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-restore");
+  const remoteTask = {
+    taskId: 45,
+    testCase: {
+      id: 1005,
+      name: "remote-case-restore",
+      type: "full_generation",
+      description: "新增页面",
+      input: "完整 PRD 文本",
+      expectedOutput: "实现登录页",
+      fileUrl: "",
+    },
+    executionResult: {
+      isBuildSuccess: true,
+      outputCodeUrl: "https://remote.example.com/workspace.json",
+    },
+    token: "remote-token",
+    callback: "https://remote.example.com/callback",
+  };
+  await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "inputs", "remote-task.json"),
+    JSON.stringify(remoteTask),
+    "utf-8",
+  );
+
+  const restored = await restoreAcceptedRemoteEvaluationTask({
+    taskId: 45,
+    caseDir,
+    remoteTaskFile: "inputs/remote-task.json",
+  });
+
+  assert.equal(restored.taskId, 45);
+  assert.equal(restored.caseDir, caseDir);
+  assert.deepEqual(restored.remoteTask, remoteTask);
+  assert.deepEqual(restored.workflowState, { stage: "accepted", caseDir });
+});
+
+test("replayCompletedRemoteTaskCallback sends completed payload from stored result", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-replay");
+  const callbackUrl = "https://remote.example.com/callback/replay";
+  const resultJson = createStoredResultJson(91);
+  const callbackCalls: Array<Record<string, unknown>> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    assert.equal(String(input), callbackUrl);
+    callbackCalls.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await fs.mkdir(path.join(caseDir, "inputs"), { recursive: true });
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(caseDir, "inputs", "remote-task.json"),
+    JSON.stringify({
+      taskId: 46,
+      testCase: {
+        id: 1006,
+        name: "remote-case-replay",
+        type: "full_generation",
+        description: "新增页面",
+        input: "完整 PRD 文本",
+        expectedOutput: "实现登录页",
+        fileUrl: "",
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: "https://remote.example.com/workspace.json",
+      },
+      token: "remote-token",
+      callback: callbackUrl,
+    }),
+    "utf-8",
+  );
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(resultJson));
+
+  await replayCompletedRemoteTaskCallback({
+    taskId: 46,
+    caseDir,
+    remoteTaskFile: "inputs/remote-task.json",
+  });
+
+  assert.equal(callbackCalls.length, 1);
+  assertCompletedCallbackSummary(callbackCalls[0] ?? {}, resultJson);
 });
 
 async function waitForAssertion(assertion: () => Promise<void>, attempts = 20): Promise<void> {

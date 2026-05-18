@@ -251,6 +251,12 @@ type InitialAcceptedRemoteWorkflowState = {
   caseDir: string;
 };
 
+type RemoteTaskRecoveryInput = {
+  taskId: number;
+  caseDir: string;
+  remoteTaskFile?: string;
+};
+
 export type AcceptedRemoteEvaluationTask = {
   taskId: number;
   caseDir: string;
@@ -262,6 +268,23 @@ export type AcceptedRemoteEvaluationTask = {
 
 const REMOTE_TASK_ACCEPTED_MESSAGE = "任务接收成功，结果将通过 callback 返回";
 export const REMOTE_TASK_PAYLOAD_FILE = "inputs/remote-task.json";
+
+function resolveRemoteTaskPayloadPath(input: RemoteTaskRecoveryInput): string {
+  return path.join(input.caseDir, input.remoteTaskFile ?? REMOTE_TASK_PAYLOAD_FILE);
+}
+
+async function readPersistedRemoteTask(
+  input: RemoteTaskRecoveryInput,
+): Promise<RemoteEvaluationTask> {
+  const text = await fsp.readFile(resolveRemoteTaskPayloadPath(input), "utf-8");
+  const parsed = JSON.parse(text) as RemoteEvaluationTask;
+  if (parsed.taskId !== input.taskId) {
+    throw new Error(
+      `Persisted remote task id mismatch: expected ${String(input.taskId)}, got ${String(parsed.taskId)}`,
+    );
+  }
+  return parsed;
+}
 
 function formatRemoteTaskLogContext(remoteTask: RemoteEvaluationTask): string {
   return `taskId=${String(remoteTask.taskId)} testCaseId=${String(remoteTask.testCase.id)}`;
@@ -430,6 +453,40 @@ export async function acceptRemoteEvaluationTask(
     remoteTask,
     workflowState: acceptedState,
   };
+}
+
+export async function restoreAcceptedRemoteEvaluationTask(
+  input: RemoteTaskRecoveryInput,
+): Promise<AcceptedRemoteEvaluationTask> {
+  const remoteTask = await readPersistedRemoteTask(input);
+  return {
+    taskId: input.taskId,
+    caseDir: input.caseDir,
+    message: REMOTE_TASK_ACCEPTED_MESSAGE,
+    remoteTask,
+    workflowState: { stage: "accepted", caseDir: input.caseDir },
+  };
+}
+
+export async function replayCompletedRemoteTaskCallback(
+  input: RemoteTaskRecoveryInput,
+): Promise<string> {
+  const remoteTask = await readPersistedRemoteTask(input);
+  const config = getConfig();
+  const artifactStore = new ArtifactStore(config.localCaseRoot);
+  const logger = new CaseLogger(artifactStore, input.caseDir);
+  const resultText = await fsp.readFile(
+    path.join(input.caseDir, "outputs", "result.json"),
+    "utf-8",
+  );
+  const resultJson = JSON.parse(resultText) as Record<string, unknown>;
+  return await uploadRemoteTaskCallbackWithLog({
+    remoteTask,
+    logger,
+    status: "completed",
+    phase: "recovered_completed",
+    resultData: buildCompletedRemoteResultData({ resultJson }),
+  });
 }
 
 async function prepareAcceptedRemoteEvaluationTask(
