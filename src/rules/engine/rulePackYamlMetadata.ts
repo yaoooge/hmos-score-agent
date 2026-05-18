@@ -23,4 +23,12 @@ export const rulePackYamlMetadataByPackId: Record<string, RulePackYamlMetadata> 
     source_name: "Huawei-ArkTS-High-Performance-Programming-Practices",
     source_version: "performance-rules-2026-04-17",
   },
+  "cross-device-adaptation": {
+    name: "HarmonyOS 一多适配通用规则包",
+    version: "v1.0.0",
+    summary:
+      "基于一多适配通用规则整理的内部条件规则包，仅在任务理解判定涉及一多适配时启用。",
+    source_name: "HarmonyOS-Cross-Device-Adaptation-General-Rules",
+    source_version: "general-rules-2026-05-15",
+  },
 };

@@ -701,6 +701,94 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   );
 });
 
+test("ruleAuditNode excludes cross-device rules when task is not cross-device related", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rootDir = await makeTempDir(t);
+  const caseDir = await writeCaseFixture(rootDir, {
+    workspaceContent: "let x: any = 1;\nvar y = 2;\n",
+  });
+  const caseInput = await loadCaseFromPath(caseDir);
+
+  const result = await ruleAuditNode(
+    {
+      caseInput,
+      taskType: "full_generation",
+      constraintSummary: {
+        explicitConstraints: ["固定任务类型: full_generation"],
+        contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+        implicitConstraints: ["修改范围: 未提供 patch"],
+        classificationHints: ["full_generation", "no_patch"],
+        crossDeviceAdaptation: notInvolvedCrossDevice(),
+      },
+    } as never,
+    { referenceRoot },
+  );
+
+  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "RSP-MUST-01"), false);
+  assert.deepEqual(result.enabledRulePacks, [
+    {
+      pack_id: "arkts-language",
+      display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+    },
+    {
+      pack_id: "arkts-performance",
+      display_name: "ArkTS 高性能编程实践",
+    },
+  ]);
+});
+
+test("ruleAuditNode enables cross-device rules and preserves assisted candidate metadata", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const rootDir = await makeTempDir(t);
+  const caseDir = await writeCaseFixture(rootDir, {
+    promptText: "实现一多适配响应式布局，按断点适配手机和平板",
+    workspaceContent: "GridRow({ breakpoints: { value: ['320vp','600vp','840vp','1440vp'] } }) {}\n",
+  });
+  const caseInput = await loadCaseFromPath(caseDir);
+
+  const result = await ruleAuditNode(
+    {
+      caseInput,
+      taskType: "full_generation",
+      constraintSummary: {
+        explicitConstraints: ["固定任务类型: full_generation", "实现一多适配响应式布局"],
+        contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+        implicitConstraints: ["修改范围: 未提供 patch"],
+        classificationHints: ["full_generation", "no_patch"],
+        crossDeviceAdaptation: {
+          applicability: "involved",
+          confidence: "high",
+          reasons: ["需求明确要求一多适配和断点布局"],
+        },
+      },
+    } as never,
+    { referenceRoot },
+  );
+
+  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "RSP-MUST-01"), true);
+  assert.equal(
+    result.enabledRulePacks?.some((pack) => pack.pack_id === "cross-device-adaptation"),
+    true,
+  );
+
+  const candidate = result.assistedRuleCandidates?.find((item) => item.rule_id === "RSP-MUST-01");
+  assert.ok(candidate);
+  assert.equal(candidate.rule_source, "must_rule");
+  assert.equal(candidate.rule_name, "横向断点划分范围必须符合系统推荐值");
+  assert.equal(candidate.priority, "P0");
+  assert.deepEqual(candidate.kit, ["ArkUI: GridRow / WidthBreakpoint"]);
+  assert.equal(candidate.is_case_rule, undefined);
+  assert.match(candidate.llm_prompt ?? "", /横向断点划分必须为/);
+  assert.deepEqual(candidate.target_checks, [
+    {
+      target: "**/*.ets",
+      ast_signals: [],
+      llm_prompt:
+        "检查工程中自定义断点系统或 WidthBreakpointType 工具类的断点边界定义，横向断点划分必须为 xs:(0,320)、sm:[320,600)、md:[600,840)、lg:[840,1440)、xl:[1440,+∞)。若使用 GridRow 的 breakpoints.value，值必须为 ['320vp','600vp','840vp','1440vp']。断点边界值与系统推荐不一致即判定失败",
+    },
+  ]);
+});
+
 test("ruleMergeNode returns deterministic results directly when there are no assisted candidates", async () => {
   const deterministicRuleResults = [
     {
@@ -1120,6 +1208,164 @@ test("reportGenerationNode includes case_rule_results in resultJson", async (t) 
       display_name: "用例 requirement_004 约束规则",
     },
   ]);
+});
+
+test("reportGenerationNode includes cross-device pack only as enabled built-in pack", async (t) => {
+  const referenceRoot = await createReferenceRoot(t);
+  const scoringResult = await scoreFusionOrchestrationNode({
+    taskType: "full_generation",
+    rubricSnapshot: {
+      task_type: "full_generation",
+      evaluation_mode: "auto_precheck_with_human_review",
+      scenario: "生成响应式页面",
+      scoring_method: "discrete_band",
+      scoring_note: "按离散档位给分。",
+      common_risks: [],
+      report_emphasis: [],
+      dimension_summaries: [
+        {
+          name: "需求达成度",
+          weight: 25,
+          intent: "评价需求是否正确落地",
+          item_summaries: [
+            {
+              name: "核心链路达成",
+              weight: 10,
+              scoring_bands: [{ score: 10, criteria: "核心链路完整。" }],
+            },
+          ],
+        },
+      ],
+      hard_gates: [],
+      review_rule_summary: [],
+    },
+    deterministicRuleResults: [
+      {
+        rule_id: "RSP-MUST-01",
+        rule_source: "must_rule",
+        result: "满足",
+        conclusion: "断点符合系统推荐值",
+      },
+    ],
+    mergedRuleAuditResults: [
+      {
+        rule_id: "RSP-MUST-01",
+        rule_source: "must_rule",
+        result: "满足",
+        conclusion: "断点符合系统推荐值",
+      },
+    ],
+    ruleViolations: [],
+    constraintSummary: {
+      explicitConstraints: ["实现一多适配响应式布局"],
+      contextualConstraints: [],
+      implicitConstraints: [],
+      classificationHints: ["full_generation"],
+      crossDeviceAdaptation: {
+        applicability: "involved",
+        confidence: "high",
+        reasons: ["需求明确要求一多适配"],
+      },
+    },
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+    caseRuleDefinitions: [],
+  } as never);
+
+  const reportResult = await reportGenerationNode(
+    {
+      taskType: "full_generation",
+      caseInput: {
+        caseId: "case-cross-device",
+        promptText: "实现一多适配响应式布局",
+        originalProjectPath: "/tmp/original",
+        generatedProjectPath: "/tmp/workspace",
+      },
+      constraintSummary: {
+        explicitConstraints: ["实现一多适配响应式布局"],
+        contextualConstraints: [],
+        implicitConstraints: [],
+        classificationHints: ["full_generation"],
+        crossDeviceAdaptation: {
+          applicability: "involved",
+          confidence: "high",
+          reasons: ["需求明确要求一多适配"],
+        },
+      },
+      enabledRulePacks: [
+        {
+          pack_id: "arkts-language",
+          display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+        },
+        {
+          pack_id: "arkts-performance",
+          display_name: "ArkTS 高性能编程实践",
+        },
+        {
+          pack_id: "cross-device-adaptation",
+          display_name: "HarmonyOS 一多适配通用规则",
+        },
+      ],
+      rubricSnapshot: {
+        task_type: "full_generation",
+        evaluation_mode: "auto_precheck_with_human_review",
+        scenario: "生成响应式页面",
+        scoring_method: "discrete_band",
+        scoring_note: "按离散档位给分。",
+        common_risks: [],
+        report_emphasis: [],
+        dimension_summaries: [
+          {
+            name: "需求达成度",
+            weight: 25,
+            intent: "评价需求是否正确落地",
+            item_summaries: [
+              {
+                name: "核心链路达成",
+                weight: 10,
+                scoring_bands: [{ score: 10, criteria: "核心链路完整。" }],
+              },
+            ],
+          },
+        ],
+        hard_gates: [],
+        review_rule_summary: [],
+      },
+      mergedRuleAuditResults: [
+        {
+          rule_id: "RSP-MUST-01",
+          rule_source: "must_rule",
+          result: "满足",
+          conclusion: "断点符合系统推荐值",
+        },
+      ],
+      caseRuleDefinitions: [],
+      scoreComputation: scoringResult.scoreComputation,
+      ruleViolations: [],
+    } as never,
+    { referenceRoot },
+  );
+
+  assert.deepEqual(reportResult.resultJson?.bound_rule_packs, [
+    {
+      pack_id: "arkts-language",
+      display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+    },
+    {
+      pack_id: "arkts-performance",
+      display_name: "ArkTS 高性能编程实践",
+    },
+    {
+      pack_id: "cross-device-adaptation",
+      display_name: "HarmonyOS 一多适配通用规则",
+    },
+  ]);
+  assert.deepEqual(reportResult.resultJson?.case_rule_results, []);
 });
 
 test("reportGenerationNode includes official_linter_results with findings and score impact", async (t) => {
