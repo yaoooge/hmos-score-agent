@@ -58,6 +58,13 @@ export type TaskLogResponse = {
   content: string;
 };
 
+export type TaskResultResponse = {
+  success: true;
+  taskId: number;
+  status: string;
+  resultData: unknown;
+};
+
 export type DailyReportItem = {
   date: string;
   received: number;
@@ -220,6 +227,10 @@ export function fetchTasks(params: Record<string, string | number | undefined>) 
 
 export function fetchTaskLog(taskId: number, tailBytes = 65536) {
   return getJson<TaskLogResponse>(`/dashboard/tasks/${String(taskId)}/logs`, { tailBytes });
+}
+
+export function fetchTaskResult(taskId: number) {
+  return getJson<TaskResultResponse>(`/score/remote-tasks/${String(taskId)}/result`);
 }
 
 export function fetchDailyReport(params?: Record<string, string | number | undefined>) {

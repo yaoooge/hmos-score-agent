@@ -39,3 +39,18 @@ test("dashboard dev proxy still forwards dashboard API routes", () => {
     );
   }
 });
+
+test("dashboard dev proxy forwards remote task result API routes", () => {
+  assert.equal(typeof viteConfig, "object");
+  assert.notEqual(viteConfig, null);
+
+  const proxy = viteConfig.server?.proxy;
+  assert.equal(typeof proxy, "object");
+  assert.notEqual(proxy, null);
+
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(proxy, "/score/remote-tasks"),
+    true,
+    "/score/remote-tasks should be proxied to the API server in dev",
+  );
+});
