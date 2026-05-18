@@ -121,6 +121,7 @@ import {
   summarizeTaskTypeCounts,
 } from "../taskTypes";
 import { createRecentDashboardRange, refreshDashboardRangeEnd } from "../dashboardDateRange";
+import { loadTaskDashboardData } from "./taskDashboardDataLoader";
 
 const loading = ref(false);
 const summary = ref<DashboardSummary | null>(null);
@@ -159,6 +160,7 @@ const filters = reactive({
   scoreMin: undefined as number | undefined,
   scoreMax: undefined as number | undefined,
 });
+let latestLoadId = 0;
 
 const taskTypeOptions = computed(() => {
   return buildTaskTypeOptions(summary.value?.taskTypeCounts ?? []);
@@ -179,13 +181,12 @@ const drawerTitle = computed(() => {
   return `#${String(drawerTask.value.taskId)} ${drawerTask.value.name}`;
 });
 
-async function loadData() {
-  loading.value = true;
-  try {
-    const from = range.value?.[0]?.toISOString();
-    const to = range.value?.[1]?.toISOString();
-    summary.value = await fetchSummary({ from, to });
-    const response = await fetchTasks({
+function buildTaskListParams() {
+  const from = range.value?.[0]?.toISOString();
+  const to = range.value?.[1]?.toISOString();
+  return {
+    summaryParams: { from, to },
+    taskParams: {
       page: page.value,
       pageSize: pageSize.value,
       status: filters.status || undefined,
@@ -197,11 +198,32 @@ async function loadData() {
       to,
       sortBy: "updatedAt",
       sortOrder: "desc",
+    },
+  };
+}
+
+async function loadData(options: { includeSummary?: boolean } = {}) {
+  const loadId = ++latestLoadId;
+  loading.value = true;
+  try {
+    const { summaryParams, taskParams } = buildTaskListParams();
+    const response = await loadTaskDashboardData({
+      includeSummary: options.includeSummary ?? false,
+      fetchSummary: () => fetchSummary(summaryParams),
+      fetchTasks: () => fetchTasks(taskParams),
     });
-    tasks.value = response.items.map(normalizeDashboardTask);
-    total.value = response.total;
+    if (loadId !== latestLoadId) {
+      return;
+    }
+    if (response.summary) {
+      summary.value = response.summary;
+    }
+    tasks.value = response.tasks.items.map(normalizeDashboardTask);
+    total.value = response.tasks.total;
   } finally {
-    loading.value = false;
+    if (loadId === latestLoadId) {
+      loading.value = false;
+    }
   }
 }
 
@@ -229,11 +251,15 @@ async function reloadLog() {
   logState.truncated = response.truncated;
 }
 
-watch([page, pageSize], loadData);
-watch(range, loadData);
+watch([page, pageSize], () => loadData());
+watch(range, () => loadData({ includeSummary: true }));
 watch(
   () => [filters.status, filters.taskType, filters.keyword, filters.scoreMin, filters.scoreMax],
   () => {
+    if (page.value !== 1) {
+      page.value = 1;
+      return;
+    }
     page.value = 1;
     loadData();
   },
@@ -245,13 +271,12 @@ function onRefresh() {
     range.value = refreshedRange;
     return;
   }
-  loadData();
+  loadData({ includeSummary: true });
 }
 
 onMounted(() => {
   range.value = createRecentDashboardRange(7);
   setTitleControls?.({ dateRange: { model: range } });
-  loadData();
   window.addEventListener("dashboard:refresh", onRefresh as EventListener);
 });
 
