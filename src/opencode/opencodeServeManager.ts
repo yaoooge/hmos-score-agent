@@ -4,6 +4,7 @@ import { setTimeout as sleepTimer } from "node:timers/promises";
 import type { OpencodeRuntimeConfig } from "./opencodeConfig.js";
 
 const HEALTH_CHECK_TIMEOUT_MS = 2000;
+const WATCHDOG_INTERVAL_MS = 10000;
 
 export class OpencodeServeError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -14,6 +15,7 @@ export class OpencodeServeError extends Error {
 
 export interface OpencodeServeManager {
   start(): Promise<void>;
+  restart(): Promise<void>;
   stop(): Promise<void>;
   health(): Promise<boolean>;
   serverUrl(): string;
@@ -22,6 +24,7 @@ export interface OpencodeServeManager {
 type SpawnedProcess = Pick<ChildProcess, "stdout" | "stderr" | "on" | "kill">;
 
 type KillSignal = "SIGTERM" | "SIGKILL";
+type WatchdogTimer = { unref?: () => void };
 
 type ServeManagerDeps = {
   checkHealth?: (serverUrl: string) => Promise<boolean>;
@@ -34,6 +37,11 @@ type ServeManagerDeps = {
   collectListeningPids?: (port: number) => Promise<number[]>;
   killProcess?: (pid: number, signal: KillSignal) => void;
   sleep?: (ms: number) => Promise<void>;
+  setWatchdogTimer?: (
+    callback: () => void | Promise<void>,
+    intervalMs: number,
+  ) => WatchdogTimer;
+  clearWatchdogTimer?: (timer: WatchdogTimer) => void;
 };
 
 export async function ensureOpencodeCliAvailable(deps: {
@@ -184,7 +192,19 @@ export function createOpencodeServeManager(
       }));
   const collectPids = deps.collectListeningPids ?? collectListeningPids;
   const sleep = deps.sleep ?? sleepTimer;
+  const setWatchdogTimer =
+    deps.setWatchdogTimer ??
+    ((callback: () => void | Promise<void>, intervalMs: number): WatchdogTimer =>
+      setInterval(() => {
+        void callback();
+      }, intervalMs));
+  const clearWatchdogTimer =
+    deps.clearWatchdogTimer ?? ((timer: WatchdogTimer) => clearInterval(timer as NodeJS.Timeout));
   let child: SpawnedProcess | undefined;
+  let startPromise: Promise<void> | undefined;
+  let restartPromise: Promise<void> | undefined;
+  let watchdogTimer: WatchdogTimer | undefined;
+  let watchdogRunning = false;
 
   async function health(): Promise<boolean> {
     return checkHealth(config.serverUrl);
@@ -214,6 +234,14 @@ export function createOpencodeServeManager(
       });
     }
     await terminateExistingServer(config);
+  }
+
+  function stopWatchdog(): void {
+    if (!watchdogTimer) {
+      return;
+    }
+    clearWatchdogTimer(watchdogTimer);
+    watchdogTimer = undefined;
   }
 
   async function waitForHealthy(shouldStop: () => boolean = () => false): Promise<void> {
@@ -250,8 +278,11 @@ export function createOpencodeServeManager(
     return `opencode serve 提前退出 ${details.join(" ")}`;
   }
 
-  return {
-    async start(): Promise<void> {
+  async function startServe(): Promise<void> {
+    if (startPromise) {
+      return startPromise;
+    }
+    startPromise = (async () => {
       if (child && (await health())) {
         return;
       }
@@ -275,17 +306,17 @@ export function createOpencodeServeManager(
       const stderr: Buffer[] = [];
       let childExited = false;
 
-      child = spawnProcess(
-        "opencode",
-        args,
-        { env: config.env, stdio: ["ignore", "pipe", "pipe"] },
-      );
+      const spawnedChild = spawnProcess("opencode", args, {
+        env: config.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child = spawnedChild;
 
-      child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
-      child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+      spawnedChild.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+      spawnedChild.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
 
       const childFailure = new Promise<never>((_, reject) => {
-        child?.on("error", (error) => {
+        spawnedChild.on("error", (error) => {
           reject(
             new OpencodeServeError(
               `opencode serve 启动失败 serverUrl=${config.serverUrl} command=opencode ${args.join(" ")}`,
@@ -293,18 +324,83 @@ export function createOpencodeServeManager(
             ),
           );
         });
-        child?.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+        spawnedChild.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
           childExited = true;
-          child = undefined;
+          if (child === spawnedChild) {
+            child = undefined;
+          }
           reject(new OpencodeServeError(buildServeFailureMessage({ code, signal, stdout, stderr })));
         });
       });
       childFailure.catch(() => undefined);
 
       await Promise.race([waitForHealthy(() => childExited), childFailure]);
-    },
+      startWatchdog();
+    })();
+    try {
+      await startPromise;
+    } finally {
+      startPromise = undefined;
+    }
+  }
+
+  async function start(): Promise<void> {
+    if (restartPromise) {
+      await restartPromise;
+      return;
+    }
+    await startServe();
+  }
+
+  async function restart(): Promise<void> {
+    if (restartPromise) {
+      return restartPromise;
+    }
+    restartPromise = (async () => {
+      await stopOwnedChild();
+      await startServe();
+    })();
+    try {
+      await restartPromise;
+    } finally {
+      restartPromise = undefined;
+    }
+  }
+
+  async function watchdogTick(): Promise<void> {
+    if (watchdogRunning) {
+      return;
+    }
+    watchdogRunning = true;
+    try {
+      if (!(await health())) {
+        await restart();
+      }
+    } catch {
+      try {
+        await restart();
+      } catch {
+        // Keep the watchdog alive; the next tick will try again.
+      }
+    } finally {
+      watchdogRunning = false;
+    }
+  }
+
+  function startWatchdog(): void {
+    if (watchdogTimer) {
+      return;
+    }
+    watchdogTimer = setWatchdogTimer(watchdogTick, WATCHDOG_INTERVAL_MS);
+    watchdogTimer.unref?.();
+  }
+
+  return {
+    start,
+    restart,
 
     async stop(): Promise<void> {
+      stopWatchdog();
       await stopOwnedChild();
     },
 

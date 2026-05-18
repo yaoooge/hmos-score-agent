@@ -25,6 +25,7 @@ import {
   type OpencodeRunRequest,
   type OpencodeRunResult,
 } from "../opencode/opencodeCliRunner.js";
+import { createManagedOpencodeRunner } from "../opencode/managedOpencodeRunner.js";
 import {
   createOpencodeServeManager,
   ensureOpencodeCliAvailable,
@@ -120,11 +121,13 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
   const runtime = input.opencodeRuntime;
   const opencode =
     input.opencodeRunner ??
-    (runtime
-      ? {
-          runPrompt: (request: OpencodeRunRequest) => runOpencodePrompt({ runtime, request }),
-        }
-      : undefined);
+    (runtime && input.opencodeServeManager
+      ? createManagedOpencodeRunner({ runtime, serveManager: input.opencodeServeManager })
+      : runtime
+        ? {
+            runPrompt: (request: OpencodeRunRequest) => runOpencodePrompt({ runtime, request }),
+          }
+        : undefined);
   const opencodeForState = (state: ScoreGraphState) =>
     opencode && state.opencodeSandboxRoot
       ? { sandboxRoot: state.opencodeSandboxRoot, runPrompt: opencode.runPrompt }
@@ -275,7 +278,13 @@ async function prepareOpencodeRuntime(input: WorkflowCommonInput): Promise<Workf
   }
 
   sharedOpencodeRuntime ??= createOpencodeWorkflowRuntime();
-  const shared = await sharedOpencodeRuntime;
+  let shared: OpencodeWorkflowRuntime;
+  try {
+    shared = await sharedOpencodeRuntime;
+  } catch (error) {
+    sharedOpencodeRuntime = undefined;
+    throw error;
+  }
   return {
     ...input,
     opencodeRuntime: shared.runtime,

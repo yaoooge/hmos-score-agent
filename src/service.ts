@@ -9,7 +9,7 @@ import { CaseLogger } from "./io/caseLogger.js";
 import { formatElapsedDuration } from "./io/duration.js";
 import { uploadTaskCallback } from "./io/uploader.js";
 import { createOpencodeRuntimeConfig } from "./opencode/opencodeConfig.js";
-import { runOpencodePrompt } from "./opencode/opencodeCliRunner.js";
+import { createManagedOpencodeRunner } from "./opencode/managedOpencodeRunner.js";
 import {
   createOpencodeServeManager,
   ensureOpencodeCliAvailable,
@@ -56,9 +56,7 @@ async function createSharedServiceOpencodeRunner(): Promise<OpencodeRunner> {
   const runtime = await createOpencodeRuntimeConfig({ repoRoot: process.cwd() });
   const serveManager = createOpencodeServeManager(runtime);
   await serveManager.start();
-  return {
-    runPrompt: (request) => runOpencodePrompt({ runtime, request }),
-  };
+  return createManagedOpencodeRunner({ runtime, serveManager });
 }
 
 async function resolveServiceOpencodeRunner(deps: ServiceOpencodeDeps): Promise<OpencodeRunner> {
@@ -67,7 +65,12 @@ async function resolveServiceOpencodeRunner(deps: ServiceOpencodeDeps): Promise<
   }
 
   sharedServiceOpencodeRunner ??= createSharedServiceOpencodeRunner();
-  return sharedServiceOpencodeRunner;
+  try {
+    return await sharedServiceOpencodeRunner;
+  } catch (error) {
+    sharedServiceOpencodeRunner = undefined;
+    throw error;
+  }
 }
 
 async function runCaseInput(input: {

@@ -1,9 +1,6 @@
-import {
-  runOpencodePrompt,
-  type OpencodeRunRequest,
-  type OpencodeRunResult,
-} from "../opencode/opencodeCliRunner.js";
+import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
 import { createOpencodeRuntimeConfig, type OpencodeRuntimeConfig } from "../opencode/opencodeConfig.js";
+import { createManagedOpencodeRunner } from "../opencode/managedOpencodeRunner.js";
 import {
   createOpencodeServeManager,
   ensureOpencodeCliAvailable,
@@ -46,8 +43,9 @@ async function createRuntimeDeps(
   const serveManager = deps.opencodeServeManager ?? createOpencodeServeManager(runtime);
   await ensureOpencodeCliAvailable();
   await serveManager.start();
+  const runner = createManagedOpencodeRunner({ runtime, serveManager });
   return {
-    runPrompt: (request) => runOpencodePrompt({ runtime, request }),
+    runPrompt: runner.runPrompt,
     cleanup: async () => {
       if (!deps.opencodeServeManager) {
         await serveManager.stop();

@@ -251,3 +251,106 @@ test("serve manager escalates an unhealthy existing listener before spawning rep
   ]);
   assert.equal(spawnCount, 1);
 });
+
+test("serve manager watchdog restarts opencode serve when health turns unhealthy", async () => {
+  const children = [createFakeChild(), createFakeChild()];
+  const healthResults = [false, true, false, false, true];
+  let spawnCount = 0;
+  let watchdogIntervalMs = 0;
+  let watchdogCallback: (() => Promise<void>) | undefined;
+  const manager = createOpencodeServeManager(runtimeConfig(), {
+    checkHealth: async () => healthResults.shift() ?? true,
+    spawnProcess: () => children[spawnCount++] ?? createFakeChild(),
+    terminateExistingServer: async () => undefined,
+    collectListeningPids: async () => [],
+    sleep: async () => undefined,
+    setWatchdogTimer: (callback, intervalMs) => {
+      watchdogCallback = callback;
+      watchdogIntervalMs = intervalMs;
+      return { unref: () => undefined };
+    },
+    clearWatchdogTimer: () => undefined,
+  });
+
+  await manager.start();
+  assert.equal(spawnCount, 1);
+  assert.ok(watchdogIntervalMs > 0);
+
+  await watchdogCallback?.();
+
+  assert.equal(spawnCount, 2);
+  assert.deepEqual(children[0]?.killedSignals, ["SIGTERM"]);
+});
+
+test("serve manager start waits for an in-flight restart instead of racing it", async () => {
+  const children = [createFakeChild(), createFakeChild()];
+  const healthResults = [false, true, false, false, true];
+  let spawnCount = 0;
+  let watchdogCallback: (() => Promise<void>) | undefined;
+  let releaseRestartStop: (() => void) | undefined;
+  let restartStopStarted!: Promise<void>;
+  let markRestartStopStarted!: () => void;
+  restartStopStarted = new Promise<void>((resolve) => {
+    markRestartStopStarted = resolve;
+  });
+  let shouldBlockRestartStop = false;
+  const manager = createOpencodeServeManager(runtimeConfig(), {
+    checkHealth: async () => healthResults.shift() ?? true,
+    spawnProcess: () => children[spawnCount++] ?? createFakeChild(),
+    terminateExistingServer: async () => undefined,
+    collectListeningPids: async () => {
+      if (shouldBlockRestartStop) {
+        shouldBlockRestartStop = false;
+        markRestartStopStarted();
+        return new Promise<number[]>((resolve) => {
+          releaseRestartStop = () => resolve([]);
+        });
+      }
+      return [];
+    },
+    sleep: async () => undefined,
+    setWatchdogTimer: (callback) => {
+      watchdogCallback = callback;
+      return { unref: () => undefined };
+    },
+    clearWatchdogTimer: () => undefined,
+  });
+
+  await manager.start();
+  shouldBlockRestartStop = true;
+  const restartPromise = watchdogCallback?.();
+  await restartStopStarted;
+  const startPromise = manager.start();
+  await Promise.resolve();
+  const spawnCountBeforeRestartStopCompletes = spawnCount;
+
+  releaseRestartStop?.();
+  await restartPromise;
+  await startPromise;
+
+  assert.equal(spawnCountBeforeRestartStopCompletes, 1);
+  assert.equal(spawnCount, 2);
+  assert.deepEqual(children[0]?.killedSignals, ["SIGTERM"]);
+  assert.deepEqual(children[1]?.killedSignals, []);
+});
+
+test("serve manager stop clears the watchdog", async () => {
+  const healthResults = [false, true];
+  let clearCount = 0;
+  const manager = createOpencodeServeManager(runtimeConfig(), {
+    checkHealth: async () => healthResults.shift() ?? true,
+    spawnProcess: () => createFakeChild(),
+    terminateExistingServer: async () => undefined,
+    collectListeningPids: async () => [],
+    sleep: async () => undefined,
+    setWatchdogTimer: () => ({ unref: () => undefined }),
+    clearWatchdogTimer: () => {
+      clearCount += 1;
+    },
+  });
+
+  await manager.start();
+  await manager.stop();
+
+  assert.equal(clearCount, 1);
+});

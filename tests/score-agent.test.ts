@@ -1937,6 +1937,9 @@ test("runScoreWorkflow stops ephemeral opencode runtime after a single local cas
     start: async () => {
       lifecycleCalls.push("start");
     },
+    restart: async () => {
+      lifecycleCalls.push("restart");
+    },
     stop: async () => {
       lifecycleCalls.push("stop");
     },
