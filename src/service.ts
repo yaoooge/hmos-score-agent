@@ -8,12 +8,11 @@ import { loadCaseFromPath } from "./io/caseLoader.js";
 import { CaseLogger } from "./io/caseLogger.js";
 import { formatElapsedDuration } from "./io/duration.js";
 import { uploadTaskCallback } from "./io/uploader.js";
-import { createOpencodeRuntimeConfig } from "./opencode/opencodeConfig.js";
-import { createManagedOpencodeRunner } from "./opencode/managedOpencodeRunner.js";
 import {
-  createOpencodeServeManager,
-  ensureOpencodeCliAvailable,
-} from "./opencode/opencodeServeManager.js";
+  createOpencodeRunnerPool,
+  type OpencodeRunnerLease,
+  type OpencodeRunnerPool,
+} from "./opencode/opencodeRunnerPool.js";
 import { inputClassificationNode } from "./nodes/inputClassificationNode.js";
 import { remoteTaskPreparationNode } from "./nodes/remoteTaskPreparationNode.js";
 import { taskUnderstandingNode } from "./nodes/taskUnderstandingNode.js";
@@ -49,28 +48,20 @@ type ServiceOpencodeDeps = {
   }) => Promise<void>;
 };
 
-let sharedServiceOpencodeRunner: Promise<OpencodeRunner> | undefined;
+let sharedServiceOpencodeRunnerPool: OpencodeRunnerPool | undefined;
 
-async function createSharedServiceOpencodeRunner(): Promise<OpencodeRunner> {
-  await ensureOpencodeCliAvailable();
-  const runtime = await createOpencodeRuntimeConfig({ repoRoot: process.cwd() });
-  const serveManager = createOpencodeServeManager(runtime);
-  await serveManager.start();
-  return createManagedOpencodeRunner({ runtime, serveManager });
+function resolveServiceOpencodeRunnerPool(): OpencodeRunnerPool {
+  sharedServiceOpencodeRunnerPool ??= createOpencodeRunnerPool({
+    size: 3,
+    basePort: Number(process.env.HMOS_OPENCODE_PORT ?? 4096),
+  });
+  return sharedServiceOpencodeRunnerPool;
 }
 
-async function resolveServiceOpencodeRunner(deps: ServiceOpencodeDeps): Promise<OpencodeRunner> {
-  if (deps.opencodeRunner) {
-    return deps.opencodeRunner;
-  }
-
-  sharedServiceOpencodeRunner ??= createSharedServiceOpencodeRunner();
-  try {
-    return await sharedServiceOpencodeRunner;
-  } catch (error) {
-    sharedServiceOpencodeRunner = undefined;
-    throw error;
-  }
+export function setServiceOpencodeRunnerPoolForTesting(
+  pool: OpencodeRunnerPool | undefined,
+): void {
+  sharedServiceOpencodeRunnerPool = pool;
 }
 
 async function runCaseInput(input: {
@@ -264,6 +255,7 @@ export type AcceptedRemoteEvaluationTask = {
   remoteTask: RemoteEvaluationTask;
   workflowState: InitialAcceptedRemoteWorkflowState | AcceptedRemoteWorkflowState;
   opencodeRunner?: OpencodeRunner;
+  opencodeRunnerLease?: OpencodeRunnerLease;
 };
 
 const REMOTE_TASK_ACCEPTED_MESSAGE = "任务接收成功，结果将通过 callback 返回";
@@ -510,11 +502,23 @@ async function prepareAcceptedRemoteEvaluationTask(
     remoteTask: acceptedTask.remoteTask,
     caseDir: acceptedTask.caseDir,
   };
+  let runnerLease: OpencodeRunnerLease | undefined;
 
   try {
     Object.assign(preparedState, await remoteTaskPreparationNode(preparedState as ScoreGraphState));
     await logger.info("远端任务预处理完成");
-    const opencodeRunner = await resolveServiceOpencodeRunner(deps);
+    runnerLease =
+      !deps.opencodeRunner && !acceptedTask.opencodeRunner && !acceptedTask.opencodeRunnerLease
+        ? await resolveServiceOpencodeRunnerPool().acquire()
+        : undefined;
+    const opencodeRunner =
+      deps.opencodeRunner ??
+      acceptedTask.opencodeRunner ??
+      acceptedTask.opencodeRunnerLease?.runner ??
+      runnerLease?.runner;
+    if (!opencodeRunner) {
+      throw new Error("远端任务 opencode runner 未配置");
+    }
     Object.assign(
       preparedState,
       await taskUnderstandingNode(preparedState as ScoreGraphState, {
@@ -537,8 +541,10 @@ async function prepareAcceptedRemoteEvaluationTask(
       ...acceptedTask,
       workflowState: toAcceptedRemoteWorkflowState(preparedState),
       opencodeRunner,
+      opencodeRunnerLease: acceptedTask.opencodeRunnerLease ?? runnerLease,
     };
   } catch (error) {
+    runnerLease?.release();
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
     await logger.error(
       `预处理失败 ${formatRemoteTaskLogContext(acceptedTask.remoteTask)} error=${message}`,
@@ -550,6 +556,7 @@ async function prepareAcceptedRemoteEvaluationTask(
     if (remoteTaskRootDir) {
       await fsp.rm(remoteTaskRootDir, { recursive: true, force: true });
     }
+    acceptedTask.opencodeRunnerLease?.release();
     throw error;
   }
 }
@@ -599,7 +606,10 @@ export async function executeAcceptedRemoteEvaluationTask(
       caseDir: preparedTask.caseDir,
       referenceRoot: config.referenceRoot,
       artifactStore,
-      opencodeRunner: deps.opencodeRunner ?? preparedTask.opencodeRunner,
+      opencodeRunner:
+        deps.opencodeRunner ??
+        preparedTask.opencodeRunner ??
+        preparedTask.opencodeRunnerLease?.runner,
     });
     await artifactStore.writeJson(
       acceptedTask.caseDir,
@@ -681,6 +691,7 @@ export async function executeAcceptedRemoteEvaluationTask(
     });
     throw error;
   } finally {
+    preparedTask.opencodeRunnerLease?.release();
     const remoteTaskRootDir =
       typeof workflowResult.remoteTaskRootDir === "string"
         ? workflowResult.remoteTaskRootDir

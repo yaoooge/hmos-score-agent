@@ -305,6 +305,38 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   assert.equal(runtime.env.OPENCODE_CONFIG_DIR, runtime.configDir);
 });
 
+test("createOpencodeRuntimeConfig supports isolated worker runtime overrides", async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-config-worker-"));
+  await copyOpencodeTemplate(repoRoot);
+
+  const runtime = await createOpencodeRuntimeConfig({
+    repoRoot,
+    env: requiredEnv,
+    port: 4098,
+    runtimeName: "worker-2",
+  });
+
+  const expectedRuntimeDir = path.join(repoRoot, ".opencode", "runtime", "worker-2");
+  assert.equal(runtime.port, 4098);
+  assert.equal(runtime.serverUrl, "http://127.0.0.1:4098");
+  assert.equal(runtime.runtimeDir, expectedRuntimeDir);
+  assert.equal(runtime.configPath, path.join(expectedRuntimeDir, "opencode.generated.json"));
+  assert.equal(runtime.env.HOME, path.join(expectedRuntimeDir, "home"));
+  assert.equal(runtime.env.XDG_CONFIG_HOME, path.join(expectedRuntimeDir, "xdg-config"));
+  assert.equal(runtime.env.OPENCODE_CONFIG, runtime.configPath);
+  const generatedConfig = JSON.parse(await fs.readFile(runtime.configPath, "utf-8")) as {
+    server?: { port?: unknown };
+  };
+  assert.equal(generatedConfig.server?.port, 4098);
+  assert.equal(
+    await fs.readFile(
+      path.join(expectedRuntimeDir, "xdg-config", "opencode", "opencode.json"),
+      "utf-8",
+    ),
+    await fs.readFile(runtime.configPath, "utf-8"),
+  );
+});
+
 test("createOpencodeRuntimeConfig requires project skill files when configured", async () => {
   const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-config-missing-skill-"));
   await copyOpencodeTemplate(repoRoot);

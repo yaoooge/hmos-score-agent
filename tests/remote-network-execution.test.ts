@@ -19,9 +19,11 @@ import {
   replayCompletedRemoteTaskCallback,
   restoreAcceptedRemoteEvaluationTask,
   runRemoteEvaluationTask,
+  setServiceOpencodeRunnerPoolForTesting,
 } from "../src/service.js";
 import type { LoadedRubricSnapshot } from "../src/types.js";
 import type { OpencodeRunner } from "../src/workflow/scoreWorkflow.js";
+import type { OpencodeRunnerPool } from "../src/opencode/opencodeRunnerPool.js";
 
 function createResponse() {
   const responseState: { statusCode: number; body?: Record<string, unknown> } = {
@@ -1702,6 +1704,122 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
   releases.get(2)?.();
   releases.get(3)?.();
   releases.get(4)?.();
+});
+
+test("executeAcceptedRemoteEvaluationTask leases distinct opencode runners for three concurrent remote tasks", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;
+  const originalReferenceRoot = process.env.DEFAULT_REFERENCE_ROOT;
+  const originalCodeLinterEnabled = process.env.HMOS_CODE_LINTER_ENABLED;
+  process.env.LOCAL_CASE_ROOT = localCaseRoot;
+  process.env.DEFAULT_REFERENCE_ROOT = path.resolve(process.cwd(), "references/scoring");
+  process.env.HMOS_CODE_LINTER_ENABLED = "false";
+
+  const callbackCalls: Array<Record<string, unknown>> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const manifestMatch = /https:\/\/remote\.example\.com\/assets\/pool-(\d+)\/(original|workspace)\.json/.exec(
+      url,
+    );
+    if (manifestMatch) {
+      return new Response(JSON.stringify(createManifest(`let value${manifestMatch[1]} = 1;\n`)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url === "https://remote.example.com/api/evaluation-tasks/pool-callback") {
+      callbackCalls.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  const acquiredSlots: number[] = [];
+  const releasedSlots: number[] = [];
+  const runnerTags = new Map<number, string[]>();
+  const pool: OpencodeRunnerPool = {
+    async acquire() {
+      const slotId = acquiredSlots.length;
+      acquiredSlots.push(slotId);
+      const baseRunner = createOpencodeRunnerMock();
+      const tags: string[] = [];
+      runnerTags.set(slotId, tags);
+      return {
+        slotId,
+        runner: {
+          async runPrompt(request) {
+            tags.push(request.requestTag);
+            return baseRunner.runPrompt(request);
+          },
+        },
+        release() {
+          releasedSlots.push(slotId);
+        },
+      };
+    },
+    async stopAll() {
+      return undefined;
+    },
+  };
+  setServiceOpencodeRunnerPoolForTesting(pool);
+
+  t.after(() => {
+    setServiceOpencodeRunnerPoolForTesting(undefined);
+    globalThis.fetch = originalFetch;
+    if (originalLocalCaseRoot === undefined) {
+      delete process.env.LOCAL_CASE_ROOT;
+    } else {
+      process.env.LOCAL_CASE_ROOT = originalLocalCaseRoot;
+    }
+    if (originalReferenceRoot === undefined) {
+      delete process.env.DEFAULT_REFERENCE_ROOT;
+    } else {
+      process.env.DEFAULT_REFERENCE_ROOT = originalReferenceRoot;
+    }
+    if (originalCodeLinterEnabled === undefined) {
+      delete process.env.HMOS_CODE_LINTER_ENABLED;
+    } else {
+      process.env.HMOS_CODE_LINTER_ENABLED = originalCodeLinterEnabled;
+    }
+  });
+
+  const acceptedTasks = await Promise.all(
+    [21, 22, 23].map((taskId) =>
+      acceptRemoteEvaluationTask({
+        taskId,
+        testCase: {
+          id: taskId + 100,
+          name: `remote-case-pool-${String(taskId)}`,
+          type: "full_generation",
+          description: "新增页面",
+          input: "请实现登录页",
+          expectedOutput: "实现登录页",
+          fileUrl: `https://remote.example.com/assets/pool-${String(taskId)}/original.json`,
+        },
+        executionResult: {
+          isBuildSuccess: true,
+          outputCodeUrl: `https://remote.example.com/assets/pool-${String(taskId)}/workspace.json`,
+        },
+        callback: "https://remote.example.com/api/evaluation-tasks/pool-callback",
+      }),
+    ),
+  );
+
+  await Promise.all(acceptedTasks.map((acceptedTask) => executeAcceptedRemoteEvaluationTask(acceptedTask)));
+
+  assert.deepEqual(acquiredSlots, [0, 1, 2]);
+  assert.deepEqual(releasedSlots.sort((left, right) => left - right), [0, 1, 2]);
+  for (const slotId of [0, 1, 2]) {
+    const tags = runnerTags.get(slotId) ?? [];
+    assert.ok(tags.some((tag) => tag.startsWith("task-understanding-")), String(slotId));
+    assert.ok(tags.some((tag) => tag.startsWith("rubric-scoring-")), String(slotId));
+    assert.ok(tags.some((tag) => tag.startsWith("rule-assessment-")), String(slotId));
+  }
+  assert.equal(callbackCalls.filter((call) => call.status === "completed").length, 3);
 });
 
 test("createRunRemoteTaskHandler uploads pending callback for queued remote task", async (t) => {

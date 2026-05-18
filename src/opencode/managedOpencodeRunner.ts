@@ -27,17 +27,28 @@ function isRecoverableOpencodeRuntimeError(error: unknown): boolean {
 
 export function createManagedOpencodeRunner(input: ManagedOpencodeRunnerInput): ManagedOpencodeRunner {
   const runPrompt = input.runPrompt ?? runOpencodePrompt;
+  let promptQueue: Promise<void> = Promise.resolve();
   return {
     async runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult> {
-      await input.serveManager.start();
+      const previous = promptQueue;
+      let releaseQueue!: () => void;
+      promptQueue = new Promise<void>((resolve) => {
+        releaseQueue = resolve;
+      });
+      await previous;
       try {
-        return await runPrompt({ runtime: input.runtime, request });
-      } catch (error) {
-        if (!isRecoverableOpencodeRuntimeError(error)) {
-          throw error;
+        await input.serveManager.start();
+        try {
+          return await runPrompt({ runtime: input.runtime, request });
+        } catch (error) {
+          if (!isRecoverableOpencodeRuntimeError(error)) {
+            throw error;
+          }
+          await input.serveManager.restart();
+          return await runPrompt({ runtime: input.runtime, request });
         }
-        await input.serveManager.restart();
-        return await runPrompt({ runtime: input.runtime, request });
+      } finally {
+        releaseQueue();
       }
     },
   };

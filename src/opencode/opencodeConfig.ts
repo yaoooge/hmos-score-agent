@@ -154,13 +154,15 @@ async function copySkillDirectory(input: {
 export async function createOpencodeRuntimeConfig(input: {
   repoRoot: string;
   env?: NodeJS.ProcessEnv;
+  port?: number;
+  runtimeName?: string;
 }): Promise<OpencodeRuntimeConfig> {
   const env = input.env ?? process.env;
   const values = requiredEnv(env);
   for (const key of REQUIRED_ENV_KEYS) {
     rejectPlaceholderValue(values[key], key);
   }
-  const port = parsePositiveInteger(values.HMOS_OPENCODE_PORT, "HMOS_OPENCODE_PORT");
+  const port = input.port ?? parsePositiveInteger(values.HMOS_OPENCODE_PORT, "HMOS_OPENCODE_PORT");
   const timeoutMs = parsePositiveInteger(
     values.HMOS_OPENCODE_TIMEOUT_MS,
     "HMOS_OPENCODE_TIMEOUT_MS",
@@ -172,7 +174,9 @@ export async function createOpencodeRuntimeConfig(input: {
 
   const repoRoot = path.resolve(input.repoRoot);
   const configDir = path.join(repoRoot, ".opencode");
-  const runtimeDir = path.join(configDir, "runtime");
+  const runtimeDir = input.runtimeName
+    ? path.join(configDir, "runtime", input.runtimeName)
+    : path.join(configDir, "runtime");
   const configPath = path.join(runtimeDir, "opencode.generated.json");
   const templatePath = path.join(configDir, "opencode.template.json");
   const promptsDir = path.join(configDir, "prompts");
@@ -184,7 +188,11 @@ export async function createOpencodeRuntimeConfig(input: {
       `无法读取 opencode 配置模板：${error instanceof Error ? error.message : String(error)}`,
     );
   });
-  const generatedText = replaceTemplateVariables(template, values);
+  const runtimeValues: Record<RequiredEnvKey, string> = {
+    ...values,
+    HMOS_OPENCODE_PORT: String(port),
+  };
+  const generatedText = replaceTemplateVariables(template, runtimeValues);
 
   try {
     JSON.parse(generatedText) as unknown;
