@@ -234,13 +234,15 @@ test("project opencode agent system prompts require matching skills", async () =
   assert.match(rubricPrompt, /你是评分流程中的 rubric 评分 agent/);
   assert.match(rubricPrompt, /必须使用 hmos-rubric-scoring skill/);
   assert.match(rubricPrompt, /职责边界、证据边界、JSON 输出契约和写入 output_file 协议/);
-  assert.match(rubricPrompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.doesNotMatch(rubricPrompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.doesNotMatch(rubricPrompt, /deduction_trace/);
   assert.match(rubricSkill, /JSON 字符串中的英文双引号必须转义/);
 
   assert.match(rulePrompt, /你是评分流程中的规则判定 agent/);
   assert.match(rulePrompt, /必须使用 hmos-rule-assessment skill/);
   assert.match(rulePrompt, /职责边界、证据边界、JSON 输出契约和写入 output_file 协议/);
-  assert.match(rulePrompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.doesNotMatch(rulePrompt, /JSON 字符串中的英文双引号必须转义/);
+  assert.doesNotMatch(rulePrompt, /未接入静态判定器本身不是人工复核理由/);
   assert.match(ruleSkill, /JSON 字符串中的英文双引号必须转义/);
 
   assert.match(humanRatingPrompt, /你是评分流程中的人工评级差异分析 agent/);

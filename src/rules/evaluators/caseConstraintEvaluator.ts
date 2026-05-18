@@ -45,20 +45,174 @@ function getSignalTokens(signal: Record<string, string>): string[] {
     .filter(Boolean);
 }
 
-function getKitAnchorTokens(kit: string[]): string[] {
-  const tokens = new Set<string>();
+type KitRequirementKind = "arkui_builtin_component" | "external_kit_api";
 
-  for (const item of kit) {
-    const searchablePart = item.includes(":") ? (item.split(":").pop() ?? item) : item;
-    const matches = searchablePart.match(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g) ?? [];
-    for (const match of matches) {
-      if (match.length >= 4) {
-        tokens.add(match);
+interface KitRequirement {
+  rawText: string;
+  kind: KitRequirementKind;
+  symbols: string[];
+  namespace?: string;
+}
+
+interface KitEvidence {
+  matchedTokens: string[];
+  matchedFiles: string[];
+  strongMatchCount: number;
+  weakMatchCount: number;
+  summaries: string[];
+}
+
+function extractIdentifierTokens(text: string): string[] {
+  return text.match(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g) ?? [];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function classifyKitRequirement(item: string): KitRequirement {
+  const [namespacePart, ...restParts] = item.split(":");
+  const searchablePart = restParts.length > 0 ? restParts.join(":") : item;
+  const symbols = uniqueStrings(extractIdentifierTokens(searchablePart).filter((token) => token.length >= 4));
+  const namespace = namespacePart?.trim();
+
+  return {
+    rawText: item,
+    kind: /arkui/i.test(item) ? "arkui_builtin_component" : "external_kit_api",
+    symbols,
+    namespace: namespace && namespace !== item ? namespace : undefined,
+  };
+}
+
+function hasArkuiSymbolEvidence(content: string, symbol: string): boolean {
+  return (
+    new RegExp(`\\b${escapeRegex(symbol)}\\s*\\(`).test(content) ||
+    new RegExp(`\\b${escapeRegex(symbol)}\\b`).test(content)
+  );
+}
+
+function hasExternalKitStrongEvidence(
+  content: string,
+  requirement: KitRequirement,
+  symbol: string,
+): boolean {
+  const importLines = content
+    .split(/\r?\n/)
+    .filter((line) => /^\s*import\b/.test(line) && /kit/i.test(line));
+  const hasKitImportForSymbol = importLines.some(
+    (line) =>
+      line.includes(symbol) ||
+      (requirement.namespace ? line.toLowerCase().includes(requirement.namespace.toLowerCase()) : false),
+  );
+  if (hasKitImportForSymbol) {
+    return true;
+  }
+
+  if (requirement.namespace) {
+    return new RegExp(
+      `\\b${escapeRegex(requirement.namespace)}\\s*\\.\\s*${escapeRegex(symbol)}\\b`,
+    ).test(content);
+  }
+
+  return false;
+}
+
+function findFilesContainingToken(
+  candidateFiles: CollectedEvidence["workspaceFiles"],
+  token: string,
+): CollectedEvidence["workspaceFiles"] {
+  return candidateFiles.filter((file) => getPatchScopedContent(file).includes(token));
+}
+
+function collectKitEvidence(
+  candidateFiles: CollectedEvidence["workspaceFiles"],
+  kit: string[],
+): KitEvidence {
+  const matchedTokens = new Set<string>();
+  const matchedFiles = new Set<string>();
+  const summaries: string[] = [];
+  let strongMatchCount = 0;
+  let weakMatchCount = 0;
+
+  for (const requirement of kit.map(classifyKitRequirement)) {
+    if (requirement.symbols.length === 0) {
+      continue;
+    }
+
+    if (requirement.kind === "arkui_builtin_component") {
+      const matchedSymbols = requirement.symbols.filter((symbol) => {
+        const matchedCandidateFiles = candidateFiles.filter((file) =>
+          hasArkuiSymbolEvidence(getPatchScopedContent(file), symbol),
+        );
+        for (const file of matchedCandidateFiles) {
+          matchedFiles.add(file.relativePath);
+        }
+        return matchedCandidateFiles.length > 0;
+      });
+
+      for (const symbol of matchedSymbols) {
+        matchedTokens.add(symbol);
       }
+
+      if (matchedSymbols.length > 0) {
+        strongMatchCount += 1;
+        summaries.push(`Kit 静态锚点：ArkUI 内置组件或符号 ${matchedSymbols.join("、")} 已在目标文件中使用。`);
+      } else {
+        summaries.push(
+          `Kit 静态锚点：ArkUI 内置组件或符号 ${requirement.symbols.join("、")} 未在目标文件中出现。`,
+        );
+      }
+      continue;
+    }
+
+    const strongMatchedSymbols = requirement.symbols.filter((symbol) => {
+      const matchedCandidateFiles = candidateFiles.filter((file) =>
+        hasExternalKitStrongEvidence(getPatchScopedContent(file), requirement, symbol),
+      );
+      for (const file of matchedCandidateFiles) {
+        matchedFiles.add(file.relativePath);
+      }
+      return matchedCandidateFiles.length > 0;
+    });
+    const weakMatchedSymbols = requirement.symbols.filter((symbol) => {
+      if (strongMatchedSymbols.includes(symbol)) {
+        return false;
+      }
+      const matchedCandidateFiles = findFilesContainingToken(candidateFiles, symbol);
+      for (const file of matchedCandidateFiles) {
+        matchedFiles.add(file.relativePath);
+      }
+      return matchedCandidateFiles.length > 0;
+    });
+
+    for (const symbol of [...strongMatchedSymbols, ...weakMatchedSymbols]) {
+      matchedTokens.add(symbol);
+    }
+
+    if (strongMatchedSymbols.length > 0) {
+      strongMatchCount += 1;
+      summaries.push(
+        `Kit 静态锚点：发现 external kit/API 的导入或调用链证据：${strongMatchedSymbols.join("、")}。`,
+      );
+    } else if (weakMatchedSymbols.length > 0) {
+      weakMatchCount += 1;
+      summaries.push(
+        `Kit 静态锚点：仅发现疑似同名本地方法或弱文本命中：${weakMatchedSymbols.join("、")}，未发现 external kit/API 来源证据。`,
+      );
+    } else {
+      summaries.push(
+        `Kit 静态锚点：未发现 external kit/API 来源证据：${requirement.symbols.join("、")}。`,
+      );
     }
   }
 
-  return [...tokens];
+  return {
+    matchedTokens: [...matchedTokens],
+    matchedFiles: [...matchedFiles],
+    strongMatchCount,
+    weakMatchCount,
+    summaries,
+  };
 }
 
 function getPatchScopedContent(file: CollectedEvidence["workspaceFiles"][number]): string {
@@ -89,8 +243,8 @@ function buildStaticPrecheck(
   const matchedTokens = new Set<string>();
   const matchedFiles = new Set<string>();
   let matchedSignalCount = 0;
-  const kitAnchorTokens = getKitAnchorTokens(kit);
-  let matchedKitAnchorCount = 0;
+  const kitRequirements = kit.map(classifyKitRequirement).filter((requirement) => requirement.symbols.length > 0);
+  const kitEvidence = collectKitEvidence(candidateFiles, kit);
 
   for (const signal of astSignals) {
     const tokens = getSignalTokens(signal);
@@ -113,37 +267,28 @@ function buildStaticPrecheck(
     }
   }
 
-  for (const token of kitAnchorTokens) {
-    const matchedCandidateFiles = candidateFiles.filter((file) =>
-      getPatchScopedContent(file).includes(token),
-    );
-    if (matchedCandidateFiles.length > 0) {
-      matchedKitAnchorCount += 1;
-      matchedTokens.add(token);
-      for (const file of matchedCandidateFiles) {
-        matchedFiles.add(file.relativePath);
-      }
-    }
+  for (const token of kitEvidence.matchedTokens) {
+    matchedTokens.add(token);
+  }
+  for (const file of kitEvidence.matchedFiles) {
+    matchedFiles.add(file);
   }
 
   let signalStatus: CaseRuleStaticPrecheck["signal_status"] = "none_matched";
   const hasAllAstSignals =
     matchedSignalCount > 0 && matchedSignalCount === astSignals.length && astSignals.length > 0;
-  const hasAllKitAnchors =
-    matchedKitAnchorCount > 0 &&
-    matchedKitAnchorCount === kitAnchorTokens.length &&
-    kitAnchorTokens.length > 0;
+  const hasAllKitAnchors = kitEvidence.strongMatchCount > 0 && kitRequirements.length > 0;
   if (hasAllAstSignals || hasAllKitAnchors) {
     signalStatus = "all_matched";
-  } else if (matchedSignalCount > 0 || matchedKitAnchorCount > 0) {
+  } else if (matchedSignalCount > 0 || kitEvidence.weakMatchCount > 0) {
     signalStatus = "partial_matched";
   }
 
   const matchedSignalText =
     astSignals.length > 0 ? `${matchedSignalCount}/${astSignals.length}` : "0/0";
   const kitAnchorText =
-    kitAnchorTokens.length > 0
-      ? `Kit 静态锚点命中 ${matchedKitAnchorCount}/${kitAnchorTokens.length}。`
+    kitRequirements.length > 0
+      ? `Kit 静态锚点强证据命中 ${kitEvidence.strongMatchCount}/${kitRequirements.length}。${kitEvidence.summaries.join("")}`
       : undefined;
   const summaryParts = [`静态预判在目标文件中命中了 ${matchedSignalText} 个 AST 信号。`];
   if (kitAnchorText) {

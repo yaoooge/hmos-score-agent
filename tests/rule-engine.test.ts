@@ -612,6 +612,101 @@ test("runRuleEngine uses kit anchors for static precheck on runtime case rules",
   assert.match(candidate.static_precheck?.summary ?? "", /Kit 静态锚点/);
 });
 
+test("runRuleEngine treats ArkUI slash-separated kit components as OR evidence", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  build() {",
+      "    Tabs() {",
+      "    }",
+      "  }",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "case-requirement_tabs",
+        rule_id: "RSP-MUST-TABS",
+        rule_name: "底部导航必须使用 Tabs 或 TabContent",
+        rule_source: "must_rule",
+        summary: "底部导航必须使用 Tabs 或 TabContent",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/*.ets"],
+          astSignals: [],
+          llmPrompt: "检查底部导航栏是否使用 Tabs + TabContent 组件实现",
+          kit: ["ArkUI: Tabs / TabContent"],
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  const candidate = result.assistedRuleCandidates.find((item) => item.rule_id === "RSP-MUST-TABS");
+
+  assert.ok(candidate);
+  assert.equal(candidate.static_precheck?.signal_status, "all_matched");
+  assert.deepEqual(candidate.static_precheck?.matched_tokens, ["Tabs"]);
+  assert.match(candidate.static_precheck?.summary ?? "", /ArkUI 内置组件/);
+});
+
+test("runRuleEngine does not treat local same-name functions as external kit API evidence", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/entryability/EntryAbility.ets": [
+      "function cloudFunction(): void {",
+      "  // local fallback implementation",
+      "}",
+      "export class EntryAbility {",
+      "  doPreload(): void {",
+      "    cloudFunction();",
+      "  }",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "case-requirement_preload",
+        rule_id: "RSP-MUST-02",
+        rule_name: "预加载调用失败需要使用云函数获取数据",
+        rule_source: "must_rule",
+        summary: "预加载调用失败需要使用云函数获取数据",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/EntryAbility.ets"],
+          astSignals: [],
+          llmPrompt: "检查预加载方法报错后是否有调用云函数方法cloudFunction获取数据的逻辑",
+          kit: ["CloudFoundationKit: cloudFunction"],
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  const candidate = result.assistedRuleCandidates.find((item) => item.rule_id === "RSP-MUST-02");
+
+  assert.ok(candidate);
+  assert.equal(candidate.static_precheck?.signal_status, "partial_matched");
+  assert.deepEqual(candidate.static_precheck?.matched_tokens, ["cloudFunction"]);
+  assert.match(candidate.static_precheck?.summary ?? "", /同名本地方法/);
+  assert.match(candidate.static_precheck?.summary ?? "", /未发现.*来源证据/);
+});
+
 test("runRuleEngine keeps missing case targets in agent candidates instead of static violations", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/Index.ets": "Text('plain')\n",
