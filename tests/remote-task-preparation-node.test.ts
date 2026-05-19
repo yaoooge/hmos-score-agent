@@ -341,6 +341,97 @@ test("remoteTaskPreparationNode supports full generation tasks without original 
   );
 });
 
+test("remoteTaskPreparationNode logs remote download diagnostics", async (t) => {
+  const originalUrl = "https://remote.example.com/log-original.json";
+  const workspaceUrl = "https://remote.example.com/log-workspace.json";
+  const patchUrl = "https://remote.example.com/log-changes.patch";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+  const messages: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === originalUrl) {
+      return new Response(JSON.stringify(createManifest("let originalValue: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let workspaceValue: number = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === patchUrl) {
+      return new Response("diff --git a/a b/a\n", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  await remoteTaskPreparationNode(
+    {
+      caseDir: tempCaseDir,
+      remoteTask: {
+        taskId: 108,
+        testCase: {
+          id: 208,
+          name: "download-log-case",
+          type: "continuation",
+          description: "新增下载诊断日志",
+          input: "实现下载诊断日志",
+          expectedOutput: "",
+          fileUrl: originalUrl,
+        },
+        executionResult: {
+          isBuildSuccess: true,
+          outputCodeUrl: workspaceUrl,
+          diffFileUrl: patchUrl,
+        },
+        callback: "https://remote.example.com/callback",
+      },
+    } as never,
+    {
+      logger: {
+        info: async (message: string) => {
+          messages.push(message);
+        },
+        error: async (message: string) => {
+          messages.push(message);
+        },
+      },
+    },
+  );
+
+  assert.ok(
+    messages.some((message) =>
+      message.includes(`remote_download_started label=original_project url=${originalUrl}`),
+    ),
+  );
+  assert.ok(
+    messages.some((message) =>
+      message.includes(`remote_download_response label=workspace_project url=${workspaceUrl}`),
+    ),
+  );
+  assert.ok(
+    messages.some((message) =>
+      message.includes(`remote_download_completed label=diff_patch url=${patchUrl}`),
+    ),
+  );
+});
+
 test("remoteTaskPreparationNode accepts zip archives for original and workspace bundles", async (t) => {
   const originalUrl = "https://remote.example.com/original.zip";
   const workspaceUrl = "https://remote.example.com/workspace.zip";

@@ -776,6 +776,68 @@ test("fuseRubricScoreWithRules writes uncertain hard gate rules into suggested f
   });
 });
 
+test("fuseRubricScoreWithRules creates human review item for uncertain non-gating rule", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "未找到明确负面证据，按满分保留。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "high" as const,
+      review_required: false,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础分满分。", overall_confidence: "high" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "SIZE-07",
+        rule_source: "should_rule",
+        result: "待人工复核",
+        conclusion:
+          "Agent 输出结论与规则描述不相关，已阻断自动合并。建议人工复核或重新执行本用例以获得可信规则判定",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const reviewItem = result.humanReviewItems.find((item) => item.item === "规则判定复核：SIZE-07");
+  assert.ok(reviewItem);
+  assert.equal(reviewItem.current_assessment, "待人工复核");
+  assert.match(reviewItem.uncertainty_reason, /Agent 输出结论与规则描述不相关/);
+  assert.match(reviewItem.suggested_focus, /SIZE-07/);
+  assert.deepEqual(reviewItem.score_effect, {
+    type: "rule_result",
+    rule_ids: ["SIZE-07"],
+    hard_gate_ids: [],
+    gate_caps: {},
+  });
+});
+
 test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fails", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);

@@ -23,13 +23,57 @@
                 :value="item"
               />
             </el-select>
+            <el-select
+              v-model="gapFilters.manualAnalysisStatus"
+              placeholder="分析状态"
+              clearable
+              style="width: 140px"
+            >
+              <el-option label="待分析" value="pending" />
+              <el-option label="已分析" value="analyzed" />
+            </el-select>
+            <el-button
+              type="primary"
+              plain
+              :disabled="gapSelection.length === 0"
+              :loading="gapStatusUpdating"
+              @click="markSelectedGaps('analyzed')"
+            >
+              标记已分析
+            </el-button>
+            <el-button
+              plain
+              :disabled="gapSelection.length === 0"
+              :loading="gapStatusUpdating"
+              @click="markSelectedGaps('pending')"
+            >
+              标记待分析
+            </el-button>
           </div>
-          <el-table :data="gaps" v-loading="gapLoading" stripe height="560">
+          <el-table
+            :data="gaps"
+            v-loading="gapLoading"
+            stripe
+            height="560"
+            @selection-change="onGapSelectionChange"
+          >
+            <el-table-column type="selection" width="48" />
             <el-table-column prop="taskId" label="taskId" width="100" />
             <el-table-column prop="caseName" label="名称" min-width="220" />
             <el-table-column prop="manualRating" label="人工" width="90" />
             <el-table-column prop="autoRating" label="自动" width="90" />
             <el-table-column prop="autoScore" label="自动分" width="90" />
+            <el-table-column label="分析状态" width="110">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="manualAnalysisStatusTagType(row.manualAnalysisStatus)"
+                  effect="plain"
+                >
+                  {{ formatManualAnalysisStatus(row.manualAnalysisStatus) }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="primaryConclusion" label="结论" min-width="200" />
             <el-table-column prop="reasonSummary" label="摘要" min-width="260" />
           </el-table>
@@ -151,16 +195,40 @@
               style="width: 220px"
             />
             <el-select
-              v-model="riskFilters.agreement"
-              placeholder="人工同意"
+              v-model="riskFilters.manualAnalysisStatus"
+              placeholder="分析状态"
               clearable
-              style="width: 160px"
+              style="width: 140px"
             >
-              <el-option label="同意" value="agreed" />
-              <el-option label="不同意" value="disagreed" />
+              <el-option label="待分析" value="pending" />
+              <el-option label="已分析" value="analyzed" />
             </el-select>
+            <el-button
+              type="primary"
+              plain
+              :disabled="riskSelection.length === 0"
+              :loading="riskStatusUpdating"
+              @click="markSelectedRisks('analyzed')"
+            >
+              标记已分析
+            </el-button>
+            <el-button
+              plain
+              :disabled="riskSelection.length === 0"
+              :loading="riskStatusUpdating"
+              @click="markSelectedRisks('pending')"
+            >
+              标记待分析
+            </el-button>
           </div>
-          <el-table :data="riskReviews" v-loading="riskLoading" stripe height="620">
+          <el-table
+            :data="riskReviews"
+            v-loading="riskLoading"
+            stripe
+            height="620"
+            @selection-change="onRiskSelectionChange"
+          >
+            <el-table-column type="selection" width="48" />
             <el-table-column prop="taskId" label="taskId" width="100" />
             <el-table-column prop="testCaseId" label="testCaseId" width="120" />
             <el-table-column prop="caseName" label="名称" min-width="220" show-overflow-tooltip />
@@ -182,6 +250,17 @@
             <el-table-column label="修正等级" width="100">
               <template #default="{ row }">
                 {{ row.humanReview?.correctedLevel ?? "-" }}
+              </template>
+            </el-table-column>
+            <el-table-column label="分析状态" width="110">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="manualAnalysisStatusTagType(row.manualAnalysisStatus)"
+                  effect="plain"
+                >
+                  {{ formatManualAnalysisStatus(row.manualAnalysisStatus) }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column label="原因" min-width="240" show-overflow-tooltip>
@@ -213,7 +292,10 @@ import {
   fetchHumanRatingGaps,
   fetchNegativeResults,
   fetchRiskReviewCalibrations,
+  updateHumanRatingGapManualAnalysisStatus,
+  updateRiskReviewManualAnalysisStatus,
   type HumanRatingGap,
+  type ManualAnalysisStatus,
   type RiskReviewCalibration,
 } from "../api/dashboard";
 import {
@@ -226,8 +308,12 @@ const tab = ref("gap");
 const gapLoading = ref(false);
 const riskLoading = ref(false);
 const negativeLoading = ref(false);
+const gapStatusUpdating = ref(false);
+const riskStatusUpdating = ref(false);
 const gaps = ref<HumanRatingGap[]>([]);
 const riskReviews = ref<RiskReviewCalibration[]>([]);
+const gapSelection = ref<HumanRatingGap[]>([]);
+const riskSelection = ref<RiskReviewCalibration[]>([]);
 const negative = ref<Awaited<ReturnType<typeof fetchNegativeResults>> | null>(null);
 const gapPage = ref(1);
 const gapPageSize = ref(20);
@@ -242,11 +328,12 @@ const negativeTaskPageSize = ref(20);
 const gapFilters = reactive({
   keyword: "",
   primaryConclusion: "",
+  manualAnalysisStatus: "" as "" | ManualAnalysisStatus,
 });
 
 const riskFilters = reactive({
   keyword: "",
-  agreement: "" as "" | "agreed" | "disagreed",
+  manualAnalysisStatus: "" as "" | ManualAnalysisStatus,
 });
 const baseGapConclusionOptions = [
   "aligned",
@@ -284,8 +371,10 @@ async function loadGaps() {
       pageSize: gapPageSize.value,
       keyword: gapFilters.keyword || undefined,
       primaryConclusion: gapFilters.primaryConclusion || undefined,
+      manualAnalysisStatus: gapFilters.manualAnalysisStatus || undefined,
     });
     gaps.value = gapResponse.items;
+    gapSelection.value = [];
     gapTotal.value = gapResponse.total;
   } finally {
     gapLoading.value = false;
@@ -299,9 +388,11 @@ async function loadRiskReviews() {
       page: riskPage.value,
       pageSize: riskPageSize.value,
       keyword: riskFilters.keyword || undefined,
-      agreement: riskFilters.agreement || undefined,
+      agreement: "disagreed",
+      manualAnalysisStatus: riskFilters.manualAnalysisStatus || undefined,
     });
     riskReviews.value = riskResponse.items;
+    riskSelection.value = [];
     riskTotal.value = riskResponse.total;
   } finally {
     riskLoading.value = false;
@@ -330,6 +421,54 @@ function formatAgreement(review: RiskReviewCalibration["humanReview"]): string {
     return "不同意";
   }
   return "-";
+}
+
+function formatManualAnalysisStatus(status: ManualAnalysisStatus | undefined): string {
+  return status === "analyzed" ? "已分析" : "待分析";
+}
+
+function manualAnalysisStatusTagType(status: ManualAnalysisStatus | undefined): "success" | "info" {
+  return status === "analyzed" ? "success" : "info";
+}
+
+function onGapSelectionChange(selection: HumanRatingGap[]) {
+  gapSelection.value = selection;
+}
+
+function onRiskSelectionChange(selection: RiskReviewCalibration[]) {
+  riskSelection.value = selection;
+}
+
+async function markSelectedGaps(status: ManualAnalysisStatus) {
+  if (gapSelection.value.length === 0) {
+    return;
+  }
+  gapStatusUpdating.value = true;
+  try {
+    await updateHumanRatingGapManualAnalysisStatus(
+      gapSelection.value.map((item) => item.taskId),
+      status,
+    );
+    await loadGaps();
+  } finally {
+    gapStatusUpdating.value = false;
+  }
+}
+
+async function markSelectedRisks(status: ManualAnalysisStatus) {
+  const items = riskSelection.value.flatMap((item) =>
+    typeof item.riskId === "number" ? [{ taskId: item.taskId, riskId: item.riskId }] : [],
+  );
+  if (items.length === 0) {
+    return;
+  }
+  riskStatusUpdating.value = true;
+  try {
+    await updateRiskReviewManualAnalysisStatus(items, status);
+    await loadRiskReviews();
+  } finally {
+    riskStatusUpdating.value = false;
+  }
 }
 
 function reloadGapsFromFirstPage() {
@@ -362,8 +501,14 @@ watch(
     }
   },
 );
-watch(() => [gapFilters.keyword, gapFilters.primaryConclusion], reloadGapsFromFirstPage);
-watch(() => [riskFilters.keyword, riskFilters.agreement], reloadRiskReviewsFromFirstPage);
+watch(
+  () => [gapFilters.keyword, gapFilters.primaryConclusion, gapFilters.manualAnalysisStatus],
+  reloadGapsFromFirstPage,
+);
+watch(
+  () => [riskFilters.keyword, riskFilters.manualAnalysisStatus],
+  reloadRiskReviewsFromFirstPage,
+);
 
 onMounted(() => {
   loadData();

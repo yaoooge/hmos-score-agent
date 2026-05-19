@@ -27,7 +27,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查页面代码中所有布局条件判断（if/else、三元表达式），必须使用 WidthBreakpoint.WIDTH_SM/MD/LG/XL 枚举或 BreakpointType 的 sm/md/lg/xl 字段，不得使用 if(width > 600) 或 if(vp > 840) 等硬编码数值比较。存在硬编码宽度值做布局判断即判定失败",
+        llmPrompt: "检查所有参与断点计算、断点派发、布局条件判断的代码，包括页面组件、组件、模型、工具类和常量类。不得使用硬编码宽度数值进行断点判断，例如 width < 600、width < 840、vp > 840、screenWidth >= 600。即使硬编码判断位于 BreakpointUtils、WindowModel、constants 等封装层，只要其结果用于布局断点，也判定失败。布局条件必须基于 WidthBreakpoint 枚举、GridRow 标准 breakpoints、mediaquery 查询结果，或已覆盖 sm/md/lg/xl 的断点枚举值",
       },
     ],
   },
@@ -51,7 +51,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查页面中需要根据断点切换布局的组件，是否通过断点工具类获取当前断点值、或 @Env 系统断点变量获取断点值。自行计算窗口宽度除以密度来推导断点即判定失败",
+        llmPrompt: "检查页面组件获取当前断点值的来源。允许的来源：1. ArkUI/系统提供的 WidthBreakpoint、GridRow breakpoints、@Env 系统断点变量；2. mediaquery.matchMediaSync 或 window.on('windowSizeChange') 驱动的断点状态；3. 项目封装的断点工具，但该工具底层必须来自上述系统断点或标准监听机制。不允许的来源：1. 组件 onAreaChange 回调直接读取 width 后自行计算断点；2. 自定义 calcBreakpoint(width) 使用 600、840 等宽度阈值推导断点；3. 页面或工具类自行用窗口宽度、组件宽度、px/vp 换算结果推导断点。命中任一不允许来源即判定失败",
       },
     ],
   },
@@ -63,7 +63,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查断点更新逻辑是否注册在 window.on('windowSizeChange') 回调中，或者mediaquery.matchMediaSync中监听断点变化的。使用 foldStatusChange 或设备方向 API 驱动断点更新即判定失败",
+        llmPrompt: "检查断点更新逻辑是否通过 window.on('windowSizeChange') 回调或 mediaquery.matchMediaSync 监听断点变化。使用 foldStatusChange 或设备方向 API 驱动断点更新即判定失败",
       },
     ],
   },
@@ -74,7 +74,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "注册断点监听的方法必须在 loadContent 回调后调用",
+        llmPrompt: "本规则只检查 window.on('windowSizeChange') 或 mediaquery.matchMediaSync 等断点监听注册的时序。如果工程没有使用 window.on('windowSizeChange') 或 mediaquery.matchMediaSync 注册断点监听，本规则判定为不涉及；监听方式是否合规由 RSP-MUST-05 判定。如果工程使用 window.on('windowSizeChange') 或 mediaquery.matchMediaSync，则注册动作必须发生在 windowStage.loadContent 成功回调之后。在 loadContent 之前注册，或无法确认注册发生在 loadContent 之后，判定失败。组件 onAreaChange 的注册时序不作为本规则检查对象，但其作为断点来源的合规性由 RSP-MUST-04 判定",
       },
     ],
   },
@@ -98,19 +98,19 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查使用 List 组件展示重复内容的页面，lanes 属性必须根据断点设置对应列数或行数，且必须随断点从小到大递增。所有断点 lanes 值相同、sm 断点即使用多列、或较大断点列数小于较小断点即判定失败",
+        llmPrompt: "检查使用 List 组件展示重复内容的页面，lanes 属性必须按断点从小到大非递减设置列数。对同一个 List，sm/md/lg/xl 的列数序列不得下降。例如 1/2/3 满足，2/2/3 满足，4/4/3 不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-01",
-    name: "List space 必须按断点设置不同间距",
+    name: "List space 建议按断点设置不同间距",
     priority: "P1",
     kit: ["ArkUI: List"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 List 组件的 space 属性是否根据断点设置不同值。所有断点 space 值相同即判定失败",
+        llmPrompt: "检查 List 组件的 space 属性是否根据断点设置不同值。sm下如果是单列列表推荐行间距为8vp，md下如果是双列列表推荐列间距为12vp行间距为12vp，lg下如果是三列列表推荐列间距为12vp行间距为16vp",
       },
     ],
   },
@@ -122,19 +122,19 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 List 组件在 lanes >= 2 时是否将 .divider() 设为 undefined。多列 List 保留 divider 会导致分割线在列间错乱即判定为不满足",
+        llmPrompt: "检查 List 组件在 lanes >= 2 时是否将 .divider() 设为 undefined。多列 List 保留 divider 会导致分割线在列间错乱则建议排查",
       },
     ],
   },
   {
     id: "CMP-MUST-02",
-    name: "WaterFlow columnsTemplate 必须按断点递增列数",
+    name: "WaterFlow columnsTemplate 必须按断点非递减设置列数",
     priority: "P0",
     kit: ["ArkUI: WaterFlow"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 WaterFlow 组件的 columnsTemplate 是否根据断点设置递增列数。所有断点列数相同即判定失败",
+        llmPrompt: "检查 WaterFlow 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 WaterFlow，sm/md/lg/xl 的列数序列不得下降。例如 2/3/4 满足，3/3/4 满足，4/4/3 不满足，3/2/2 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败",
       },
     ],
   },
@@ -158,7 +158,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "在图片、卡片瀑布流上，应设置 itemConstraintSize 属性用来保证内容可读性，防止卡片过大导致瀑布流布局异常。itemConstraintSize 属性应根据断点值动态调整约束",
+        llmPrompt: "检查图片或卡片类 WaterFlow 是否通过 itemConstraintSize 或等效的子项尺寸约束控制卡片尺寸。若未设置 itemConstraintSize，但每个 FlowItem 或其根容器已通过明确的 maxWidth/maxHeight/constraintSize/width/height 控制尺寸，可判定为满足。仅 padding、文本内容自适应或 aspectRatio 单独存在，不视为等效约束。如果 WaterFlow 不是图片或卡片瀑布流，判定为不涉及",
       },
     ],
   },
@@ -170,7 +170,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Swiper 组件的 displayCount 是否根据断点设置递增值。所有断点 displayCount 相同即判定失败",
+        llmPrompt: "检查 Swiper 组件的 displayCount 是否按断点从小到大非递减设置。对同一个 Swiper，sm/md/lg/xl 的 displayCount 序列不得下降。例如 1/2/3 满足，2/2/3 满足，3/2/2 不满足，2/1/1 不满足。所有断点 displayCount 相同，或较大断点值小于较小断点，均判定失败",
       },
     ],
   },
@@ -188,13 +188,13 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "CMP-MUST-05",
-    name: "Grid columnsTemplate 必须按断点递增列数",
+    name: "Grid columnsTemplate 必须按断点非递减设置列数",
     priority: "P0",
     kit: ["ArkUI: Grid / columnsTemplate"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Grid 组件的 columnsTemplate 是否根据断点设置递增列数。所有断点列数相同即判定失败",
+        llmPrompt: "检查 Grid 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 Grid，sm/md/lg/xl 的列数序列不得下降。例如 1/2/3 满足，2/2/3 满足，4/4/3 不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败",
       },
     ],
   },
@@ -235,14 +235,14 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     ],
   },
   {
-    id: "CMP-SHOULD-16",
-    name: "涉及Navigation分栏的时候， mode 必须按断点切换 Stack 和 Split",
+    id: "CMP-MUST-17",
+    name: "Swiper 多元素展示必须设置前后边距",
     priority: "P0",
-    kit: ["ArkUI: Navigation / NavigationMode"],
+    kit: ["ArkUI: Swiper / indicator / displayCount"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "Navigation设计分栏的时候，检查 Navigation 组件的 mode 属性是否根据断点动态设置：sm 断点使用 NavigationMode.Stack（单栏），md/lg 断点使用 NavigationMode.Split（双栏）。所有断点使用相同 mode 即判定失败",
+        llmPrompt: "横向sm断点下如果只展示一个元素，则无需设置前后边距，横向md断点下如果展示两个元素则建议设置前后边距12vp，横向lg断点下如果展示三个元素建议设置前后边距64vp",
       },
     ],
   },
@@ -254,7 +254,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Navigation 组件在 Split 模式下是否设置了 navBarWidth。双栏时未设置 navBarWidth 导致导航栏占比不合理即判定为不满足",
+        llmPrompt: "检查 Navigation 组件在 Split 模式下是否设置了 navBarWidth。双栏时未设置 navBarWidth 导致导航栏占比不合理则建议排查",
       },
     ],
   },
@@ -296,13 +296,13 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "CMP-MUST-13",
-    name: "GridRow columns 必须按断点递增列数",
+    name: "GridRow columns 必须按断点非递减设置列数",
     priority: "P0",
     kit: ["ArkUI: GridRow"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 GridRow 组件的 columns 属性是否按断点递增。列数不随断点递增或所有断点列数相同即判定失败",
+        llmPrompt: "检查 GridRow 组件的 columns 属性是否按断点从小到大非递减设置列数。对同一个 GridRow，sm/md/lg/xl 的列数序列不得下降。列数不随断点非递减、所有断点列数相同、或较大断点列数小于较小断点，均判定失败",
       },
     ],
   },
@@ -314,7 +314,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下 span 值必须不同，以实现挪移或缩进等响应式布局效果。所有断点 span 相同即判定失败",
+        llmPrompt: "检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下 span 值必须不同，以实现挪移或缩进等响应式布局效果。判定条件：如果 GridCol 所在 GridRow 的 columns 按断点变化（即 GridRow 本身是响应式的），则该 GridCol 的 span 必须按断点设置不同值；如果 GridCol 在所有断点都占据全部列数（如全宽横幅），或 GridRow 的 columns 在所有断点都相同，则判定为不涉及。在需要响应式适配的情况下，所有断点 span 相同即判定失败",
       },
     ],
   },
@@ -326,7 +326,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 GridRow 组件是否配置了 gutter.x 和 gutter.y 属性。缺失 gutter 导致栅格子组件之间无间距即判定为不满足",
+        llmPrompt: "检查 GridRow 组件是否配置了 gutter.x 和 gutter.y 属性。缺失 gutter 导致栅格子组件之间无间距则建议排查是否合理",
       },
     ],
   },
@@ -338,7 +338,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查需要在大屏居中展示的内容区域是否通过 GridCol 的 offset 属性实现两侧留白。使用硬编码 margin/padding 模拟缩进而非栅格 offset 即判定为不满足",
+        llmPrompt: "检查需要在大屏居中展示的内容区域是否通过 GridCol 的 offset 属性实现两侧留白。使用硬编码 margin/padding 模拟缩进而非栅格 offset 则建议排查是否合理",
       },
     ],
   },
@@ -362,7 +362,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Flex 等间距均分布局（如工具栏、菜单栏）是否将 justifyContent 属性设置为 FlexAlign.SpaceEvenly。使用固定 margin/padding 手动计算间距来实现均分即判定为不满足",
+        llmPrompt: "检查 Flex 等间距均分布局（如工具栏、菜单栏）是否将 justifyContent 属性设置为 FlexAlign.SpaceEvenly。使用固定 margin/padding 手动计算间距来实现均分则建议排查",
       },
     ],
   },
@@ -374,7 +374,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查内容可能溢出容器宽度的 Flex 布局是否设置了 wrap: FlexWrap.Wrap。使用固定列数或手动计算换行位置即判定为不满足",
+        llmPrompt: "检查内容可能溢出容器宽度的 Flex 布局是否设置了 wrap: FlexWrap.Wrap。使用固定列数或手动计算换行位置则建议排查是否合理",
       },
     ],
   },
@@ -386,7 +386,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Row/Column/Flex 容器中需要按比例分配空间的兄弟子组件是否使用 layoutWeight 属性或百分比（%）形式的 width/height。使用固定 vp 值导致无法随容器自适应即判定为不满足",
+        llmPrompt: "检查 Row/Column/Flex 容器中需要按比例分配空间的兄弟子组件是否使用 layoutWeight 属性或百分比（%）形式的 width/height。使用固定 vp 值导致无法随容器自适应则建议排查",
       },
     ],
   },
@@ -398,7 +398,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Row/Column/Flex 容器中需要随容器尺寸变化自动显示或隐藏的子组件是否设置了 displayPriority 属性控制显隐优先级。使用 if 条件判断配合断点手动控制显隐而非 displayPriority 即判定为不满足",
+        llmPrompt: "检查 Row/Column/Flex 容器中需要随容器尺寸变化自动显示或隐藏的子组件是否设置了 displayPriority 属性控制显隐优先级。使用 if 条件判断配合断点手动控制显隐而非 displayPriority 则建议排查是否合理",
       },
     ],
   },
@@ -410,7 +410,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Row/Column/Flex 中固定元素（如文字与开关）之间的空白区域是否使用 Blank 组件填充剩余空间。使用固定 width/height 的空容器模拟空白区域即判定为不满足",
+        llmPrompt: "检查 Row/Column/Flex 中固定元素（如文字与开关）之间的空白区域是否使用 Blank 组件填充剩余空间。使用固定 width/height 的空容器模拟空白区域则建议排查是否合理",
       },
     ],
   },
@@ -422,7 +422,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查横向可延伸的内容列表是否使用 Scroll 组件配合 Row/Column（设置 scrollable(ScrollDirection.Horizontal)）或使用 List 的 listDirection(Axis.Horizontal) 实现延伸能力。内容超出容器宽度但未使用可滚动容器即判定为不满足",
+        llmPrompt: "检查横向可延伸的内容列表是否使用 Scroll 组件配合 Row/Column（设置 scrollable(ScrollDirection.Horizontal)）或使用 List 的 listDirection(Axis.Horizontal) 实现延伸能力。内容超出容器宽度但未使用可滚动容器则建议排查是否合理",
       },
     ],
   },
@@ -434,19 +434,19 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查需要随容器尺寸变化但保持固定宽高比的子组件（如图片容器、卡片）是否设置了 aspectRatio 属性，同时宽或高使用百分比或自适应尺寸。宽高都使用固定 vp 值且未设置 aspectRatio 即判定为不满足",
+        llmPrompt: "检查需要随容器尺寸变化但保持固定宽高比的子组件（如图片容器、卡片）是否设置了 aspectRatio 属性，同时宽或高使用百分比或自适应尺寸。宽高都使用固定 vp 值且未设置 aspectRatio 则建议排查是否合理",
       },
     ],
   },
   {
     id: "CMP-SHOULD-15",
-    name: "容器子组件的 aspectRatio 应根据断点设置不同宽高比",
+    name: "容器子组件的 aspectRatio 建议根据断点设置不同宽高比",
     priority: "P1",
     kit: ["ArkUI: aspectRatio"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查设置了 aspectRatio 的子组件是否根据断点设置不同宽高比（如 sm 断点使用 4:3 适配竖屏，lg 断点使用 16:9 适配宽屏）。所有断点 aspectRatio 值相同即判定为不满足",
+        llmPrompt: "检查设置了 aspectRatio 的子组件是否根据断点设置不同宽高比（如 sm 断点使用 4:3 适配竖屏，lg 断点使用 16:9 适配宽屏）。所有断点 aspectRatio 值相同则建议排查是否合理",
       },
     ],
   },
@@ -566,7 +566,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查自定义悬停态实现中，上半屏展示组件的 height 是否根据折痕区域顶部位置（creaseRegion[0]）动态设置，下半屏交互组件是否根据折痕区域底部（creaseRegion[0] + creaseRegion[1]）计算起始位置。使用固定 vp 值设置组件位置而非基于折痕区域计算即判定为不满足",
+        llmPrompt: "检查自定义悬停态实现中，上半屏展示组件的 height 是否根据折痕区域顶部位置（creaseRegion[0]）动态设置，下半屏交互组件是否根据折痕区域底部（creaseRegion[0] + creaseRegion[1]）计算起始位置。使用固定 vp 值设置组件位置而非基于折痕区域计算则建议排查是否合理",
       },
     ],
   },
@@ -638,7 +638,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Web 组件加载的页面资源中，元素的尺寸、间距等布局属性是否优先使用百分比（%）、rem、vw/vh 等相对单位而非固定 px 值。布局关键属性（宽度、间距）全部使用固定 px 值导致无法随容器自适应即判定为不满足",
+        llmPrompt: "检查 Web 组件加载的页面资源中，元素的尺寸、间距等布局属性是否优先使用百分比（%）、rem、vw/vh 等相对单位而非固定 px 值。布局关键属性（宽度、间距）全部使用固定 px 值导致无法随容器自适应则建议排查是否合理",
       },
     ],
   },
@@ -650,7 +650,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Web 组件加载的页面资源中使用 CSS Grid 宫格布局的区域，grid-template-columns 的列数是否在不同断点下递增（如 sm:repeat(4,1fr)、md:repeat(6,1fr)、lg:repeat(8,1fr)）。所有断点宫格列数相同即判定为不满足",
+        llmPrompt: "检查 Web 组件加载的页面资源中使用 CSS Grid 宫格布局的区域，grid-template-columns 的列数是否在不同断点下递增（如 sm:repeat(4,1fr)、md:repeat(6,1fr)、lg:repeat(8,1fr)）。所有断点宫格列数相同则建议排查是否合理",
       },
     ],
   },
@@ -662,7 +662,7 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Web 组件加载的页面资源中轮播组件的实现：sm 断点应显示单张轮播元素并展示圆点指示器，md/lg 断点应同时显示多张轮播元素（displayCount >= 2）并隐藏圆点指示器。所有断点轮播元素显示数量相同或指示器显隐策略不随 displayCount 变化即判定为不满足",
+        llmPrompt: "检查 Web 组件加载的页面资源中轮播组件的实现：sm 断点应显示单张轮播元素并展示圆点指示器，md/lg 断点应同时显示多张轮播元素（displayCount >= 2）并隐藏圆点指示器。所有断点轮播元素显示数量相同或指示器显隐策略不随 displayCount 变化则建议排查是否合理",
       },
     ],
   },

@@ -30,8 +30,10 @@ import {
   readHumanRatingGapDataset,
   readRiskReviewCalibrationDataset,
   readTaskLog,
+  updateHumanRatingGapManualAnalysisStatus,
+  updateRiskReviewManualAnalysisStatus,
 } from "./dashboardDataStore.js";
-import type { DashboardStatusCategory } from "./dashboardTypes.js";
+import type { DashboardStatusCategory, ManualAnalysisStatus } from "./dashboardTypes.js";
 
 export type DashboardRouterDeps = {
   registry: RemoteTaskRegistry;
@@ -44,6 +46,7 @@ const SORT_FIELDS = new Set(["createdAt", "updatedAt", "score", "taskId"]);
 const CROSS_DEVICE_SORT_FIELDS = new Set(["updatedAt", "score", "taskId"]);
 const RISK_REVIEW_AGREEMENTS = new Set(["agreed", "disagreed"]);
 const RISK_LEVELS = new Set(["high", "medium", "low"]);
+const MANUAL_ANALYSIS_STATUSES = new Set(["pending", "analyzed"]);
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -74,6 +77,63 @@ function readBooleanFlag(value: unknown): boolean {
 
 function sendError(res: Response, status: number, message: string): void {
   res.status(status).json({ success: false, message });
+}
+
+function readManualAnalysisStatus(value: unknown): {
+  status?: ManualAnalysisStatus;
+  error?: string;
+} {
+  const status = readString(value);
+  if (status === undefined) {
+    return {};
+  }
+  if (!MANUAL_ANALYSIS_STATUSES.has(status)) {
+    return { error: "manualAnalysisStatus must be one of pending, analyzed" };
+  }
+  return { status: status as ManualAnalysisStatus };
+}
+
+function readBodyRecord(req: Request): Record<string, unknown> {
+  return typeof req.body === "object" && req.body !== null && !Array.isArray(req.body)
+    ? (req.body as Record<string, unknown>)
+    : {};
+}
+
+function parseManualStatus(value: unknown): ManualAnalysisStatus | undefined {
+  return value === "pending" || value === "analyzed" ? value : undefined;
+}
+
+function parseTaskIds(value: unknown): number[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const taskIds = value.filter(
+    (item): item is number => Number.isInteger(item) && Number(item) > 0,
+  );
+  return taskIds.length === value.length ? taskIds : undefined;
+}
+
+function parseRiskStatusItems(value: unknown): Array<{ taskId: number; riskId: number }> | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const items: Array<{ taskId: number; riskId: number }> = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      return undefined;
+    }
+    const record = item as Record<string, unknown>;
+    if (
+      !Number.isInteger(record.taskId) ||
+      Number(record.taskId) <= 0 ||
+      !Number.isInteger(record.riskId) ||
+      Number(record.riskId) <= 0
+    ) {
+      return undefined;
+    }
+    items.push({ taskId: Number(record.taskId), riskId: Number(record.riskId) });
+  }
+  return items;
 }
 
 async function getTaskSummaries(deps: DashboardRouterDeps) {
@@ -317,6 +377,11 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       sendError(res, 400, "page and pageSize must be positive integers");
       return;
     }
+    const manualAnalysisStatus = readManualAnalysisStatus(req.query.manualAnalysisStatus);
+    if (manualAnalysisStatus.error) {
+      sendError(res, 400, manualAnalysisStatus.error);
+      return;
+    }
     try {
       const taskSummaries = await getTaskSummaries(deps);
       const taskNameIndex = new Map(taskSummaries.map((task) => [task.taskId, task.name]));
@@ -328,6 +393,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
           manualRating: readString(req.query.manualRating),
           primaryConclusion: readString(req.query.primaryConclusion),
           keyword: readString(req.query.keyword),
+          manualAnalysisStatus: manualAnalysisStatus.status,
         }),
       );
       const paged = paginate(filtered, page, pageSize);
@@ -339,6 +405,34 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
         skippedRows: dataset.skippedRows,
         items: paged.items,
       });
+    } catch (error) {
+      sendError(
+        res,
+        500,
+        error instanceof Error ? error.message : "Dashboard analysis unavailable",
+      );
+    }
+  });
+
+  router.patch("/dashboard/analysis/human-rating-gaps/manual-analysis-status", async (req, res) => {
+    const body = readBodyRecord(req);
+    const status = parseManualStatus(body.status);
+    if (!status) {
+      sendError(res, 400, "status must be one of pending, analyzed");
+      return;
+    }
+    const taskIds = parseTaskIds(body.taskIds);
+    if (!taskIds) {
+      sendError(res, 400, "taskIds must be a non-empty array of positive integers");
+      return;
+    }
+    try {
+      const result = await updateHumanRatingGapManualAnalysisStatus(
+        deps.humanReviewEvidenceRoot,
+        taskIds,
+        status,
+      );
+      res.json({ success: true, ...result });
     } catch (error) {
       sendError(
         res,
@@ -360,6 +454,11 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       sendError(res, 400, "agreement must be one of agreed, disagreed");
       return;
     }
+    const manualAnalysisStatus = readManualAnalysisStatus(req.query.manualAnalysisStatus);
+    if (manualAnalysisStatus.error) {
+      sendError(res, 400, manualAnalysisStatus.error);
+      return;
+    }
     try {
       const taskSummaries = await getTaskSummaries(deps);
       const taskNameIndex = new Map(taskSummaries.map((task) => [task.taskId, task.name]));
@@ -374,6 +473,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
         filterRiskReviewCalibrations(dataset.items, {
           keyword: readString(req.query.keyword),
           agreement: agreement as "agreed" | "disagreed" | undefined,
+          manualAnalysisStatus: manualAnalysisStatus.status,
         }),
         taskCreatedAtById,
       );
@@ -394,6 +494,37 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       );
     }
   });
+
+  router.patch(
+    "/dashboard/analysis/risk-review-calibrations/manual-analysis-status",
+    async (req, res) => {
+      const body = readBodyRecord(req);
+      const status = parseManualStatus(body.status);
+      if (!status) {
+        sendError(res, 400, "status must be one of pending, analyzed");
+        return;
+      }
+      const items = parseRiskStatusItems(body.items);
+      if (!items) {
+        sendError(res, 400, "items must be a non-empty array");
+        return;
+      }
+      try {
+        const result = await updateRiskReviewManualAnalysisStatus(
+          deps.humanReviewEvidenceRoot,
+          items,
+          status,
+        );
+        res.json({ success: true, ...result });
+      } catch (error) {
+        sendError(
+          res,
+          500,
+          error instanceof Error ? error.message : "Dashboard analysis unavailable",
+        );
+      }
+    },
+  );
 
   router.get("/dashboard/analysis/negative-results", async (req, res) => {
     try {

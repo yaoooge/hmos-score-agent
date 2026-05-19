@@ -505,7 +505,10 @@ async function prepareAcceptedRemoteEvaluationTask(
   let runnerLease: OpencodeRunnerLease | undefined;
 
   try {
-    Object.assign(preparedState, await remoteTaskPreparationNode(preparedState as ScoreGraphState));
+    Object.assign(
+      preparedState,
+      await remoteTaskPreparationNode(preparedState as ScoreGraphState, { logger }),
+    );
     await logger.info("远端任务预处理完成");
     runnerLease =
       !deps.opencodeRunner && !acceptedTask.opencodeRunner && !acceptedTask.opencodeRunnerLease

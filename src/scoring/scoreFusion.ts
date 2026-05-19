@@ -481,6 +481,27 @@ function buildRiskScoreEffect(input: {
   };
 }
 
+function buildRuleResultReviewItem(input: {
+  id: number;
+  scoringInput: FuseRubricScoreWithRulesInput;
+  rule: RuleAuditResult;
+}): HumanReviewItem {
+  const hardGateIds = selectRuleTriggeredGateIds(input.scoringInput, input.rule);
+  return {
+    id: input.id,
+    item: `规则判定复核：${input.rule.rule_id}`,
+    current_assessment: input.rule.result,
+    uncertainty_reason: input.rule.conclusion,
+    suggested_focus: `请人工确认规则 ${input.rule.rule_id} 的判定是否可信，并核对规则结论：${input.rule.conclusion}`,
+    score_effect: {
+      type: "rule_result",
+      rule_ids: [input.rule.rule_id],
+      hard_gate_ids: hardGateIds,
+      gate_caps: buildGateCaps(input.scoringInput, hardGateIds),
+    },
+  };
+}
+
 function isHvigorBuildHardGateTriggered(summary?: HvigorBuildCheckSummary): boolean {
   if (!summary) {
     return false;
@@ -745,6 +766,18 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         gate_caps: buildGateCaps(input, candidateGateIds),
       },
     });
+  }
+  for (const rule of input.ruleAuditResults) {
+    if (rule.result !== "待人工复核") {
+      continue;
+    }
+    humanReviewItems.push(
+      buildRuleResultReviewItem({
+        id: humanReviewItems.length + 1,
+        scoringInput: input,
+        rule,
+      }),
+    );
   }
 
   return {

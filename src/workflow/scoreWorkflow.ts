@@ -185,7 +185,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
   return {
     logger,
     graph: new StateGraph(ScoreState)
-      .addNode("remoteTaskPreparationNode", (s) => remoteTaskPreparationNode(s))
+      .addNode("remoteTaskPreparationNode", (s) => remoteTaskPreparationNode(s, { logger }))
       .addNode("taskUnderstandingNode", (s, nodeConfig) =>
         taskUnderstandingNode(
           s,

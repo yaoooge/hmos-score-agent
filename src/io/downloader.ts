@@ -6,15 +6,79 @@ import * as yauzl from "yauzl";
 import { RemoteEvaluationTask, RemoteTaskFileManifest } from "../types.js";
 import { fetchWithNetworkLogging } from "./networkLogger.js";
 
-export async function downloadToFile(url: string, outputPath: string): Promise<string> {
-  const res = await fetchWithNetworkLogging(url);
-  if (!res.ok) {
-    throw new Error(`Failed to download ${url}: ${res.status}`);
+export type RemoteDownloadLogger = {
+  info(message: string): Promise<void>;
+  error(message: string): Promise<void>;
+};
+
+type RemoteDownloadOptions = {
+  label?: string;
+  logger?: RemoteDownloadLogger;
+};
+
+function formatRemoteDownloadContext(url: string, options?: RemoteDownloadOptions): string {
+  return `label=${options?.label ?? "remote_resource"} url=${url}`;
+}
+
+function formatRemoteDownloadLog(
+  url: string,
+  options: RemoteDownloadOptions | undefined,
+  message: string,
+): string {
+  const [event, ...details] = message.split(" ");
+  return [event, formatRemoteDownloadContext(url, options), ...details].join(" ");
+}
+
+async function logRemoteDownloadInfo(
+  url: string,
+  options: RemoteDownloadOptions | undefined,
+  message: string,
+): Promise<void> {
+  await options?.logger?.info(formatRemoteDownloadLog(url, options, message));
+}
+
+async function logRemoteDownloadError(
+  url: string,
+  options: RemoteDownloadOptions | undefined,
+  message: string,
+): Promise<void> {
+  await options?.logger?.error(formatRemoteDownloadLog(url, options, message));
+}
+
+export async function downloadToFile(
+  url: string,
+  outputPath: string,
+  options?: RemoteDownloadOptions,
+): Promise<string> {
+  const startedAt = Date.now();
+  await logRemoteDownloadInfo(url, options, "remote_download_started");
+  try {
+    const res = await fetchWithNetworkLogging(url);
+    await logRemoteDownloadInfo(
+      url,
+      options,
+      `remote_download_response status=${res.status} ok=${String(res.ok)} elapsedMs=${String(Date.now() - startedAt)}`,
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to download ${url}: ${res.status}`);
+    }
+    const text = await res.text();
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, text, "utf-8");
+    await logRemoteDownloadInfo(
+      url,
+      options,
+      `remote_download_completed bytes=${String(Buffer.byteLength(text, "utf-8"))} elapsedMs=${String(Date.now() - startedAt)}`,
+    );
+    return outputPath;
+  } catch (error) {
+    await logRemoteDownloadError(
+      url,
+      options,
+      `remote_download_failed error=${error instanceof Error ? error.message : String(error)} elapsedMs=${String(Date.now() - startedAt)}`,
+    );
+    throw error;
   }
-  const text = await res.text();
-  await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.writeFile(outputPath, text, "utf-8");
-  return outputPath;
 }
 
 export async function downloadJson<T>(url: string): Promise<T> {
@@ -186,17 +250,41 @@ async function extractZipToDirectory(
 export async function downloadManifestToDirectory(
   url: string,
   outputDir: string,
+  options?: RemoteDownloadOptions,
 ): Promise<string[]> {
-  const response = await fetchWithNetworkLogging(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download remote project ${url}: ${response.status}`);
-  }
+  const startedAt = Date.now();
+  await logRemoteDownloadInfo(url, options, "remote_download_started");
+  try {
+    const response = await fetchWithNetworkLogging(url);
+    await logRemoteDownloadInfo(
+      url,
+      options,
+      `remote_download_response status=${response.status} ok=${String(response.ok)} elapsedMs=${String(Date.now() - startedAt)}`,
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to download remote project ${url}: ${response.status}`);
+    }
 
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (isZipPayload(url, response.headers.get("Content-Type"), bytes)) {
-    return extractZipToDirectory(url, outputDir, bytes);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const writtenFiles = isZipPayload(url, response.headers.get("Content-Type"), bytes)
+      ? await extractZipToDirectory(url, outputDir, bytes)
+      : await writeManifestToDirectory(
+          url,
+          outputDir,
+          parseManifest(url, new TextDecoder("utf-8").decode(bytes)),
+        );
+    await logRemoteDownloadInfo(
+      url,
+      options,
+      `remote_download_completed bytes=${String(bytes.byteLength)} fileCount=${String(writtenFiles.length)} elapsedMs=${String(Date.now() - startedAt)}`,
+    );
+    return writtenFiles;
+  } catch (error) {
+    await logRemoteDownloadError(
+      url,
+      options,
+      `remote_download_failed error=${error instanceof Error ? error.message : String(error)} elapsedMs=${String(Date.now() - startedAt)}`,
+    );
+    throw error;
   }
-
-  const sourceText = new TextDecoder("utf-8").decode(bytes);
-  return writeManifestToDirectory(url, outputDir, parseManifest(url, sourceText));
 }

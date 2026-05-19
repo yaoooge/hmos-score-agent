@@ -7,7 +7,6 @@ import type {
 } from "./crossDeviceTypes.js";
 import { getRegisteredRulePacks } from "../rules/engine/rulePackRegistry.js";
 
-const CROSS_DEVICE_RULE_SET = "plugin:@cross-device-app-dev/recommended";
 const CROSS_DEVICE_CONDITIONAL_RULE_PACK_ID = "cross-device-adaptation";
 
 const rulePackIdByRuleId = new Map<string, string>(
@@ -76,10 +75,6 @@ export function sortCrossDeviceCases(
   });
 }
 
-function isCrossDeviceOfficialRule(rule: { ruleId: string; sourceRuleSet?: string }): boolean {
-  return rule.sourceRuleSet === CROSS_DEVICE_RULE_SET || rule.ruleId.startsWith("@cross-device-app-dev/");
-}
-
 function matchesRuleKeyword(rule: { ruleId: string; ruleSummary?: string }, keyword?: string): boolean {
   const normalized = keyword?.trim().toLowerCase();
   if (!normalized) {
@@ -114,28 +109,6 @@ export function buildCrossDeviceRuleViolationStats(
   >();
 
   for (const task of tasks) {
-    for (const rule of task.officialLinterResults) {
-      if (!query.includeOtherRules && !isCrossDeviceOfficialRule(rule)) {
-        continue;
-      }
-      if (query.includeOtherRules || isCrossDeviceOfficialRule(rule)) {
-        const existing = stats.get(rule.ruleId) ?? {
-          ruleId: rule.ruleId,
-          sourceRuleSet: rule.sourceRuleSet,
-          severity: rule.severity,
-          violationCount: 0,
-          affectedTaskIds: new Set<number>(),
-          lastViolatedAt: task.updatedAt,
-        };
-        existing.violationCount += rule.findingCount;
-        existing.affectedTaskIds.add(task.taskId);
-        if (Date.parse(task.updatedAt) > Date.parse(existing.lastViolatedAt)) {
-          existing.lastViolatedAt = task.updatedAt;
-        }
-        stats.set(rule.ruleId, existing);
-      }
-    }
-
     for (const rule of task.ruleAuditResults) {
       if (
         rule.result !== "不满足" ||

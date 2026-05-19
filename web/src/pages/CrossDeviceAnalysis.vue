@@ -63,13 +63,11 @@
               placeholder="规则关键词"
               style="width: 240px"
             />
-            <el-checkbox v-model="ruleFilters.includeOtherRules">包含其他规则</el-checkbox>
           </div>
           <el-table :data="rules" v-loading="ruleLoading" stripe height="560">
             <el-table-column prop="ruleId" label="规则" min-width="260" show-overflow-tooltip />
             <el-table-column prop="ruleSummary" label="摘要" min-width="260" show-overflow-tooltip />
             <el-table-column prop="sourceRuleSet" label="来源" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="severity" label="级别" width="90" />
             <el-table-column prop="violationCount" label="次数" width="90" />
             <el-table-column prop="affectedTaskCount" label="影响用例" width="100" />
             <el-table-column label="最近命中" min-width="170">
@@ -421,7 +419,6 @@ const caseFilters = reactive({
 });
 const ruleFilters = reactive({
   keyword: "",
-  includeOtherRules: false,
 });
 const riskFilters = reactive({
   keyword: "",
@@ -473,7 +470,6 @@ async function loadRules() {
       page: rulePage.value,
       pageSize: rulePageSize.value,
       keyword: ruleFilters.keyword || undefined,
-      includeOtherRules: ruleFilters.includeOtherRules ? "true" : undefined,
     });
     rules.value = response.items;
     ruleTotal.value = response.total;
@@ -630,7 +626,7 @@ watch([casePage, casePageSize], loadCases);
 watch([rulePage, rulePageSize], loadRules);
 watch([riskPage, riskPageSize], loadRiskReviews);
 watch(() => caseFilters.keyword, reloadCasesFromFirstPage);
-watch(() => [ruleFilters.keyword, ruleFilters.includeOtherRules], reloadRulesFromFirstPage);
+watch(() => ruleFilters.keyword, reloadRulesFromFirstPage);
 watch(
   () => [riskFilters.keyword, riskFilters.agreement, riskFilters.riskLevel],
   reloadRiskReviewsFromFirstPage,

@@ -64,7 +64,11 @@ export const API_PATHS = {
   dashboardReportsDaily: "/dashboard/reports/daily",
   dashboardReportsScoreDistribution: "/dashboard/reports/score-distribution",
   dashboardAnalysisHumanRatingGaps: "/dashboard/analysis/human-rating-gaps",
+  dashboardAnalysisHumanRatingGapManualStatus:
+    "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
   dashboardAnalysisRiskReviewCalibrations: "/dashboard/analysis/risk-review-calibrations",
+  dashboardAnalysisRiskReviewManualStatus:
+    "/dashboard/analysis/risk-review-calibrations/manual-analysis-status",
   dashboardAnalysisNegativeResults: "/dashboard/analysis/negative-results",
   dashboardCrossDeviceCases: "/dashboard/cross-device/cases",
   dashboardCrossDeviceRuleViolations: "/dashboard/cross-device/rule-violations",

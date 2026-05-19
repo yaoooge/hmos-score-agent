@@ -3,7 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { load } from "js-yaml";
 import { loadCaseFromPath } from "../io/caseLoader.js";
-import { downloadManifestToDirectory, downloadToFile } from "../io/downloader.js";
+import {
+  downloadManifestToDirectory,
+  downloadToFile,
+  type RemoteDownloadLogger,
+} from "../io/downloader.js";
 import { resolveRemoteTaskType } from "../service/runCaseId.js";
 import type { RemoteEvaluationTask } from "../types.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
@@ -42,6 +46,7 @@ function shouldMaterializeExpectedConstraints(expectedOutput: string): boolean {
 
 export async function remoteTaskPreparationNode(
   state: ScoreGraphState,
+  deps: { logger?: RemoteDownloadLogger } = {},
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("remoteTaskPreparationNode");
   let rootDir: string | undefined;
@@ -77,7 +82,10 @@ export async function remoteTaskPreparationNode(
 
     const originalDir = path.join(casePath, "original");
     const originalFiles = state.remoteTask.testCase.fileUrl.trim()
-      ? await downloadManifestToDirectory(state.remoteTask.testCase.fileUrl, originalDir)
+      ? await downloadManifestToDirectory(state.remoteTask.testCase.fileUrl, originalDir, {
+          label: "original_project",
+          logger: deps.logger,
+        })
       : [];
     if (originalFiles.length === 0) {
       await fs.mkdir(originalDir, { recursive: true });
@@ -85,6 +93,10 @@ export async function remoteTaskPreparationNode(
     const workspaceFiles = await downloadManifestToDirectory(
       state.remoteTask.executionResult.outputCodeUrl,
       path.join(casePath, "workspace"),
+      {
+        label: "workspace_project",
+        logger: deps.logger,
+      },
     );
     const hasPatch = Boolean(state.remoteTask.executionResult.diffFileUrl);
 
@@ -92,6 +104,10 @@ export async function remoteTaskPreparationNode(
       await downloadToFile(
         state.remoteTask.executionResult.diffFileUrl,
         path.join(casePath, "diff", "changes.patch"),
+        {
+          label: "diff_patch",
+          logger: deps.logger,
+        },
       );
     }
 
