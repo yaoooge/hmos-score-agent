@@ -1,4 +1,8 @@
-import type { HumanReviewSubmissionPayload, HumanRiskLevel } from "./humanReviewTypes.js";
+import type {
+  HumanReviewItemReview,
+  HumanReviewSubmissionPayload,
+  HumanRiskLevel,
+} from "./humanReviewTypes.js";
 
 type RecalculationSummary = {
   scoreRecalculationApplied: boolean;
@@ -61,8 +65,9 @@ export function applyHumanReviewRecalculation(input: {
   let changedRiskCount = 0;
   const changedItemReviewCount = 0;
 
+  const itemReviews = input.payload.itemReviews ?? [];
   const itemReviewEffects: Array<Record<string, unknown>> = [];
-  for (const review of input.payload.itemReviews ?? []) {
+  for (const review of itemReviews) {
     itemReviewEffects.push({
       itemId: review.itemId,
       agree: review.agree,
@@ -101,6 +106,17 @@ export function applyHumanReviewRecalculation(input: {
       reason: review.reason,
       score_effect_applied: effectApplied,
     });
+  }
+
+  for (const [index, review] of itemReviews.entries()) {
+    const effectApplied = applyAgreedHardGateReview(resultJson, review, activeGateCaps);
+    if (effectApplied) {
+      itemReviewEffects[index] = {
+        ...itemReviewEffects[index],
+        score_effect_applied: true,
+      };
+      applied = true;
+    }
   }
 
   const recalc = recalculateScores(resultJson, activeGateCaps);
@@ -186,6 +202,27 @@ function applyRiskLevelEffect(
   } else {
     removeGates(gateIds, activeGateCaps);
   }
+}
+
+function applyAgreedHardGateReview(
+  resultJson: Record<string, unknown>,
+  review: HumanReviewItemReview,
+  activeGateCaps: Map<string, number>,
+): boolean {
+  if (!review.agree) {
+    return false;
+  }
+  const item = findArrayItemById(resultJson.human_review_items, review.itemId);
+  const effect = asRecord(item?.score_effect);
+  if (effect?.type !== "hard_gate") {
+    return false;
+  }
+  const currentAssessment = readString(item?.current_assessment);
+  const gateIds =
+    currentAssessment === undefined
+      ? readStringArray(effect.gate_ids)
+      : parseHardGateAssessment(currentAssessment);
+  return addGates(gateIds, asRecord(effect.gate_caps), activeGateCaps);
 }
 
 function recalculateScores(
@@ -405,13 +442,18 @@ function addGates(
   gateIds: string[],
   gateCaps: Record<string, unknown> | undefined,
   activeGateCaps: Map<string, number>,
-): void {
+): boolean {
+  let changed = false;
   for (const gateId of gateIds) {
     const cap = readNumber(gateCaps?.[gateId]);
     if (cap !== undefined) {
+      if (activeGateCaps.get(gateId) !== cap) {
+        changed = true;
+      }
       activeGateCaps.set(gateId, cap);
     }
   }
+  return changed;
 }
 
 function removeGates(gateIds: string[], activeGateCaps: Map<string, number>): void {

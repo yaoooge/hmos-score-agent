@@ -730,6 +730,48 @@ test("submit human review handler recalculates scores from risk level review", a
   );
 });
 
+test("submit human review handler preserves agreed hard gate when risk review recalculates score", async (t) => {
+  const { registry, caseDir } = await writeRecalculableCompletedTask(t);
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      itemReviews: [{ itemId: 1, agree: true }],
+      riskReviews: [
+        {
+          riskId: 1,
+          agree: false,
+          correctedLevel: "medium",
+          reason: "风险存在，但影响范围低于 high。",
+        },
+      ],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+  assert.equal((state.body?.summary as Record<string, unknown>).scoreRecalculationApplied, true);
+  assert.equal((state.body?.summary as Record<string, unknown>).revisedTotalScore, 70);
+
+  const resultJson = JSON.parse(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  const dimension = (resultJson.dimension_results as Array<Record<string, unknown>>)[0];
+  const item = (dimension?.item_results as Array<Record<string, unknown>>)[0];
+  const ruleImpact = (item?.rule_impacts as Array<Record<string, unknown>>)[0];
+
+  assert.equal(ruleImpact?.score_delta, -12);
+  assert.equal(item?.score, 90);
+  assert.deepEqual(resultJson.overall_conclusion, {
+    total_score: 70,
+    hard_gate_triggered: true,
+    summary: "已根据人工逐条复核重新计分：70 -> 70。",
+  });
+});
+
 test("submit human review handler records item review without corrected assessment", async (t) => {
   const { registry, caseDir } = await writeRecalculableCompletedTask(t);
   const root = await makeTempDir(t);
