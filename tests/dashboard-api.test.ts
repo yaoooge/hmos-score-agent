@@ -517,17 +517,17 @@ async function invokeExpressGet(
   return await invokeExpressRequest(app, "GET", pathName);
 }
 
-async function invokeExpressPatch(
+async function invokeExpressPost(
   app: Express,
   pathName: string,
   body: unknown,
 ): Promise<{ statusCode: number; body: string }> {
-  return await invokeExpressRequest(app, "PATCH", pathName, body);
+  return await invokeExpressRequest(app, "POST", pathName, body);
 }
 
 async function invokeExpressRequest(
   app: Express,
-  method: "GET" | "PATCH",
+  method: "GET" | "POST",
   pathName: string,
   body?: unknown,
 ): Promise<{ statusCode: number; body: string }> {
@@ -839,7 +839,7 @@ test("dashboard human rating gaps batch update persists manual analysis status",
   const fixture = await createFixture(t);
   const app = createDashboardTestApp(fixture);
 
-  const update = await invokeExpressPatch(
+  const update = await invokeExpressPost(
     app,
     "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
     { taskIds: [88], status: "analyzed" },
@@ -859,7 +859,7 @@ test("dashboard human rating gaps batch update persists manual analysis status",
   assert.equal(item?.manualAnalysisStatus, "analyzed");
   assert.equal(typeof item?.manualAnalyzedAt, "string");
 
-  const reset = await invokeExpressPatch(
+  const reset = await invokeExpressPost(
     app,
     "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
     { taskIds: [88, 999], status: "pending" },
@@ -945,7 +945,7 @@ test("dashboard risk review manual status updates only disagreed rows", async (t
     "pending",
   );
 
-  const update = await invokeExpressPatch(
+  const update = await invokeExpressPost(
     app,
     "/dashboard/analysis/risk-review-calibrations/manual-analysis-status",
     {
@@ -985,7 +985,7 @@ test("dashboard manual status batch endpoints validate payloads", async (t) => {
   const fixture = await createFixture(t);
   const app = createDashboardTestApp(fixture);
 
-  const emptyGap = await invokeExpressPatch(
+  const emptyGap = await invokeExpressPost(
     app,
     "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
     { taskIds: [], status: "analyzed" },
@@ -993,7 +993,7 @@ test("dashboard manual status batch endpoints validate payloads", async (t) => {
   assert.equal(emptyGap.statusCode, 400);
   assert.match(emptyGap.body, /taskIds must be a non-empty array of positive integers/);
 
-  const invalidGapStatus = await invokeExpressPatch(
+  const invalidGapStatus = await invokeExpressPost(
     app,
     "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
     { taskIds: [88], status: "done" },
@@ -1001,7 +1001,7 @@ test("dashboard manual status batch endpoints validate payloads", async (t) => {
   assert.equal(invalidGapStatus.statusCode, 400);
   assert.match(invalidGapStatus.body, /status must be one of pending, analyzed/);
 
-  const emptyRisk = await invokeExpressPatch(
+  const emptyRisk = await invokeExpressPost(
     app,
     "/dashboard/analysis/risk-review-calibrations/manual-analysis-status",
     { items: [], status: "pending" },

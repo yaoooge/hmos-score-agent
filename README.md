@@ -9,6 +9,7 @@
 | [docs/README.md](docs/README.md) | 文档总索引与建议阅读顺序 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 代码仓目录结构、主评分 workflow 与旁路人工流程 |
 | [docs/apis/README.md](docs/apis/README.md) | 当前服务对外 HTTP 接口与 callback 契约 |
+| [docs/apis/dashboard-internal.md](docs/apis/dashboard-internal.md) | dashboard 内部查询接口，供前端和 AI 编码查询使用 |
 | [docs/agents/README.md](docs/agents/README.md) | opencode agents 索引与各 agent 说明 |
 
 ## 快速启动
@@ -36,6 +37,8 @@ curl http://localhost:3000/health
 
 API 服务默认监听 `PORT`，未设置时为 `3000`。启动后可先访问 `GET /health` 确认进程可用，再调用评分接口。
 
+Dashboard 前端位于 `web/`，生产构建后由 API 服务挂载在 `/dashboard`；开发调试可单独运行 `npm run dev:dashboard`。
+
 ## 可执行脚本
 
 | 脚本 | 作用 |
@@ -43,6 +46,10 @@ API 服务默认监听 `PORT`，未设置时为 `3000`。启动后可先访问 `
 | `npm run build` | TypeScript 编译检查并输出 `dist/`。 |
 | `npm start` | 启动编译后的 API 服务。 |
 | `npm run dev:api` | 以开发模式启动 HTTP 服务。 |
+| `npm run dev:dashboard` | 启动 dashboard 前端开发服务。 |
+| `npm run build:dashboard` | 构建 dashboard 前端产物到 `web/dist/`。 |
+| `npm run preview:dashboard` | 预览已构建的 dashboard 前端产物。 |
+| `npm run build:all` | 依次构建后端 TypeScript 和 dashboard 前端。 |
 | `npm run score` | 直接运行本地单用例评分。 |
 | `npm run rulepack:export` | 导出规则包 YAML。 |
 | `npm test` | 运行全部 node:test 测试。 |

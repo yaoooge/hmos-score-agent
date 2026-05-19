@@ -57,6 +57,9 @@ hmos-score-agent/
   references/
     scoring/                        # rubric、报告 schema 和评分说明
     rules/                          # 内置规则包 YAML 导出结果
+  web/                              # Vue dashboard 前端
+    src/                            # 页面、组件、路由和 dashboard API client
+    dist/                           # dashboard 构建产物，由 API 服务挂载
   src/
     index.ts                        # Express API 启动入口
     cli.ts                          # 本地 CLI 评分入口
@@ -65,6 +68,7 @@ hmos-score-agent/
     types.ts                        # 远端任务、评分结果、报告等共享类型
     api/                            # HTTP 路由、远端任务 registry、人工接口和规则统计
     agent/                          # opencode agent 调用、prompt 构建、输出解析
+    dashboard/                      # dashboard 数据聚合、数据读取和内部路由 handler
     humanReview/                    # 逐条人工复核、复核样本写入、复算逻辑
     humanRating/                    # 整单人工评级、差异阈值判断和分析产物
     io/                             # case 加载、下载上传、patch、日志、产物存储
@@ -78,12 +82,15 @@ hmos-score-agent/
   docs/
     README.md                       # 文档索引
     ARCHITECTURE.md                 # 本文档
-    apis/                           # 对外接口文档
+    apis/                           # 对外接口文档和 dashboard 内部查询接口索引
     agents/                         # opencode agent 文档
     superpowers/                    # 历史设计文档和实施计划
   tests/                            # node:test 测试用例与 fixtures
+  scripts/                          # 部署和运维辅助脚本
   .local-cases/                     # 本地运行产物目录，运行时生成
 ```
+
+Dashboard API 路由由 `src/dashboard/dashboardHandlers.ts` 注册，供 `web/` 前端和后续 AI 编码查询使用，不作为远端平台对外接口契约的一部分。
 
 ## 主评分 Workflow
 

@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: hmos-score-agent API
   version: 0.1.0
-  description: HarmonyOS 代码评分服务对外 HTTP 接口和远端 callback 契约。
+  description: HarmonyOS 代码评分服务对外 HTTP 接口和远端 callback 契约。仅覆盖 /health 与 /score/* 对外接口；/dashboard/* 为内部前端查询接口，见 docs/apis/dashboard-internal.md。
 servers:
   - url: http://localhost:3000
     description: 本地开发服务，默认 PORT=3000。

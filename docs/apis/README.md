@@ -1,6 +1,8 @@
 # 对外接口
 
-本页汇总当前服务对外提供的 HTTP 接口和远端回调契约。路由定义在 `src/api/apiDefinitions.ts`，实现位于 `src/api/app.ts`。
+本页汇总当前服务对远端平台和管理台集成提供的 HTTP 接口与远端回调契约。路由定义在 `src/api/apiDefinitions.ts`，实现位于 `src/api/app.ts`。
+
+`/dashboard/*` 路由仅供仓库内 dashboard 前端和后续 AI 编码查询使用，不作为对外接口提供；内部查询索引见 [dashboard-internal.md](dashboard-internal.md)。OpenAPI 文档 [openapi.yaml](openapi.yaml) 只覆盖本页列出的对外接口。
 
 ## 服务接口
 

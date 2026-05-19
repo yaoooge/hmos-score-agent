@@ -251,9 +251,9 @@ async function getJson<T>(
   return (await response.json()) as T;
 }
 
-async function patchJson<T>(path: string, body: unknown): Promise<T> {
+async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
-    method: "PATCH",
+    method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -305,7 +305,7 @@ export function updateHumanRatingGapManualAnalysisStatus(
   taskIds: number[],
   status: ManualAnalysisStatus,
 ) {
-  return patchJson<{
+  return postJson<{
     success: true;
     updated: number;
     missing: Array<{ taskId: number }>;
@@ -329,7 +329,7 @@ export function updateRiskReviewManualAnalysisStatus(
   items: Array<{ taskId: number; riskId: number }>,
   status: ManualAnalysisStatus,
 ) {
-  return patchJson<{
+  return postJson<{
     success: true;
     updated: number;
     missing: Array<{ taskId: number; riskId: number }>;

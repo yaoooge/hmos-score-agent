@@ -414,7 +414,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
     }
   });
 
-  router.patch("/dashboard/analysis/human-rating-gaps/manual-analysis-status", async (req, res) => {
+  router.post("/dashboard/analysis/human-rating-gaps/manual-analysis-status", async (req, res) => {
     const body = readBodyRecord(req);
     const status = parseManualStatus(body.status);
     if (!status) {
@@ -495,7 +495,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
     }
   });
 
-  router.patch(
+  router.post(
     "/dashboard/analysis/risk-review-calibrations/manual-analysis-status",
     async (req, res) => {
       const body = readBodyRecord(req);
