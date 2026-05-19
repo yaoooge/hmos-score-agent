@@ -104,25 +104,25 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "CMP-SHOULD-01",
-    name: "List space 建议按断点设置不同间距",
+    name: "List space 必须按断点设置不同间距",
     priority: "P1",
     kit: ["ArkUI: List"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 List 组件的 space 属性是否根据断点设置不同值。sm下如果是单列列表推荐行间距为8vp，md下如果是双列列表推荐列间距为12vp行间距为12vp，lg下如果是三列列表推荐列间距为12vp行间距为16vp",
+        llmPrompt: "List 组件的 space 属性必须根据当前断点动态设置不同值，禁止使用固定常量。sm 断点单列列表行间距必须为 8vp，md 断点双列列表列间距必须为 12vp 且行间距必须为 12vp，lg 断点三列列表列间距必须为 12vp 且行间距必须为 16vp。space 使用固定值（如 space: 12）不随断点变化，一律判定为不满足",
       },
     ],
   },
   {
     id: "CMP-SHOULD-02",
-    name: "List 多列时 divider 应设为 undefined",
+    name: "List 多列时 divider 必须设为 undefined",
     priority: "P1",
     kit: ["ArkUI: List"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 List 组件在 lanes >= 2 时是否将 .divider() 设为 undefined。多列 List 保留 divider 会导致分割线在列间错乱则建议排查",
+        llmPrompt: "检查 List 组件在 lanes >= 2 时是否将 .divider() 设为 undefined。多列 List 保留 divider 会导致分割线在列间错乱，lanes >= 2 时 divider 未设为 undefined 即判定失败",
       },
     ],
   },
@@ -140,25 +140,25 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "CMP-SHOULD-03",
-    name: "WaterFlow 动态切换列数应使用 SLIDING_WINDOW 模式",
+    name: "WaterFlow 动态切换列数必须使用 SLIDING_WINDOW 模式",
     priority: "P1",
     kit: ["ArkUI: WaterFlow"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "若要动态设置列数，建议采用瀑布流的移动窗口布局模式，即取值为 WaterFlowLayoutMode 枚举说明中的 SLIDING_WINDOW，从而实现更快速的列数转换",
+        llmPrompt: "动态设置列数时必须采用瀑布流的移动窗口布局模式，即取值为 WaterFlowLayoutMode 枚举说明中的 SLIDING_WINDOW，从而实现更快速的列数转换。动态切换列数时未使用 SLIDING_WINDOW 模式即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-04",
-    name: "WaterFlow 应通过 itemConstraintSize 设置子组件约束尺寸",
+    name: "WaterFlow 必须通过 itemConstraintSize 设置子组件约束尺寸",
     priority: "P1",
     kit: ["ArkUI: WaterFlow"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查图片或卡片类 WaterFlow 是否通过 itemConstraintSize 或等效的子项尺寸约束控制卡片尺寸。若未设置 itemConstraintSize，但每个 FlowItem 或其根容器已通过明确的 maxWidth/maxHeight/constraintSize/width/height 控制尺寸，可判定为满足。仅 padding、文本内容自适应或 aspectRatio 单独存在，不视为等效约束。如果 WaterFlow 不是图片或卡片瀑布流，判定为不涉及",
+        llmPrompt: "检查图片或卡片类 WaterFlow 是否通过 itemConstraintSize 或等效的子项尺寸约束控制卡片尺寸。若未设置 itemConstraintSize，但每个 FlowItem 或其根容器已通过明确的 maxWidth/maxHeight/constraintSize/width/height 控制尺寸，可判定为满足。仅 padding、文本内容自适应或 aspectRatio 单独存在，不视为等效约束，即判定失败。如果 WaterFlow 不是图片或卡片瀑布流，判定为不涉及",
       },
     ],
   },
@@ -248,13 +248,13 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "CMP-SHOULD-05",
-    name: "Navigation 双栏时 navBarWidth 应设置为合理比例",
+    name: "Navigation 双栏时 navBarWidth 必须设置为合理比例",
     priority: "P1",
     kit: ["ArkUI: Navigation / navBarWidth"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Navigation 组件在 Split 模式下是否设置了 navBarWidth。双栏时未设置 navBarWidth 导致导航栏占比不合理则建议排查",
+        llmPrompt: "检查 Navigation 组件在 Split 模式下是否设置了 navBarWidth。双栏时未设置 navBarWidth 导致导航栏占比不合理即判定失败",
       },
     ],
   },
@@ -320,25 +320,25 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "CMP-SHOULD-06",
-    name: "GridRow 应配置 gutter 属性",
+    name: "GridRow 必须配置 gutter 属性",
     priority: "P1",
     kit: ["ArkUI: GridRow"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 GridRow 组件是否配置了 gutter.x 和 gutter.y 属性。缺失 gutter 导致栅格子组件之间无间距则建议排查是否合理",
+        llmPrompt: "检查 GridRow 组件是否配置了 gutter.x 和 gutter.y 属性。缺失 gutter 导致栅格子组件之间无间距即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-07",
-    name: "缩进布局应使用 GridCol offset 实现居中留白",
+    name: "缩进布局必须使用 GridCol offset 实现居中留白",
     priority: "P1",
     kit: ["ArkUI: GridCol"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查需要在大屏居中展示的内容区域是否通过 GridCol 的 offset 属性实现两侧留白。使用硬编码 margin/padding 模拟缩进而非栅格 offset 则建议排查是否合理",
+        llmPrompt: "检查需要在大屏居中展示的内容区域是否通过 GridCol 的 offset 属性实现两侧留白。使用硬编码 margin/padding 模拟缩进而非栅格 offset 即判定失败",
       },
     ],
   },
@@ -356,97 +356,97 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "CMP-SHOULD-08",
-    name: "Flex 均分布局应使用 FlexAlign.SpaceEvenly",
+    name: "Flex 均分布局必须使用 FlexAlign.SpaceEvenly",
     priority: "P1",
     kit: ["ArkUI: Flex"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Flex 等间距均分布局（如工具栏、菜单栏）是否将 justifyContent 属性设置为 FlexAlign.SpaceEvenly。使用固定 margin/padding 手动计算间距来实现均分则建议排查",
+        llmPrompt: "检查 Flex 等间距均分布局（如工具栏、菜单栏）是否将 justifyContent 属性设置为 FlexAlign.SpaceEvenly。使用固定 margin/padding 手动计算间距来实现均分即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-09",
-    name: "Flex 折行布局应设置 wrap 为 FlexWrap.Wrap",
+    name: "Flex 折行布局必须设置 wrap 为 FlexWrap.Wrap",
     priority: "P1",
     kit: ["ArkUI: Flex"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查内容可能溢出容器宽度的 Flex 布局是否设置了 wrap: FlexWrap.Wrap。使用固定列数或手动计算换行位置则建议排查是否合理",
+        llmPrompt: "检查内容可能溢出容器宽度的 Flex 布局是否设置了 wrap: FlexWrap.Wrap。使用固定列数或手动计算换行位置即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-10",
-    name: "Row/Column 占比布局中子组件应使用 layoutWeight",
+    name: "Row/Column 占比布局中子组件必须使用 layoutWeight",
     priority: "P1",
     kit: ["ArkUI: Row / Column"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Row/Column/Flex 容器中需要按比例分配空间的兄弟子组件是否使用 layoutWeight 属性或百分比（%）形式的 width/height。使用固定 vp 值导致无法随容器自适应则建议排查",
+        llmPrompt: "检查 Row/Column/Flex 容器中需要按比例分配空间的兄弟子组件是否使用 layoutWeight 属性或百分比（%）形式的 width/height。使用固定 vp 值导致无法随容器自适应即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-11",
-    name: "Row/Column 中随尺寸变化的显隐子组件应设置 displayPriority",
+    name: "Row/Column 中随尺寸变化的显隐子组件必须设置 displayPriority",
     priority: "P1",
     kit: ["ArkUI: Row / Column"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Row/Column/Flex 容器中需要随容器尺寸变化自动显示或隐藏的子组件是否设置了 displayPriority 属性控制显隐优先级。使用 if 条件判断配合断点手动控制显隐而非 displayPriority 则建议排查是否合理",
+        llmPrompt: "检查 Row/Column/Flex 容器中需要随容器尺寸变化自动显示或隐藏的子组件是否设置了 displayPriority 属性控制显隐优先级。使用 if 条件判断配合断点手动控制显隐而非 displayPriority 即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-12",
-    name: "Row/Column/Flex 中固定元素间的空白应使用 Blank 组件填充",
+    name: "Row/Column/Flex 中固定元素间的空白必须使用 Blank 组件填充",
     priority: "P1",
     kit: ["ArkUI: Row / Column / Flex"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Row/Column/Flex 中固定元素（如文字与开关）之间的空白区域是否使用 Blank 组件填充剩余空间。使用固定 width/height 的空容器模拟空白区域则建议排查是否合理",
+        llmPrompt: "检查 Row/Column/Flex 中固定元素（如文字与开关）之间的空白区域是否使用 Blank 组件填充剩余空间。使用固定 width/height 的空容器模拟空白区域即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-13",
-    name: "横向延伸内容应使用 Scroll 配合 Row 实现",
+    name: "横向延伸内容必须使用 Scroll 配合 Row 实现",
     priority: "P1",
     kit: ["ArkUI: Scroll"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查横向可延伸的内容列表是否使用 Scroll 组件配合 Row/Column（设置 scrollable(ScrollDirection.Horizontal)）或使用 List 的 listDirection(Axis.Horizontal) 实现延伸能力。内容超出容器宽度但未使用可滚动容器则建议排查是否合理",
+        llmPrompt: "检查横向可延伸的内容列表是否使用 Scroll 组件配合 Row/Column（设置 scrollable(ScrollDirection.Horizontal)）或使用 List 的 listDirection(Axis.Horizontal) 实现延伸能力。内容超出容器宽度但未使用可滚动容器即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-14",
-    name: "需要保持宽高比的容器子组件应设置 aspectRatio",
+    name: "需要保持宽高比的容器子组件必须设置 aspectRatio",
     priority: "P1",
     kit: ["ArkUI: aspectRatio"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查需要随容器尺寸变化但保持固定宽高比的子组件（如图片容器、卡片）是否设置了 aspectRatio 属性，同时宽或高使用百分比或自适应尺寸。宽高都使用固定 vp 值且未设置 aspectRatio 则建议排查是否合理",
+        llmPrompt: "检查需要随容器尺寸变化但保持固定宽高比的子组件（如图片容器、卡片）是否设置了 aspectRatio 属性，同时宽或高使用百分比或自适应尺寸。宽高都使用固定 vp 值且未设置 aspectRatio 即判定失败",
       },
     ],
   },
   {
     id: "CMP-SHOULD-15",
-    name: "容器子组件的 aspectRatio 建议根据断点设置不同宽高比",
+    name: "容器子组件的 aspectRatio 必须根据断点设置不同宽高比",
     priority: "P1",
     kit: ["ArkUI: aspectRatio"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查设置了 aspectRatio 的子组件是否根据断点设置不同宽高比（如 sm 断点使用 4:3 适配竖屏，lg 断点使用 16:9 适配宽屏）。所有断点 aspectRatio 值相同则建议排查是否合理",
+        llmPrompt: "检查设置了 aspectRatio 的子组件是否根据断点设置不同宽高比（如 sm 断点使用 4:3 适配竖屏，lg 断点使用 16:9 适配宽屏）。所有断点 aspectRatio 值相同即判定失败",
       },
     ],
   },
@@ -560,13 +560,13 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "HOV-SHOULD-01",
-    name: "自定义悬停态应根据折痕区域动态调整组件尺寸和位置",
+    name: "自定义悬停态必须根据折痕区域动态调整组件尺寸和位置",
     priority: "P1",
     kit: ["ArkUI: display"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查自定义悬停态实现中，上半屏展示组件的 height 是否根据折痕区域顶部位置（creaseRegion[0]）动态设置，下半屏交互组件是否根据折痕区域底部（creaseRegion[0] + creaseRegion[1]）计算起始位置。使用固定 vp 值设置组件位置而非基于折痕区域计算则建议排查是否合理",
+        llmPrompt: "检查自定义悬停态实现中，上半屏展示组件的 height 必须根据折痕区域顶部位置（creaseRegion[0]）动态设置，下半屏交互组件必须根据折痕区域底部（creaseRegion[0] + creaseRegion[1]）计算起始位置。使用固定 vp 值设置组件位置而非基于折痕区域计算即判定失败",
       },
     ],
   },
@@ -632,37 +632,37 @@ export const crossDeviceAdaptationRuleData: CrossDeviceAdaptationRuleData[] = [
   },
   {
     id: "WEB-SHOULD-01",
-    name: "Web 侧布局属性应使用相对单位而非固定像素值",
+    name: "Web 侧布局属性必须使用相对单位而非固定像素值",
     priority: "P1",
     kit: ["ArkUI: Web"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Web 组件加载的页面资源中，元素的尺寸、间距等布局属性是否优先使用百分比（%）、rem、vw/vh 等相对单位而非固定 px 值。布局关键属性（宽度、间距）全部使用固定 px 值导致无法随容器自适应则建议排查是否合理",
+        llmPrompt: "检查 Web 组件加载的页面资源中，元素的尺寸、间距等布局属性必须使用百分比（%）、rem、vw/vh 等相对单位而非固定 px 值。布局关键属性（宽度、间距）全部使用固定 px 值导致无法随容器自适应即判定失败",
       },
     ],
   },
   {
     id: "WEB-SHOULD-02",
-    name: "Web 侧宫格布局列数应按断点递增",
+    name: "Web 侧宫格布局列数必须按断点递增",
     priority: "P1",
     kit: ["ArkUI: Web"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Web 组件加载的页面资源中使用 CSS Grid 宫格布局的区域，grid-template-columns 的列数是否在不同断点下递增（如 sm:repeat(4,1fr)、md:repeat(6,1fr)、lg:repeat(8,1fr)）。所有断点宫格列数相同则建议排查是否合理",
+        llmPrompt: "检查 Web 组件加载的页面资源中使用 CSS Grid 宫格布局的区域，grid-template-columns 的列数必须在不同断点下递增（如 sm:repeat(4,1fr)、md:repeat(6,1fr)、lg:repeat(8,1fr)）。所有断点宫格列数相同即判定失败",
       },
     ],
   },
   {
     id: "WEB-SHOULD-03",
-    name: "Web 侧轮播布局 displayCount 应按断点递增且按条件显隐指示器",
+    name: "Web 侧轮播布局 displayCount 必须按断点递增且按条件显隐指示器",
     priority: "P1",
     kit: ["ArkUI: Web"],
     rules: [
       {
         target: "**/*.ets",
-        llmPrompt: "检查 Web 组件加载的页面资源中轮播组件的实现：sm 断点应显示单张轮播元素并展示圆点指示器，md/lg 断点应同时显示多张轮播元素（displayCount >= 2）并隐藏圆点指示器。所有断点轮播元素显示数量相同或指示器显隐策略不随 displayCount 变化则建议排查是否合理",
+        llmPrompt: "检查 Web 组件加载的页面资源中轮播组件的实现：sm 断点必须显示单张轮播元素并展示圆点指示器，md/lg 断点必须同时显示多张轮播元素（displayCount >= 2）并隐藏圆点指示器。所有断点轮播元素显示数量相同或指示器显隐策略不随 displayCount 变化即判定失败",
       },
     ],
   },

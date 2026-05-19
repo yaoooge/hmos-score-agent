@@ -3,6 +3,7 @@ import TaskDashboard from "../pages/TaskDashboard.vue";
 import CaseReports from "../pages/CaseReports.vue";
 import ResultAnalysis from "../pages/ResultAnalysis.vue";
 import CrossDeviceAnalysis from "../pages/CrossDeviceAnalysis.vue";
+import ConsistencyAnalysis from "../pages/ConsistencyAnalysis.vue";
 
 export const router = createRouter({
   history: createWebHashHistory("/dashboard/"),
@@ -12,5 +13,7 @@ export const router = createRouter({
     { path: "/reports", component: CaseReports },
     { path: "/analysis", component: ResultAnalysis },
     { path: "/cross-device", component: CrossDeviceAnalysis },
+    { path: "/consistency", component: ConsistencyAnalysis },
+    { path: "/consistency/:taskId", component: ConsistencyAnalysis },
   ],
 });

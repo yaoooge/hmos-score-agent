@@ -17,7 +17,9 @@ export default defineConfig({
       "/dashboard/reports": dashboardApiProxy,
       "/dashboard/analysis": dashboardApiProxy,
       "/dashboard/cross-device": dashboardApiProxy,
+      "/score/run-remote-task": dashboardApiProxy,
       "/score/remote-tasks": dashboardApiProxy,
+      "/score/consistency-tasks": dashboardApiProxy,
     },
   },
 });

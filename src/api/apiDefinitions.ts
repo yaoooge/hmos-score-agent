@@ -1,4 +1,4 @@
-export type ApiMethod = "GET" | "POST" | "OPTIONS";
+export type ApiMethod = "GET" | "POST" | "PUT" | "OPTIONS";
 
 export type ApiSchemaPrimitive = "boolean" | "number" | "string" | "object" | "array" | "unknown";
 
@@ -55,6 +55,9 @@ export const API_PATHS = {
   health: "/health",
   runRemoteTask: "/score/run-remote-task",
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
+  remoteTaskStatuses: "/score/remote-tasks/status",
+  consistencyTasks: "/score/consistency-tasks",
+  consistencyTask: "/score/consistency-tasks/:id",
   ruleViolationStats: "/score/rule-violation-stats",
   humanReview: "/score/remote-tasks/:taskId/human-review",
   dashboardSummary: "/dashboard/summary",
@@ -103,7 +106,7 @@ const statusField = {
 const remoteTaskRecordStatusField = {
   type: "enum",
   required: false,
-  values: ["preparing", "queued", "running", "completed", "failed", "timed_out"],
+  values: ["preparing", "queued", "running", "completed", "failed", "timed_out", "missing"],
   description: "Internal remote task execution status recorded by this service.",
 } as const satisfies ApiFieldSchema;
 
@@ -167,6 +170,23 @@ const resultDataField = {
   required: false,
   description:
     "Completed callback result subset containing only basic_info and overall_conclusion. Full scoring result JSON is available from the result API.",
+} as const satisfies ApiFieldSchema;
+
+const consistencyTaskItemsField = {
+  type: "array",
+  required: true,
+  description:
+    "Persisted score consistency task records. Each record is the dashboard task collection item.",
+  items: {
+    type: "object",
+    description: "One score consistency task record.",
+  },
+} as const satisfies ApiFieldSchema;
+
+const consistencyTaskItemField = {
+  type: "object",
+  required: true,
+  description: "One persisted score consistency task record.",
 } as const satisfies ApiFieldSchema;
 
 const remoteCallbackDefinition = {
@@ -369,6 +389,158 @@ export const API_DEFINITIONS: ApiDefinition[] = [
           },
         },
       },
+    ],
+  },
+  {
+    method: "GET",
+    path: API_PATHS.remoteTaskStatuses,
+    description: "Read registry statuses for a batch of remote task ids.",
+    request: {
+      pathParams: {},
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Remote task statuses are available.",
+        body: {
+          type: "object",
+          description: "Remote task status batch response.",
+          properties: {
+            success: successField,
+            items: {
+              type: "array",
+              required: true,
+              description: "Statuses in the same order as the requested taskIds query.",
+              items: {
+                type: "object",
+                description: "One remote task status item.",
+                properties: {
+                  taskId: taskIdField,
+                  status: remoteTaskRecordStatusField,
+                  createdAt: {
+                    type: "number",
+                    required: false,
+                    description: "Registry creation timestamp in milliseconds.",
+                  },
+                  updatedAt: {
+                    type: "number",
+                    required: false,
+                    description: "Registry update timestamp in milliseconds.",
+                  },
+                  testCaseId: {
+                    type: "number",
+                    required: false,
+                    description: "Remote test case id.",
+                  },
+                  testCaseName: {
+                    type: "string",
+                    required: false,
+                    description: "Remote test case name.",
+                  },
+                  resultAvailable: {
+                    type: "boolean",
+                    required: true,
+                    description: "Whether the completed result JSON can be requested.",
+                  },
+                  error: {
+                    type: "string",
+                    required: false,
+                    description: "Recorded task error when available.",
+                  },
+                  message: {
+                    type: "string",
+                    required: false,
+                    description: "Missing or diagnostic message.",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      { status: 400, description: "Invalid query parameter.", body: errorResponseBody },
+    ],
+  },
+  {
+    method: "GET",
+    path: API_PATHS.consistencyTasks,
+    description: "Read persisted score consistency task records.",
+    responses: [
+      {
+        status: 200,
+        description: "Persisted consistency tasks are available.",
+        body: {
+          type: "object",
+          description: "Consistency task collection response.",
+          properties: {
+            success: successField,
+            items: consistencyTaskItemsField,
+          },
+        },
+      },
+      { status: 500, description: "Consistency task table could not be read.", body: errorResponseBody },
+    ],
+  },
+  {
+    method: "PUT",
+    path: API_PATHS.consistencyTasks,
+    description:
+      "Replace the persisted score consistency task table. The file is stored beside remote-task-index.json.",
+    request: {
+      body: {
+        type: "object",
+        description: "Consistency task collection replacement request.",
+        properties: {
+          items: consistencyTaskItemsField,
+        },
+      },
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Consistency task table was replaced.",
+        body: {
+          type: "object",
+          description: "Consistency task collection response.",
+          properties: {
+            success: successField,
+            items: consistencyTaskItemsField,
+          },
+        },
+      },
+      { status: 400, description: "Invalid consistency task records.", body: errorResponseBody },
+      { status: 500, description: "Consistency task table could not be written.", body: errorResponseBody },
+    ],
+  },
+  {
+    method: "PUT",
+    path: API_PATHS.consistencyTask,
+    description: "Upsert one persisted score consistency task record.",
+    request: {
+      pathParams: {
+        id: {
+          type: "string",
+          required: true,
+          description: "Consistency task identifier.",
+        },
+      },
+      body: consistencyTaskItemField,
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Consistency task record was upserted.",
+        body: {
+          type: "object",
+          description: "Consistency task upsert response.",
+          properties: {
+            success: successField,
+            item: consistencyTaskItemField,
+          },
+        },
+      },
+      { status: 400, description: "Invalid consistency task record.", body: errorResponseBody },
+      { status: 500, description: "Consistency task table could not be written.", body: errorResponseBody },
     ],
   },
   {

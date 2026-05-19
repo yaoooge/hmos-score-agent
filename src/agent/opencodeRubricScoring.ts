@@ -71,6 +71,7 @@ type ParsedRubricScoringResult = z.infer<typeof opencodeRubricScoringSchema>;
 export type OpencodeRubricScoringOutcome = "success" | "request_failed" | "protocol_error";
 
 const RUBRIC_SCORING_OUTPUT_FILE = "metadata/agent-output/rubric-scoring.json";
+const MAX_RUBRIC_SCORING_RETRIES = 2;
 
 export interface OpencodeRubricScoringResult {
   outcome: OpencodeRubricScoringOutcome;
@@ -443,48 +444,45 @@ export async function runOpencodeRubricScoring(
     });
   }
 
-  let runResult: OpencodeRunResult;
+  let retryContext: { failureReason: string; rawText: string } | undefined;
 
-  try {
-    runResult = await runOnce(requestTag);
-  } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
-    await input.logger?.warn?.(`opencode rubric scoring request failed: ${failureReason}`);
+  for (let attempt = 0; attempt <= MAX_RUBRIC_SCORING_RETRIES; attempt += 1) {
+    const inputRequestTag = attempt === 0 ? requestTag : `${requestTag}-retry-${attempt}`;
+    let runResult: OpencodeRunResult;
     try {
-      const retryRunResult = await runOnce(`${requestTag}-retry-1`, {
+      runResult = await runOnce(inputRequestTag, retryContext);
+    } catch (error) {
+      const failureReason = error instanceof Error ? error.message : String(error);
+      const phase = attempt === 0 ? "request" : "retry request";
+      await input.logger?.warn?.(`opencode rubric scoring ${phase} failed: ${failureReason}`);
+      if (attempt >= MAX_RUBRIC_SCORING_RETRIES) {
+        return {
+          outcome: "request_failed",
+          failure_reason: failureReason,
+        };
+      }
+      retryContext = {
         failureReason,
-        rawText: "",
-      });
-      return parseRubricRunResult(retryRunResult, input.scoringPayload.rubric_summary);
-    } catch (retryError) {
-      const retryFailureReason = retryError instanceof Error ? retryError.message : String(retryError);
-      await input.logger?.warn?.(`opencode rubric scoring retry request failed: ${retryFailureReason}`);
-      return {
-        outcome: "request_failed",
-        failure_reason: retryFailureReason,
+        rawText: retryContext?.rawText ?? "",
       };
+      continue;
     }
-  }
 
-  const firstParseResult = parseRubricRunResult(runResult, input.scoringPayload.rubric_summary);
-  if (firstParseResult.outcome !== "protocol_error") {
-    return firstParseResult;
-  }
-
-  let retryRunResult: OpencodeRunResult;
-  try {
-    retryRunResult = await runOnce(`${requestTag}-retry-1`, {
-      failureReason: firstParseResult.failure_reason ?? "unknown protocol error",
-      rawText: firstParseResult.final_answer_raw_text ?? "",
-    });
-  } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
-    await input.logger?.warn?.(`opencode rubric scoring retry request failed: ${failureReason}`);
-    return {
-      outcome: "request_failed",
-      failure_reason: failureReason,
+    const parseResult = parseRubricRunResult(runResult, input.scoringPayload.rubric_summary);
+    if (parseResult.outcome !== "protocol_error") {
+      return parseResult;
+    }
+    if (attempt >= MAX_RUBRIC_SCORING_RETRIES) {
+      return parseResult;
+    }
+    retryContext = {
+      failureReason: parseResult.failure_reason ?? "unknown protocol error",
+      rawText: parseResult.final_answer_raw_text ?? "",
     };
   }
 
-  return parseRubricRunResult(retryRunResult, input.scoringPayload.rubric_summary);
+  return {
+    outcome: "request_failed",
+    failure_reason: "rubric scoring retry loop exited unexpectedly",
+  };
 }

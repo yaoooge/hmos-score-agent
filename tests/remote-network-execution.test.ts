@@ -7,10 +7,15 @@ import { API_DEFINITIONS, API_PATHS } from "../src/api/apiDefinitions.js";
 import {
   createApp,
   createCorsMiddleware,
+  createGetConsistencyTasksHandler,
   createGetRemoteTaskResultHandler,
+  createGetRemoteTaskStatusesHandler,
+  createReplaceConsistencyTasksHandler,
+  createUpsertConsistencyTaskHandler,
   createRemoteTaskExecutionQueue,
   createRunRemoteTaskHandler,
 } from "../src/api/app.js";
+import { createConsistencyTaskStore } from "../src/api/consistencyTaskStore.js";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import {
   acceptRemoteEvaluationTask,
@@ -62,6 +67,18 @@ function createResultRequest(taskId: number, token?: string) {
     header(name: string) {
       return name.toLowerCase() === "token" ? token : undefined;
     },
+  };
+}
+
+function createStatusesRequest(taskIds: string) {
+  return {
+    query: { taskIds },
+  };
+}
+
+function createConsistencyTasksRequest(items: unknown[]) {
+  return {
+    body: { items },
   };
 }
 
@@ -455,10 +472,37 @@ function notInvolvedCrossDevice() {
 
 test("API definitions include the remote task result endpoint", () => {
   assert.equal(API_PATHS.remoteTaskResult, "/score/remote-tasks/:taskId/result");
+  assert.equal(API_PATHS.remoteTaskStatuses, "/score/remote-tasks/status");
+  assert.equal(API_PATHS.consistencyTasks, "/score/consistency-tasks");
+  assert.equal(API_PATHS.consistencyTask, "/score/consistency-tasks/:id");
   assert.ok(
     API_DEFINITIONS.some(
       (definition) =>
         definition.method === "GET" && definition.path === "/score/remote-tasks/:taskId/result",
+    ),
+  );
+  assert.ok(
+    API_DEFINITIONS.some(
+      (definition) =>
+        definition.method === "GET" && definition.path === "/score/remote-tasks/status",
+    ),
+  );
+  assert.ok(
+    API_DEFINITIONS.some(
+      (definition) =>
+        definition.method === "GET" && definition.path === "/score/consistency-tasks",
+    ),
+  );
+  assert.ok(
+    API_DEFINITIONS.some(
+      (definition) =>
+        definition.method === "PUT" && definition.path === "/score/consistency-tasks",
+    ),
+  );
+  assert.ok(
+    API_DEFINITIONS.some(
+      (definition) =>
+        definition.method === "PUT" && definition.path === "/score/consistency-tasks/:id",
     ),
   );
 });
@@ -663,6 +707,204 @@ test("createGetRemoteTaskResultHandler reports unknown task", async (t) => {
   assert.equal(responseState.body?.success, false);
   assert.equal(responseState.body?.taskId, 704);
   assert.equal(responseState.body?.message, "Remote task not found");
+});
+
+test("createGetRemoteTaskStatusesHandler returns registry statuses in requested order", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 801,
+    status: "running",
+    caseDir: path.join(localCaseRoot, "remote-case-running"),
+    testCaseId: 1801,
+    testCaseName: "运行中用例",
+  });
+  await registry.upsert({
+    taskId: 802,
+    status: "queued",
+    testCaseId: 1802,
+    testCaseName: "排队中用例",
+  });
+  const handler = createGetRemoteTaskStatusesHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createStatusesRequest("802,999,801") as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  assert.deepEqual(responseState.body?.items, [
+    {
+      taskId: 802,
+      status: "queued",
+      createdAt: responseState.body?.items?.[0]?.createdAt,
+      updatedAt: responseState.body?.items?.[0]?.updatedAt,
+      testCaseId: 1802,
+      testCaseName: "排队中用例",
+      resultAvailable: false,
+    },
+    {
+      taskId: 999,
+      status: "missing",
+      resultAvailable: false,
+      message: "Remote task not found",
+    },
+    {
+      taskId: 801,
+      status: "running",
+      createdAt: responseState.body?.items?.[2]?.createdAt,
+      updatedAt: responseState.body?.items?.[2]?.updatedAt,
+      testCaseId: 1801,
+      testCaseName: "运行中用例",
+      resultAvailable: false,
+    },
+  ]);
+});
+
+test("createGetRemoteTaskStatusesHandler validates taskIds query", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  const handler = createGetRemoteTaskStatusesHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createStatusesRequest("801,abc") as never, response as never);
+
+  assert.equal(responseState.statusCode, 400);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(responseState.body?.message, "Invalid query parameter: taskIds must be comma-separated positive integers");
+});
+
+test("consistency task store persists records beside remote task index", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+
+  await store.replace([
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://score.example.com",
+      originalTaskId: 1306,
+      runs: [{ taskId: 130600101, status: "running" }],
+    },
+  ]);
+
+  const persisted = JSON.parse(
+    await fs.readFile(path.join(localCaseRoot, "consistency-task-index.json"), "utf-8"),
+  ) as Record<string, unknown>;
+  assert.deepEqual(persisted.records, [
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://score.example.com",
+      originalTaskId: 1306,
+      runs: [{ taskId: 130600101, status: "running" }],
+    },
+  ]);
+  assert.deepEqual(await createConsistencyTaskStore(localCaseRoot).list(), persisted.records);
+});
+
+test("consistency task store upserts single records without dropping persisted fields", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+
+  await store.upsert({
+    id: "C-003",
+    sequence: 3,
+    serviceBaseUrl: "http://score.example.com",
+    originalTaskId: 1306,
+    sourceTask: { taskId: 1306, callback: "" },
+    runs: [{ runIndex: 0, taskId: 130600101, status: "running" }],
+  });
+
+  await store.upsert({
+    id: "C-003",
+    sequence: 3,
+    runs: [{ runIndex: 0, taskId: 130600101, status: "completed" }],
+  });
+
+  const persisted = await store.list();
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.serviceBaseUrl, "http://score.example.com");
+  assert.equal("sourceTask" in (persisted[0] ?? {}), true);
+  assert.equal(persisted[0]?.runs[0]?.status, "completed");
+});
+
+test("consistency task handlers read and replace persisted task collection", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  const replaceHandler = createReplaceConsistencyTasksHandler(store);
+  const getHandler = createGetConsistencyTasksHandler(store);
+  const replaceResponse = createResponse();
+
+  await replaceHandler(
+    createConsistencyTasksRequest([{ id: "C-002", sequence: 2, runs: [] }]) as never,
+    replaceResponse.response as never,
+  );
+
+  assert.equal(replaceResponse.responseState.statusCode, 200);
+  assert.deepEqual(replaceResponse.responseState.body?.items, [
+    { id: "C-002", sequence: 2, runs: [] },
+  ]);
+
+  const getResponse = createResponse();
+  await getHandler({} as never, getResponse.response as never);
+
+  assert.equal(getResponse.responseState.statusCode, 200);
+  assert.deepEqual(getResponse.responseState.body?.items, [
+    { id: "C-002", sequence: 2, runs: [] },
+  ]);
+});
+
+test("consistency task upsert handler writes a single record", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const handler = createUpsertConsistencyTaskHandler(createConsistencyTaskStore(localCaseRoot));
+  const { response, responseState } = createResponse();
+
+  await handler(
+    {
+      params: { id: "C-010" },
+      body: {
+        id: "C-010",
+        sequence: 10,
+        serviceBaseUrl: "http://score.example.com",
+        runs: [],
+      },
+    } as never,
+    response as never,
+  );
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  assert.equal((responseState.body?.item as Record<string, unknown>).id, "C-010");
+});
+
+test("consistency task replacement rejects empty collection over existing records", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  await store.upsert({ id: "C-011", sequence: 11, runs: [] });
+  const handler = createReplaceConsistencyTasksHandler(store);
+  const { response, responseState } = createResponse();
+
+  await handler(createConsistencyTasksRequest([]) as never, response as never);
+
+  assert.equal(responseState.statusCode, 409);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(
+    responseState.body?.message,
+    "Refusing to replace existing consistency tasks with an empty collection",
+  );
+  assert.equal((await store.list()).length, 1);
+});
+
+test("consistency task replacement validates record shape", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const handler = createReplaceConsistencyTasksHandler(createConsistencyTaskStore(localCaseRoot));
+  const { response, responseState } = createResponse();
+
+  await handler(createConsistencyTasksRequest([{ id: "", sequence: 1 }]) as never, response as never);
+
+  assert.equal(responseState.statusCode, 400);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(responseState.body?.message, "Invalid request body: items must be consistency task records");
 });
 
 test("remote task registry reloads persisted records after restart", async (t) => {

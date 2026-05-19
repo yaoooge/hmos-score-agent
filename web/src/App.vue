@@ -19,6 +19,10 @@
           <el-icon><Connection /></el-icon>
           <span>一多适配</span>
         </el-menu-item>
+        <el-menu-item index="/consistency">
+          <el-icon><Histogram /></el-icon>
+          <span>一致性分析</span>
+        </el-menu-item>
       </el-menu>
     </aside>
     <main class="main-panel">
@@ -47,7 +51,14 @@
 <script setup lang="ts">
 import { computed, provide, shallowRef, type Ref } from "vue";
 import { useRoute } from "vue-router";
-import { Connection, DataAnalysis, List, Refresh, TrendCharts } from "@element-plus/icons-vue";
+import {
+  Connection,
+  DataAnalysis,
+  Histogram,
+  List,
+  Refresh,
+  TrendCharts,
+} from "@element-plus/icons-vue";
 
 type DashboardTitleControls = {
   dateRange?: {
@@ -77,6 +88,9 @@ const title = computed(() => {
   if (route.path.startsWith("/cross-device")) {
     return "一多适配";
   }
+  if (route.path.startsWith("/consistency")) {
+    return "一致性分析";
+  }
   return "评测任务";
 });
 const subtitle = computed(() => {
@@ -88,6 +102,9 @@ const subtitle = computed(() => {
   }
   if (route.path.startsWith("/cross-device")) {
     return "用例结果、规则违背和风险项分析";
+  }
+  if (route.path.startsWith("/consistency")) {
+    return "重复评分、规则波动和风险项稳定性分析";
   }
   return "任务状态、类型概览和执行日志";
 });

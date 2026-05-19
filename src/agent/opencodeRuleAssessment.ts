@@ -51,6 +51,7 @@ export interface OpencodeRuleAssessmentInput {
 }
 
 const RULE_ASSESSMENT_OUTPUT_FILE = "metadata/agent-output/rule-assessment.json";
+const MAX_RULE_ASSESSMENT_RETRIES = 2;
 
 function stringifyForPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -355,8 +356,6 @@ export async function runOpencodeRuleAssessment(
     caseId: input.bootstrapPayload.case_context.case_id,
     sandboxRoot: input.sandboxRoot,
   });
-  let runResult: OpencodeRunResult;
-
   async function runOnce(inputRequestTag: string, retryContext?: { failureReason: string; rawText: string }) {
     const preserveOutputFileOnStart =
       retryContext && retryContext.rawText.trim().length > 0 ? true : undefined;
@@ -378,46 +377,48 @@ export async function runOpencodeRuleAssessment(
     });
   }
 
-  try {
-    runResult = await runOnce(requestTag);
-  } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
-    await input.logger?.warn?.(`opencode rule assessment request failed: ${failureReason}`);
+  let retryContext: { failureReason: string; rawText: string } | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RULE_ASSESSMENT_RETRIES; attempt += 1) {
+    const inputRequestTag = attempt === 0 ? requestTag : `${requestTag}-retry-${attempt}`;
+    let runResult: OpencodeRunResult;
     try {
-      const retryRunResult = await runOnce(`${requestTag}-retry-1`, {
+      runResult = await runOnce(inputRequestTag, retryContext);
+    } catch (error) {
+      const failureReason = error instanceof Error ? error.message : String(error);
+      const phase = attempt === 0 ? "request" : "retry request";
+      await input.logger?.warn?.(`opencode rule assessment ${phase} failed: ${failureReason}`);
+      if (attempt >= MAX_RULE_ASSESSMENT_RETRIES) {
+        return {
+          outcome: "request_failed",
+          failure_reason: failureReason,
+        };
+      }
+      retryContext = {
         failureReason,
-        rawText: "",
-      });
-      return parseRuleAssessmentRunResult(retryRunResult, input.bootstrapPayload.assisted_rule_candidates);
-    } catch (retryError) {
-      const retryFailureReason = retryError instanceof Error ? retryError.message : String(retryError);
-      await input.logger?.warn?.(`opencode rule assessment retry request failed: ${retryFailureReason}`);
-      return {
-        outcome: "request_failed",
-        failure_reason: retryFailureReason,
+        rawText: retryContext?.rawText ?? "",
       };
+      continue;
     }
-  }
 
-  const firstParseResult = parseRuleAssessmentRunResult(runResult, input.bootstrapPayload.assisted_rule_candidates);
-  if (firstParseResult.outcome !== "protocol_error") {
-    return firstParseResult;
-  }
-
-  let retryRunResult: OpencodeRunResult;
-  try {
-    retryRunResult = await runOnce(`${requestTag}-retry-1`, {
-      failureReason: firstParseResult.failure_reason ?? "unknown protocol error",
-      rawText: firstParseResult.final_answer_raw_text ?? "",
-    });
-  } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
-    await input.logger?.warn?.(`opencode rule assessment retry request failed: ${failureReason}`);
-    return {
-      outcome: "request_failed",
-      failure_reason: failureReason,
+    const parseResult = parseRuleAssessmentRunResult(
+      runResult,
+      input.bootstrapPayload.assisted_rule_candidates,
+    );
+    if (parseResult.outcome !== "protocol_error") {
+      return parseResult;
+    }
+    if (attempt >= MAX_RULE_ASSESSMENT_RETRIES) {
+      return parseResult;
+    }
+    retryContext = {
+      failureReason: parseResult.failure_reason ?? "unknown protocol error",
+      rawText: parseResult.final_answer_raw_text ?? "",
     };
   }
 
-  return parseRuleAssessmentRunResult(retryRunResult, input.bootstrapPayload.assisted_rule_candidates);
+  return {
+    outcome: "request_failed",
+    failure_reason: "rule assessment retry loop exited unexpectedly",
+  };
 }

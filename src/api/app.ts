@@ -3,6 +3,11 @@ import path from "node:path";
 import express, { NextFunction, Request, Response } from "express";
 import { API_PATHS } from "./apiDefinitions.js";
 import { getConfig } from "../config.js";
+import {
+  createConsistencyTaskStore,
+  type ConsistencyTaskRecord,
+  type ConsistencyTaskStore,
+} from "./consistencyTaskStore.js";
 import { createSubmitHumanReviewHandler } from "./humanReviewHandler.js";
 import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 import { uploadTaskCallback } from "../io/uploader.js";
@@ -527,6 +532,59 @@ function readOptionalQueryString(value: unknown): string | undefined {
   return undefined;
 }
 
+function readRemoteTaskStatusIds(req: Request): number[] | string {
+  const taskIdsText = readOptionalQueryString(req.query.taskIds);
+  if (!taskIdsText) {
+    return "Invalid query parameter: taskIds must be comma-separated positive integers";
+  }
+
+  const taskIds = taskIdsText.split(",").map((value) => Number(value.trim()));
+  if (
+    taskIds.length === 0 ||
+    taskIds.length > 50 ||
+    !taskIds.every((taskId) => Number.isSafeInteger(taskId) && taskId > 0)
+  ) {
+    return "Invalid query parameter: taskIds must be comma-separated positive integers";
+  }
+  return taskIds;
+}
+
+function isConsistencyTaskRecord(value: unknown): value is ConsistencyTaskRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    (value as { id?: string }).id.trim().length > 0 &&
+    typeof (value as { sequence?: unknown }).sequence === "number" &&
+    Number.isFinite((value as { sequence?: number }).sequence)
+  );
+}
+
+function readConsistencyTaskRecords(req: Request): ConsistencyTaskRecord[] | string {
+  const items = (req.body as { items?: unknown } | undefined)?.items;
+  if (!Array.isArray(items) || !items.every(isConsistencyTaskRecord)) {
+    return "Invalid request body: items must be consistency task records";
+  }
+  return items;
+}
+
+function readConsistencyTaskRecord(req: Request): ConsistencyTaskRecord | string {
+  const body = req.body as unknown;
+  if (!isConsistencyTaskRecord(body)) {
+    return "Invalid request body: consistency task record is required";
+  }
+
+  const taskId = req.params.id;
+  if (typeof taskId !== "string" || taskId.trim().length === 0) {
+    return "Invalid path parameter: id is required";
+  }
+  if (body.id !== taskId) {
+    return "Invalid request body: id does not match path parameter";
+  }
+
+  return body;
+}
+
 function readRuleViolationStatsQuery(req: Request): RuleViolationStatsQuery | string {
   const testCaseIdText = readOptionalQueryString(req.query.testCaseId);
   const testCaseId = testCaseIdText === undefined ? undefined : Number(testCaseIdText);
@@ -636,6 +694,94 @@ export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
   };
 }
 
+export function createGetRemoteTaskStatusesHandler(registry: RemoteTaskRegistry) {
+  return async (req: Request, res: Response) => {
+    const taskIds = readRemoteTaskStatusIds(req);
+    if (typeof taskIds === "string") {
+      res.status(400).json({ success: false, message: taskIds });
+      return;
+    }
+
+    const items = await Promise.all(
+      taskIds.map(async (taskId) => {
+        const record = await registry.get(taskId);
+        if (!record) {
+          return {
+            taskId,
+            status: "missing",
+            resultAvailable: false,
+            message: "Remote task not found",
+          };
+        }
+        return {
+          taskId: record.taskId,
+          status: record.status,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+          ...(record.testCaseId !== undefined ? { testCaseId: record.testCaseId } : {}),
+          ...(record.testCaseName ? { testCaseName: record.testCaseName } : {}),
+          resultAvailable: record.status === "completed",
+          ...(record.error ? { error: record.error } : {}),
+        };
+      }),
+    );
+
+    res.json({ success: true, items });
+  };
+}
+
+export function createGetConsistencyTasksHandler(store: ConsistencyTaskStore) {
+  return async (_req: Request, res: Response) => {
+    try {
+      res.json({ success: true, items: await store.list() });
+    } catch (error) {
+      console.error(`consistency_task_table_read_failed error=${formatError(error)}`);
+      res.status(500).json({ success: false, message: "Consistency task table is unavailable" });
+    }
+  };
+}
+
+export function createReplaceConsistencyTasksHandler(store: ConsistencyTaskStore) {
+  return async (req: Request, res: Response) => {
+    const items = readConsistencyTaskRecords(req);
+    if (typeof items === "string") {
+      res.status(400).json({ success: false, message: items });
+      return;
+    }
+
+    try {
+      if (items.length === 0 && (await store.list()).length > 0) {
+        res.status(409).json({
+          success: false,
+          message: "Refusing to replace existing consistency tasks with an empty collection",
+        });
+        return;
+      }
+      res.json({ success: true, items: await store.replace(items) });
+    } catch (error) {
+      console.error(`consistency_task_table_write_failed error=${formatError(error)}`);
+      res.status(500).json({ success: false, message: "Consistency task table is unavailable" });
+    }
+  };
+}
+
+export function createUpsertConsistencyTaskHandler(store: ConsistencyTaskStore) {
+  return async (req: Request, res: Response) => {
+    const item = readConsistencyTaskRecord(req);
+    if (typeof item === "string") {
+      res.status(400).json({ success: false, message: item });
+      return;
+    }
+
+    try {
+      res.json({ success: true, item: await store.upsert(item) });
+    } catch (error) {
+      console.error(`consistency_task_record_write_failed error=${formatError(error)}`);
+      res.status(500).json({ success: false, message: "Consistency task table is unavailable" });
+    }
+  };
+}
+
 export function createCorsMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
     const origin = req.header("Origin") ?? "*";
@@ -643,7 +789,7 @@ export function createCorsMiddleware() {
 
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin, Access-Control-Request-Headers");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
       requestedHeaders && requestedHeaders.length > 0
@@ -671,6 +817,7 @@ export function createApp(
   const app = express();
   const config = getConfig();
   const registry = createRemoteTaskRegistry(config.localCaseRoot);
+  const consistencyTaskStore = createConsistencyTaskStore(config.localCaseRoot);
   const ruleViolationStatsStore = createRuleViolationStatsStore(config.localCaseRoot);
   const humanReviewEvidenceStore = createHumanReviewEvidenceStore(config.humanReviewEvidenceRoot);
   const remoteTaskQueue = createRemoteTaskExecutionQueue(
@@ -683,7 +830,7 @@ export function createApp(
     console.error(`remote_task_recovery_failed error=${formatError(error)}`);
   });
   app.use(createCorsMiddleware());
-  app.use(express.json());
+  app.use(express.json({ limit: "2mb" }));
 
   app.get(API_PATHS.health, (_req, res) => {
     res.json({ ok: true });
@@ -704,6 +851,13 @@ export function createApp(
     createGetRuleViolationStatsHandler(ruleViolationStatsStore),
   );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
+  app.get(API_PATHS.remoteTaskStatuses, createGetRemoteTaskStatusesHandler(registry));
+  app.get(API_PATHS.consistencyTasks, createGetConsistencyTasksHandler(consistencyTaskStore));
+  app.put(API_PATHS.consistencyTasks, createReplaceConsistencyTasksHandler(consistencyTaskStore));
+  app.put(
+    API_PATHS.consistencyTask,
+    createUpsertConsistencyTaskHandler(consistencyTaskStore),
+  );
   app.use(
     createDashboardRouter({
       registry,

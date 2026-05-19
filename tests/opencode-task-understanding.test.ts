@@ -210,6 +210,39 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
   assert.doesNotMatch(calls[1]?.prompt ?? "", /代表文件/);
 });
 
+test("runOpencodeTaskUnderstanding succeeds on the second retry after repeated protocol errors", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeTaskUnderstanding({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    agentInput: input(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "{}\n",
+        rawText:
+          calls.length < 3
+            ? "不是合法 JSON"
+            : JSON.stringify({
+                explicitConstraints: ["修复登录按钮无响应问题"],
+                contextualConstraints: ["ArkTS 页面实现"],
+                implicitConstraints: ["低侵入修改"],
+                classificationHints: ["bug_fix", "has_patch"],
+                crossDeviceAdaptation: notInvolvedCrossDevice(),
+              }),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.deepEqual(calls, [
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-2",
+  ]);
+});
+
 test("runOpencodeTaskUnderstanding retry prompt omits raw agent input", async () => {
   const calls: Array<{ requestTag: string; title?: string; prompt: string }> = [];
   const result = await runOpencodeTaskUnderstanding({
@@ -319,7 +352,40 @@ test("runOpencodeTaskUnderstanding retries once after initial opencode timeout",
   ]);
 });
 
-test("runOpencodeTaskUnderstanding fails when retry also times out", async () => {
+test("runOpencodeTaskUnderstanding succeeds on the second retry after an initial timeout", async () => {
+  const calls: string[] = [];
+  const result = await runOpencodeTaskUnderstanding({
+    sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
+    agentInput: input(),
+    runPrompt: async (request) => {
+      calls.push(request.requestTag);
+      if (calls.length < 3) {
+        throw new Error(`opencode 调用超时 request=${request.requestTag}`);
+      }
+      return {
+        requestTag: request.requestTag,
+        rawEvents: "{}\n",
+        rawText: JSON.stringify({
+          explicitConstraints: ["修复登录按钮无响应问题"],
+          contextualConstraints: ["ArkTS 页面实现"],
+          implicitConstraints: ["低侵入修改"],
+          classificationHints: ["bug_fix", "has_patch"],
+          crossDeviceAdaptation: notInvolvedCrossDevice(),
+        }),
+        elapsedMs: 1,
+      };
+    },
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.deepEqual(calls, [
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a",
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-2",
+  ]);
+});
+
+test("runOpencodeTaskUnderstanding fails when both retries also time out", async () => {
   const calls: string[] = [];
   const result = await runOpencodeTaskUnderstanding({
     sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
@@ -335,5 +401,6 @@ test("runOpencodeTaskUnderstanding fails when retry also times out", async () =>
   assert.deepEqual(calls, [
     "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a",
     "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-2",
   ]);
 });

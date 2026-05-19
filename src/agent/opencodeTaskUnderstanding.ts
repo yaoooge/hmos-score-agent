@@ -7,6 +7,7 @@ import { inferCrossDeviceAdaptation, parseConstraintSummary } from "./taskUnders
 export type OpencodeTaskUnderstandingOutcome = "success" | "request_failed" | "protocol_error";
 
 const TASK_UNDERSTANDING_OUTPUT_FILE = "metadata/agent-output/task-understanding.json";
+const MAX_TASK_UNDERSTANDING_RETRIES = 2;
 
 export interface OpencodeTaskUnderstandingResult {
   outcome: OpencodeTaskUnderstandingOutcome;
@@ -222,48 +223,45 @@ export async function runOpencodeTaskUnderstanding(
     });
   }
 
-  let runResult: OpencodeRunResult;
+  let retryContext: { failureReason: string; rawText: string } | undefined;
 
-  try {
-    runResult = await runOnce(requestTag);
-  } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
-    await input.logger?.warn?.(`opencode task understanding request failed: ${failureReason}`);
+  for (let attempt = 0; attempt <= MAX_TASK_UNDERSTANDING_RETRIES; attempt += 1) {
+    const inputRequestTag = attempt === 0 ? requestTag : `${requestTag}-retry-${attempt}`;
+    let runResult: OpencodeRunResult;
     try {
-      const retryRunResult = await runOnce(`${requestTag}-retry-1`, {
+      runResult = await runOnce(inputRequestTag, retryContext);
+    } catch (error) {
+      const failureReason = error instanceof Error ? error.message : String(error);
+      const phase = attempt === 0 ? "request" : "retry request";
+      await input.logger?.warn?.(`opencode task understanding ${phase} failed: ${failureReason}`);
+      if (attempt >= MAX_TASK_UNDERSTANDING_RETRIES) {
+        return {
+          outcome: "request_failed",
+          failure_reason: failureReason,
+        };
+      }
+      retryContext = {
         failureReason,
-        rawText: "",
-      });
-      return parseTaskUnderstandingRunResult(retryRunResult);
-    } catch (retryError) {
-      const retryFailureReason = retryError instanceof Error ? retryError.message : String(retryError);
-      await input.logger?.warn?.(`opencode task understanding retry request failed: ${retryFailureReason}`);
-      return {
-        outcome: "request_failed",
-        failure_reason: retryFailureReason,
+        rawText: retryContext?.rawText ?? "",
       };
+      continue;
     }
-  }
 
-  const firstParseResult = parseTaskUnderstandingRunResult(runResult);
-  if (firstParseResult.outcome !== "protocol_error") {
-    return firstParseResult;
-  }
-
-  let retryRunResult: OpencodeRunResult;
-  try {
-    retryRunResult = await runOnce(`${requestTag}-retry-1`, {
-      failureReason: firstParseResult.failure_reason ?? "unknown protocol error",
-      rawText: firstParseResult.raw_text ?? "",
-    });
-  } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
-    await input.logger?.warn?.(`opencode task understanding retry request failed: ${failureReason}`);
-    return {
-      outcome: "request_failed",
-      failure_reason: failureReason,
+    const parseResult = parseTaskUnderstandingRunResult(runResult);
+    if (parseResult.outcome !== "protocol_error") {
+      return parseResult;
+    }
+    if (attempt >= MAX_TASK_UNDERSTANDING_RETRIES) {
+      return parseResult;
+    }
+    retryContext = {
+      failureReason: parseResult.failure_reason ?? "unknown protocol error",
+      rawText: parseResult.raw_text ?? "",
     };
   }
 
-  return parseTaskUnderstandingRunResult(retryRunResult);
+  return {
+    outcome: "request_failed",
+    failure_reason: "task understanding retry loop exited unexpectedly",
+  };
 }

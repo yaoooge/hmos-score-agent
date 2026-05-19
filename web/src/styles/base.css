@@ -98,6 +98,59 @@ body {
   padding: 14px;
 }
 
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.consistency-header,
+.consistency-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.consistency-header h2,
+.consistency-detail-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.consistency-header p,
+.consistency-detail-header p {
+  margin: 6px 0 0;
+  color: #667085;
+}
+
+.detail-title {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.detail-title > div {
+  min-width: 0;
+}
+
+.detail-back-button {
+  flex: 0 0 auto;
+  margin-top: -4px;
+}
+
+.drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.consistency-error-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
 .log-content {
   min-height: 420px;
   max-height: calc(100vh - 180px);
