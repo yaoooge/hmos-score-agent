@@ -55,9 +55,9 @@
 
 人工评分差异、风险复核等分析数据当前都以 JSONL 文件追加或重写。数据量上来后，列表页和筛选页会继续退化。
 
-## 方案对比
+## 确定方案
 
-### 方案 A: SQLite 嵌入式数据库
+本次改造明确使用 SQLite 嵌入式数据库，不引入独立数据库服务。当前服务按单机运行设计，SQLite 可以直接解决 JSON 全量扫描问题，同时保持部署和恢复成本可控。
 
 优点：
 
@@ -70,26 +70,7 @@
 缺点：
 
 - 不适合后续多实例共享写入。
-- 复杂报表和高并发写入能力不如服务型数据库。
 - 需要自己维护 schema migration 和回填工具。
-
-### 方案 B: MySQL / PostgreSQL 独立数据库服务
-
-优点：
-
-- 并发、事务、索引和备份能力更强。
-- 后续如果要做多实例、共享状态或对外服务化，扩展更自然。
-- 更适合未来把评测服务拆成多进程/多机器。
-
-缺点：
-
-- 对当前单机部署来说太重。
-- 要额外处理连接池、运维、故障恢复和部署依赖。
-- 迁移和测试成本明显更高。
-
-### 结论
-
-当前明确是单机运行，所以优先选择 SQLite。它能解决现在的主要瓶颈，又不会把部署复杂度抬高。
 
 ## 推荐架构
 
@@ -180,26 +161,7 @@
 - `test_case_id`
 - `completed_at_ms`
 
-### 3. `rule_violation_run_pack`
-
-记录一次 run 绑定了哪些静态规则包。
-
-核心字段：
-
-- `task_id`
-- `pack_id`
-- `display_name`
-
-主键：
-
-- `(task_id, pack_id)`
-
-用途：
-
-- 保留当前 `packId` 过滤语义
-- 让规则包过滤不必扫描整份 run 明细
-
-### 4. `rule_violation_item`
+### 3. `rule_violation_item`
 
 记录一次 run 中真正不满足的静态规则。
 
@@ -210,6 +172,7 @@
 - `rule_id`
 - `rule_summary`
 - `rule_source`
+- `pack_display_name`
 - `conclusion`
 
 主键：
@@ -220,6 +183,7 @@
 
 - 支撑按规则维度的聚合统计
 - 支撑 `violationCount`、`affectedCaseIds`、`affectedTaskIds`、`lastViolatedAt`
+- 支撑 `packId` 过滤；不再单独维护 run-pack 关系表。
 
 建议索引：
 
@@ -227,7 +191,12 @@
 - `task_id`
 - `pack_id`
 
-### 5. `consistency_task`
+说明：
+
+- 当前统计口径只保存 `result === "不满足"` 的静态规则；因此 `packId` 过滤可以直接通过 `rule_violation_item.pack_id` 完成。
+- 如果某次 run 绑定了某规则包但没有违反项，不会出现在规则不满足统计里，和当前 `rule-violation-stats.json` 只保存有违反规则包的语义一致。
+
+### 4. `consistency_task`
 
 替代 `consistency-task-index.json`。
 
@@ -243,7 +212,7 @@
 - `payload_json` 保留现有任意扩展字段。
 - 如果后续发现 `sequence` 是唯一排序条件，也可以把它提升成索引字段。
 
-### 6. `analysis_event`
+### 5. `analysis_event`
 
 统一承载当前 JSONL 分析数据，避免继续用逐行扫描和重写。
 
@@ -284,7 +253,7 @@
 
 1. 继续写 `caseDir/outputs/result.json`、`report.html` 等原始产物。
 2. 提取任务摘要，写入 `remote_task`。
-3. 提取规则违反快照，写入 `rule_violation_run`、`rule_violation_run_pack`、`rule_violation_item`。
+3. 提取规则违反快照，写入 `rule_violation_run`、`rule_violation_item`。
 4. 需要时写入分析事件表。
 
 ### 查询时
@@ -293,6 +262,94 @@
 - `GET /dashboard/tasks` 直接查 `remote_task`，不再逐个读 case 文件。
 - `GET /score/consistency-tasks` / `PUT /score/consistency-tasks` 直接读写 `consistency_task`。
 - 分析页直接查 `analysis_event`。
+
+## 前端接口影响
+
+这次改造不要求前端改接口协议，但需要确认所有前端页面背后的后端接口都改成 SQLite 查询，避免“后端换库但页面仍触发文件扫描”。
+
+### 1. 评测任务页
+
+相关接口：
+
+- `GET /dashboard/summary`
+- `GET /dashboard/tasks`
+- `GET /dashboard/tasks/status-counts`
+
+调整：
+
+- 任务列表、任务状态计数、分数摘要、任务类型统计都从 `remote_task` 查询。
+- 分页、排序、状态、任务类型、分数区间、时间范围、关键词搜索都下推到 SQL。
+- `risks_json` 只用于列表摘要展示，不代替完整结果详情。
+
+### 2. 用例报表页
+
+相关接口：
+
+- `GET /dashboard/reports/daily`
+- `GET /dashboard/reports/score-distribution`
+
+调整：
+
+- 日报和分数分布直接从 `remote_task` 聚合。
+- 不再先调用 `listDashboardTasks()` 读全量任务后在内存聚合。
+
+### 3. 结果分析页
+
+相关接口：
+
+- `GET /dashboard/analysis/human-rating-gaps`
+- `PUT /dashboard/analysis/human-rating-gaps/manual-analysis-status`
+- `GET /dashboard/analysis/risk-review-calibrations`
+- `PUT /dashboard/analysis/risk-review-calibrations/manual-analysis-status`
+- `GET /dashboard/analysis/negative-results`
+
+调整：
+
+- 人工评分差异和风险复核从 `analysis_event` 查询。
+- 手动分析状态更新直接更新 `analysis_event.manual_analysis_status` 和 `manual_analyzed_at_ms`。
+- 负向结果分析从 `remote_task` 查询分数、风险和任务摘要，不再扫描每个 `result.json`。
+
+### 4. 一多适配页
+
+相关接口：
+
+- `GET /dashboard/cross-device/cases`
+- `GET /dashboard/cross-device/rule-violations`
+- `GET /dashboard/cross-device/risk-review-calibrations`
+
+调整：
+
+- 一多用例列表需要的基础任务信息从 `remote_task` 查询。
+- 一多规则违反从 `rule_violation_item` 聚合。
+- 一多风险复核从 `analysis_event` 查询。
+- 如果现有一多识别信息只存在 `constraint-summary.json`，回填时需要把“一多是否涉及”和原因摘要写入可查询字段；否则这个页面仍会退回文件扫描。
+
+### 5. 一致性分析页
+
+相关接口：
+
+- `GET /score/consistency-tasks`
+- `PUT /score/consistency-tasks`
+- `GET /score/remote-tasks/status`
+- `GET /score/remote-tasks/:taskId/result`
+
+调整：
+
+- 一致性任务列表从 `consistency_task` 查询。
+- 批量状态查询从 `remote_task` 查询。
+- 完整评分结果仍通过 `GET /score/remote-tasks/:taskId/result` 读取原始 `result.json`。
+
+### 6. 规则不满足统计接口
+
+相关接口：
+
+- `GET /score/rule-violation-stats`
+
+调整：
+
+- 规则统计从 `rule_violation_run` join `rule_violation_item` 聚合。
+- `packId` 过滤直接使用 `rule_violation_item.pack_id`。
+- `caseId`、`testCaseId`、时间范围过滤使用 `rule_violation_run`。
 
 ### 原始结果读取
 
@@ -316,6 +373,7 @@
 - 从 `rule-violation-stats.json` 回填 `rule_violation_run` 和明细表
 - 从 `consistency-task-index.json` 回填 `consistency_task`
 - 从现有 JSONL 分析文件回填 `analysis_event`
+- 从历史 case 的 `constraint-summary.json` 或 `metadata.json` 补齐一多适配查询所需字段。
 
 ### 第三步
 
@@ -333,24 +391,6 @@
 - 数据库损坏时，以 case 目录原始产物和 JSON 回填为恢复来源。
 - 查询不到索引时返回空结果，不把“首次启动未回填完成”当成业务错误。
 
-## 优劣总结
-
-### SQLite 适合当前阶段
-
-- 单机部署
-- 查询量持续增长
-- 需要低运维成本
-- 需要保留文件产物作为事实源
-
-### MySQL / PostgreSQL 更适合后续阶段
-
-- 多实例共享
-- 更高并发写入
-- 更强的运维和备份要求
-- 未来需要把这套索引升级成服务级数据层
-
-结论还是一样：现在先做 SQLite，把查询瓶颈先解决掉。
-
 ## 测试与验收
 
 ### 单元测试
@@ -359,12 +399,14 @@
 - 规则违反快照的幂等写入和聚合查询。
 - 一致性任务表的 replace 和 list。
 - 分析事件表的 upsert / delete / list。
+- dashboard 查询 repository 的分页、排序、筛选、聚合。
 
 ### 集成测试
 
 - 任务完成后，`GET /dashboard/tasks` 不再依赖逐个读取 `result.json` 才能返回基础列表。
 - `GET /score/rule-violation-stats` 在大量历史记录下仍能稳定完成筛选和聚合。
 - `PUT /score/consistency-tasks` 写入后再次启动服务，数据可恢复。
+- 前端现有 dashboard API 在回填后的 SQLite 数据上输出和旧实现一致的结果。
 
 ### 验收标准
 
