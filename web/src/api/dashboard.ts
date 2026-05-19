@@ -82,6 +82,8 @@ export type ScoreBucket = {
   count: number;
 };
 
+export type ManualAnalysisStatus = "pending" | "analyzed";
+
 export type HumanRatingGap = {
   taskId: number;
   testCaseId?: number;
@@ -95,6 +97,8 @@ export type HumanRatingGap = {
   confidence?: string;
   reasonSummary?: string;
   recommendedActions?: string[];
+  manualAnalysisStatus?: ManualAnalysisStatus;
+  manualAnalyzedAt?: string;
 };
 
 export type RiskReviewCalibration = {
@@ -119,6 +123,8 @@ export type RiskReviewCalibration = {
     reason?: string;
     comment?: string;
   };
+  manualAnalysisStatus?: ManualAnalysisStatus;
+  manualAnalyzedAt?: string;
 };
 
 export type CrossDeviceCase = {
@@ -245,6 +251,18 @@ async function getJson<T>(
   return (await response.json()) as T;
 }
 
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return (await response.json()) as T;
+}
+
 export function fetchSummary(params?: Record<string, string | number | undefined>) {
   return getJson<DashboardSummary>("/dashboard/summary", params);
 }
@@ -283,6 +301,17 @@ export function fetchHumanRatingGaps(params?: Record<string, string | number | u
   }>("/dashboard/analysis/human-rating-gaps", params);
 }
 
+export function updateHumanRatingGapManualAnalysisStatus(
+  taskIds: number[],
+  status: ManualAnalysisStatus,
+) {
+  return patchJson<{
+    success: true;
+    updated: number;
+    missing: Array<{ taskId: number }>;
+  }>("/dashboard/analysis/human-rating-gaps/manual-analysis-status", { taskIds, status });
+}
+
 export function fetchRiskReviewCalibrations(
   params?: Record<string, string | number | undefined>,
 ) {
@@ -294,6 +323,18 @@ export function fetchRiskReviewCalibrations(
     skippedRows: number;
     items: RiskReviewCalibration[];
   }>("/dashboard/analysis/risk-review-calibrations", params);
+}
+
+export function updateRiskReviewManualAnalysisStatus(
+  items: Array<{ taskId: number; riskId: number }>,
+  status: ManualAnalysisStatus,
+) {
+  return patchJson<{
+    success: true;
+    updated: number;
+    missing: Array<{ taskId: number; riskId: number }>;
+    skipped: Array<{ taskId: number; riskId: number; reason: string }>;
+  }>("/dashboard/analysis/risk-review-calibrations/manual-analysis-status", { items, status });
 }
 
 export function fetchNegativeResults(params?: Record<string, string | number | undefined>) {
