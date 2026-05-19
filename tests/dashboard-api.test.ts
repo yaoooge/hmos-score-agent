@@ -514,18 +514,65 @@ async function invokeExpressGet(
   app: Express,
   pathName: string,
 ): Promise<{ statusCode: number; body: string }> {
+  return await invokeExpressRequest(app, "GET", pathName);
+}
+
+async function invokeExpressPatch(
+  app: Express,
+  pathName: string,
+  body: unknown,
+): Promise<{ statusCode: number; body: string }> {
+  return await invokeExpressRequest(app, "PATCH", pathName, body);
+}
+
+async function invokeExpressRequest(
+  app: Express,
+  method: "GET" | "PATCH",
+  pathName: string,
+  body?: unknown,
+): Promise<{ statusCode: number; body: string }> {
   return await new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const headers = new Map<string, number | string | readonly string[]>();
+    const bodyBuffer =
+      body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body), "utf-8");
     const req = {
-      method: "GET",
+      method,
       url: pathName,
       originalUrl: pathName,
-      headers: { host: "127.0.0.1" },
+      headers:
+        body === undefined
+          ? { host: "127.0.0.1" }
+          : {
+              host: "127.0.0.1",
+              "content-type": "application/json",
+              "content-length": String(bodyBuffer.length),
+            },
       socket: { encrypted: false },
       connection: { encrypted: false },
+      readable: body !== undefined,
+      complete: body === undefined,
+      body,
       get(name: string) {
-        return this.headers[name.toLowerCase() as "host"];
+        return this.headers[name.toLowerCase() as keyof typeof this.headers];
+      },
+      on(event: string, listener: (...args: unknown[]) => void) {
+        if (body === undefined) {
+          return this;
+        }
+        if (event === "data") {
+          queueMicrotask(() => listener(bodyBuffer));
+        }
+        if (event === "end") {
+          queueMicrotask(() => {
+            this.complete = true;
+            listener();
+          });
+        }
+        return this;
+      },
+      once(event: string, listener: (...args: unknown[]) => void) {
+        return this.on(event, listener);
       },
     };
     const res = {
@@ -766,6 +813,73 @@ test("dashboard human rating gaps support keyword and conclusion filters", async
   assert.equal((byConclusion.items as Array<Record<string, unknown>>)[0]?.taskId, 89);
 });
 
+test("dashboard human rating gaps expose default manual analysis status and filter by status", async (t) => {
+  const fixture = await createFixture(t);
+  const app = createDashboardTestApp(fixture);
+
+  const all = await getJson(app, "/dashboard/analysis/human-rating-gaps");
+  assert.equal((all.items as Array<Record<string, unknown>>)[0]?.manualAnalysisStatus, "pending");
+  assert.equal((all.items as Array<Record<string, unknown>>)[1]?.manualAnalysisStatus, "pending");
+
+  const analyzedBefore = await getJson(
+    app,
+    "/dashboard/analysis/human-rating-gaps?manualAnalysisStatus=analyzed",
+  );
+  assert.equal(analyzedBefore.total, 0);
+
+  const invalid = await invokeExpressGet(
+    app,
+    "/dashboard/analysis/human-rating-gaps?manualAnalysisStatus=unknown",
+  );
+  assert.equal(invalid.statusCode, 400);
+  assert.match(invalid.body, /manualAnalysisStatus must be one of pending, analyzed/);
+});
+
+test("dashboard human rating gaps batch update persists manual analysis status", async (t) => {
+  const fixture = await createFixture(t);
+  const app = createDashboardTestApp(fixture);
+
+  const update = await invokeExpressPatch(
+    app,
+    "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
+    { taskIds: [88], status: "analyzed" },
+  );
+  assert.equal(update.statusCode, 200);
+  const updateBody = JSON.parse(update.body) as Record<string, unknown>;
+  assert.equal(updateBody.updated, 1);
+  assert.deepEqual(updateBody.missing, []);
+
+  const analyzed = await getJson(
+    app,
+    "/dashboard/analysis/human-rating-gaps?manualAnalysisStatus=analyzed",
+  );
+  assert.equal(analyzed.total, 1);
+  const item = (analyzed.items as Array<Record<string, unknown>>)[0];
+  assert.equal(item?.taskId, 88);
+  assert.equal(item?.manualAnalysisStatus, "analyzed");
+  assert.equal(typeof item?.manualAnalyzedAt, "string");
+
+  const reset = await invokeExpressPatch(
+    app,
+    "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
+    { taskIds: [88, 999], status: "pending" },
+  );
+  assert.equal(reset.statusCode, 200);
+  const resetBody = JSON.parse(reset.body) as Record<string, unknown>;
+  assert.equal(resetBody.updated, 1);
+  assert.deepEqual(resetBody.missing, [{ taskId: 999 }]);
+
+  const pending = await getJson(
+    app,
+    "/dashboard/analysis/human-rating-gaps?manualAnalysisStatus=pending",
+  );
+  const resetItem = (pending.items as Array<Record<string, unknown>>).find(
+    (row) => row.taskId === 88,
+  );
+  assert.equal(resetItem?.manualAnalysisStatus, "pending");
+  assert.equal(Object.hasOwn(resetItem ?? {}, "manualAnalyzedAt"), false);
+});
+
 test("dashboard risk review calibrations expose case names and review details", async (t) => {
   const fixture = await createFixture(t);
   const app = createDashboardTestApp(fixture);
@@ -815,6 +929,85 @@ test("dashboard risk review calibrations support keyword and agreement filters",
   );
   assert.equal(invalid.statusCode, 400);
   assert.match(invalid.body, /agreement must be one of agreed, disagreed/);
+});
+
+test("dashboard risk review manual status updates only disagreed rows", async (t) => {
+  const fixture = await createFixture(t);
+  const app = createDashboardTestApp(fixture);
+
+  const disagreed = await getJson(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?agreement=disagreed",
+  );
+  assert.equal(disagreed.total, 1);
+  assert.equal(
+    (disagreed.items as Array<Record<string, unknown>>)[0]?.manualAnalysisStatus,
+    "pending",
+  );
+
+  const update = await invokeExpressPatch(
+    app,
+    "/dashboard/analysis/risk-review-calibrations/manual-analysis-status",
+    {
+      items: [
+        { taskId: 88, riskId: 1 },
+        { taskId: 89, riskId: 2 },
+        { taskId: 999, riskId: 1 },
+      ],
+      status: "analyzed",
+    },
+  );
+  assert.equal(update.statusCode, 200);
+  const updateBody = JSON.parse(update.body) as Record<string, unknown>;
+  assert.equal(updateBody.updated, 1);
+  assert.deepEqual(updateBody.missing, [{ taskId: 999, riskId: 1 }]);
+  assert.deepEqual(updateBody.skipped, [{ taskId: 89, riskId: 2, reason: "not_disagreed" }]);
+
+  const analyzed = await getJson(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?agreement=disagreed&manualAnalysisStatus=analyzed",
+  );
+  assert.equal(analyzed.total, 1);
+  const analyzedItem = (analyzed.items as Array<Record<string, unknown>>)[0];
+  assert.equal(analyzedItem?.taskId, 88);
+  assert.equal(analyzedItem?.manualAnalysisStatus, "analyzed");
+  assert.equal(typeof analyzedItem?.manualAnalyzedAt, "string");
+
+  const agreed = await getJson(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?agreement=agreed",
+  );
+  const agreedItem = (agreed.items as Array<Record<string, unknown>>)[0];
+  assert.equal(agreedItem?.manualAnalysisStatus, "pending");
+});
+
+test("dashboard manual status batch endpoints validate payloads", async (t) => {
+  const fixture = await createFixture(t);
+  const app = createDashboardTestApp(fixture);
+
+  const emptyGap = await invokeExpressPatch(
+    app,
+    "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
+    { taskIds: [], status: "analyzed" },
+  );
+  assert.equal(emptyGap.statusCode, 400);
+  assert.match(emptyGap.body, /taskIds must be a non-empty array of positive integers/);
+
+  const invalidGapStatus = await invokeExpressPatch(
+    app,
+    "/dashboard/analysis/human-rating-gaps/manual-analysis-status",
+    { taskIds: [88], status: "done" },
+  );
+  assert.equal(invalidGapStatus.statusCode, 400);
+  assert.match(invalidGapStatus.body, /status must be one of pending, analyzed/);
+
+  const emptyRisk = await invokeExpressPatch(
+    app,
+    "/dashboard/analysis/risk-review-calibrations/manual-analysis-status",
+    { items: [], status: "pending" },
+  );
+  assert.equal(emptyRisk.statusCode, 400);
+  assert.match(emptyRisk.body, /items must be a non-empty array/);
 });
 
 test("dashboard cross-device cases list only involved tasks and support keyword filters", async (t) => {

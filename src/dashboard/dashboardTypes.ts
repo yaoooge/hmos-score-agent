@@ -2,6 +2,8 @@ import type { RemoteTaskRecord, RemoteTaskRecordStatus } from "../api/remoteTask
 
 export type DashboardStatusCategory = "received" | "queued" | "running" | "completed" | "failed";
 
+export type ManualAnalysisStatus = "pending" | "analyzed";
+
 export type DashboardTaskSummary = {
   taskId: number;
   testCaseId?: number;
@@ -42,6 +44,8 @@ export type HumanRatingGapDashboardItem = {
   humanNeedsImprovement?: boolean;
   scoringNeedsImprovement?: boolean;
   recommendedActions?: unknown[];
+  manualAnalysisStatus?: ManualAnalysisStatus;
+  manualAnalyzedAt?: string;
 };
 
 export type HumanRatingGapReadResult = {
@@ -60,6 +64,8 @@ export type RiskReviewCalibrationDashboardItem = {
   caseName?: string;
   resultRisk?: Record<string, unknown>;
   humanReview?: Record<string, unknown>;
+  manualAnalysisStatus?: ManualAnalysisStatus;
+  manualAnalyzedAt?: string;
 };
 
 export type RiskReviewCalibrationReadResult = {

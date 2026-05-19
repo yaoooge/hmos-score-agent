@@ -3,6 +3,7 @@ import type {
   DashboardStatusCategory,
   DashboardTaskSummary,
   HumanRatingGapDashboardItem,
+  ManualAnalysisStatus,
   RiskReviewCalibrationDashboardItem,
 } from "./dashboardTypes.js";
 
@@ -207,6 +208,7 @@ export function filterHumanRatingGaps(
     manualRating?: string;
     primaryConclusion?: string;
     keyword?: string;
+    manualAnalysisStatus?: ManualAnalysisStatus;
   },
 ) {
   const keyword = query.keyword?.trim().toLowerCase();
@@ -218,6 +220,12 @@ export function filterHumanRatingGaps(
       return false;
     }
     if (query.primaryConclusion && gap.primaryConclusion !== query.primaryConclusion) {
+      return false;
+    }
+    if (
+      query.manualAnalysisStatus &&
+      gap.manualAnalysisStatus !== query.manualAnalysisStatus
+    ) {
       return false;
     }
     if (query.from && (!gap.reviewedAt || Date.parse(gap.reviewedAt) < Date.parse(query.from))) {
@@ -298,7 +306,11 @@ function readHumanReviewAgreement(review: Record<string, unknown> | undefined): 
 
 export function filterRiskReviewCalibrations(
   items: RiskReviewCalibrationDashboardItem[],
-  query: { keyword?: string; agreement?: "agreed" | "disagreed" },
+  query: {
+    keyword?: string;
+    agreement?: "agreed" | "disagreed";
+    manualAnalysisStatus?: ManualAnalysisStatus;
+  },
 ) {
   const keyword = query.keyword?.trim().toLowerCase();
   return items
@@ -309,6 +321,12 @@ export function filterRiskReviewCalibrations(
       }
       const agreed = readHumanReviewAgreement(item.humanReview);
       return query.agreement === "agreed" ? agreed === true : agreed === false;
+    })
+    .filter((item) => {
+      if (!query.manualAnalysisStatus) {
+        return true;
+      }
+      return item.manualAnalysisStatus === query.manualAnalysisStatus;
     });
 }
 

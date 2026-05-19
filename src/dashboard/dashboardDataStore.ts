@@ -7,9 +7,13 @@ import type {
   DashboardTaskSummary,
   HumanRatingGapDashboardItem,
   HumanRatingGapReadResult,
+  ManualAnalysisStatus,
   RiskReviewCalibrationDashboardItem,
   RiskReviewCalibrationReadResult,
 } from "./dashboardTypes.js";
+
+const HUMAN_RATING_GAP_DATASET = "human_rating_gap_analyses.jsonl";
+const RISK_REVIEW_CALIBRATION_DATASET = "risk_review_calibrations.jsonl";
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -19,6 +23,61 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function toIso(value: number): string {
   return new Date(value).toISOString();
+}
+
+function normalizeManualAnalysisStatus(value: unknown): ManualAnalysisStatus {
+  return value === "analyzed" ? "analyzed" : "pending";
+}
+
+function normalizeManualAnalyzedAt(
+  status: ManualAnalysisStatus,
+  value: unknown,
+): string | undefined {
+  return status === "analyzed" && typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
+function applyManualAnalysisStatusFields<T extends Record<string, unknown>>(
+  item: T,
+  status: ManualAnalysisStatus,
+  nowIso: string,
+): T & { manualAnalysisStatus: ManualAnalysisStatus; manualAnalyzedAt?: string } {
+  const next: T & { manualAnalysisStatus: ManualAnalysisStatus; manualAnalyzedAt?: string } = {
+    ...item,
+    manualAnalysisStatus: status,
+  };
+  if (status === "analyzed") {
+    next.manualAnalyzedAt = nowIso;
+  } else {
+    delete next.manualAnalyzedAt;
+  }
+  return next;
+}
+
+function isDisagreedRiskReview(record: Record<string, unknown>): boolean {
+  const humanReview = asRecord(record.humanReview);
+  const agreed = humanReview?.agreeWithResultLevel ?? humanReview?.agree;
+  return agreed === false;
+}
+
+async function readDatasetLines(filePath: string): Promise<string[] | undefined> {
+  try {
+    return (await fs.readFile(filePath, "utf-8")).split("\n");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function rewriteDatasetLines(filePath: string, lines: string[]): Promise<void> {
+  const content = lines.join("\n");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.${String(process.pid)}.${String(Date.now())}.tmp`;
+  await fs.writeFile(tempPath, content.endsWith("\n") ? content : `${content}\n`, "utf-8");
+  await fs.rename(tempPath, filePath);
 }
 
 export function statusCategory(status: RemoteTaskRecord["status"]): DashboardStatusCategory {
@@ -229,7 +288,7 @@ export async function readHumanRatingGapDataset(
   root: string,
   taskNames: Map<number, string> = new Map(),
 ): Promise<HumanRatingGapReadResult> {
-  const filePath = path.join(root, "datasets", "human_rating_gap_analyses.jsonl");
+  const filePath = path.join(root, "datasets", HUMAN_RATING_GAP_DATASET);
   let text: string;
   try {
     text = await fs.readFile(filePath, "utf-8");
@@ -255,11 +314,18 @@ export async function readHumanRatingGapDataset(
       }
       const item = record as HumanRatingGapDashboardItem;
       const hasCaseName = typeof item.caseName === "string" && item.caseName.trim().length > 0;
+      const manualAnalysisStatus = normalizeManualAnalysisStatus(item.manualAnalysisStatus);
+      const manualAnalyzedAt = normalizeManualAnalyzedAt(
+        manualAnalysisStatus,
+        item.manualAnalyzedAt,
+      );
       items.push({
         ...item,
         caseName: hasCaseName
           ? item.caseName
           : (taskNames.get(item.taskId) ?? `Task ${String(item.taskId)}`),
+        manualAnalysisStatus,
+        ...(manualAnalyzedAt ? { manualAnalyzedAt } : {}),
       });
     } catch {
       skippedRows += 1;
@@ -272,7 +338,7 @@ export async function readRiskReviewCalibrationDataset(
   root: string,
   taskNames: Map<number, string>,
 ): Promise<RiskReviewCalibrationReadResult> {
-  const filePath = path.join(root, "datasets", "risk_review_calibrations.jsonl");
+  const filePath = path.join(root, "datasets", RISK_REVIEW_CALIBRATION_DATASET);
   let text: string;
   try {
     text = await fs.readFile(filePath, "utf-8");
@@ -302,15 +368,128 @@ export async function readRiskReviewCalibrationDataset(
         continue;
       }
       const hasCaseName = typeof record.caseName === "string" && record.caseName.trim().length > 0;
+      const item = record as RiskReviewCalibrationDashboardItem;
+      const manualAnalysisStatus = normalizeManualAnalysisStatus(item.manualAnalysisStatus);
+      const manualAnalyzedAt = normalizeManualAnalyzedAt(
+        manualAnalysisStatus,
+        item.manualAnalyzedAt,
+      );
       items.push({
-        ...(record as RiskReviewCalibrationDashboardItem),
+        ...item,
         caseName: hasCaseName
           ? (record.caseName as string)
           : (taskNames.get(taskId) ?? `Task ${String(taskId)}`),
+        manualAnalysisStatus,
+        ...(manualAnalyzedAt ? { manualAnalyzedAt } : {}),
       });
     } catch {
       skippedRows += 1;
     }
   }
   return { items, skippedRows };
+}
+
+export async function updateHumanRatingGapManualAnalysisStatus(
+  root: string,
+  taskIds: number[],
+  status: ManualAnalysisStatus,
+  nowIso = new Date().toISOString(),
+): Promise<{ updated: number; missing: Array<{ taskId: number }> }> {
+  const filePath = path.join(root, "datasets", HUMAN_RATING_GAP_DATASET);
+  const lines = await readDatasetLines(filePath);
+  const requested = new Set(taskIds);
+  const found = new Set<number>();
+  let updated = 0;
+  if (!lines) {
+    return { updated, missing: taskIds.map((taskId) => ({ taskId })) };
+  }
+
+  const rewritten = lines.map((line) => {
+    if (line.trim().length === 0) {
+      return line;
+    }
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      const record = asRecord(parsed);
+      if (
+        !record ||
+        record.type !== "human_rating_gap_analysis" ||
+        typeof record.taskId !== "number" ||
+        !requested.has(record.taskId)
+      ) {
+        return line;
+      }
+      found.add(record.taskId);
+      updated += 1;
+      return JSON.stringify(applyManualAnalysisStatusFields(record, status, nowIso));
+    } catch {
+      return line;
+    }
+  });
+
+  await rewriteDatasetLines(filePath, rewritten);
+  return {
+    updated,
+    missing: taskIds.filter((taskId) => !found.has(taskId)).map((taskId) => ({ taskId })),
+  };
+}
+
+export async function updateRiskReviewManualAnalysisStatus(
+  root: string,
+  items: Array<{ taskId: number; riskId: number }>,
+  status: ManualAnalysisStatus,
+  nowIso = new Date().toISOString(),
+): Promise<{
+  updated: number;
+  missing: Array<{ taskId: number; riskId: number }>;
+  skipped: Array<{ taskId: number; riskId: number; reason: "not_disagreed" }>;
+}> {
+  const filePath = path.join(root, "datasets", RISK_REVIEW_CALIBRATION_DATASET);
+  const lines = await readDatasetLines(filePath);
+  const requested = new Map(items.map((item) => [`${String(item.taskId)}:${String(item.riskId)}`, item]));
+  const found = new Set<string>();
+  const skipped: Array<{ taskId: number; riskId: number; reason: "not_disagreed" }> = [];
+  let updated = 0;
+  if (!lines) {
+    return { updated, missing: items, skipped };
+  }
+
+  const rewritten = lines.map((line) => {
+    if (line.trim().length === 0) {
+      return line;
+    }
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      const record = asRecord(parsed);
+      if (
+        !record ||
+        record.type !== "risk_review_calibration" ||
+        typeof record.taskId !== "number" ||
+        typeof record.riskId !== "number"
+      ) {
+        return line;
+      }
+      const key = `${String(record.taskId)}:${String(record.riskId)}`;
+      const requestedItem = requested.get(key);
+      if (!requestedItem) {
+        return line;
+      }
+      found.add(key);
+      if (!isDisagreedRiskReview(record)) {
+        skipped.push({ ...requestedItem, reason: "not_disagreed" });
+        return line;
+      }
+      updated += 1;
+      return JSON.stringify(applyManualAnalysisStatusFields(record, status, nowIso));
+    } catch {
+      return line;
+    }
+  });
+
+  await rewriteDatasetLines(filePath, rewritten);
+  return {
+    updated,
+    missing: items.filter((item) => !found.has(`${String(item.taskId)}:${String(item.riskId)}`)),
+    skipped,
+  };
 }
