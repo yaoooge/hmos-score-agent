@@ -143,6 +143,65 @@ test("runOpencodePrompt logs actual opencode invocation lifecycle", async () => 
   );
 });
 
+test("runOpencodePrompt logs token usage when opencode emits token counts", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-token-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-token-"));
+  const child = createFakeChild();
+  const messages: string[] = [];
+
+  const result = await runOpencodePrompt({
+    runtime: runtimeConfig(runtimeDir),
+    request: {
+      prompt: "请评分",
+      sandboxRoot,
+      requestTag: "rule-assessment",
+      agent: "hmos-rule-assessment",
+      outputFile: "metadata/agent-output/rule-assessment.json",
+      logger: {
+        info: (message) => {
+          messages.push(message);
+        },
+      },
+    },
+    deps: {
+      spawnProcess: () => {
+        queueMicrotask(async () => {
+          await fs.mkdir(path.join(sandboxRoot, "metadata", "agent-output"), { recursive: true });
+          await fs.writeFile(
+            path.join(sandboxRoot, "metadata", "agent-output", "rule-assessment.json"),
+            '{"ok":true}\n',
+            "utf-8",
+          );
+          child.stdout.emit(
+            "data",
+            Buffer.from(
+              [
+                '{"type":"text","part":{"type":"text","text":"{\\"output_file\\":\\"metadata/agent-output/rule-assessment.json\\"}"}}',
+                '{"type":"step_finish","part":{"type":"step-finish","cost":12.5,"tokens":{"input":10,"output":20,"reasoning":3,"cache":{"read":4,"write":5},"total":42}}}',
+              ].join("\n") + "\n",
+            ),
+          );
+          child.emit("exit", 0);
+        });
+        return child;
+      },
+    },
+  });
+
+  assert.deepEqual(result.tokenUsage, {
+    total: 42,
+    input: 10,
+    output: 20,
+    reasoning: 3,
+    cacheRead: 4,
+    cacheWrite: 5,
+  });
+  assert.match(
+    messages.at(-1) ?? "",
+    /opencode 调用完成 request=rule-assessment elapsedMs=\d+ tokens=42 inputTokens=10 outputTokens=20 reasoningTokens=3 cacheReadTokens=4 cacheWriteTokens=5 outputFile=metadata\/agent-output\/rule-assessment\.json/,
+  );
+});
+
 test("runOpencodePrompt concatenates streamed opencode text part events", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-stream-text-"));
   const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-stream-text-"));

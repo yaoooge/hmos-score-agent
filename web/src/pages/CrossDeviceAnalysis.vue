@@ -99,15 +99,6 @@
               style="width: 220px"
             />
             <el-select
-              v-model="riskFilters.agreement"
-              placeholder="人工同意"
-              clearable
-              style="width: 150px"
-            >
-              <el-option label="同意" value="agreed" />
-              <el-option label="不同意" value="disagreed" />
-            </el-select>
-            <el-select
               v-model="riskFilters.riskLevel"
               placeholder="风险等级"
               clearable
@@ -382,6 +373,7 @@ import {
 import OverflowTextTooltip from "../components/OverflowTextTooltip.vue";
 import TaskStatusTag from "../components/TaskStatusTag.vue";
 import { formatDashboardDateTime } from "../dateTime";
+import { buildCrossDeviceRiskQueryParams } from "./crossDeviceRiskQuery";
 
 type DashboardTitleControls = {
   dateRange?: {
@@ -422,7 +414,6 @@ const ruleFilters = reactive({
 });
 const riskFilters = reactive({
   keyword: "",
-  agreement: "" as "" | "agreed" | "disagreed",
   riskLevel: "" as "" | "high" | "medium" | "low",
 });
 
@@ -481,14 +472,15 @@ async function loadRules() {
 async function loadRiskReviews() {
   riskLoading.value = true;
   try {
-    const response = await fetchCrossDeviceRiskReviewCalibrations({
-      ...dateParams(),
-      page: riskPage.value,
-      pageSize: riskPageSize.value,
-      keyword: riskFilters.keyword || undefined,
-      agreement: riskFilters.agreement || undefined,
-      riskLevel: riskFilters.riskLevel || undefined,
-    });
+    const response = await fetchCrossDeviceRiskReviewCalibrations(
+      buildCrossDeviceRiskQueryParams({
+        ...dateParams(),
+        page: riskPage.value,
+        pageSize: riskPageSize.value,
+        keyword: riskFilters.keyword || undefined,
+        riskLevel: riskFilters.riskLevel || undefined,
+      }),
+    );
     riskReviews.value = response.items;
     riskTotal.value = response.total;
   } finally {
@@ -628,7 +620,7 @@ watch([riskPage, riskPageSize], loadRiskReviews);
 watch(() => caseFilters.keyword, reloadCasesFromFirstPage);
 watch(() => ruleFilters.keyword, reloadRulesFromFirstPage);
 watch(
-  () => [riskFilters.keyword, riskFilters.agreement, riskFilters.riskLevel],
+  () => [riskFilters.keyword, riskFilters.riskLevel],
   reloadRiskReviewsFromFirstPage,
 );
 

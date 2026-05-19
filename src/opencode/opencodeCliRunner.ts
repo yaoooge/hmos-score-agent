@@ -22,9 +22,19 @@ export interface OpencodeRunResult {
   rawText: string;
   rawEvents: string;
   elapsedMs: number;
+  tokenUsage?: OpencodeTokenUsage;
   assistantText?: string;
   outputFile?: string;
   outputFileText?: string;
+}
+
+export interface OpencodeTokenUsage {
+  total: number;
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
 }
 
 export class OpencodeRunError extends Error {
@@ -92,6 +102,96 @@ function summarizeEventTypes(rawEvents: string): string {
   return types.slice(-20).join(",") || "none";
 }
 
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeTokenUsage(tokens: unknown): OpencodeTokenUsage | undefined {
+  if (!tokens || typeof tokens !== "object") {
+    return undefined;
+  }
+  const record = tokens as Record<string, unknown>;
+  const input = readFiniteNumber(record.input);
+  const output = readFiniteNumber(record.output);
+  const reasoning = readFiniteNumber(record.reasoning);
+  const cache = record.cache && typeof record.cache === "object" ? (record.cache as Record<string, unknown>) : undefined;
+  const cacheRead = readFiniteNumber(cache?.read);
+  const cacheWrite = readFiniteNumber(cache?.write);
+  const total =
+    readFiniteNumber(record.total) ??
+    (input !== undefined &&
+    output !== undefined &&
+    reasoning !== undefined &&
+    cacheRead !== undefined &&
+    cacheWrite !== undefined
+      ? input + output + reasoning + cacheRead + cacheWrite
+      : undefined);
+
+  if (
+    input === undefined ||
+    output === undefined ||
+    reasoning === undefined ||
+    cacheRead === undefined ||
+    cacheWrite === undefined ||
+    total === undefined
+  ) {
+    return undefined;
+  }
+
+  return { total, input, output, reasoning, cacheRead, cacheWrite };
+}
+
+function extractTokenUsage(rawEvents: string): OpencodeTokenUsage | undefined {
+  let latestTokenUsage: OpencodeTokenUsage | undefined;
+
+  for (const line of rawEvents.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    let event: unknown;
+    try {
+      event = JSON.parse(line) as unknown;
+    } catch {
+      continue;
+    }
+    if (!event || typeof event !== "object") {
+      continue;
+    }
+
+    const record = event as Record<string, unknown>;
+    const type = record.type;
+    const part = record.part;
+    if (part && typeof part === "object") {
+      const partRecord = part as Record<string, unknown>;
+      if (partRecord.type === "step-finish") {
+        const tokenUsage = normalizeTokenUsage(partRecord.tokens);
+        if (tokenUsage) {
+          latestTokenUsage = tokenUsage;
+        }
+      }
+    }
+
+    if (typeof type === "string" && type.startsWith("message.updated")) {
+      const properties = record.properties;
+      if (properties && typeof properties === "object") {
+        const info = (properties as Record<string, unknown>).info;
+        if (info && typeof info === "object") {
+          const infoRecord = info as Record<string, unknown>;
+          if (infoRecord.role === "assistant") {
+            const tokenUsage = normalizeTokenUsage(infoRecord.tokens);
+            if (tokenUsage) {
+              latestTokenUsage = tokenUsage;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return latestTokenUsage;
+}
+
 function extractAssistantText(rawEvents: string): string {
   const streamedTextParts: string[] = [];
   for (const line of rawEvents.split(/\r?\n/)) {
@@ -124,6 +224,17 @@ function extractAssistantText(rawEvents: string): string {
     );
   }
   return text;
+}
+
+function formatTokenUsageLog(tokenUsage: OpencodeTokenUsage): string {
+  return [
+    `tokens=${String(tokenUsage.total)}`,
+    `inputTokens=${String(tokenUsage.input)}`,
+    `outputTokens=${String(tokenUsage.output)}`,
+    `reasoningTokens=${String(tokenUsage.reasoning)}`,
+    `cacheReadTokens=${String(tokenUsage.cacheRead)}`,
+    `cacheWriteTokens=${String(tokenUsage.cacheWrite)}`,
+  ].join(" ");
 }
 
 function resolveAgentOutputPath(sandboxRoot: string, outputFile: string): string {
@@ -265,6 +376,7 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
         }
 
         const rawEvents = Buffer.concat(stdout).toString("utf-8");
+        const tokenUsage = extractTokenUsage(rawEvents);
         let assistantText: string | undefined;
         let assistantTextError: OpencodeRunError | undefined;
         try {
@@ -299,6 +411,7 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
           [
             `opencode 调用完成 request=${input.request.requestTag}`,
             `elapsedMs=${String(elapsedMs)}`,
+            tokenUsage ? formatTokenUsageLog(tokenUsage) : undefined,
             input.request.outputFile ? `outputFile=${input.request.outputFile}` : undefined,
           ]
             .filter((part): part is string => typeof part === "string")
@@ -309,6 +422,7 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
           rawText,
           rawEvents,
           elapsedMs,
+          tokenUsage,
           assistantText,
           outputFile: input.request.outputFile,
           outputFileText,

@@ -73,3 +73,18 @@ struct SubPage(){
 }
 ```
 
+### 不支持一个组件上挂载多个bindsheet
+
+```ts
+// 反例：
+@ComponentV2
+struct Comp(){
+  build(){
+    Column(){
+
+    }
+    .bindSheet()
+    .bindSheet()
+  }
+}
+```
