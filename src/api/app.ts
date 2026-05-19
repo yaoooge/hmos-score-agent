@@ -550,13 +550,14 @@ function readRemoteTaskStatusIds(req: Request): number[] | string {
 }
 
 function isConsistencyTaskRecord(value: unknown): value is ConsistencyTaskRecord {
+  const record = value as { id?: unknown; sequence?: unknown };
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as { id?: unknown }).id === "string" &&
-    (value as { id?: string }).id.trim().length > 0 &&
-    typeof (value as { sequence?: unknown }).sequence === "number" &&
-    Number.isFinite((value as { sequence?: number }).sequence)
+    typeof record.id === "string" &&
+    record.id.trim().length > 0 &&
+    typeof record.sequence === "number" &&
+    Number.isFinite(record.sequence)
   );
 }
 

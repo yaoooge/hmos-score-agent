@@ -187,6 +187,7 @@ const consistencyTaskItemField = {
   type: "object",
   required: true,
   description: "One persisted score consistency task record.",
+  properties: {},
 } as const satisfies ApiFieldSchema;
 
 const remoteCallbackDefinition = {
