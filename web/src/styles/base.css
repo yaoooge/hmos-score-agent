@@ -9,16 +9,68 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  overflow: hidden;
+}
+
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: #eef3f8;
+}
+
+.login-panel {
+  width: min(100%, 380px);
+  padding: 28px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(31, 41, 55, 0.12);
+}
+
+.login-brand {
+  margin-bottom: 20px;
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.login-panel h1 {
+  margin: 0 0 22px;
+  font-size: 24px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 8px;
 }
 
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
   width: 220px;
   flex: 0 0 220px;
   border-right: 1px solid #d8dee6;
@@ -36,12 +88,25 @@ body {
 }
 
 .nav-menu {
+  flex: 1;
   border-right: 0;
+}
+
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid #e5e9ef;
+}
+
+.sidebar-footer .el-button {
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .main-panel {
   min-width: 0;
   flex: 1;
+  height: 100vh;
+  overflow: auto;
   padding: 22px 24px 36px;
 }
 
@@ -615,15 +680,19 @@ body {
 
 @media (max-width: 760px) {
   .app-shell {
+    height: 100vh;
     flex-direction: column;
   }
 
   .sidebar {
+    height: auto;
     width: 100%;
     flex-basis: auto;
   }
 
   .main-panel {
+    height: auto;
+    min-height: 0;
     padding: 16px;
   }
 

@@ -1,5 +1,6 @@
 <template>
-  <div class="app-shell">
+  <router-view v-if="isLoginRoute" />
+  <div v-else class="app-shell">
     <aside class="sidebar">
       <div class="brand">HMOS Score</div>
       <el-menu :default-active="activePath" router class="nav-menu">
@@ -24,6 +25,9 @@
           <span>一致性分析</span>
         </el-menu-item>
       </el-menu>
+      <div class="sidebar-footer">
+        <el-button :icon="SwitchButton" @click="logout">退出</el-button>
+      </div>
     </aside>
     <main class="main-panel">
       <header class="topbar">
@@ -50,15 +54,17 @@
 
 <script setup lang="ts">
 import { computed, provide, shallowRef, type Ref } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import {
   Connection,
   DataAnalysis,
   Histogram,
   List,
   Refresh,
+  SwitchButton,
   TrendCharts,
 } from "@element-plus/icons-vue";
+import { clearAuthSession } from "./authSession.js";
 
 type DashboardTitleControls = {
   dateRange?: {
@@ -67,6 +73,7 @@ type DashboardTitleControls = {
 };
 
 const route = useRoute();
+const router = useRouter();
 const titleControls = shallowRef<DashboardTitleControls>({});
 const titleDateRange = computed({
   get: () => titleControls.value.dateRange?.model.value ?? null,
@@ -78,6 +85,7 @@ const titleDateRange = computed({
 });
 
 const activePath = computed(() => route.path);
+const isLoginRoute = computed(() => route.path === "/login");
 const title = computed(() => {
   if (route.path.startsWith("/reports")) {
     return "用例报表";
@@ -112,6 +120,11 @@ const showTopbarRefresh = computed(() => !route.path.startsWith("/consistency/")
 
 function reloadPage() {
   window.dispatchEvent(new CustomEvent("dashboard:refresh"));
+}
+
+async function logout() {
+  clearAuthSession(window.localStorage);
+  await router.replace("/login");
 }
 
 provide("setDashboardTitleControls", (controls: DashboardTitleControls | null) => {
