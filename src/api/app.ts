@@ -9,7 +9,7 @@ import {
   type ConsistencyTaskStore,
 } from "./consistencyTaskStore.js";
 import { createSubmitHumanReviewHandler } from "./humanReviewHandler.js";
-import { createRemoteTaskRegistry, type RemoteTaskRegistry } from "./remoteTaskRegistry.js";
+import type { RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 import { uploadTaskCallback } from "../io/uploader.js";
 import {
   createHumanReviewEvidenceStore,
@@ -33,12 +33,86 @@ import {
 } from "../service.js";
 import type { RemoteEvaluationTask } from "../types.js";
 import { createDashboardRouter } from "../dashboard/dashboardHandlers.js";
+import { createScoreDatabase } from "../storage/sqliteDatabase.js";
+import { backfillSqliteIndexes } from "../storage/sqliteBackfill.js";
+import {
+  createSqliteConsistencyTaskStore,
+  createSqliteRemoteTaskRegistry,
+  createSqliteRuleViolationStatsStore,
+  buildSqliteDailyReport,
+  buildSqliteRuleViolationStatsResponse,
+  buildSqliteScoreDistribution,
+  countSqliteRemoteTaskStatuses,
+  listSqliteRemoteTaskPage,
+  listSqliteRemoteTaskSummariesForRange,
+  summarizeSqliteRemoteTasks,
+  updateSqliteRemoteTaskSummary,
+} from "../storage/sqliteStores.js";
 
 type AppDeps = {
   acceptRemoteEvaluationTask: typeof acceptRemoteEvaluationTask;
   prepareRemoteEvaluationTask: typeof prepareRemoteEvaluationTask;
   executeAcceptedRemoteEvaluationTask: typeof executeAcceptedRemoteEvaluationTask;
 };
+
+type RemoteTaskSummaryStore = {
+  updateTaskSummary(input: {
+    taskId: number;
+    caseName?: string;
+    taskType?: string;
+    score?: number | null;
+    hardGateTriggered?: boolean | null;
+    resultAvailable: boolean;
+    resultError?: string;
+    risks?: Array<{ level?: string; title?: string }>;
+  }): void;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readScore(resultJson: Record<string, unknown>): number | null {
+  const score = asRecord(resultJson.overall_conclusion)?.total_score;
+  return typeof score === "number" && Number.isFinite(score) ? score : null;
+}
+
+function readHardGate(resultJson: Record<string, unknown>): boolean | null {
+  const hardGate = asRecord(resultJson.overall_conclusion)?.hard_gate_triggered;
+  return typeof hardGate === "boolean" ? hardGate : null;
+}
+
+function readCaseName(resultJson: Record<string, unknown>): string | undefined {
+  const basicInfo = asRecord(resultJson.basic_info);
+  const caseName = basicInfo?.case_name ?? basicInfo?.name;
+  return typeof caseName === "string" && caseName.trim().length > 0 ? caseName : undefined;
+}
+
+function readTaskTypeFromResult(resultJson: Record<string, unknown>): string | undefined {
+  const taskType = asRecord(resultJson.basic_info)?.task_type;
+  return typeof taskType === "string" && taskType.trim().length > 0 ? taskType : undefined;
+}
+
+function readRisks(resultJson: Record<string, unknown>): Array<{ level?: string; title?: string }> {
+  const risks = resultJson.risks;
+  if (!Array.isArray(risks)) {
+    return [];
+  }
+  return risks
+    .map((risk): { level?: string; title?: string } | undefined => {
+      const record = asRecord(risk);
+      if (!record) {
+        return undefined;
+      }
+      return {
+        level: typeof record.level === "string" ? record.level : undefined,
+        title: typeof record.title === "string" ? record.title : undefined,
+      };
+    })
+    .filter((risk): risk is { level?: string; title?: string } => Boolean(risk));
+}
 
 type AcceptedRemoteEvaluationTask = Parameters<AppDeps["executeAcceptedRemoteEvaluationTask"]>[0];
 
@@ -174,6 +248,7 @@ export function createRunRemoteTaskHandler(
     registry,
     ruleViolationStatsStore,
     humanReviewEvidenceStore,
+    undefined,
   ),
 ) {
   function buildAcceptedTaskLogContext(
@@ -248,6 +323,7 @@ export function createRemoteTaskExecutionQueue(
   registry?: RemoteTaskRegistry,
   ruleViolationStatsStore?: RuleViolationStatsStore,
   _humanReviewEvidenceStore?: HumanReviewEvidenceStore,
+  remoteTaskSummaryStore?: RemoteTaskSummaryStore,
 ) {
   const runningTaskIds = new Set<number>();
   const queuedTaskIds = new Set<number>();
@@ -330,6 +406,15 @@ export function createRemoteTaskExecutionQueue(
       await deps.executeAcceptedRemoteEvaluationTask(acceptedTask, {
         onCompleted: ruleViolationStatsStore
           ? async ({ acceptedTask: completedTask, workflowResult, resultJson }) => {
+              remoteTaskSummaryStore?.updateTaskSummary({
+                taskId: completedTask.taskId,
+                caseName: readCaseName(resultJson),
+                taskType: readTaskTypeFromResult(resultJson),
+                score: readScore(resultJson),
+                hardGateTriggered: readHardGate(resultJson),
+                resultAvailable: true,
+                risks: readRisks(resultJson),
+              });
               await ruleViolationStatsStore.upsertRun(
                 extractRuleViolationRunSnapshot({
                   taskId: completedTask.taskId,
@@ -634,6 +719,27 @@ export function createGetRuleViolationStatsHandler(store: RuleViolationStatsStor
   };
 }
 
+export function createGetSqliteRuleViolationStatsHandler(
+  buildResponse: (
+    query: RuleViolationStatsQuery,
+  ) => ReturnType<typeof buildSqliteRuleViolationStatsResponse>,
+) {
+  return async (req: Request, res: Response) => {
+    const query = readRuleViolationStatsQuery(req);
+    if (typeof query === "string") {
+      res.status(400).json({ success: false, message: query });
+      return;
+    }
+
+    try {
+      res.json(buildResponse(query));
+    } catch (error) {
+      console.error(`rule_violation_stats_read_failed error=${formatError(error)}`);
+      res.status(500).json({ success: false, message: "Rule violation stats are unavailable" });
+    }
+  };
+}
+
 export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
   return async (req: Request, res: Response) => {
     const taskId = readRouteTaskId(req);
@@ -817,19 +923,31 @@ export function createApp(
 ) {
   const app = express();
   const config = getConfig();
-  const registry = createRemoteTaskRegistry(config.localCaseRoot);
-  const consistencyTaskStore = createConsistencyTaskStore(config.localCaseRoot);
-  const ruleViolationStatsStore = createRuleViolationStatsStore(config.localCaseRoot);
+  const scoreDb = createScoreDatabase(path.join(config.localCaseRoot, "score-index.sqlite3"));
+  const registry = createSqliteRemoteTaskRegistry(scoreDb);
+  const consistencyTaskStore = createSqliteConsistencyTaskStore(scoreDb);
+  const ruleViolationStatsStore = createSqliteRuleViolationStatsStore(scoreDb);
   const humanReviewEvidenceStore = createHumanReviewEvidenceStore(config.humanReviewEvidenceRoot);
+  const remoteTaskSummaryStore: RemoteTaskSummaryStore = {
+    updateTaskSummary(input) {
+      updateSqliteRemoteTaskSummary(scoreDb, input);
+    },
+  };
   const remoteTaskQueue = createRemoteTaskExecutionQueue(
     deps,
     registry,
     ruleViolationStatsStore,
     humanReviewEvidenceStore,
+    remoteTaskSummaryStore,
   );
-  void remoteTaskQueue.recoverPendingRemoteTasks().catch((error) => {
-    console.error(`remote_task_recovery_failed error=${formatError(error)}`);
-  });
+  void backfillSqliteIndexes({ localCaseRoot: config.localCaseRoot, db: scoreDb })
+    .catch((error) => {
+      console.error(`sqlite_index_backfill_failed error=${formatError(error)}`);
+    })
+    .then(() => remoteTaskQueue.recoverPendingRemoteTasks())
+    .catch((error) => {
+      console.error(`remote_task_recovery_failed error=${formatError(error)}`);
+    });
   app.use(createCorsMiddleware());
   app.use(express.json({ limit: "2mb" }));
 
@@ -849,21 +967,27 @@ export function createApp(
   );
   app.get(
     API_PATHS.ruleViolationStats,
-    createGetRuleViolationStatsHandler(ruleViolationStatsStore),
+    createGetSqliteRuleViolationStatsHandler((query) =>
+      buildSqliteRuleViolationStatsResponse(scoreDb, query),
+    ),
   );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
   app.get(API_PATHS.remoteTaskStatuses, createGetRemoteTaskStatusesHandler(registry));
   app.get(API_PATHS.consistencyTasks, createGetConsistencyTasksHandler(consistencyTaskStore));
   app.put(API_PATHS.consistencyTasks, createReplaceConsistencyTasksHandler(consistencyTaskStore));
-  app.put(
-    API_PATHS.consistencyTask,
-    createUpsertConsistencyTaskHandler(consistencyTaskStore),
-  );
+  app.put(API_PATHS.consistencyTask, createUpsertConsistencyTaskHandler(consistencyTaskStore));
   app.use(
     createDashboardRouter({
       registry,
       ruleViolationStatsStore,
       humanReviewEvidenceRoot: config.humanReviewEvidenceRoot,
+      taskSummaryProvider: async (query) =>
+        listSqliteRemoteTaskSummariesForRange(scoreDb, query ?? {}),
+      taskPageProvider: async (query) => listSqliteRemoteTaskPage(scoreDb, query),
+      dashboardSummaryProvider: async (query) => summarizeSqliteRemoteTasks(scoreDb, query),
+      statusCountsProvider: async () => countSqliteRemoteTaskStatuses(scoreDb),
+      dailyReportProvider: async (query) => buildSqliteDailyReport(scoreDb, query),
+      scoreDistributionProvider: async (query) => buildSqliteScoreDistribution(scoreDb, query),
     }),
   );
   app.post(

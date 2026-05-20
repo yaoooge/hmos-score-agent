@@ -182,7 +182,7 @@ function makeRuleKey(packId: string, ruleId: string): string {
   return `${packId}\u0000${ruleId}`;
 }
 
-function sanitizeRuleViolationRunSnapshot(
+export function sanitizeRuleViolationRunSnapshot(
   snapshot: RuleViolationRunSnapshot,
 ): RuleViolationRunSnapshot {
   const metadata = getStaticRuleMetadata();
