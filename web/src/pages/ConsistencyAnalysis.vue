@@ -16,7 +16,7 @@
     </div>
 
     <div class="table-card" v-loading="loadingTasks">
-      <el-table :data="pagedTasks" stripe height="360" highlight-current-row>
+      <el-table :data="pagedTasks" stripe highlight-current-row>
         <el-table-column prop="id" label="任务ID" width="110" />
         <el-table-column prop="originalTaskId" label="原始taskId" width="120" />
         <el-table-column prop="caseName" label="用例名称" min-width="240" show-overflow-tooltip />
@@ -42,7 +42,7 @@
             {{ formatDateTime(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button link type="primary" :loading="refreshingTaskId === row.id" @click="refreshTaskStatus(row)">
               刷新状态
@@ -112,7 +112,7 @@
     </el-drawer>
   </div>
 
-  <div v-else class="page-stack">
+  <div v-else class="page-stack consistency-detail-page">
     <template v-if="selectedTask">
       <div class="table-card consistency-detail-header">
         <div class="detail-title">
@@ -122,7 +122,15 @@
             <p>{{ selectedTask.analysis.conclusion }}</p>
           </div>
         </div>
-        <div class="toolbar">
+        <div class="toolbar consistency-detail-actions">
+          <el-button
+            :icon="Download"
+            :loading="downloadingResults"
+            :disabled="!selectedTaskDownloadable"
+            @click="downloadSelectedTaskResults"
+          >
+            下载结果 ZIP
+          </el-button>
           <el-button :icon="Refresh" :loading="refreshingTaskId === selectedTask.id" @click="refreshTaskStatus(selectedTask)">
             刷新状态
           </el-button>
@@ -145,54 +153,68 @@
         <MetricCard label="一致性" :value="formatPercent(selectedTask.analysis.consistencyPercentage)" />
       </div>
 
+      <div class="consistency-history-grid">
+        <EChartPanel
+          title="多轮一致性趋势"
+          compact
+          :option="historyConsistencyOption"
+          :empty="historyChartRows.length === 0"
+        />
+        <EChartPanel
+          title="多轮质量指标"
+          compact
+          :option="historyQualityOption"
+          :empty="historyChartRows.length === 0"
+        />
+      </div>
+
       <div class="table-card">
         <el-tabs v-model="detailTab">
           <el-tab-pane label="运行对比" name="runs">
-            <el-table :data="selectedTask.runs" stripe height="420">
-              <el-table-column label="运行" width="80">
+            <el-table :data="selectedTask.runs" stripe class="consistency-report-table">
+              <el-table-column label="运行" width="70">
                 <template #default="{ row }">{{ row.runIndex + 1 }}</template>
               </el-table-column>
-              <el-table-column prop="taskId" label="taskId" width="120" />
-              <el-table-column label="状态" width="130">
+              <el-table-column prop="taskId" label="taskId" min-width="100" />
+              <el-table-column label="状态" min-width="110">
                 <template #default="{ row }">
                   <el-tag size="small" effect="plain" :type="runStatusTagType(row.status)">
                     {{ formatRunStatus(row.status) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="总分" width="90">
+              <el-table-column label="总分" min-width="80">
                 <template #default="{ row }">{{ formatNullableNumber(row.totalScore) }}</template>
               </el-table-column>
-              <el-table-column label="分差" width="90">
+              <el-table-column label="分差" min-width="80">
                 <template #default="{ row }">{{ formatScoreDelta(row) }}</template>
               </el-table-column>
-              <el-table-column label="硬门槛" width="90">
+              <el-table-column label="硬门槛" min-width="80">
                 <template #default="{ row }">{{ formatHardGate(row.hardGateTriggered) }}</template>
               </el-table-column>
-              <el-table-column label="规则不满足" width="120">
+              <el-table-column label="规则不满足" min-width="105">
                 <template #default="{ row }">
                   {{ formatRatioPercent(row.ruleUnsatisfactionRatio) }}
                 </template>
               </el-table-column>
-              <el-table-column label="风险" width="80">
+              <el-table-column label="风险" min-width="70">
                 <template #default="{ row }">{{ row.risks.length }}</template>
               </el-table-column>
-              <el-table-column label="一致性" width="90">
+              <el-table-column label="一致性" min-width="85">
                 <template #default="{ row }">
                   {{ formatRunConsistency(selectedTask, row) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="summary" label="主要结论" min-width="260" show-overflow-tooltip />
-              <el-table-column label="操作" width="120" fixed="right">
+              <el-table-column label="操作" min-width="100">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openRawResult(row.taskId)">原始结果</el-button>
+                  <el-button link type="primary" @click="openRunReport(row)">查看报告</el-button>
                 </template>
               </el-table-column>
             </el-table>
           </el-tab-pane>
 
           <el-tab-pane label="规则不满足报表" name="rules">
-            <el-table :data="selectedTask.ruleReport" stripe height="420">
+            <el-table :data="selectedTask.ruleReport" stripe class="consistency-report-table">
               <el-table-column prop="ruleId" label="规则ID" width="160" />
               <el-table-column prop="summary" label="摘要" min-width="260" show-overflow-tooltip />
               <el-table-column prop="unsatisfiedCount" label="不满足次数" width="120" />
@@ -207,7 +229,7 @@
           </el-tab-pane>
 
           <el-tab-pane label="风险项报表" name="risks">
-            <el-table :data="selectedTask.riskReport" stripe height="420">
+            <el-table :data="selectedTask.riskReport" stripe class="consistency-report-table">
               <el-table-column prop="level" label="等级" width="90" />
               <el-table-column prop="title" label="风险标题" min-width="260" show-overflow-tooltip />
               <el-table-column prop="appearanceCount" label="出现次数" width="110" />
@@ -227,17 +249,28 @@
       <el-button type="primary" @click="backToTaskList">返回列表</el-button>
     </el-empty>
 
-    <el-drawer v-model="rawDrawerVisible" size="52%" title="原始结果">
-      <pre class="log-content">{{ rawDrawerContent }}</pre>
-    </el-drawer>
+    <CaseReportDrawer
+      v-model="reportDrawerVisible"
+      :title="reportDrawerTitle"
+      :loading="reportLoading"
+      :error="reportError"
+      :report="reportCase"
+      :task-id="reportRun?.taskId"
+      :test-case-id="selectedTask?.caseId"
+      :task-name="selectedTask?.caseName"
+      @refresh="reloadRunReport"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import type { EChartsOption } from "echarts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { ArrowLeft, Plus, Refresh } from "@element-plus/icons-vue";
+import { ArrowLeft, Download, Plus, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
+import CaseReportDrawer from "../components/CaseReportDrawer.vue";
+import EChartPanel from "../components/EChartPanel.vue";
 import MetricCard from "../components/MetricCard.vue";
 import {
   fetchConsistencyTasks,
@@ -249,14 +282,25 @@ import {
   type RemoteTaskRegistryStatus,
 } from "../api/scoreConsistency";
 import {
+  buildCaseReportViewModel,
+  type CaseReportViewModel,
+} from "./caseReportViewModel";
+import {
   analyzeConsistency,
+  appendAnalysisHistorySnapshot,
+  buildConsistencyExportFiles,
+  buildConsistencyExportPayload,
+  buildConsistencyHistoryChartRows,
   buildConsistencyTaskPersistRecord,
   buildRiskReport,
   buildRuleReport,
   extractConsistencyRunSummary,
   generateSubmittedTaskIds,
   hydrateConsistencyTaskSnapshot,
+  isConsistencyTaskTerminal,
+  createStoredZip,
   validateRemoteTaskJson,
+  type ConsistencyAnalysisHistoryItem,
   type ConsistencyTaskCollectionRecord,
   type ConsistencyAnalysisSummary,
   type ConsistencyRiskSummary,
@@ -283,6 +327,7 @@ type ConsistencyTask = {
   analysis: ConsistencyAnalysisSummary;
   ruleReport: RuleConsistencyReportItem[];
   riskReport: RiskConsistencyReportItem[];
+  analysisHistory: ConsistencyAnalysisHistoryItem[];
 };
 
 const RUN_COUNT = 10;
@@ -295,8 +340,12 @@ const page = ref(1);
 const pageSize = ref(10);
 const detailTab = ref("runs");
 const createDrawerVisible = ref(false);
-const rawDrawerVisible = ref(false);
-const rawDrawerContent = ref("");
+const reportDrawerVisible = ref(false);
+const reportLoading = ref(false);
+const reportError = ref("");
+const reportRun = ref<ConsistencyRunSummary | null>(null);
+const reportCase = ref<CaseReportViewModel | null>(null);
+const downloadingResults = ref(false);
 const serviceBaseUrl = ref(DEFAULT_SERVICE_BASE_URL);
 const jsonInput = ref("");
 const validationErrors = ref<string[]>([]);
@@ -351,6 +400,71 @@ const taskIdPreview = computed(() => {
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+});
+const selectedTaskDownloadable = computed(() => {
+  return selectedTask.value ? isConsistencyTaskTerminal(selectedTask.value.runs) : false;
+});
+const historyChartRows = computed(() =>
+  selectedTask.value ? buildConsistencyHistoryChartRows(selectedTask.value.analysisHistory) : [],
+);
+const historyConsistencyOption = computed<EChartsOption>(() => ({
+  tooltip: {
+    trigger: "axis",
+    formatter: (params) => formatHistoryTooltip(params),
+  },
+  legend: { top: 0 },
+  grid: { top: 44, left: 42, right: 18, bottom: 36 },
+  xAxis: { type: "category", data: historyChartRows.value.map((item) => item.label) },
+  yAxis: { type: "value", min: 0, max: 100 },
+  series: [
+    {
+      type: "line",
+      name: "一致性",
+      data: historyChartRows.value.map((item) => item.consistencyPercentage),
+      smooth: true,
+    },
+    {
+      type: "line",
+      name: "规则不满足度",
+      data: historyChartRows.value.map((item) => item.ruleUnsatisfactionPercentage),
+      smooth: true,
+    },
+  ],
+}));
+const historyQualityOption = computed<EChartsOption>(() => ({
+  tooltip: {
+    trigger: "axis",
+    formatter: (params) => formatHistoryTooltip(params),
+  },
+  legend: { top: 0 },
+  grid: { top: 44, left: 42, right: 18, bottom: 36 },
+  xAxis: { type: "category", data: historyChartRows.value.map((item) => item.label) },
+  yAxis: { type: "value" },
+  series: [
+    {
+      type: "line",
+      name: "平均分",
+      data: historyChartRows.value.map((item) => item.averageScore),
+      smooth: true,
+    },
+    {
+      type: "line",
+      name: "标准差",
+      data: historyChartRows.value.map((item) => item.scoreStandardDeviation),
+      smooth: true,
+    },
+    {
+      type: "bar",
+      name: "平均风险数",
+      data: historyChartRows.value.map((item) => item.averageRiskCount),
+    },
+  ],
+}));
+const reportDrawerTitle = computed(() => {
+  if (!reportRun.value || !selectedTask.value) {
+    return "用例报告";
+  }
+  return `#${String(reportRun.value.taskId)} ${selectedTask.value.caseName}`;
 });
 
 function buildPersistPayload(task: ConsistencyTask, includeSourceTask = false) {
@@ -426,6 +540,7 @@ function refreshTaskAggregates(task: ConsistencyTask) {
   } else {
     task.status = "running";
   }
+  refreshTaskHistorySnapshot(task);
   queuePersistTask(task);
 }
 
@@ -480,6 +595,21 @@ async function loadCompletedResult(task: ConsistencyTask, run: ConsistencyRunSum
   rawResults.set(run.taskId, response.resultData);
   const completed = extractConsistencyRunSummary(run.runIndex, run.taskId, response.resultData);
   Object.assign(run, completed);
+}
+
+function refreshTaskHistorySnapshot(task: ConsistencyTask) {
+  const nextHistory = appendAnalysisHistorySnapshot(task.analysisHistory, task.runs);
+  if (nextHistory !== task.analysisHistory) {
+    task.analysisHistory = nextHistory;
+  }
+}
+
+async function ensureRunResult(task: ConsistencyTask, run: ConsistencyRunSummary): Promise<unknown> {
+  if (!rawResults.has(run.taskId)) {
+    const response = await fetchRemoteScoreResult(task.serviceBaseUrl, run.taskId);
+    rawResults.set(run.taskId, response.resultData);
+  }
+  return rawResults.get(run.taskId);
 }
 
 async function refreshTaskStatus(task: ConsistencyTask) {
@@ -553,6 +683,7 @@ async function createTask() {
       analysis: analyzeConsistency(runs),
       ruleReport: [],
       riskReport: [],
+      analysisHistory: [],
     };
     tasks.value = [task, ...tasks.value];
     selectedTaskId.value = task.id;
@@ -581,6 +712,7 @@ function rerunTask(taskId: string) {
   if (!task) {
     return;
   }
+  refreshTaskHistorySnapshot(task);
   for (const run of task.runs) {
     run.status = "pending_submit";
     run.totalScore = undefined;
@@ -593,13 +725,89 @@ function rerunTask(taskId: string) {
   }
   refreshTaskAggregates(task);
   rawResults.clear();
+  reportRun.value = null;
+  reportCase.value = null;
+  reportError.value = "";
   void runTask(task);
 }
 
-function openRawResult(taskId: number) {
-  const result = rawResults.get(taskId);
-  rawDrawerContent.value = JSON.stringify(result ?? { message: "当前页面内暂无原始结果缓存" }, null, 2);
-  rawDrawerVisible.value = true;
+async function openRunReport(run: ConsistencyRunSummary) {
+  const task = selectedTask.value;
+  if (!task) {
+    return;
+  }
+  reportRun.value = run;
+  reportDrawerVisible.value = true;
+  await reloadRunReport();
+}
+
+async function reloadRunReport() {
+  const task = selectedTask.value;
+  const run = reportRun.value;
+  if (!task || !run) {
+    return;
+  }
+  reportLoading.value = true;
+  reportError.value = "";
+  try {
+    const result = await ensureRunResult(task, run);
+    reportCase.value = buildCaseReportViewModel(result);
+  } catch (error) {
+    reportCase.value = null;
+    reportError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    reportLoading.value = false;
+  }
+}
+
+function triggerZipDownload(filename: string, archive: Uint8Array) {
+  const body = archive.buffer.slice(
+    archive.byteOffset,
+    archive.byteOffset + archive.byteLength,
+  ) as ArrayBuffer;
+  const blob = new Blob([body], { type: "application/zip" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadSelectedTaskResults() {
+  const task = selectedTask.value;
+  if (!task || !isConsistencyTaskTerminal(task.runs)) {
+    ElMessage.warning("一致性任务结束运行后才能下载");
+    return;
+  }
+  downloadingResults.value = true;
+  try {
+    const results = new Map<number, unknown>();
+    for (const run of task.runs) {
+      try {
+        results.set(run.taskId, await ensureRunResult(task, run));
+      } catch (error) {
+        results.set(run.taskId, error);
+      }
+    }
+    const payload = buildConsistencyExportPayload(task, results);
+    triggerZipDownload(
+      `consistency-${task.id}-results.zip`,
+      createStoredZip(buildConsistencyExportFiles(payload)),
+    );
+    const successCount = [...results.values()].filter((value) => !(value instanceof Error)).length;
+    if (successCount === 0) {
+      ElMessage.warning("未下载到运行原始结果，已导出分析结果和错误信息");
+    } else if (successCount < task.runs.length) {
+      ElMessage.warning("部分运行结果不可用，已导出可用结果和错误信息");
+    } else {
+      ElMessage.success("一致性任务结果已下载");
+    }
+  } finally {
+    downloadingResults.value = false;
+  }
 }
 
 function completedRunCount(task: ConsistencyTask) {
@@ -620,6 +828,25 @@ function formatRatioPercent(value: number | null | undefined) {
 
 function formatNullableNumber(value: number | null | undefined) {
   return typeof value === "number" ? String(value) : "-";
+}
+
+function formatHistoryTooltip(params: unknown): string {
+  const rows = Array.isArray(params) ? params : [params];
+  const first = rows[0] as { dataIndex?: number; axisValueLabel?: string } | undefined;
+  const row =
+    typeof first?.dataIndex === "number" ? historyChartRows.value[first.dataIndex] : undefined;
+  const lines = [
+    first?.axisValueLabel ?? row?.label ?? "",
+    row ? `捕获时间：${formatDateTime(row.capturedAt)}` : "",
+    row ? `完成/失败：${String(row.completedRuns)}/${String(row.failedRuns)}` : "",
+    ...rows.map((item) => {
+      const point = item as { marker?: string; seriesName?: string; value?: unknown };
+      return `${point.marker ?? ""}${point.seriesName ?? ""}: ${formatNullableNumber(
+        typeof point.value === "number" ? point.value : null,
+      )}`;
+    }),
+  ];
+  return lines.filter(Boolean).join("<br/>");
 }
 
 function formatScoreDelta(run: ConsistencyRunSummary) {

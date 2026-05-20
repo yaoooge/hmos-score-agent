@@ -151,6 +151,60 @@ body {
   padding-left: 18px;
 }
 
+.consistency-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.consistency-detail-page {
+  gap: 10px;
+}
+
+.consistency-detail-page .metrics-grid {
+  gap: 8px;
+}
+
+.consistency-detail-page .table-card {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+}
+
+.consistency-detail-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.consistency-detail-actions .el-button {
+  flex: 0 0 auto;
+}
+
+.consistency-report-table .el-scrollbar,
+.consistency-report-table .el-scrollbar__wrap,
+.consistency-report-table .el-table__body-wrapper,
+.consistency-report-table .el-table__inner-wrapper {
+  height: auto !important;
+  max-height: none !important;
+}
+
+.consistency-report-table .el-scrollbar__wrap,
+.consistency-report-table .el-table__body-wrapper {
+  overflow-y: visible !important;
+}
+
+.consistency-detail-page .consistency-detail-header h2 {
+  font-size: 16px;
+}
+
+.consistency-detail-page .consistency-detail-header p {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .log-content {
   min-height: 420px;
   max-height: calc(100vh - 180px);
@@ -183,12 +237,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
+  min-width: 0;
 }
 
 .report-document {
   color: #111827;
   font-size: 14px;
   line-height: 1.65;
+}
+
+.case-report-drawer .el-drawer__body {
+  min-width: 0;
 }
 
 .report-loading {
@@ -586,6 +646,10 @@ body {
 
   .report-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .consistency-history-grid {
+    grid-template-columns: 1fr;
   }
 
   .dimension-score {

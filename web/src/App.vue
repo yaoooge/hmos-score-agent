@@ -40,7 +40,7 @@
             start-placeholder="开始"
             end-placeholder="结束"
           />
-          <el-button :icon="Refresh" @click="reloadPage">刷新</el-button>
+          <el-button v-if="showTopbarRefresh" :icon="Refresh" @click="reloadPage">刷新</el-button>
         </div>
       </header>
       <router-view />
@@ -108,6 +108,7 @@ const subtitle = computed(() => {
   }
   return "任务状态、类型概览和执行日志";
 });
+const showTopbarRefresh = computed(() => !route.path.startsWith("/consistency/"));
 
 function reloadPage() {
   window.dispatchEvent(new CustomEvent("dashboard:refresh"));

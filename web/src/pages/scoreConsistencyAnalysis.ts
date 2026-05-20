@@ -123,6 +123,81 @@ export type RiskConsistencyReportItem = {
   stability: "稳定出现" | "偶发出现" | "未出现";
 };
 
+export type ConsistencyAnalysisHistoryItem = {
+  round: number;
+  capturedAt: string;
+  summary: ConsistencyAnalysisSummary;
+  ruleReport: RuleConsistencyReportItem[];
+  riskReport: RiskConsistencyReportItem[];
+  runs: ConsistencyRunSummary[];
+};
+
+export type ConsistencyExportTask = ConsistencyTaskSnapshot & {
+  analysis: ConsistencyAnalysisSummary;
+  ruleReport: RuleConsistencyReportItem[];
+  riskReport: RiskConsistencyReportItem[];
+  analysisHistory: ConsistencyAnalysisHistoryItem[];
+};
+
+export type ConsistencyExportPayload = {
+  task: {
+    id: string;
+    originalTaskId: number;
+    caseId: number;
+    caseName: string;
+    createdAt: string;
+    status: string;
+    serviceBaseUrl: string;
+  };
+  analysis: {
+    summary: ConsistencyAnalysisSummary;
+    ruleReport: RuleConsistencyReportItem[];
+    riskReport: RiskConsistencyReportItem[];
+  };
+  analysisHistory: ConsistencyAnalysisHistoryItem[];
+  runs: Array<{
+    runIndex: number;
+    taskId: number;
+    status: ConsistencyRunStatus;
+    summary: ConsistencyRunSummary;
+    resultData?: unknown;
+    error?: string;
+  }>;
+};
+
+export type ConsistencyExportOverview = {
+  task: ConsistencyExportPayload["task"];
+  analysis: ConsistencyExportPayload["analysis"];
+  analysisHistory: Array<{
+    round: number;
+    capturedAt: string;
+    summary: ConsistencyAnalysisSummary;
+    ruleReportPath: string;
+    riskReportPath: string;
+    runsPath: string;
+  }>;
+  runs: Array<{
+    runIndex: number;
+    taskId: number;
+    status: ConsistencyRunStatus;
+    summaryPath: string;
+    resultPath: string;
+    error?: string;
+  }>;
+};
+
+export type ConsistencyHistoryChartRow = {
+  label: string;
+  capturedAt: string;
+  completedRuns: number;
+  failedRuns: number;
+  consistencyPercentage: number | null;
+  averageScore: number | null;
+  scoreStandardDeviation: number | null;
+  ruleUnsatisfactionPercentage: number | null;
+  averageRiskCount: number | null;
+};
+
 type RunSignature = {
   taskId: number;
   scoreBand: number;
@@ -142,6 +217,7 @@ export type ConsistencyTaskCollectionRecord = {
   status: string;
   sourceTask?: RemoteEvaluationTaskInput;
   runs: ConsistencyRunSummary[];
+  analysisHistory?: ConsistencyAnalysisHistoryItem[];
 };
 
 export type ConsistencyTaskSnapshot = ConsistencyTaskCollectionRecord & {
@@ -236,6 +312,56 @@ function normalizeRunSnapshot(run: ConsistencyRunSummary): ConsistencyRunSummary
   };
 }
 
+function isTerminalRunStatus(status: ConsistencyRunStatus): boolean {
+  return (
+    status === "completed" ||
+    status === "failed" ||
+    status === "timed_out" ||
+    status === "missing"
+  );
+}
+
+function cloneRunSummary(run: ConsistencyRunSummary): ConsistencyRunSummary {
+  return {
+    ...run,
+    unsatisfiedRules: run.unsatisfiedRules.map((rule) => ({ ...rule })),
+    risks: run.risks.map((risk) => ({ ...risk })),
+  };
+}
+
+function runSetKey(runs: ConsistencyRunSummary[]): string {
+  return runs
+    .map((run) =>
+      [
+        run.runIndex,
+        run.taskId,
+        run.status,
+        run.totalScore ?? "",
+        run.hardGateTriggered ?? "",
+        run.ruleUnsatisfactionRatio ?? "",
+        run.unsatisfiedRules.map((rule) => `${rule.ruleId}:${rule.summary}`).join(","),
+        run.risks.map((risk) => risk.key).join(","),
+      ].join(":"),
+    )
+    .join("|");
+}
+
+function errorMessage(value: unknown): string | undefined {
+  return value instanceof Error ? value.message : undefined;
+}
+
+function stringifyJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function padNumber(value: number, width: number): string {
+  return String(value).padStart(width, "0");
+}
+
+export function isConsistencyTaskTerminal(runs: ConsistencyRunSummary[]): boolean {
+  return runs.length > 0 && runs.every((run) => isTerminalRunStatus(run.status));
+}
+
 export function compactConsistencyTaskSnapshots(
   snapshots: ConsistencyTaskSnapshot[],
 ): ConsistencyTaskCollectionRecord[] {
@@ -276,6 +402,7 @@ export function hydrateConsistencyTaskSnapshot(
     analysis: analyzeConsistency(runs),
     ruleReport: buildRuleReport(runs),
     riskReport: buildRiskReport(runs),
+    analysisHistory: record.analysisHistory ?? [],
   };
 }
 
@@ -642,6 +769,233 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
     conclusion: `本次 AI 评分结果一致性为 ${String(consistencyPercentage)}%。${levelText}。${lowSampleText}${volatilityText}`,
     runConsistencyByTaskId,
   };
+}
+
+export function appendAnalysisHistorySnapshot(
+  history: ConsistencyAnalysisHistoryItem[],
+  runs: ConsistencyRunSummary[],
+  capturedAt = new Date().toISOString(),
+): ConsistencyAnalysisHistoryItem[] {
+  if (!isConsistencyTaskTerminal(runs)) {
+    return history;
+  }
+  const currentRunSetKey = runSetKey(runs);
+  if (history.some((item) => runSetKey(item.runs) === currentRunSetKey)) {
+    return history;
+  }
+  const runSnapshot = runs.map(cloneRunSummary);
+  return [
+    ...history,
+    {
+      round: history.length + 1,
+      capturedAt,
+      summary: analyzeConsistency(runSnapshot),
+      ruleReport: buildRuleReport(runSnapshot),
+      riskReport: buildRiskReport(runSnapshot),
+      runs: runSnapshot,
+    },
+  ];
+}
+
+export function buildConsistencyExportPayload(
+  task: ConsistencyExportTask,
+  runResults: Map<number, unknown>,
+): ConsistencyExportPayload {
+  return {
+    task: {
+      id: task.id,
+      originalTaskId: task.originalTaskId,
+      caseId: task.caseId,
+      caseName: task.caseName,
+      createdAt: task.createdAt,
+      status: task.status,
+      serviceBaseUrl: task.serviceBaseUrl,
+    },
+    analysis: {
+      summary: task.analysis,
+      ruleReport: task.ruleReport,
+      riskReport: task.riskReport,
+    },
+    analysisHistory: task.analysisHistory,
+    runs: task.runs.map((run) => {
+      const result = runResults.get(run.taskId);
+      const error = errorMessage(result);
+      return {
+        runIndex: run.runIndex,
+        taskId: run.taskId,
+        status: run.status,
+        summary: cloneRunSummary(run),
+        ...(error ? { error } : { resultData: result }),
+      };
+    }),
+  };
+}
+
+export function buildConsistencyExportFiles(payload: ConsistencyExportPayload): Map<string, string> {
+  const files = new Map<string, string>();
+  const roundByRunKey = new Map<string, number>();
+  const analysisHistory = payload.analysisHistory.map((round) => {
+    const roundDir = `rounds/round-${padNumber(round.round, 3)}`;
+    for (const run of round.runs) {
+      roundByRunKey.set(`${String(run.runIndex)}:${String(run.taskId)}`, round.round);
+    }
+    files.set(
+      `${roundDir}/summary.json`,
+      stringifyJson({
+        round: round.round,
+        capturedAt: round.capturedAt,
+        summary: round.summary,
+        ruleReport: round.ruleReport,
+        riskReport: round.riskReport,
+        runs: round.runs,
+      }),
+    );
+    return {
+      round: round.round,
+      capturedAt: round.capturedAt,
+      summary: round.summary,
+      ruleReportPath: `${roundDir}/summary.json`,
+      riskReportPath: `${roundDir}/summary.json`,
+      runsPath: `${roundDir}/summary.json`,
+    };
+  });
+
+  const runs = payload.runs.map((run) => {
+    const round = roundByRunKey.get(`${String(run.runIndex)}:${String(run.taskId)}`) ?? 1;
+    const roundDir = `rounds/round-${padNumber(round, 3)}`;
+    const resultPath = `${roundDir}/run-${padNumber(run.runIndex + 1, 2)}-task-${String(
+      run.taskId,
+    )}.json`;
+    files.set(resultPath, stringifyJson(run.error ? { error: run.error } : run.resultData));
+    return {
+      runIndex: run.runIndex,
+      taskId: run.taskId,
+      status: run.status,
+      summaryPath: `${roundDir}/summary.json`,
+      resultPath,
+      ...(run.error ? { error: run.error } : {}),
+    };
+  });
+
+  const overview: ConsistencyExportOverview = {
+    task: payload.task,
+    analysis: payload.analysis,
+    analysisHistory,
+    runs,
+  };
+  files.set("overview.json", stringifyJson(overview));
+  return new Map([...files.entries()].sort(([left], [right]) => exportFileOrder(left, right)));
+}
+
+function exportFileOrder(left: string, right: string): number {
+  if (left === "overview.json") return -1;
+  if (right === "overview.json") return 1;
+  const leftSummary = left.endsWith("/summary.json");
+  const rightSummary = right.endsWith("/summary.json");
+  if (leftSummary !== rightSummary && left.split("/").slice(0, 2).join("/") === right.split("/").slice(0, 2).join("/")) {
+    return leftSummary ? -1 : 1;
+  }
+  return left.localeCompare(right);
+}
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeUint16(output: number[], value: number) {
+  output.push(value & 0xff, (value >>> 8) & 0xff);
+}
+
+function writeUint32(output: number[], value: number) {
+  output.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+}
+
+function writeBytes(output: number[], bytes: Uint8Array) {
+  output.push(...bytes);
+}
+
+export function createStoredZip(files: Map<string, string>): Uint8Array {
+  const encoder = new TextEncoder();
+  const output: number[] = [];
+  const centralDirectory: number[] = [];
+
+  for (const [path, content] of files) {
+    const nameBytes = encoder.encode(path);
+    const contentBytes = encoder.encode(content);
+    const checksum = crc32(contentBytes);
+    const localHeaderOffset = output.length;
+
+    writeUint32(output, 0x04034b50);
+    writeUint16(output, 20);
+    writeUint16(output, 0x0800);
+    writeUint16(output, 0);
+    writeUint16(output, 0);
+    writeUint16(output, 0);
+    writeUint32(output, checksum);
+    writeUint32(output, contentBytes.length);
+    writeUint32(output, contentBytes.length);
+    writeUint16(output, nameBytes.length);
+    writeUint16(output, 0);
+    writeBytes(output, nameBytes);
+    writeBytes(output, contentBytes);
+
+    writeUint32(centralDirectory, 0x02014b50);
+    writeUint16(centralDirectory, 20);
+    writeUint16(centralDirectory, 20);
+    writeUint16(centralDirectory, 0x0800);
+    writeUint16(centralDirectory, 0);
+    writeUint16(centralDirectory, 0);
+    writeUint16(centralDirectory, 0);
+    writeUint32(centralDirectory, checksum);
+    writeUint32(centralDirectory, contentBytes.length);
+    writeUint32(centralDirectory, contentBytes.length);
+    writeUint16(centralDirectory, nameBytes.length);
+    writeUint16(centralDirectory, 0);
+    writeUint16(centralDirectory, 0);
+    writeUint16(centralDirectory, 0);
+    writeUint16(centralDirectory, 0);
+    writeUint32(centralDirectory, 0);
+    writeUint32(centralDirectory, localHeaderOffset);
+    writeBytes(centralDirectory, nameBytes);
+  }
+
+  const centralDirectoryOffset = output.length;
+  writeBytes(output, new Uint8Array(centralDirectory));
+  writeUint32(output, 0x06054b50);
+  writeUint16(output, 0);
+  writeUint16(output, 0);
+  writeUint16(output, files.size);
+  writeUint16(output, files.size);
+  writeUint32(output, centralDirectory.length);
+  writeUint32(output, centralDirectoryOffset);
+  writeUint16(output, 0);
+  return new Uint8Array(output);
+}
+
+export function buildConsistencyHistoryChartRows(
+  history: ConsistencyAnalysisHistoryItem[],
+): ConsistencyHistoryChartRow[] {
+  return history.map((item) => ({
+    label: `第 ${String(item.round)} 轮`,
+    capturedAt: item.capturedAt,
+    completedRuns: item.summary.completedRuns,
+    failedRuns: item.summary.failedRuns,
+    consistencyPercentage: item.summary.consistencyPercentage,
+    averageScore: item.summary.averageScore,
+    scoreStandardDeviation: item.summary.scoreStandardDeviation,
+    ruleUnsatisfactionPercentage:
+      item.summary.averageRuleUnsatisfactionRatio === null
+        ? null
+        : roundNumber(item.summary.averageRuleUnsatisfactionRatio * 100, 2),
+    averageRiskCount: item.summary.averageRiskCount,
+  }));
 }
 
 export function buildRuleReport(runs: ConsistencyRunSummary[]): RuleConsistencyReportItem[] {

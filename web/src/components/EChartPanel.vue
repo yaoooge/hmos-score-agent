@@ -1,5 +1,5 @@
 <template>
-  <div class="chart-card">
+  <div class="chart-card" :class="{ 'chart-card-compact': compact }">
     <div class="chart-title">{{ title }}</div>
     <div v-if="empty" class="chart-empty">暂无数据</div>
     <div v-else ref="chartEl" class="chart-body" />
@@ -15,6 +15,7 @@ const props = defineProps<{
   title: string;
   option: EChartsOption;
   empty?: boolean;
+  compact?: boolean;
 }>();
 
 const chartEl = ref<HTMLDivElement>();
@@ -60,6 +61,20 @@ watch(
 .chart-empty {
   width: 100%;
   height: 300px;
+}
+
+.chart-card-compact {
+  padding: 10px;
+}
+
+.chart-card-compact .chart-title {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.chart-card-compact .chart-body,
+.chart-card-compact .chart-empty {
+  height: 170px;
 }
 
 .chart-empty {
