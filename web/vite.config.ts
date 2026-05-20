@@ -9,6 +9,9 @@ const dashboardApiProxy = {
 export default defineConfig({
   base: "/dashboard/",
   plugins: [vue()],
+  build: {
+    reportCompressedSize: false,
+  },
   server: {
     port: 5173,
     proxy: {

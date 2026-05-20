@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "build:bundle": "vite build",
+    "build": "sh -c 'npm run typecheck & typecheck_pid=$!; npm run build:bundle & bundle_pid=$!; wait $typecheck_pid; typecheck_status=$?; wait $bundle_pid; bundle_status=$?; exit $((typecheck_status || bundle_status))'",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
