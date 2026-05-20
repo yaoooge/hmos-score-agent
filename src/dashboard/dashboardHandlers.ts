@@ -33,12 +33,48 @@ import {
   updateHumanRatingGapManualAnalysisStatus,
   updateRiskReviewManualAnalysisStatus,
 } from "./dashboardDataStore.js";
-import type { DashboardStatusCategory, ManualAnalysisStatus } from "./dashboardTypes.js";
+import type {
+  DashboardStatusCategory,
+  DashboardTaskSummary,
+  ManualAnalysisStatus,
+} from "./dashboardTypes.js";
+
+type DashboardScoreSummary = {
+  completedWithScore: number;
+  averageScore: number | null;
+  minScore: number | null;
+  maxScore: number | null;
+};
 
 export type DashboardRouterDeps = {
   registry: RemoteTaskRegistry;
   ruleViolationStatsStore: RuleViolationStatsStore;
   humanReviewEvidenceRoot: string;
+  taskSummaryProvider?: (query?: {
+    taskType?: string;
+    from?: string;
+    to?: string;
+  }) => Promise<DashboardTaskSummary[]>;
+  taskPageProvider?: (query: ReturnType<typeof parseTaskQuery> & object) => Promise<{
+    items: DashboardTaskSummary[];
+    total: number;
+  }>;
+  dashboardSummaryProvider?: (query: { from?: string; to?: string }) => Promise<{
+    statusCounts: ReturnType<typeof buildStatusCounts>;
+    taskTypeCounts: ReturnType<typeof buildTaskTypeCounts>;
+    scoreSummary: DashboardScoreSummary;
+  }>;
+  statusCountsProvider?: () => Promise<ReturnType<typeof buildStatusCounts>>;
+  dailyReportProvider?: (query: {
+    taskType?: string;
+    from?: string;
+    to?: string;
+  }) => Promise<ReturnType<typeof buildDailyReport>>;
+  scoreDistributionProvider?: (query: {
+    taskType?: string;
+    from?: string;
+    to?: string;
+  }) => Promise<ReturnType<typeof buildScoreDistribution>>;
 };
 
 const STATUS_CATEGORIES = new Set(["received", "queued", "running", "completed", "failed"]);
@@ -113,7 +149,9 @@ function parseTaskIds(value: unknown): number[] | undefined {
   return taskIds.length === value.length ? taskIds : undefined;
 }
 
-function parseRiskStatusItems(value: unknown): Array<{ taskId: number; riskId: number }> | undefined {
+function parseRiskStatusItems(
+  value: unknown,
+): Array<{ taskId: number; riskId: number }> | undefined {
   if (!Array.isArray(value) || value.length === 0) {
     return undefined;
   }
@@ -136,8 +174,20 @@ function parseRiskStatusItems(value: unknown): Array<{ taskId: number; riskId: n
   return items;
 }
 
-async function getTaskSummaries(deps: DashboardRouterDeps) {
-  return (await listDashboardTasks(deps.registry)).map((item) => item.summary);
+async function getTaskSummaries(
+  deps: DashboardRouterDeps,
+  query?: { taskType?: string; from?: string; to?: string },
+) {
+  if (deps.taskSummaryProvider) {
+    return await deps.taskSummaryProvider(query);
+  }
+  return (await listDashboardTasks(deps.registry))
+    .map((item) => item.summary)
+    .filter(
+      (task) =>
+        (query?.taskType ? task.taskType === query.taskType : true) &&
+        matchesCreatedRange(task, query?.from, query?.to),
+    );
 }
 
 function matchesCreatedRange(task: { createdAt: string }, from?: string, to?: string): boolean {
@@ -262,11 +312,19 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
 
   router.get("/dashboard/summary", async (req, res) => {
     try {
-      const tasks = (await getTaskSummaries(deps)).filter((task) => {
-        const from = readString(req.query.from);
-        const to = readString(req.query.to);
-        return matchesCreatedRange(task, from, to);
-      });
+      const from = readString(req.query.from);
+      const to = readString(req.query.to);
+      if (deps.dashboardSummaryProvider) {
+        res.json({
+          success: true,
+          generatedAt: new Date().toISOString(),
+          ...(await deps.dashboardSummaryProvider({ from, to })),
+        });
+        return;
+      }
+      const tasks = (await getTaskSummaries(deps)).filter((task) =>
+        matchesCreatedRange(task, from, to),
+      );
       res.json({
         success: true,
         generatedAt: new Date().toISOString(),
@@ -286,6 +344,17 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       return;
     }
     try {
+      if (deps.taskPageProvider) {
+        const page = await deps.taskPageProvider(query);
+        res.json({
+          success: true,
+          page: query.page,
+          pageSize: query.pageSize,
+          total: page.total,
+          items: page.items,
+        });
+        return;
+      }
       const filtered = filterTasks(await getTaskSummaries(deps), query);
       const page = paginate(filtered, query.page, query.pageSize);
       res.json({
@@ -302,6 +371,10 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
 
   router.get("/dashboard/tasks/status-counts", async (_req, res) => {
     try {
+      if (deps.statusCountsProvider) {
+        res.json({ success: true, statusCounts: await deps.statusCountsProvider() });
+        return;
+      }
       res.json({ success: true, statusCounts: buildStatusCounts(await getTaskSummaries(deps)) });
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : "Dashboard status unavailable");
@@ -345,10 +418,11 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       const taskType = readString(req.query.taskType);
       const from = readString(req.query.from);
       const to = readString(req.query.to);
-      const tasks = (await getTaskSummaries(deps)).filter(
-        (task) =>
-          (taskType ? task.taskType === taskType : true) && matchesCreatedRange(task, from, to),
-      );
+      if (deps.dailyReportProvider) {
+        res.json({ success: true, items: await deps.dailyReportProvider({ taskType, from, to }) });
+        return;
+      }
+      const tasks = await getTaskSummaries(deps, { taskType, from, to });
       res.json({ success: true, items: buildDailyReport(tasks) });
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : "Dashboard report unavailable");
@@ -360,10 +434,14 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       const taskType = readString(req.query.taskType);
       const from = readString(req.query.from);
       const to = readString(req.query.to);
-      const tasks = (await getTaskSummaries(deps)).filter(
-        (task) =>
-          (taskType ? task.taskType === taskType : true) && matchesCreatedRange(task, from, to),
-      );
+      if (deps.scoreDistributionProvider) {
+        res.json({
+          success: true,
+          buckets: await deps.scoreDistributionProvider({ taskType, from, to }),
+        });
+        return;
+      }
+      const tasks = await getTaskSummaries(deps, { taskType, from, to });
       res.json({ success: true, buckets: buildScoreDistribution(tasks) });
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : "Dashboard report unavailable");
@@ -462,9 +540,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
     try {
       const taskSummaries = await getTaskSummaries(deps);
       const taskNameIndex = new Map(taskSummaries.map((task) => [task.taskId, task.name]));
-      const taskCreatedAtById = new Map(
-        taskSummaries.map((task) => [task.taskId, task.createdAt]),
-      );
+      const taskCreatedAtById = new Map(taskSummaries.map((task) => [task.taskId, task.createdAt]));
       const dataset = await readRiskReviewCalibrationDataset(
         deps.humanReviewEvidenceRoot,
         taskNameIndex,
@@ -532,10 +608,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
       const taskType = readString(req.query.taskType);
       const from = readString(req.query.from);
       const to = readString(req.query.to);
-      const tasks = (await getTaskSummaries(deps)).filter(
-        (task) =>
-          (taskType ? task.taskType === taskType : true) && matchesCreatedRange(task, from, to),
-      );
+      const tasks = await getTaskSummaries(deps, { taskType, from, to });
       const ruleRuns = await deps.ruleViolationStatsStore.listRuns();
       res.json({ success: true, ...buildNegativeResults(tasks, ruleRuns, scoreThreshold) });
     } catch (error) {
@@ -562,7 +635,9 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
         page: query.page,
         pageSize: query.pageSize,
         total: page.total,
-        items: page.items.map(({ officialLinterResults, ruleAuditResults, risks, ...item }) => item),
+        items: page.items.map(
+          ({ officialLinterResults, ruleAuditResults, risks, ...item }) => item,
+        ),
       });
     } catch (error) {
       sendError(
