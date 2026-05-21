@@ -139,3 +139,13 @@ export async function saveConsistencyTask(
   }
   return (await response.json()) as ConsistencyTaskUpsertResponse;
 }
+
+export async function deleteConsistencyTask(taskId: string): Promise<{ success: true }> {
+  const response = await fetch(`/score/consistency-tasks/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return (await response.json()) as { success: true };
+}

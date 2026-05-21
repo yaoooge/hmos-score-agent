@@ -1,4 +1,4 @@
-export type ApiMethod = "GET" | "POST" | "PUT" | "OPTIONS";
+export type ApiMethod = "GET" | "POST" | "PUT" | "DELETE" | "OPTIONS";
 
 export type ApiSchemaPrimitive = "boolean" | "number" | "string" | "object" | "array" | "unknown";
 
@@ -542,6 +542,48 @@ export const API_DEFINITIONS: ApiDefinition[] = [
       },
       { status: 400, description: "Invalid consistency task record.", body: errorResponseBody },
       { status: 500, description: "Consistency task table could not be written.", body: errorResponseBody },
+    ],
+  },
+  {
+    method: "DELETE",
+    path: API_PATHS.consistencyTask,
+    description: "Delete one persisted score consistency task record by id.",
+    request: {
+      pathParams: {
+        id: {
+          type: "string",
+          required: true,
+          description: "Consistency task identifier.",
+        },
+      },
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Consistency task record was deleted.",
+        body: {
+          type: "object",
+          description: "Consistency task deletion response.",
+          properties: {
+            success: successField,
+          },
+        },
+      },
+      {
+        status: 400,
+        description: "Invalid consistency task identifier.",
+        body: errorResponseBody,
+      },
+      {
+        status: 404,
+        description: "Consistency task was not found.",
+        body: errorResponseBody,
+      },
+      {
+        status: 500,
+        description: "Consistency task table could not be written.",
+        body: errorResponseBody,
+      },
     ],
   },
   {

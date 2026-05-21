@@ -1,4 +1,4 @@
-name: ArkTS TypeScript 适配与编程规范融合规则包
+name: 从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范
 version: v1.0.0
 summary: 基于《从TypeScript到ArkTS的适配规则》与《ArkTS编程规范》融合提炼的内部规则包，按 must / should / forbidden 分类，用于 HarmonyOS NEXT 生成代码评分与审查。
 rule_pack_meta:
@@ -11,6 +11,13 @@ must_rules:
     detector_kind: not_implemented
     detector_config: {}
     fallback_policy: agent_assisted
+    decision_criteria:
+      pass:
+        - 已确认类型、枚举、接口和命名空间未与其他标识符冲突。
+      fail:
+        - 存在类型、枚举、接口或命名空间与变量或函数标识符冲突。
+      review:
+        - 证据不足，无法确认命名唯一性。
   - id: ARKTS-MUST-002
     rule: 一个类中只允许存在一个 static 初始化块。
     detector_kind: text_pattern

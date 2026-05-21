@@ -2,6 +2,13 @@ export type RuleSource = "must_rule" | "should_rule" | "forbidden_pattern";
 
 export type StaticRuleResult = "满足" | "不满足" | "不涉及" | "未接入判定器";
 
+export interface RuleDecisionCriteria {
+  pass?: string[];
+  fail?: string[];
+  not_applicable?: string[];
+  review?: string[];
+}
+
 // StaticRuleAuditResult 允许暴露静态层内部状态，供 agent 前置链路消费。
 export interface StaticRuleAuditResult {
   rule_id: string;
@@ -28,6 +35,7 @@ export interface RegisteredRule {
   fallback_policy: "agent_assisted" | "not_applicable";
   rule_name?: string;
   priority?: "P0" | "P1";
+  decision_criteria?: RuleDecisionCriteria;
   is_case_rule?: boolean;
 }
 

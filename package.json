@@ -13,7 +13,6 @@
     "build:all": "npm run build && npm run build:dashboard",
     "score": "tsx src/cli.ts",
     "db:generate": "node --import tsx scripts/generateSqliteDatabase.ts",
-    "rulepack:export": "node --import tsx src/tools/generateRulePackYaml.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

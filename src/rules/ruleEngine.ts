@@ -156,6 +156,7 @@ export async function runRuleEngine(input: {
         evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
         rule_name: registeredRule?.rule_name,
         priority: registeredRule?.priority,
+        decision_criteria: registeredRule?.decision_criteria,
         kit: readStringArray(registeredRule?.detector_config.kit),
         llm_prompt:
           typeof registeredRule?.detector_config.llmPrompt === "string"

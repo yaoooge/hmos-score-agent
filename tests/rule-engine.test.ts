@@ -1477,6 +1477,10 @@ test("runRuleEngine keeps unsupported no-evidence rules in agent candidates", as
     result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-001"),
     true,
   );
+  assert.ok(
+    result.assistedRuleCandidates.find((item) => item.rule_id === "ARKTS-MUST-001")
+      ?.decision_criteria,
+  );
   const unsupportedCandidates = result.assistedRuleCandidates.filter((item) => !item.is_case_rule);
   assert.equal(unsupportedCandidates.length > 1, true);
   assert.equal(

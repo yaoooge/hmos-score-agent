@@ -4,6 +4,7 @@ import {
   analyzeConsistency,
   appendAnalysisHistorySnapshot,
   buildConsistencyTaskPersistRecord,
+  buildConsistencyTaskRoundOptions,
   buildConsistencyExportFiles,
   buildConsistencyExportPayload,
   buildConsistencyHistoryChartRows,
@@ -17,6 +18,9 @@ import {
   isConsistencyTaskTerminal,
   jaccardSimilarity,
   normalizeConsistencyRunStatus,
+  removeConsistencyAnalysisHistoryRound,
+  selectConsistencyTaskRoundSnapshot,
+  validateRemoteEvaluationTaskInput,
   validateRemoteTaskJson,
   type ConsistencyAnalysisHistoryItem,
   type ConsistencyRunSummary,
@@ -159,6 +163,30 @@ test("extractConsistencyRunSummary reads score, unsatisfied rules, and risks", (
   ]);
 });
 
+test("extractConsistencyRunSummary prefers risk_code over generated identity text", () => {
+  const summary = extractConsistencyRunSummary(0, 130600101, {
+    overall_conclusion: {
+      total_score: 82,
+      hard_gate_triggered: false,
+      summary: "基本满足",
+    },
+    rule_audit_results: [],
+    risks: [
+      {
+        id: 1,
+        level: "low",
+        title: "随意生成的标题",
+        description: "关键需求没有实现。",
+        evidence: "EntryAbility.ets",
+        risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
+        source_rule_id: "ARKTS-MUST-001",
+      },
+    ],
+  });
+
+  assert.equal(summary.risks[0]?.key, "risk_code|REQUIREMENT_NOT_IMPLEMENTED");
+});
+
 test("jaccardSimilarity treats two empty sets as identical", () => {
   assert.equal(jaccardSimilarity([], []), 1);
   assert.equal(jaccardSimilarity(["a", "b"], ["b", "c"]), 1 / 3);
@@ -184,6 +212,51 @@ test("analyzeConsistency uses majority result stability", () => {
   assert.equal(analysis.averageScore, 79);
   assert.equal(analysis.medianScore, 81.5);
   assert.match(analysis.conclusion, /一致性为 75%/);
+});
+
+test("analyzeConsistency exposes split score gate and finding stability", () => {
+  const analysis = analyzeConsistency([
+    completedRun(0, {
+      totalScore: 69,
+      hardGateTriggered: true,
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_NOT_IMPLEMENTED",
+          level: "high",
+          title: "需求未实现",
+          risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
+        } as never,
+      ],
+    }),
+    completedRun(1, {
+      totalScore: 69,
+      hardGateTriggered: true,
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_NOT_IMPLEMENTED",
+          level: "high",
+          title: "需求未实现",
+          risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
+        } as never,
+      ],
+    }),
+    completedRun(2, {
+      totalScore: 69,
+      hardGateTriggered: true,
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_NOT_IMPLEMENTED",
+          level: "high",
+          title: "需求未实现",
+          risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
+        } as never,
+      ],
+    }),
+  ]);
+
+  assert.equal(analysis.scoreStability?.standardDeviation, 0);
+  assert.equal(analysis.gateStability?.hardGateConsistencyPercentage, 100);
+  assert.equal(analysis.findingStability?.averageRiskJaccard, 1);
 });
 
 test("analyzeConsistency does not count in-progress runs as failed", () => {
@@ -249,6 +322,118 @@ test("appendAnalysisHistorySnapshot appends one terminal round and avoids duplic
   assert.equal(duplicated.length, 1);
   assert.equal(second.length, 2);
   assert.equal(second[1]?.round, 2);
+});
+
+test("buildConsistencyTaskRoundOptions includes the current view and each history round", () => {
+  const runs = [completedRun(0), completedRun(1, { totalScore: 86 })];
+  const history = appendAnalysisHistorySnapshot([], runs, "2026-05-20T01:00:00.000Z");
+
+  assert.deepEqual(
+    buildConsistencyTaskRoundOptions({
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs,
+      analysisHistory: history,
+    }).map((item) => item.value),
+    ["current", "2026-05-20T01:00:00.000Z"],
+  );
+});
+
+test("selectConsistencyTaskRoundSnapshot returns a historical round view", () => {
+  const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
+  const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
+  const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
+  const history = appendAnalysisHistorySnapshot(firstHistory, secondRuns, "2026-05-20T02:00:00.000Z");
+
+  const selected = selectConsistencyTaskRoundSnapshot(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs: secondRuns,
+      analysis: analyzeConsistency(secondRuns),
+      ruleReport: buildRuleReport(secondRuns),
+      riskReport: buildRiskReport(secondRuns),
+      analysisHistory: history,
+    },
+    "2026-05-20T01:00:00.000Z",
+  );
+
+  assert.equal(selected.analysis?.averageScore, 84);
+  assert.deepEqual(selected.runs.map((run) => run.taskId), [130600101, 130600102]);
+});
+
+test("removeConsistencyAnalysisHistoryRound removes the latest history round and rolls back current data", () => {
+  const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
+  const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
+  const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
+  const history = appendAnalysisHistorySnapshot(firstHistory, secondRuns, "2026-05-20T02:00:00.000Z");
+
+  const removed = removeConsistencyAnalysisHistoryRound(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs: secondRuns,
+      analysis: analyzeConsistency(secondRuns),
+      ruleReport: buildRuleReport(secondRuns),
+      riskReport: buildRiskReport(secondRuns),
+      analysisHistory: history,
+    },
+    2,
+  );
+
+  assert.equal(removed.analysisHistory?.length, 1);
+  assert.equal(removed.analysisHistory?.[0]?.round, 1);
+  assert.equal(removed.analysis?.averageScore, 84);
+  assert.deepEqual(removed.runs.map((run) => run.totalScore), [82, 86]);
+});
+
+test("removeConsistencyAnalysisHistoryRound removes an earlier history round without changing current data", () => {
+  const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
+  const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
+  const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
+  const history = appendAnalysisHistorySnapshot(firstHistory, secondRuns, "2026-05-20T02:00:00.000Z");
+
+  const removed = removeConsistencyAnalysisHistoryRound(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs: secondRuns,
+      analysis: analyzeConsistency(secondRuns),
+      ruleReport: buildRuleReport(secondRuns),
+      riskReport: buildRiskReport(secondRuns),
+      analysisHistory: history,
+    },
+    1,
+  );
+
+  assert.equal(removed.analysisHistory?.length, 1);
+  assert.equal(removed.analysisHistory?.[0]?.round, 1);
+  assert.equal(removed.analysis?.averageScore, 72);
+  assert.deepEqual(removed.runs.map((run) => run.totalScore), [70, 74]);
 });
 
 test("appendAnalysisHistorySnapshot skips non-terminal runs", () => {
@@ -441,7 +626,7 @@ test("compactConsistencyTaskSnapshots strips derived reports before persistence"
   assert.equal(hydrated.riskReport?.length, 1);
 });
 
-test("buildConsistencyTaskPersistRecord omits sourceTask for refresh saves", () => {
+test("buildConsistencyTaskPersistRecord keeps valid sourceTask for refresh saves", () => {
   const snapshot = {
     id: "C-001",
     sequence: 1,
@@ -462,8 +647,30 @@ test("buildConsistencyTaskPersistRecord omits sourceTask for refresh saves", () 
   const createPayload = buildConsistencyTaskPersistRecord(snapshot, true);
 
   assert.equal("analysis" in refreshPayload, false);
-  assert.equal("sourceTask" in refreshPayload, false);
+  assert.equal("sourceTask" in refreshPayload, true);
   assert.equal("sourceTask" in createPayload, true);
+});
+
+test("validateRemoteEvaluationTaskInput rejects fallback sourceTask without original payload", () => {
+  const hydrated = hydrateConsistencyTaskSnapshot({
+    id: "C-001",
+    sequence: 1,
+    serviceBaseUrl: "http://localhost:3000",
+    originalTaskId: 1263,
+    caseId: 229,
+    caseName: "电视台元服务完成一多适配",
+    createdAt: "2026-05-19T11:30:45.183Z",
+    status: "completed",
+    runs: [completedRun(0)],
+  });
+
+  const validation = validateRemoteEvaluationTaskInput(hydrated.sourceTask);
+  const refreshPayload = buildConsistencyTaskPersistRecord(hydrated);
+
+  assert.equal(validation.valid, false);
+  assert.match(validation.errors.join("\n"), /sourceTask\.testCase\.fileUrl/);
+  assert.match(validation.errors.join("\n"), /sourceTask\.executionResult\.outputCodeUrl/);
+  assert.equal("sourceTask" in refreshPayload, false);
 });
 
 test("buildRuleReport aggregates unsatisfied rule stability", () => {

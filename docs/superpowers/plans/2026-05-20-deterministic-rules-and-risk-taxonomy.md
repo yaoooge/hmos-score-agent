@@ -1,635 +1,289 @@
-# 确定性规则与风险枚举 Implementation Plan
+# 确定性规则与工程风险枚举实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在不引入冗余技术栈的前提下，稳定评分链路：Code Linter 作为确定性结论只在规则合并阶段进入评分，内置规则 YAML 向用例规则结构靠拢，agent 判定规则具备明确触发条件，rubric 风险项从 YAML 枚举中选择。
+**Goal:** 让内置规则和用例规则一样以 YAML 作为运行时规则源，直接进入静态检验和 agent payload 生成阶段；Code Linter 结论只在规则合并阶段进入评分；风险项从工程级、语言级、需求实现级 taxonomy 中选择，减少同一问题因自由命名造成的一致性波动。
 
-**Architecture:** 沿用现有 LangGraph 工作流和 `src/rules/**`、`src/scoring/**`、`web/src/pages/scoreConsistencyAnalysis.ts` 边界，不新增数据库、独立规则服务或第二套评分引擎。规则事实仍由 `ruleAuditNode`、`officialCodeLinterNode`、`ruleMergeNode` 汇合；rubric agent 只负责 rubric 评分和从风险枚举中选择风险，不再自由扩张风险名称。
+**Spec:** [docs/superpowers/specs/2026-05-20-deterministic-scoring-and-risk-taxonomy-design.md](/Users/guoyutong/MyWorkSpace/hmos-score-agent/docs/superpowers/specs/2026-05-20-deterministic-scoring-and-risk-taxonomy-design.md)
 
-**Tech Stack:** TypeScript、Node 内置 test runner、`js-yaml`、现有规则包导出器、现有评分融合与一致性分析模块。
+**Architecture:** 沿用现有 LangGraph、`src/rules/**`、`src/scoring/**`、`web/src/pages/scoreConsistencyAnalysis.ts`。不新增规则服务、数据库或第二套评分引擎。内置规则 YAML 是 source of truth；旧 TS rule arrays 不再作为运行时真源，也不再走“TS 导出 YAML”的路径。
 
----
-
-## 约束边界
-
-- Code Linter 的 findings、summary、conclusion 不进入 `ruleAgentPromptBuilderNode`，也不进入 rule assessment agent prompt。
-- Code Linter 的结论完整保留到 `ruleMergeNode`，由 merge 阶段追加到 deterministic rule results。
-- 不大量扩张字段。只新增必要的 `decision_triggers` 和风险稳定 key 字段。
-- 内置系统规则 YAML 结构向用例规则靠拢：保留 `rule_name`、`priority`、`targetPatterns`、`targetChecks`、`kit`、`decisionTriggers`、`fallback_policy`。
-- 需要 agent 判定的规则允许配置 `满足` / `不满足` / `不涉及` / `待复核` 的触发条件。
-- 风险项通过 YAML 枚举维护，区分低/中/高风险；rubric agent 从枚举选择，不允许无序创造新风险名称。
-
-## 文件职责
-
-- `src/rules/engine/ruleTypes.ts`
-  - 增加最小规则触发条件类型：`RuleDecisionTrigger`、`RuleDecisionTriggers`。
-  - 给 `RegisteredRule` 增加可选 `decision_triggers`。
-
-- `src/rules/packs/shared/ruleFactories.ts`
-  - 让 `createAgentAssistedTargetRule` 接受 `decisionTriggers`。
-  - 不改变既有 `detector_config` 和 `fallback_policy` 语义。
-
-- `src/rules/engine/rulePackYamlExporter.ts`
-  - 导出内置规则时补充 case-rule-like 字段。
-  - YAML 使用 `decisionTriggers`，TypeScript 运行时使用 `decision_triggers`。
-
-- `src/rules/evaluators/caseConstraintEvaluator.ts`
-  - 在已有静态预判基础上解释简单触发条件。
-  - 能确定时直接输出 `满足`、`不满足`、`不涉及`；不能确定时维持 agent fallback。
-
-- `src/rules/packs/cross-device-adaptation/ruleData.ts`
-  - 为当前稳定性问题最明显的跨设备规则补充首批触发条件。
-
-- `src/nodes/ruleAgentPromptBuilderNode.ts`
-  - 不应消费 Code Linter 内容。若当前已经满足，只补回归测试。
-
-- `src/nodes/ruleMergeNode.ts`
-  - 继续负责 deterministic static results + Code Linter results + assisted results 合并。
-
-- `references/risks/risk-taxonomy.yaml`
-  - 新增风险枚举，包含 `code`、`level`、`title`、`description`、`matchHints`。
-
-- `src/scoring/riskTaxonomy.ts`
-  - 加载并校验风险枚举 YAML。
-  - 提供风险归一化函数。
-
-- `src/types.ts`
-  - 给 `RiskItem` 最小扩展：`risk_code`、`risk_category`、`source_rule_id`。
-  - 给 `LoadedRubricSnapshot` 增加可选 `risk_taxonomy` 摘要。
-
-- `src/nodes/rubricScoringPromptBuilderNode.ts`
-  - 在 rubric prompt 中传入风险枚举，并要求 agent 从中选择。
-
-- `src/agent/opencodeRubricScoring.ts`
-  - 接收 rubric agent 输出的可选 `risk_code`、`risk_category`、`source_rule_id`。
-
-- `src/scoring/scoreFusion.ts`
-  - 规则生成风险使用稳定 `RULE_VIOLATION:<rule_id>`。
-  - rubric 风险按 taxonomy 归一化。
-
-- `web/src/pages/scoreConsistencyAnalysis.ts`
-  - 风险 key 优先使用 `risk_code`，再使用 `source_rule_id`，最后回退到当前 `level|title`。
-  - 新增分数稳定性、硬门槛稳定性、finding 稳定性拆分指标，同时保留现有 `consistencyPercentage`。
+**Tech Stack:** TypeScript、Node 内置 test runner、`js-yaml`、现有 rule engine / scoring / consistency analysis。
 
 ---
 
-### Task 1: 增加规则触发条件元数据
+## 关键决策
+
+可以把当前内置规则像用例规则一样直接采用 YAML 格式进入后续静态检验和 payload 生成阶段，而且这是本轮应采用的主路径。
+
+必要性不是为了枚举 `pass/fail/not_applicable/review` 触发条件，而是为了消除当前“双真源”问题：`references/rules/*.yaml` 已经存在，但 `rulePackRegistry.ts` 仍从 `src/rules/packs/**` 的 TS 数组加载运行时规则。继续保留 TS 为真源会导致 YAML、静态检验、agent payload 三处表达不一致，也会让规则口径调整依赖代码发布。
+
+本计划明确不做以下事情：
+
+- 不实现通用 `decision_triggers` / trigger executor。
+- 不用“没有命中反例 pattern”推断规则满足。
+- 不把 Code Linter findings、summary、conclusion 放进 rule agent prompt。
+- 不通过 `rulePackYamlExporter` 或 `generateRulePackYaml.ts` 生成内置规则 YAML。
+- 不把风险名扩张成业务 case 级枚举。
+
+## 规则 YAML 边界
+
+内置规则沿用当前 `references/rules/arkts-language.yaml` 的结构，并在必要时小幅扩展：
+
+```yaml
+name: ...
+version: ...
+summary: ...
+rule_pack_meta:
+  pack_id: arkts-language
+  source_name: ...
+  source_version: ...
+must_rules:
+  - id: ARKTS-MUST-001
+    rule: ...
+    detector_kind: text_pattern
+    detector_config: {}
+    fallback_policy: agent_assisted
+    decision_criteria:
+      pass: []
+      fail: []
+      not_applicable: []
+      review: []
+should_rules: []
+forbidden_patterns: []
+```
+
+字段含义：
+
+- `rule` 映射到运行时 `RegisteredRule.summary`。
+- `must_rules` / `should_rules` / `forbidden_patterns` 映射到 `rule_source`。
+- `detector_kind` 和 `detector_config` 继续驱动现有静态 evaluator。
+- `decision_criteria` 只作为 rule agent prompt 的判定口径，不作为静态执行条件。
+- `case_constraint` 类型继续使用 `targetPatterns`、`targetChecks`、`llmPrompt`、`kit`，与用例规则 loader 的输出形态保持一致。
+
+---
+
+### Task 1: 让内置规则 YAML 成为运行时主数据源
+
+**Why:** 这是必须做的基础任务。它不是补 trigger 条件，也不是实现新判定器，而是把已有 `references/rules/*.yaml` 接入 `rulePackRegistry`，让静态检验、agent 候选、payload 生成都读取同一份 YAML。否则规则仍由 TS 数组决定，YAML 只是一份旁路资料，一致性问题会继续存在。
 
 **Files:**
+- Create: `src/rules/engine/rulePackYamlLoader.ts`
+- Modify: `src/rules/engine/rulePackRegistry.ts`
 - Modify: `src/rules/engine/ruleTypes.ts`
-- Modify: `src/rules/packs/shared/ruleFactories.ts`
-- Test: `tests/rule-factory.test.ts`
+- Modify/Delete as needed: `tests/rule-pack-yaml-export.test.ts`
+- Test: `tests/rule-pack-yaml-loader.test.ts`
+- Test: `tests/rule-pack-registry.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 写 loader 失败测试**
 
-在 `tests/rule-factory.test.ts` 增加：
+创建 `tests/rule-pack-yaml-loader.test.ts`，断言 loader 能直接读取当前三份 YAML：
 
 ```ts
-test("agent assisted target rules preserve decision triggers", () => {
-  const rule = createAgentAssistedTargetRule({
-    packId: "cross-device-adaptation",
-    ruleSource: "must_rule",
-    ruleId: "RSP-MUST-02",
-    ruleName: "布局条件分支必须使用断点枚举值而非硬编码宽度",
-    summary: "布局条件分支必须使用断点枚举值而非硬编码宽度。",
-    priority: "P0",
-    targetChecks: [
-      {
-        target: "**/*.ets",
-        llmPrompt: "检查硬编码断点。",
-        astSignals: [],
-      },
-    ],
-    decisionTriggers: {
-      pass: [{ type: "all_patterns_absent", patterns: ["\\b(width|vp)\\s*[<>]=?\\s*(600|840)\\b"] }],
-      fail: [{ type: "any_pattern_present", patterns: ["\\b(width|vp)\\s*[<>]=?\\s*(600|840)\\b"] }],
-      not_applicable: [{ type: "no_target_files" }],
-      review: [{ type: "otherwise" }],
-    },
-  });
+import assert from "node:assert/strict";
+import path from "node:path";
+import test from "node:test";
+import { loadRegisteredRulePacksFromYamlDirectory } from "../src/rules/engine/rulePackYamlLoader.js";
 
-  assert.deepEqual(rule.decision_triggers, {
-    pass: [{ type: "all_patterns_absent", patterns: ["\\b(width|vp)\\s*[<>]=?\\s*(600|840)\\b"] }],
-    fail: [{ type: "any_pattern_present", patterns: ["\\b(width|vp)\\s*[<>]=?\\s*(600|840)\\b"] }],
-    not_applicable: [{ type: "no_target_files" }],
-    review: [{ type: "otherwise" }],
-  });
+test("loads built-in rule packs directly from references/rules yaml", () => {
+  const packs = loadRegisteredRulePacksFromYamlDirectory(path.resolve(process.cwd(), "references/rules"));
+  assert.deepEqual(
+    packs.map((pack) => pack.packId).sort(),
+    ["arkts-language", "arkts-performance", "cross-device-adaptation"],
+  );
+  assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "ARKTS-MUST-002"));
+  assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "RSP-MUST-01"));
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 2: 写 registry 失败测试**
 
-Run: `node --import tsx --test tests/rule-factory.test.ts`
+在 `tests/rule-pack-registry.test.ts` 增加断言：
 
-Expected: FAIL，原因是 `createAgentAssistedTargetRule` 还不接受 `decisionTriggers`。
+```ts
+test("registered rule packs use yaml source of truth", () => {
+  const packs = getRegisteredRulePacks();
+  const language = packs.find((pack) => pack.packId === "arkts-language");
+  assert.ok(language);
+  assert.ok(language.rules.some((rule) => rule.rule_id === "ARKTS-MUST-002"));
+});
+```
 
-- [ ] **Step 3: 增加类型**
+- [ ] **Step 3: 实现同步 YAML loader**
+
+新增 `src/rules/engine/rulePackYamlLoader.ts`。为避免把全链路改成 async，loader 使用 `fs.readFileSync` 在 registry 初始化时读取 YAML。
+
+映射规则：
+
+```text
+rule_pack_meta.pack_id -> RegisteredRule.pack_id / RegisteredRulePack.packId
+name -> RegisteredRulePack.displayName
+must_rules[] -> rule_source = must_rule
+should_rules[] -> rule_source = should_rule
+forbidden_patterns[] -> rule_source = forbidden_pattern
+rule.id -> rule_id
+rule.rule -> summary
+rule.detector_kind -> detector_kind
+rule.detector_config -> detector_config
+rule.fallback_policy -> fallback_policy
+rule.rule_name -> rule_name
+rule.priority -> priority
+rule.decision_criteria -> decision_criteria
+```
+
+loader 只做字段校验、默认值填充和类型归一，不执行规则、不导出 YAML。
+
+- [ ] **Step 4: 扩展最小规则类型**
 
 在 `src/rules/engine/ruleTypes.ts` 增加：
 
 ```ts
-export type RuleDecisionTrigger =
-  | { type: "any_pattern_present"; patterns: string[] }
-  | { type: "all_patterns_absent"; patterns: string[] }
-  | { type: "all_patterns_present"; patterns: string[] }
-  | { type: "no_target_files" }
-  | { type: "otherwise" };
-
-export interface RuleDecisionTriggers {
-  pass?: RuleDecisionTrigger[];
-  fail?: RuleDecisionTrigger[];
-  not_applicable?: RuleDecisionTrigger[];
-  review?: RuleDecisionTrigger[];
+export interface RuleDecisionCriteria {
+  pass?: string[];
+  fail?: string[];
+  not_applicable?: string[];
+  review?: string[];
 }
 ```
 
 并给 `RegisteredRule` 增加：
 
 ```ts
-decision_triggers?: RuleDecisionTriggers;
+decision_criteria?: RuleDecisionCriteria;
 ```
 
-- [ ] **Step 4: 工厂透传触发条件**
+不新增通用 trigger 字段。
 
-在 `src/rules/packs/shared/ruleFactories.ts` 中：
+- [ ] **Step 5: registry 改为从 YAML 加载**
 
-```ts
-import type { RegisteredRule, RuleDecisionTriggers, RuleSource } from "../../engine/ruleTypes.js";
-```
+修改 `src/rules/engine/rulePackRegistry.ts`：
 
-给 `createAgentAssistedTargetRule` 入参增加：
+- 移除对 `src/rules/packs/arkts-language/*.ts`、`arkts-performance/*.ts`、`cross-device-adaptation/*.ts` 的运行时 import。
+- 使用 `loadRegisteredRulePacksFromYamlDirectory(path.resolve(process.cwd(), "references/rules"))` 初始化 `registeredRulePacks`。
+- 保持 `resolveEnabledRulePackIds`、`getRegisteredRulePacks`、`getEnabledRulePacks`、`listRegisteredRules` 对外签名不变。
 
-```ts
-decisionTriggers?: RuleDecisionTriggers;
-```
+- [ ] **Step 6: 处理旧 YAML 导出测试**
 
-返回对象中增加：
-
-```ts
-...(input.decisionTriggers ? { decision_triggers: input.decisionTriggers } : {}),
-```
-
-- [ ] **Step 5: 运行测试确认通过**
-
-Run: `node --import tsx --test tests/rule-factory.test.ts`
-
-Expected: PASS。
-
-- [ ] **Step 6: 提交**
-
-```bash
-git add src/rules/engine/ruleTypes.ts src/rules/packs/shared/ruleFactories.ts tests/rule-factory.test.ts
-git commit -m "feat: add rule decision trigger metadata"
-```
-
----
-
-### Task 2: 将内置规则 YAML 导出为接近用例规则的结构
-
-**Files:**
-- Modify: `src/rules/engine/rulePackYamlExporter.ts`
-- Test: `tests/rule-pack-yaml-export.test.ts`
-
-- [ ] **Step 1: 写失败测试**
-
-在 `tests/rule-pack-yaml-export.test.ts` 增加：
-
-```ts
-test("rule pack yaml export includes case-rule-like metadata when present", () => {
-  const docs = buildRulePackYamlDocuments([
-    {
-      packId: "cross-device-adaptation",
-      displayName: "一多适配",
-      rules: [
-        {
-          pack_id: "cross-device-adaptation",
-          rule_id: "RSP-MUST-02",
-          rule_name: "布局条件分支必须使用断点枚举值而非硬编码宽度",
-          priority: "P0",
-          rule_source: "must_rule",
-          summary: "布局条件分支必须使用断点枚举值而非硬编码宽度。",
-          detector_kind: "case_constraint",
-          detector_config: {
-            targetPatterns: ["**/*.ets"],
-            kit: ["ArkUI: WidthBreakpoint"],
-            targetChecks: [
-              {
-                target: "**/*.ets",
-                astSignals: [],
-                llmPrompt: "检查硬编码断点。",
-              },
-            ],
-          },
-          decision_triggers: {
-            fail: [{ type: "any_pattern_present", patterns: ["\\b(width|vp)\\s*[<>]=?\\s*(600|840)\\b"] }],
-            review: [{ type: "otherwise" }],
-          },
-          fallback_policy: "agent_assisted",
-        },
-      ],
-    },
-  ]);
-
-  const rule = docs[0]?.document.must_rules[0] as Record<string, unknown>;
-  assert.equal(rule.rule_name, "布局条件分支必须使用断点枚举值而非硬编码宽度");
-  assert.equal(rule.priority, "P0");
-  assert.deepEqual(rule.kit, ["ArkUI: WidthBreakpoint"]);
-  assert.deepEqual(rule.targetChecks, [
-    {
-      target: "**/*.ets",
-      astSignals: [],
-      llmPrompt: "检查硬编码断点。",
-    },
-  ]);
-  assert.deepEqual(rule.decisionTriggers, {
-    fail: [{ type: "any_pattern_present", patterns: ["\\b(width|vp)\\s*[<>]=?\\s*(600|840)\\b"] }],
-    review: [{ type: "otherwise" }],
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `node --import tsx --test tests/rule-pack-yaml-export.test.ts`
-
-Expected: FAIL，当前 exporter 未导出这些字段。
-
-- [ ] **Step 3: 扩展 YAML rule 类型**
-
-在 `src/rules/engine/rulePackYamlExporter.ts` 中给 `RulePackYamlRule` 增加：
-
-```ts
-rule_name?: string;
-priority?: RegisteredRule["priority"];
-kit?: string[];
-targetChecks?: unknown;
-decisionTriggers?: RegisteredRule["decision_triggers"];
-```
-
-- [ ] **Step 4: 修改 `toYamlRule`**
-
-使用当前 `detector_config` 提取可选字段：
-
-```ts
-const kit = Array.isArray(rule.detector_config.kit) ? rule.detector_config.kit : undefined;
-const targetChecks = Array.isArray(rule.detector_config.targetChecks)
-  ? rule.detector_config.targetChecks
-  : undefined;
-```
-
-返回：
-
-```ts
-return {
-  id: rule.rule_id,
-  rule: rule.summary,
-  ...(rule.rule_name ? { rule_name: rule.rule_name } : {}),
-  ...(rule.priority ? { priority: rule.priority } : {}),
-  detector_kind: rule.detector_kind,
-  detector_config: rule.detector_config,
-  ...(kit ? { kit } : {}),
-  ...(targetChecks ? { targetChecks } : {}),
-  ...(rule.decision_triggers ? { decisionTriggers: rule.decision_triggers } : {}),
-  fallback_policy: rule.fallback_policy,
-};
-```
-
-- [ ] **Step 5: 运行测试**
-
-Run: `node --import tsx --test tests/rule-pack-yaml-export.test.ts`
-
-Expected: PASS。
-
-- [ ] **Step 6: 重新导出规则 YAML**
-
-Run: `npm run rulepack:export`
-
-Expected: PASS，`references/rules/*.yaml` 出现新增元数据。
-
-- [ ] **Step 7: 提交**
-
-```bash
-git add src/rules/engine/rulePackYamlExporter.ts tests/rule-pack-yaml-export.test.ts references/rules
-git commit -m "feat: export case-like rule metadata"
-```
-
----
-
-### Task 3: 在 case constraint evaluator 中执行触发条件
-
-**Files:**
-- Modify: `src/rules/evaluators/caseConstraintEvaluator.ts`
-- Test: `tests/case-constraint-evaluator.test.ts`
-
-- [ ] **Step 1: 写失败测试**
-
-创建 `tests/case-constraint-evaluator.test.ts`：
-
-```ts
-import assert from "node:assert/strict";
-import test from "node:test";
-import { runCaseConstraintRule } from "../src/rules/evaluators/caseConstraintEvaluator.js";
-import type { RegisteredRule } from "../src/rules/engine/ruleTypes.js";
-
-function ruleWithTriggers(pattern: string): RegisteredRule {
-  return {
-    pack_id: "cross-device-adaptation",
-    rule_id: "RSP-MUST-02",
-    rule_source: "must_rule",
-    summary: "布局条件分支必须使用断点枚举值而非硬编码宽度。",
-    detector_kind: "case_constraint",
-    detector_config: {
-      targetPatterns: ["**/*.ets"],
-      targetChecks: [{ target: "**/*.ets", astSignals: [], llmPrompt: "检查硬编码断点。" }],
-    },
-    decision_triggers: {
-      fail: [{ type: "any_pattern_present", patterns: [pattern] }],
-      pass: [{ type: "all_patterns_absent", patterns: [pattern] }],
-      not_applicable: [{ type: "no_target_files" }],
-      review: [{ type: "otherwise" }],
-    },
-    fallback_policy: "agent_assisted",
-  };
-}
-
-test("case constraint evaluator returns violation from fail trigger", () => {
-  const result = runCaseConstraintRule(ruleWithTriggers("\\bwidth\\s*<\\s*600\\b"), {
-    workspaceFiles: [
-      {
-        relativePath: "features/home/src/main/ets/pages/Index.ets",
-        content: "if (width < 600) { this.compact = true }",
-      },
-    ],
-    originalFiles: [],
-    changedFiles: ["features/home/src/main/ets/pages/Index.ets"],
-    summary: {
-      workspaceFileCount: 1,
-      originalFileCount: 0,
-      changedFileCount: 1,
-      changedFiles: ["features/home/src/main/ets/pages/Index.ets"],
-      hasPatch: true,
-    },
-  });
-
-  assert.equal(result.result, "不满足");
-});
-
-test("case constraint evaluator returns pass from pass trigger", () => {
-  const result = runCaseConstraintRule(ruleWithTriggers("\\bwidth\\s*<\\s*600\\b"), {
-    workspaceFiles: [
-      {
-        relativePath: "features/home/src/main/ets/pages/Index.ets",
-        content: "if (this.breakpoint === WidthBreakpoint.WIDTH_SM) { this.compact = true }",
-      },
-    ],
-    originalFiles: [],
-    changedFiles: ["features/home/src/main/ets/pages/Index.ets"],
-    summary: {
-      workspaceFileCount: 1,
-      originalFileCount: 0,
-      changedFileCount: 1,
-      changedFiles: ["features/home/src/main/ets/pages/Index.ets"],
-      hasPatch: true,
-    },
-  });
-
-  assert.equal(result.result, "满足");
-});
-
-test("case constraint evaluator returns not applicable when no target files match", () => {
-  const result = runCaseConstraintRule(ruleWithTriggers("\\bwidth\\s*<\\s*600\\b"), {
-    workspaceFiles: [{ relativePath: "README.md", content: "no ets files" }],
-    originalFiles: [],
-    changedFiles: [],
-    summary: {
-      workspaceFileCount: 1,
-      originalFileCount: 0,
-      changedFileCount: 0,
-      changedFiles: [],
-      hasPatch: false,
-    },
-  });
-
-  assert.equal(result.result, "不涉及");
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `node --import tsx --test tests/case-constraint-evaluator.test.ts`
-
-Expected: FAIL，因为当前 evaluator 总是返回 `未接入判定器`。
-
-- [ ] **Step 3: 增加触发条件解释函数**
-
-在 `src/rules/evaluators/caseConstraintEvaluator.ts` 增加：
-
-```ts
-function compileTriggerPatterns(patterns: string[]): RegExp[] {
-  return patterns.map((pattern) => new RegExp(pattern, "m"));
-}
-
-function candidateContent(candidateFiles: CollectedEvidence["workspaceFiles"]): string {
-  return candidateFiles.map((file) => getPatchScopedContent(file)).join("\n");
-}
-
-function triggerMatches(
-  trigger: NonNullable<RegisteredRule["decision_triggers"]>[keyof NonNullable<RegisteredRule["decision_triggers"]>][number],
-  candidateFiles: CollectedEvidence["workspaceFiles"],
-): boolean {
-  if (trigger.type === "no_target_files") {
-    return candidateFiles.length === 0;
-  }
-  if (trigger.type === "otherwise") {
-    return true;
-  }
-  const content = candidateContent(candidateFiles);
-  const patterns = "patterns" in trigger ? compileTriggerPatterns(trigger.patterns) : [];
-  if (trigger.type === "any_pattern_present") {
-    return patterns.some((pattern) => pattern.test(content));
-  }
-  if (trigger.type === "all_patterns_present") {
-    return patterns.every((pattern) => pattern.test(content));
-  }
-  if (trigger.type === "all_patterns_absent") {
-    return patterns.every((pattern) => !pattern.test(content));
-  }
-  return false;
-}
-
-function matchTriggerGroup(
-  triggers: RegisteredRule["decision_triggers"] | undefined,
-  group: "fail" | "pass" | "not_applicable" | "review",
-  candidateFiles: CollectedEvidence["workspaceFiles"],
-): boolean {
-  return (triggers?.[group] ?? []).some((trigger) => triggerMatches(trigger, candidateFiles));
-}
-```
-
-- [ ] **Step 4: 在 `runCaseConstraintRule` 中使用触发条件**
-
-在 `staticPrecheck` 构建之后加入：
-
-```ts
-const triggers = rule.decision_triggers;
-if (triggers) {
-  if (matchTriggerGroup(triggers, "not_applicable", candidateFiles)) {
-    return {
-      rule_id: rule.rule_id,
-      rule_source: rule.rule_source,
-      result: "不涉及",
-      conclusion: `${rule.rule_id} 未找到规则适用目标文件。`,
-      matchedFiles: [],
-      preliminaryData: { static_precheck: staticPrecheck },
-    };
-  }
-  if (matchTriggerGroup(triggers, "fail", candidateFiles)) {
-    return {
-      rule_id: rule.rule_id,
-      rule_source: rule.rule_source,
-      result: "不满足",
-      conclusion: `${rule.rule_id} 命中不满足触发条件：${rule.summary}`,
-      matchedFiles: staticPrecheck.matched_files ?? candidateFiles.map((file) => file.relativePath),
-      preliminaryData: { static_precheck: staticPrecheck },
-    };
-  }
-  if (matchTriggerGroup(triggers, "pass", candidateFiles)) {
-    return {
-      rule_id: rule.rule_id,
-      rule_source: rule.rule_source,
-      result: "满足",
-      conclusion: `${rule.rule_id} 命中满足触发条件：${rule.summary}`,
-      matchedFiles: staticPrecheck.matched_files ?? [],
-      preliminaryData: { static_precheck: staticPrecheck },
-    };
-  }
-}
-```
-
-保留原有 `未接入判定器` fallback。
-
-- [ ] **Step 5: 运行测试**
-
-Run: `node --import tsx --test tests/case-constraint-evaluator.test.ts`
-
-Expected: PASS。
-
-- [ ] **Step 6: 提交**
-
-```bash
-git add src/rules/evaluators/caseConstraintEvaluator.ts tests/case-constraint-evaluator.test.ts
-git commit -m "feat: evaluate case rule decision triggers"
-```
-
----
-
-### Task 4: 为首批内置跨设备规则补充触发条件
-
-**Files:**
-- Modify: `src/rules/packs/cross-device-adaptation/ruleData.ts`
-- Modify: `src/rules/packs/cross-device-adaptation/must.ts`
-- Test: `tests/rule-pack-registry.test.ts`
-
-- [ ] **Step 1: 写失败测试**
-
-在 `tests/rule-pack-registry.test.ts` 增加：
-
-```ts
-test("cross-device must rules expose decision triggers for deterministic precheck", () => {
-  const rules = listRegisteredRules({ enabledPackIds: ["cross-device-adaptation"] });
-  const rspMust02 = rules.find((rule) => rule.rule_id === "RSP-MUST-02");
-  assert.ok(rspMust02?.decision_triggers?.fail?.length, "RSP-MUST-02 should define fail triggers");
-  assert.ok(rspMust02?.decision_triggers?.pass?.length, "RSP-MUST-02 should define pass triggers");
-
-  const rspMust03 = rules.find((rule) => rule.rule_id === "RSP-MUST-03");
-  assert.ok(rspMust03?.decision_triggers?.fail?.length, "RSP-MUST-03 should define fail triggers");
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `node --import tsx --test tests/rule-pack-registry.test.ts`
-
-Expected: FAIL。
-
-- [ ] **Step 3: 给 rule data 类型增加 `decisionTriggers`**
-
-在 `src/rules/packs/cross-device-adaptation/ruleData.ts` 对规则数据类型增加：
-
-```ts
-decisionTriggers?: {
-  pass?: Array<{ type: "all_patterns_absent" | "all_patterns_present" | "any_pattern_present"; patterns: string[] }>;
-  fail?: Array<{ type: "all_patterns_absent" | "all_patterns_present" | "any_pattern_present"; patterns: string[] }>;
-  not_applicable?: Array<{ type: "no_target_files" }>;
-  review?: Array<{ type: "otherwise" }>;
-};
-```
-
-- [ ] **Step 4: 给 `RSP-MUST-02` 增加触发条件**
-
-```ts
-decisionTriggers: {
-  fail: [
-    {
-      type: "any_pattern_present",
-      patterns: [
-        "\\b(?:width|screenWidth|windowWidth|vp)\\s*[<>]=?\\s*(?:320|600|840|1440)\\b",
-        "\\b(?:320|600|840|1440)\\s*[<>]=?\\s*(?:width|screenWidth|windowWidth|vp)\\b",
-      ],
-    },
-  ],
-  pass: [
-    {
-      type: "all_patterns_absent",
-      patterns: [
-        "\\b(?:width|screenWidth|windowWidth|vp)\\s*[<>]=?\\s*(?:320|600|840|1440)\\b",
-        "\\b(?:320|600|840|1440)\\s*[<>]=?\\s*(?:width|screenWidth|windowWidth|vp)\\b",
-      ],
-    },
-  ],
-  not_applicable: [{ type: "no_target_files" }],
-  review: [{ type: "otherwise" }],
-}
-```
-
-- [ ] **Step 5: 给 `RSP-MUST-03` 增加触发条件**
-
-```ts
-decisionTriggers: {
-  fail: [
-    {
-      type: "all_patterns_absent",
-      patterns: ["\\b(?:XL|xl|WIDTH_XL)\\b"],
-    },
-  ],
-  review: [{ type: "otherwise" }],
-}
-```
-
-- [ ] **Step 6: 在 must rule factory 调用中透传**
-
-在 `src/rules/packs/cross-device-adaptation/must.ts` 的 `createAgentAssistedTargetRule` 入参中增加：
-
-```ts
-decisionTriggers: rule.decisionTriggers,
-```
+旧导出链路不再是计划路径。删除或改写 `tests/rule-pack-yaml-export.test.ts`，避免继续要求 `rulePackYamlExporter` 或 `generateRulePackYaml.ts` 参与主流程。若暂时保留旧工具，测试也只能标注为 legacy utility，不允许作为运行时依赖。
 
 - [ ] **Step 7: 运行测试**
 
-Run: `node --import tsx --test tests/rule-pack-registry.test.ts tests/case-constraint-evaluator.test.ts`
+Run:
+
+```bash
+node --import tsx --test tests/rule-pack-yaml-loader.test.ts tests/rule-pack-registry.test.ts
+```
 
 Expected: PASS。
 
 - [ ] **Step 8: 提交**
 
 ```bash
-git add src/rules/packs/cross-device-adaptation/ruleData.ts src/rules/packs/cross-device-adaptation/must.ts tests/rule-pack-registry.test.ts
-git commit -m "feat: add deterministic triggers for cross-device rules"
+git add src/rules/engine/rulePackYamlLoader.ts src/rules/engine/rulePackRegistry.ts src/rules/engine/ruleTypes.ts tests/rule-pack-yaml-loader.test.ts tests/rule-pack-registry.test.ts tests/rule-pack-yaml-export.test.ts
+git commit -m "feat: load built-in rule packs from yaml"
+```
+
+只提交实际改动文件。
+
+---
+
+### Task 2: 将 agent 判定标准作为 YAML prompt 口径传递
+
+**Why:** 这里补的是 agent 判定口径，不是静态触发条件。`decision_criteria` 解决的是 agent 对“满足 / 不满足 / 不涉及 / 待复核”的解释稳定性，不负责自动判定。
+
+**Files:**
+- Modify: `references/rules/arkts-language.yaml`
+- Modify: `references/rules/arkts-performance.yaml`
+- Modify: `references/rules/cross-device-adaptation.yaml`
+- Modify: `src/types.ts`
+- Modify: `src/rules/ruleEngine.ts`
+- Modify: `src/agent/ruleAssistance.ts`
+- Test: `tests/rule-agent-decision-criteria.test.ts`
+
+- [ ] **Step 1: 写 prompt 失败测试**
+
+创建 `tests/rule-agent-decision-criteria.test.ts`，构造一个带 `decision_criteria` 的 assisted candidate，断言 payload 保留标准，同时不包含 Code Linter：
+
+```ts
+test("rule agent payload includes yaml decision criteria but excludes official linter", () => {
+  const payload = buildAgentBootstrapPayload({
+    // existing minimal input...
+    assistedRuleCandidates: [
+      {
+        rule_id: "ARKTS-MUST-001",
+        rule_source: "must_rule",
+        why_uncertain: "需要语义判定",
+        local_preliminary_signal: "unknown",
+        evidence_files: [],
+        evidence_snippets: [],
+        decision_criteria: {
+          fail: ["存在标识符冲突导致类型、枚举、接口或命名空间语义不唯一。"],
+          review: ["证据不足，需人工复核。"],
+        },
+      },
+    ],
+  } as never);
+
+  const text = JSON.stringify(payload);
+  assert.match(text, /decision_criteria/);
+  assert.doesNotMatch(text, /OFFICIAL-LINTER/);
+});
+```
+
+- [ ] **Step 2: 扩展最小 payload 类型**
+
+在 `src/types.ts` 的 `AssistedRuleCandidate` 增加：
+
+```ts
+decision_criteria?: RuleDecisionCriteria;
+```
+
+从 `src/rules/engine/ruleTypes.ts` 复用类型，避免重复定义。
+
+- [ ] **Step 3: rule engine 透传 criteria**
+
+在 `src/rules/ruleEngine.ts` 构造 `assistedRuleCandidates` 时，把 `registeredRule?.decision_criteria` 透传到 candidate。
+
+不要把 Code Linter state 传入这个流程。
+
+- [ ] **Step 4: YAML 中只给高波动规则补充 criteria**
+
+优先给需要 agent 判定且当前波动大的规则补充 `decision_criteria`，例如：
+
+```yaml
+decision_criteria:
+  pass:
+    - 已明确使用规范 API 或类型约束完成需求，且没有发现相反证据。
+  fail:
+    - 缺失关键 API 调用、语言约束违规或实现与需求目标明显偏离。
+  not_applicable:
+    - 当前工程没有对应场景或目标文件。
+  review:
+    - 证据不足，无法仅凭 patch 和目标文件确认。
+```
+
+不要要求所有规则一次性补齐，不写通用 pattern trigger。
+
+- [ ] **Step 5: 运行测试**
+
+Run:
+
+```bash
+node --import tsx --test tests/rule-agent-decision-criteria.test.ts
+```
+
+Expected: PASS。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add references/rules src/types.ts src/rules/ruleEngine.ts src/agent/ruleAssistance.ts tests/rule-agent-decision-criteria.test.ts
+git commit -m "feat: pass yaml decision criteria to rule agent"
 ```
 
 ---
 
-### Task 5: 锁定 Code Linter 与 rule agent 的边界
+### Task 3: 锁定 Code Linter 只在规则合并阶段进入评分
 
 **Files:**
 - Test: `tests/rule-agent-linter-boundary.test.ts`
@@ -637,129 +291,51 @@ git commit -m "feat: add deterministic triggers for cross-device rules"
 - Modify only if failing: `src/nodes/ruleAgentPromptBuilderNode.ts`
 - Modify only if failing: `src/nodes/ruleMergeNode.ts`
 
-- [ ] **Step 1: 写 rule agent prompt 边界测试**
+- [ ] **Step 1: 写 rule agent 边界测试**
 
-创建 `tests/rule-agent-linter-boundary.test.ts`：
+创建 `tests/rule-agent-linter-boundary.test.ts`，构造带 `officialLinterRuleResults` 的 state，调用 `ruleAgentPromptBuilderNode`，断言输出 payload 不包含：
 
-```ts
-import assert from "node:assert/strict";
-import test from "node:test";
-import { ruleAgentPromptBuilderNode } from "../src/nodes/ruleAgentPromptBuilderNode.js";
-
-test("rule agent prompt builder does not include official linter results", async () => {
-  const output = await ruleAgentPromptBuilderNode(
-    {
-      caseInput: {
-        caseId: "case-1",
-        promptText: "test",
-        originalProjectPath: "/tmp/original",
-        generatedProjectPath: "/tmp/generated",
-      },
-      caseDir: "/tmp/case",
-      effectivePatchPath: "/tmp/case/patch/effective.patch",
-      taskType: "continuation",
-      constraintSummary: {
-        explicitConstraints: [],
-        contextualConstraints: [],
-        implicitConstraints: [],
-        classificationHints: [],
-        crossDeviceAdaptation: { applicability: "not_involved", confidence: "high", reasons: [] },
-      },
-      rubricSnapshot: {
-        task_type: "continuation",
-        evaluation_mode: "auto",
-        scenario: "",
-        scoring_method: "",
-        scoring_note: "",
-        common_risks: [],
-        report_emphasis: [],
-        dimension_summaries: [],
-        hard_gates: [],
-        review_rule_summary: [],
-      },
-      assistedRuleCandidates: [],
-      officialLinterRuleResults: [
-        {
-          rule_id: "OFFICIAL-LINTER:@performance/no-use-any-import",
-          rule_source: "should_rule",
-          result: "不满足",
-          conclusion: "官方 Code Linter 命中。",
-        },
-      ],
-    } as never,
-    { logger: { info: async () => undefined } },
-  );
-
-  const text = JSON.stringify(output);
-  assert.doesNotMatch(text, /OFFICIAL-LINTER/);
-  assert.doesNotMatch(text, /官方 Code Linter/);
-});
+```text
+OFFICIAL-LINTER
+官方 Code Linter
+officialLinterRuleResults
+officialLinterSummary
 ```
 
-- [ ] **Step 2: 运行边界测试**
+- [ ] **Step 2: 写 merge 测试**
 
-Run: `node --import tsx --test tests/rule-agent-linter-boundary.test.ts`
+创建 `tests/rule-merge-node.test.ts`，断言 `ruleMergeNode` 会把：
 
-Expected: PASS。若失败，从 prompt payload 构建路径移除 linter 字段。
-
-- [ ] **Step 3: 写 merge 阶段测试**
-
-创建 `tests/rule-merge-node.test.ts`：
-
-```ts
-import assert from "node:assert/strict";
-import test from "node:test";
-import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
-
-test("rule merge appends official linter results to deterministic results", async () => {
-  const result = await ruleMergeNode(
-    {
-      deterministicRuleResults: [
-        {
-          rule_id: "REQ-MUST-01",
-          rule_source: "must_rule",
-          result: "不满足",
-          conclusion: "缺少预加载 API。",
-        },
-      ],
-      officialLinterRuleResults: [
-        {
-          rule_id: "OFFICIAL-LINTER:@performance/no-use-any-import",
-          rule_source: "should_rule",
-          result: "不满足",
-          conclusion: "官方 Code Linter 命中通配符导入。",
-        },
-      ],
-      assistedRuleCandidates: [],
-    } as never,
-    { logger: { info: async () => undefined } },
-  );
-
-  assert.deepEqual(
-    result.mergedRuleAuditResults?.map((rule) => rule.rule_id),
-    ["REQ-MUST-01", "OFFICIAL-LINTER:@performance/no-use-any-import"],
-  );
-});
+```text
+deterministicRuleResults + officialLinterRuleResults + assisted results
 ```
 
-- [ ] **Step 4: 运行 merge 测试**
+合并为 `mergedRuleAuditResults`，且顺序稳定。
 
-Run: `node --import tsx --test tests/rule-merge-node.test.ts`
+- [ ] **Step 3: 运行测试**
 
-Expected: PASS。
+Run:
 
-- [ ] **Step 5: 提交**
+```bash
+node --import tsx --test tests/rule-agent-linter-boundary.test.ts tests/rule-merge-node.test.ts
+```
+
+Expected: PASS。若失败，只修对应边界，不把 linter 内容塞进 rule agent。
+
+- [ ] **Step 4: 提交**
 
 ```bash
 git add tests/rule-agent-linter-boundary.test.ts tests/rule-merge-node.test.ts src/nodes/ruleAgentPromptBuilderNode.ts src/nodes/ruleMergeNode.ts
 git commit -m "test: lock official linter merge boundary"
 ```
 
-如果两个 source 文件没有改动，从 `git add` 中去掉。
+只提交实际改动文件。
 
 ---
 
-### Task 6: 新增风险枚举 YAML 与加载器
+### Task 4: 建立工程级风险 taxonomy YAML
+
+**Why:** 风险 taxonomy 不应按单个业务 case 命名。它的职责是把 agent 的自由文本风险收敛到稳定、可复用的工程问题类别，便于评分融合和一致性分析使用稳定 key。
 
 **Files:**
 - Create: `references/risks/risk-taxonomy.yaml`
@@ -772,102 +348,83 @@ git commit -m "test: lock official linter merge boundary"
 创建 `tests/risk-taxonomy.test.ts`：
 
 ```ts
-import assert from "node:assert/strict";
-import test from "node:test";
-import path from "node:path";
-import { loadRiskTaxonomy, normalizeRiskItem } from "../src/scoring/riskTaxonomy.js";
-
-test("risk taxonomy loads stable low medium high entries", async () => {
-  const taxonomy = await loadRiskTaxonomy(path.join(process.cwd(), "references/risks/risk-taxonomy.yaml"));
-  assert.ok(taxonomy.entries.some((entry) => entry.code === "PRELOAD_API_MISSING"));
-  assert.ok(taxonomy.entries.some((entry) => entry.level === "low"));
-  assert.ok(taxonomy.entries.some((entry) => entry.level === "medium"));
-  assert.ok(taxonomy.entries.some((entry) => entry.level === "high"));
+test("risk taxonomy loads engineering language and requirement risks", () => {
+  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  assert.ok(taxonomy.entries.some((entry) => entry.code === "REQUIREMENT_NOT_IMPLEMENTED"));
+  assert.ok(taxonomy.entries.some((entry) => entry.code === "LANGUAGE_CONSTRAINT_VIOLATION"));
+  assert.ok(taxonomy.entries.some((entry) => entry.code === "BUILD_OR_RESOURCE_ISSUE"));
 });
 
-test("normalizeRiskItem uses taxonomy title and level for known risk code", async () => {
-  const taxonomy = await loadRiskTaxonomy(path.join(process.cwd(), "references/risks/risk-taxonomy.yaml"));
-  const risk = normalizeRiskItem(
-    {
-      id: 1,
-      level: "low",
-      title: "随便生成的 API 风险标题",
-      description: "缺少 cloudResPrefetch。",
-      evidence: "EntryAbility.ets",
-      risk_code: "PRELOAD_API_MISSING",
-    },
-    taxonomy,
-  );
+test("normalizeRiskItem uses taxonomy title and level for known risk_code", () => {
+  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const risk = normalizeRiskItem({
+    id: 1,
+    level: "low",
+    title: "随意生成的标题",
+    description: "关键需求没有实现。",
+    evidence: "EntryAbility.ets",
+    risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
+  }, taxonomy);
 
-  assert.equal(risk.risk_code, "PRELOAD_API_MISSING");
   assert.equal(risk.level, "high");
-  assert.equal(risk.title, "缺失核心预加载 API 调用");
+  assert.equal(risk.title, "需求未实现");
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `node --import tsx --test tests/risk-taxonomy.test.ts`
-
-Expected: FAIL。
-
-- [ ] **Step 3: 创建风险枚举 YAML**
+- [ ] **Step 2: 创建风险枚举 YAML**
 
 创建 `references/risks/risk-taxonomy.yaml`：
 
 ```yaml
 version: v1
 entries:
-  - code: PRELOAD_API_MISSING
+  - code: REQUIREMENT_NOT_IMPLEMENTED
     level: high
-    title: 缺失核心预加载 API 调用
-    description: 未按任务约束使用预加载核心 API，可能导致核心功能路径偏离要求。
-    matchHints:
-      - cloudResPrefetch
-      - 预加载 API
-      - 核心需求API
-  - code: PRELOAD_FALLBACK_INCOMPLETE
+    title: 需求未实现
+    description: 需求目标、关键约束或验收点没有在生成代码中落地。
+    matchHints: [未实现, 缺失功能, 需求偏离, 关键约束缺失]
+  - code: REQUIREMENT_PARTIALLY_IMPLEMENTED
     level: medium
-    title: 预加载失败兜底逻辑不完整
-    description: 预加载失败后没有清晰、可靠的业务兜底路径。
-    matchHints:
-      - 兜底
-      - 降级
-      - 预加载失败
-  - code: EXCEPTION_CONTROL_FLOW
+    title: 需求实现不完整
+    description: 需求已有部分实现，但关键路径、边界场景或兜底逻辑缺失。
+    matchHints: [部分实现, 兜底不足, 边界缺失, 实现不完整]
+  - code: API_USAGE_DEVIATION
+    level: high
+    title: 核心 API 使用偏离
+    description: 关键能力没有按要求使用框架 API、平台接口或指定调用方式。
+    matchHints: [API 偏离, 未使用指定 API, 平台接口缺失, 调用方式错误]
+  - code: LANGUAGE_CONSTRAINT_VIOLATION
     level: medium
-    title: 异常控制流反模式
-    description: 使用异常作为常规流程控制，影响可读性和稳定性。
-    matchHints:
-      - throw Error
-      - 异常控制流
-      - 异常用于流程控制
-  - code: COMMENT_REMOVAL_READABILITY
+    title: 语言约束违规
+    description: ArkTS / TypeScript 类型、语法或语言约束不符合要求。
+    matchHints: [类型违规, 语法违规, ArkTS, any, unknown]
+  - code: UI_LAYOUT_OR_BREAKPOINT_MISMATCH
+    level: medium
+    title: 布局或断点不匹配
+    description: 布局、断点、列表、网格或响应式策略与要求不一致。
+    matchHints: [断点, Grid, List, WaterFlow, 响应式]
+  - code: PERFORMANCE_OR_LIFECYCLE_RISK
+    level: medium
+    title: 性能或生命周期风险
+    description: 存在重复计算、热点路径低效、监听释放不完整或生命周期处理不稳。
+    matchHints: [性能, 生命周期, 监听, 重复计算, 释放]
+  - code: BUILD_OR_RESOURCE_ISSUE
+    level: medium
+    title: 构建或资源问题
+    description: 构建流程、资源引用、配置、依赖或模块边界存在问题。
+    matchHints: [构建, 资源, 配置, 依赖, 模块]
+  - code: READABILITY_OR_MAINTAINABILITY_RISK
     level: low
-    title: 注释移除影响代码可读性
-    description: 删除原有说明性注释，降低后续维护和 review 的上下文可读性。
-    matchHints:
-      - 注释删除
-      - 注释移除
-      - 可读性
-  - code: MISSING_DEFAULT_CASE
-    level: low
-    title: switch 语句缺少 default 分支
-    description: switch 分支缺少默认处理，可能降低代码健壮性。
-    matchHints:
-      - switch
-      - default
+    title: 可读性或可维护性下降
+    description: 命名、结构、注释或重复代码影响后续 review 和维护。
+    matchHints: [可读性, 可维护性, 命名, 注释, 重复代码]
 ```
 
-- [ ] **Step 4: 实现 taxonomy loader**
+- [ ] **Step 3: 实现 taxonomy loader**
 
-创建 `src/scoring/riskTaxonomy.ts`：
+新增 `src/scoring/riskTaxonomy.ts`。与 rule loader 一样保持简单同步加载：
 
 ```ts
-import fs from "node:fs/promises";
-import yaml from "js-yaml";
-import type { RiskItem } from "../types.js";
-
 export type RiskTaxonomyLevel = "low" | "medium" | "high";
 
 export interface RiskTaxonomyEntry {
@@ -882,70 +439,17 @@ export interface RiskTaxonomy {
   version: string;
   entries: RiskTaxonomyEntry[];
 }
-
-function isLevel(value: unknown): value is RiskTaxonomyLevel {
-  return value === "low" || value === "medium" || value === "high";
-}
-
-function readStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-export async function loadRiskTaxonomy(filePath: string): Promise<RiskTaxonomy> {
-  const parsed = yaml.load(await fs.readFile(filePath, "utf-8")) as Record<string, unknown>;
-  const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
-  return {
-    version: typeof parsed.version === "string" ? parsed.version : "v1",
-    entries: entries.flatMap((item): RiskTaxonomyEntry[] => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return [];
-      }
-      const record = item as Record<string, unknown>;
-      if (
-        typeof record.code !== "string" ||
-        !isLevel(record.level) ||
-        typeof record.title !== "string" ||
-        typeof record.description !== "string"
-      ) {
-        return [];
-      }
-      return [
-        {
-          code: record.code,
-          level: record.level,
-          title: record.title,
-          description: record.description,
-          matchHints: readStringArray(record.matchHints),
-        },
-      ];
-    }),
-  };
-}
-
-export function findRiskTaxonomyEntry(
-  taxonomy: RiskTaxonomy,
-  code: string | undefined,
-): RiskTaxonomyEntry | undefined {
-  return code ? taxonomy.entries.find((entry) => entry.code === code) : undefined;
-}
-
-export function normalizeRiskItem(risk: RiskItem, taxonomy: RiskTaxonomy): RiskItem {
-  const entry = findRiskTaxonomyEntry(taxonomy, risk.risk_code);
-  if (!entry) {
-    return risk;
-  }
-  return {
-    ...risk,
-    risk_code: entry.code,
-    risk_category: entry.level,
-    level: entry.level,
-    title: entry.title,
-    description: risk.description || entry.description,
-  };
-}
 ```
 
-- [ ] **Step 5: 扩展 `RiskItem` 类型**
+提供：
+
+```ts
+loadRiskTaxonomy(filePath: string): RiskTaxonomy
+findRiskTaxonomyEntry(taxonomy: RiskTaxonomy, code?: string): RiskTaxonomyEntry | undefined
+normalizeRiskItem(risk: RiskItem, taxonomy: RiskTaxonomy): RiskItem
+```
+
+- [ ] **Step 4: 扩展最小风险字段**
 
 在 `src/types.ts` 的 `RiskItem` 增加：
 
@@ -955,99 +459,51 @@ risk_category?: "low" | "medium" | "high";
 source_rule_id?: string;
 ```
 
-- [ ] **Step 6: 运行测试**
+不新增业务专用字段。
 
-Run: `node --import tsx --test tests/risk-taxonomy.test.ts`
+- [ ] **Step 5: 运行测试**
+
+Run:
+
+```bash
+node --import tsx --test tests/risk-taxonomy.test.ts
+```
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
 git add references/risks/risk-taxonomy.yaml src/scoring/riskTaxonomy.ts src/types.ts tests/risk-taxonomy.test.ts
-git commit -m "feat: add yaml risk taxonomy"
+git commit -m "feat: add engineering risk taxonomy"
 ```
 
 ---
 
-### Task 7: 让 rubric agent 从风险枚举中选择风险
+### Task 5: 让 rubric agent 从风险 taxonomy 中选择风险
 
 **Files:**
 - Modify: `src/types.ts`
-- Modify: `src/agent/ruleAssistance.ts` 或实际构建 `rubricSnapshot` 的文件
-- Modify: `src/nodes/rubricScoringPromptBuilderNode.ts`
+- Modify: `src/nodes/rubricPreparationNode.ts`
+- Modify: `src/agent/ruleAssistance.ts`
+- Modify: `src/agent/opencodeRubricPrompt.ts`
 - Modify: `src/agent/opencodeRubricScoring.ts`
 - Test: `tests/rubric-risk-taxonomy-prompt.test.ts`
 
-- [ ] **Step 1: 写失败 prompt 测试**
+- [ ] **Step 1: 写 prompt 失败测试**
 
-创建 `tests/rubric-risk-taxonomy-prompt.test.ts`：
+创建 `tests/rubric-risk-taxonomy-prompt.test.ts`，断言 rubric payload / prompt 包含：
 
-```ts
-import assert from "node:assert/strict";
-import test from "node:test";
-import { buildRubricScoringPrompt } from "../src/nodes/rubricScoringPromptBuilderNode.js";
-
-test("rubric scoring prompt asks agent to choose risk_code from taxonomy", () => {
-  const prompt = buildRubricScoringPrompt({
-    case_context: {
-      case_id: "case-1",
-      case_root: "/tmp/case",
-      task_type: "continuation",
-      original_prompt_summary: "新增预加载",
-      original_project_path: "/tmp/original",
-      generated_project_path: "/tmp/generated",
-    },
-    task_understanding: {
-      explicitConstraints: [],
-      contextualConstraints: [],
-      implicitConstraints: [],
-      classificationHints: [],
-      crossDeviceAdaptation: { applicability: "not_involved", confidence: "high", reasons: [] },
-    },
-    rubric_summary: {
-      task_type: "continuation",
-      evaluation_mode: "auto",
-      scenario: "",
-      scoring_method: "",
-      scoring_note: "",
-      common_risks: [],
-      report_emphasis: [],
-      dimension_summaries: [],
-      hard_gates: [],
-      review_rule_summary: [],
-      risk_taxonomy: [
-        {
-          code: "PRELOAD_API_MISSING",
-          level: "high",
-          title: "缺失核心预加载 API 调用",
-          description: "未按任务约束使用预加载核心 API。",
-        },
-      ],
-    } as never,
-    response_contract: {
-      output_language: "zh-CN",
-      json_only: true,
-    },
-  });
-
-  assert.match(prompt, /risk_code/);
-  assert.match(prompt, /PRELOAD_API_MISSING/);
-  assert.match(prompt, /不要创造新的风险名称/);
-});
+```text
+risk_taxonomy
+REQUIREMENT_NOT_IMPLEMENTED
+不要创造新的风险名称
+risk_code
 ```
 
-如果 `buildRubricScoringPrompt` 当前未导出，先导出纯函数，不改变行为。
+- [ ] **Step 2: 扩展 `LoadedRubricSnapshot`**
 
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `node --import tsx --test tests/rubric-risk-taxonomy-prompt.test.ts`
-
-Expected: FAIL。
-
-- [ ] **Step 3: 给 `LoadedRubricSnapshot` 增加 taxonomy 摘要**
-
-在 `src/types.ts` 增加：
+在 `src/types.ts` 增加可选摘要：
 
 ```ts
 risk_taxonomy?: Array<{
@@ -1058,34 +514,23 @@ risk_taxonomy?: Array<{
 }>;
 ```
 
-- [ ] **Step 4: 在 rubric snapshot 构建处加载风险枚举**
+- [ ] **Step 3: rubric preparation 加载 taxonomy**
 
-定位当前实际构建 `rubricSnapshot` 的文件。若仍是 `src/agent/ruleAssistance.ts` 的 `buildRubricSnapshot`，则在调用方加载 `references/risks/risk-taxonomy.yaml` 后传入；不要把 taxonomy 加到 rule agent bootstrap payload。
+在 `src/nodes/rubricPreparationNode.ts` 中，根据 `referenceRoot` 推导 `references/risks/risk-taxonomy.yaml`，加载后注入 `rubricSnapshot.risk_taxonomy`。
 
-只传给 rubric scoring payload：
+不要把 taxonomy 加入 rule agent bootstrap payload。
 
-```ts
-risk_taxonomy: taxonomy.entries.map((entry) => ({
-  code: entry.code,
-  level: entry.level,
-  title: entry.title,
-  description: entry.description,
-})),
+- [ ] **Step 4: 修改 rubric prompt 约束**
+
+在 `src/agent/opencodeRubricPrompt.ts` 中增加明确约束：
+
+```text
+risks 必须优先从 risk_taxonomy 中选择 risk_code、level 和 title；不要创造新的风险名称。只有确实无法匹配时，risk_code 可省略，但 title 仍应简洁稳定。
 ```
 
-- [ ] **Step 5: 修改 rubric prompt 文案**
+- [ ] **Step 5: 扩展 rubric agent 输出 schema**
 
-在 `src/nodes/rubricScoringPromptBuilderNode.ts` 中加入明确约束：
-
-```ts
-"risks 必须优先从 risk_taxonomy 中选择 risk_code、level 和 title；不要创造新的风险名称。只有确实无法匹配时，risk_code 可省略，但 title 仍应简洁稳定。",
-```
-
-同时把 taxonomy 列表输出到 prompt。
-
-- [ ] **Step 6: 扩展 rubric agent 风险 schema**
-
-在 `src/agent/opencodeRubricScoring.ts` 中，风险 schema 增加可选字段：
+在 `src/agent/opencodeRubricScoring.ts` 的风险 schema 增加：
 
 ```ts
 risk_code: z.string().min(1).optional(),
@@ -1093,141 +538,93 @@ risk_category: z.enum(["low", "medium", "high"]).optional(),
 source_rule_id: z.string().min(1).optional(),
 ```
 
-保留原有 `level`、`title`、`description`、`evidence`。
+- [ ] **Step 6: 运行测试**
 
-- [ ] **Step 7: 运行测试**
+Run:
 
-Run: `node --import tsx --test tests/rubric-risk-taxonomy-prompt.test.ts tests/opencode-config.test.ts`
+```bash
+node --import tsx --test tests/rubric-risk-taxonomy-prompt.test.ts tests/opencode-config.test.ts
+```
 
 Expected: PASS。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 7: 提交**
 
 ```bash
-git add src/types.ts src/agent/ruleAssistance.ts src/nodes/rubricPreparationNode.ts src/nodes/rubricScoringPromptBuilderNode.ts src/agent/opencodeRubricScoring.ts tests/rubric-risk-taxonomy-prompt.test.ts
+git add src/types.ts src/nodes/rubricPreparationNode.ts src/agent/ruleAssistance.ts src/agent/opencodeRubricPrompt.ts src/agent/opencodeRubricScoring.ts tests/rubric-risk-taxonomy-prompt.test.ts
 git commit -m "feat: constrain rubric risks with taxonomy"
 ```
 
-只提交实际改动过的文件。
+只提交实际改动文件。
 
 ---
 
-### Task 8: 在评分融合阶段归一化风险
+### Task 6: 在评分融合阶段归一化风险
 
 **Files:**
 - Modify: `src/scoring/scoreFusion.ts`
-- Modify if needed: `src/nodes/scoreFusionOrchestrationNode.ts`
-- Test: `tests/scoring.test.ts`
+- Modify: `src/nodes/scoreFusionOrchestrationNode.ts`
+- Test: `tests/score-fusion.test.ts`
 
 - [ ] **Step 1: 写失败测试**
 
-在 `tests/scoring.test.ts` 使用现有 helper 或新增本地 helper 调用 `fuseRubricScoreWithRules`，添加：
+在 `tests/score-fusion.test.ts` 增加：
 
-```ts
-test("score fusion assigns stable risk code to rule violations", async () => {
-  const result = await computeScoreBreakdownFixture({
-    ruleAuditResults: [
-      {
-        rule_id: "REQ-MUST-01",
-        rule_source: "must_rule",
-        result: "不满足",
-        conclusion: "未使用 cloudResPrefetch。",
-      },
-    ],
-  });
+- 规则违规生成 `risk_code = RULE_VIOLATION:<rule_id>` 和 `source_rule_id`。
+- rubric agent 输出已知 `risk_code` 时，`level/title` 被 taxonomy 覆盖为稳定值。
 
-  const ruleRisk = result.risks.find((risk) => risk.source_rule_id === "REQ-MUST-01");
-  assert.equal(ruleRisk?.risk_code, "RULE_VIOLATION:REQ-MUST-01");
-});
+- [ ] **Step 2: 给 score fusion 增加 taxonomy 输入**
 
-test("score fusion normalizes rubric risks by taxonomy code", async () => {
-  const result = await computeScoreBreakdownFixture({
-    rubricScoringResult: {
-      summary: { overall_assessment: "有风险", overall_confidence: "high" },
-      item_scores: [],
-      hard_gate_candidates: [],
-      strengths: [],
-      main_issues: [],
-      risks: [
-        {
-          id: 1,
-          level: "low",
-          title: "核心需求API使用偏差",
-          description: "未使用 cloudResPrefetch。",
-          evidence: "EntryAbility.ets",
-          risk_code: "PRELOAD_API_MISSING",
-        },
-      ],
-    },
-  });
-
-  const risk = result.risks.find((item) => item.risk_code === "PRELOAD_API_MISSING");
-  assert.equal(risk?.level, "high");
-  assert.equal(risk?.title, "缺失核心预加载 API 调用");
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `node --import tsx --test tests/scoring.test.ts`
-
-Expected: FAIL。
-
-- [ ] **Step 3: 给 score fusion 增加 taxonomy 输入**
-
-在 `src/scoring/scoreFusion.ts`：
-
-```ts
-import type { RiskTaxonomy } from "./riskTaxonomy.js";
-import { normalizeRiskItem } from "./riskTaxonomy.js";
-```
-
-给 `FuseRubricScoreWithRulesInput` 增加：
+在 `src/scoring/scoreFusion.ts` 的 `FuseRubricScoreWithRulesInput` 增加：
 
 ```ts
 riskTaxonomy?: RiskTaxonomy;
 ```
 
-- [ ] **Step 4: 归一化 rubric 风险**
+- [ ] **Step 3: 归一化 rubric risks**
 
-将 rubric risks 初始化改为：
+初始化 risks 时：
 
 ```ts
-const risks: RiskItem[] = (input.rubricScoringResult?.risks ?? []).map((risk, index) => {
+const risks = (input.rubricScoringResult?.risks ?? []).map((risk, index) => {
   const withId = { ...risk, id: index + 1 };
   return input.riskTaxonomy ? normalizeRiskItem(withId, input.riskTaxonomy) : withId;
 });
 ```
 
-- [ ] **Step 5: 给规则风险加稳定 key 字段**
+- [ ] **Step 4: 给规则风险加稳定 key**
 
-在 rule-generated risk push 中增加：
+规则违规风险增加：
 
 ```ts
 risk_code: `RULE_VIOLATION:${rule.rule_id}`,
 source_rule_id: rule.rule_id,
 ```
 
-- [ ] **Step 6: 在 orchestration node 传入 taxonomy**
+- [ ] **Step 5: orchestration 传入 taxonomy**
 
-在 `src/nodes/scoreFusionOrchestrationNode.ts` 加载 `references/risks/risk-taxonomy.yaml`，传给 `fuseRubricScoreWithRules`。
+在 `src/nodes/scoreFusionOrchestrationNode.ts` 加载同一份 taxonomy 并传给 `fuseRubricScoreWithRules`。
 
-- [ ] **Step 7: 运行测试**
+- [ ] **Step 6: 运行测试**
 
-Run: `node --import tsx --test tests/scoring.test.ts tests/risk-taxonomy.test.ts`
+Run:
+
+```bash
+node --import tsx --test tests/score-fusion.test.ts tests/risk-taxonomy.test.ts
+```
 
 Expected: PASS。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 7: 提交**
 
 ```bash
-git add src/scoring/scoreFusion.ts src/nodes/scoreFusionOrchestrationNode.ts tests/scoring.test.ts
+git add src/scoring/scoreFusion.ts src/nodes/scoreFusionOrchestrationNode.ts tests/score-fusion.test.ts
 git commit -m "feat: normalize risks during score fusion"
 ```
 
 ---
 
-### Task 9: 拆分一致性指标并使用稳定风险 key
+### Task 7: 拆分一致性指标并使用稳定风险 key
 
 **Files:**
 - Modify: `web/src/pages/scoreConsistencyAnalysis.ts`
@@ -1237,93 +634,15 @@ git commit -m "feat: normalize risks during score fusion"
 
 在 `tests/score-consistency-analysis.test.ts` 增加：
 
-```ts
-test("extractConsistencyRunSummary uses risk_code as stable risk key", () => {
-  const summary = extractConsistencyRunSummary(0, 130600101, {
-    overall_conclusion: { total_score: 69, hard_gate_triggered: true },
-    rule_audit_results: [],
-    risks: [
-      {
-        id: 1,
-        level: "high",
-        title: "核心需求API使用偏差",
-        risk_code: "PRELOAD_API_MISSING",
-        evidence: "EntryAbility.ets",
-      },
-    ],
-  });
+- `risk_code` 优先作为风险 key。
+- `source_rule_id` 次优先作为风险 key。
+- 输出 `scoreStability`、`gateStability`、`findingStability`。
 
-  assert.equal(summary.risks[0]?.key, "risk_code|PRELOAD_API_MISSING");
-});
+- [ ] **Step 2: 修改风险 key 生成优先级**
 
-test("analyzeConsistency exposes score gate and finding stability separately", () => {
-  const analysis = analyzeConsistency([
-    completedRun(0, { totalScore: 69, hardGateTriggered: true }),
-    completedRun(1, {
-      totalScore: 69,
-      hardGateTriggered: true,
-      risks: [
-        {
-          key: "risk_code|PRELOAD_API_MISSING",
-          level: "high",
-          title: "缺失核心预加载 API 调用",
-        },
-      ],
-    }),
-    completedRun(2, {
-      totalScore: 69,
-      hardGateTriggered: true,
-      risks: [
-        {
-          key: "risk_code|PRELOAD_API_MISSING",
-          level: "high",
-          title: "缺失核心预加载 API 调用",
-        },
-      ],
-    }),
-  ]);
-
-  assert.equal(analysis.scoreStability?.standardDeviation, 0);
-  assert.equal(analysis.gateStability?.hardGateConsistencyPercentage, 100);
-  assert.equal(typeof analysis.findingStability?.averageRuleJaccard, "number");
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `node --import tsx --test tests/score-consistency-analysis.test.ts`
-
-Expected: FAIL。
-
-- [ ] **Step 3: 扩展 summary 类型**
-
-在 `ConsistencyAnalysisSummary` 增加：
+在 `extractConsistencyRunSummary` 中使用：
 
 ```ts
-scoreStability?: {
-  average: number | null;
-  median: number | null;
-  min: number | null;
-  max: number | null;
-  standardDeviation: number | null;
-};
-gateStability?: {
-  majorityHardGateTriggered: boolean | undefined;
-  hardGateConsistencyPercentage: number | null;
-};
-findingStability?: {
-  averageRuleJaccard: number | null;
-  averageRiskJaccard: number | null;
-};
-```
-
-- [ ] **Step 4: 修改风险 key 生成优先级**
-
-在 `extractConsistencyRunSummary` 中：
-
-```ts
-const riskCode = optionalString(row.risk_code);
-const sourceRuleId = optionalString(row.source_rule_id);
 const key = riskCode
   ? `risk_code|${riskCode}`
   : sourceRuleId
@@ -1331,54 +650,20 @@ const key = riskCode
     : `${normalizeText(level).toLowerCase()}|${normalizeText(identityText)}`;
 ```
 
-返回 risk summary 时保留可选 `risk_code`、`source_rule_id`。
+- [ ] **Step 3: 增加拆分指标**
 
-- [ ] **Step 5: 计算拆分稳定性指标**
-
-在 `analyzeConsistency` 中增加：
-
-```ts
-const averageRuleJaccard =
-  signatures.length > 0
-    ? roundNumber(
-        signatures.reduce(
-          (sum, signature) => sum + jaccardSimilarity(signature.unsatisfiedRuleKeys, majorityRules),
-          0,
-        ) / signatures.length,
-        4,
-      )
-    : null;
-const averageRiskJaccard =
-  signatures.length > 0
-    ? roundNumber(
-        signatures.reduce(
-          (sum, signature) => sum + jaccardSimilarity(signature.riskKeys, majorityRisks),
-          0,
-        ) / signatures.length,
-        4,
-      )
-    : null;
-const hardGateConsistencyPercentage =
-  majorityHardGate === undefined
-    ? null
-    : percentage(
-        signatures.filter((signature) => signature.hardGateTriggered === majorityHardGate).length,
-        signatures.length,
-      );
-```
-
-返回对象中增加：
+在 `analyzeConsistency` 返回对象中保留现有 `consistencyPercentage`，新增：
 
 ```ts
 scoreStability: {
-  average: averageScore,
-  median: medianScore === null ? null : roundNumber(medianScore),
-  min: scores.length ? Math.min(...scores) : null,
-  max: scores.length ? Math.max(...scores) : null,
-  standardDeviation: scoreStandardDeviation,
+  average,
+  median,
+  min,
+  max,
+  standardDeviation,
 },
 gateStability: {
-  majorityHardGateTriggered: majorityHardGate,
+  majorityHardGateTriggered,
   hardGateConsistencyPercentage,
 },
 findingStability: {
@@ -1387,26 +672,25 @@ findingStability: {
 },
 ```
 
-- [ ] **Step 6: 优化 conclusion 文案**
+- [ ] **Step 4: 优化结论文案**
 
-保留现有 `consistencyPercentage`，额外补一句：
+当分数标准差低但 finding Jaccard 低时，结论中明确输出：
 
-```ts
-const splitMetricText =
-  scoreStandardDeviation !== null && scoreStandardDeviation <= 1 && consistencyPercentage !== null && consistencyPercentage < 70
-    ? "总分稳定，但规则或风险集合存在波动。"
-    : "";
+```text
+总分稳定，但规则或风险集合存在波动。
 ```
 
-把 `splitMetricText` 拼入 conclusion。
+- [ ] **Step 5: 运行测试**
 
-- [ ] **Step 7: 运行测试**
+Run:
 
-Run: `node --import tsx --test tests/score-consistency-analysis.test.ts`
+```bash
+node --import tsx --test tests/score-consistency-analysis.test.ts
+```
 
 Expected: PASS。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
 git add web/src/pages/scoreConsistencyAnalysis.ts tests/score-consistency-analysis.test.ts
@@ -1415,83 +699,126 @@ git commit -m "feat: split score consistency metrics"
 
 ---
 
-### Task 10: 最终验证
+### Task 8: 清理旧 TS 规则真源和导出路径
 
 **Files:**
-- 不主动修改文件。若验证暴露问题，只修对应问题。
+- Delete or stop importing: `src/rules/packs/arkts-language/*.ts`
+- Delete or stop importing: `src/rules/packs/arkts-performance/*.ts`
+- Delete or stop importing: `src/rules/packs/cross-device-adaptation/*.ts`
+- Delete or mark legacy: `src/rules/engine/rulePackYamlExporter.ts`
+- Delete or mark legacy: `src/tools/generateRulePackYaml.ts`
+- Modify: `package.json`
 
-- [ ] **Step 1: 运行完整测试**
+- [ ] **Step 1: 确认无运行时 import**
 
-Run: `npm test`
+Run:
+
+```bash
+rg -n "rules/packs/(arkts-language|arkts-performance|cross-device-adaptation)|rulePackYamlExporter|generateRulePackYaml" src tests package.json
+```
+
+Expected: 主运行路径不再引用旧 TS 规则数组和导出脚本。
+
+- [ ] **Step 2: 删除或标记 legacy**
+
+优先删除旧导出脚本和对应 package script。若因历史测试或文档暂时保留，必须加注释说明：
+
+```text
+legacy utility only, not used by runtime rule loading
+```
+
+旧 TS rule arrays 如果删除成本过高，可以先保留但不被 `rulePackRegistry` import；后续独立清理。
+
+- [ ] **Step 3: 运行回归测试**
+
+Run:
+
+```bash
+node --import tsx --test tests/rule-pack-yaml-loader.test.ts tests/rule-pack-registry.test.ts tests/rule-engine.test.ts
+```
 
 Expected: PASS。
 
-- [ ] **Step 2: 运行 TypeScript build**
+- [ ] **Step 4: 提交**
 
-Run: `npm run build`
+```bash
+git add src/rules/packs src/rules/engine/rulePackYamlExporter.ts src/tools/generateRulePackYaml.ts package.json tests
+git commit -m "chore: retire generated rule pack path"
+```
+
+只提交实际改动文件。
+
+---
+
+### Task 9: 最终验证
+
+**Files:** 不主动修改文件。若验证暴露问题，只修对应问题。
+
+- [ ] **Step 1: 运行核心测试**
+
+Run:
+
+```bash
+node --import tsx --test tests/rule-pack-yaml-loader.test.ts tests/rule-pack-registry.test.ts tests/rule-agent-linter-boundary.test.ts tests/rule-merge-node.test.ts tests/risk-taxonomy.test.ts tests/rubric-risk-taxonomy-prompt.test.ts tests/score-fusion.test.ts tests/score-consistency-analysis.test.ts
+```
 
 Expected: PASS。
 
-- [ ] **Step 3: 运行前端 build**
+- [ ] **Step 2: 运行完整测试**
 
-Run: `npm run build:dashboard`
+Run:
+
+```bash
+npm test
+```
 
 Expected: PASS。
 
-- [ ] **Step 4: 重新导出规则 YAML 并检查 diff**
+- [ ] **Step 3: 运行构建**
 
-Run: `npm run rulepack:export`
+Run:
 
-Expected: PASS。diff 只应包含计划内的规则元数据变化。
+```bash
+npm run build
+npm run build:dashboard
+```
 
-- [ ] **Step 5: 手工检查关键边界**
+Expected: PASS。
+
+- [ ] **Step 4: 手工边界检查**
 
 Run:
 
 ```bash
 rg -n "OFFICIAL-LINTER|officialLinter" src/nodes/ruleAgentPromptBuilderNode.ts src/agent/ruleAssistance.ts
-rg -n "risk_taxonomy|risk_code" src/nodes/rubricScoringPromptBuilderNode.ts src/agent/opencodeRubricScoring.ts src/scoring
-rg -n "decisionTriggers|decision_triggers" src/rules references/rules
+rg -n "risk_taxonomy|risk_code|source_rule_id" src/agent/opencodeRubricPrompt.ts src/agent/opencodeRubricScoring.ts src/scoring web/src/pages/scoreConsistencyAnalysis.ts
+rg -n "decision_triggers|decisionTriggers|rulePackYamlExporter|generateRulePackYaml" src references tests package.json
 ```
 
 Expected:
 
-- rule agent prompt 构建路径中没有 Code Linter 结论。
-- 风险枚举只进入 rubric scoring prompt 和 scoring normalization。
-- 触发条件只出现在规则元数据、YAML 导出和 case constraint evaluator。
+- rule agent prompt 构建路径没有 Code Linter 结论。
+- 风险 taxonomy 只进入 rubric scoring、score fusion 和一致性分析。
+- 不存在新的通用 trigger executor。
+- 不存在运行时依赖 TS 导出 YAML 的路径。
 
-- [ ] **Step 6: 如有验证修复则提交**
-
-如果修了问题：
+- [ ] **Step 5: 如有验证修复则提交**
 
 ```bash
-git add src/rules/engine/ruleTypes.ts src/rules/packs/shared/ruleFactories.ts src/rules/engine/rulePackYamlExporter.ts src/rules/evaluators/caseConstraintEvaluator.ts src/rules/packs/cross-device-adaptation/ruleData.ts src/rules/packs/cross-device-adaptation/must.ts src/types.ts src/scoring/riskTaxonomy.ts src/scoring/scoreFusion.ts src/nodes/scoreFusionOrchestrationNode.ts src/nodes/rubricScoringPromptBuilderNode.ts src/agent/opencodeRubricScoring.ts web/src/pages/scoreConsistencyAnalysis.ts tests/rule-factory.test.ts tests/rule-pack-yaml-export.test.ts tests/case-constraint-evaluator.test.ts tests/rule-pack-registry.test.ts tests/rule-agent-linter-boundary.test.ts tests/rule-merge-node.test.ts tests/risk-taxonomy.test.ts tests/rubric-risk-taxonomy-prompt.test.ts tests/scoring.test.ts tests/score-consistency-analysis.test.ts references/rules references/risks/risk-taxonomy.yaml
-git commit -m "fix: stabilize deterministic scoring integration"
+git add src references tests web package.json
+git commit -m "fix: stabilize yaml rule and risk taxonomy integration"
 ```
 
 如果没有修复，不创建空提交。
 
 ---
 
-## 自检
+## 自检清单
 
-需求覆盖：
-
-- Code Linter 不进入 rule agent prompt，只在 merge 阶段进入评分：Task 5 和 Task 10。
-- 内置规则 YAML 向用例规则结构靠拢：Task 1、Task 2、Task 4。
-- 需要 agent 判定的规则增加明确触发条件：Task 1、Task 3、Task 4。
-- 风险归一化写成 YAML，区分低中高，并让 rubric agent 选择：Task 6、Task 7。
-- 风险稳定 key 和一致性指标拆分：Task 8、Task 9。
-- 未引入新的规则服务、数据库或第二套评分流程。
-
-占位符检查：
-
-- 没有 `TBD`、`TODO`、`implement later`。
-- 每个任务都包含明确文件、测试命令、期望结果和提交点。
-
-类型一致性：
-
-- TypeScript 运行时字段为 `decision_triggers`。
-- YAML 导出字段为 `decisionTriggers`。
-- 风险新增字段限制为 `risk_code`、`risk_category`、`source_rule_id`。
-- 现有 `consistencyPercentage`、`risks`、`rule_audit_results` 兼容保留。
+- [ ] 内置规则 YAML 是运行时 source of truth。
+- [ ] 用例规则和内置规则都进入同一套 `RegisteredRule` / `AssistedRuleCandidate` 结构。
+- [ ] `decision_criteria` 只进入 agent prompt，不作为静态触发器。
+- [ ] Code Linter 只在 `ruleMergeNode` 合并，不进入 rule agent prompt。
+- [ ] 风险 taxonomy 是工程级、语言级、需求实现级分类，不绑定单个业务 case。
+- [ ] 风险稳定 key 优先使用 `risk_code`，规则风险使用 `RULE_VIOLATION:<rule_id>`。
+- [ ] 一致性分析能区分分数稳定性、硬门槛稳定性和 finding 稳定性。

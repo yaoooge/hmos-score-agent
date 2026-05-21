@@ -1,3 +1,5 @@
+import type { RuleDecisionCriteria } from "./rules/engine/ruleTypes.js";
+
 export type TaskType = "full_generation" | "continuation" | "bug_fix";
 
 export interface RemoteTaskFileManifest {
@@ -264,6 +266,9 @@ export interface RiskItem {
   title: string;
   description: string;
   evidence: string;
+  risk_code?: string;
+  risk_category?: "low" | "medium" | "high";
+  source_rule_id?: string;
   score_effect?: Record<string, unknown>;
 }
 
@@ -313,6 +318,7 @@ export interface AssistedRuleCandidate {
     ast_signals: Array<Record<string, string>>;
     llm_prompt: string;
   }>;
+  decision_criteria?: RuleDecisionCriteria;
   static_precheck?: CaseRuleStaticPrecheck;
   is_case_rule?: boolean;
 }
@@ -356,6 +362,12 @@ export interface LoadedRubricSnapshot {
     score_cap: number;
   }>;
   review_rule_summary: string[];
+  risk_taxonomy?: Array<{
+    code: string;
+    level: "low" | "medium" | "high";
+    title: string;
+    description: string;
+  }>;
 }
 
 export interface AgentBootstrapPayload {

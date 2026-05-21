@@ -3,6 +3,7 @@ import path from "node:path";
 import test from "node:test";
 import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
 import { fuseRubricScoreWithRules } from "../src/scoring/scoreFusion.js";
+import { loadRiskTaxonomy } from "../src/scoring/riskTaxonomy.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import type { RubricScoringResult, RuleAuditResult } from "../src/types.js";
 
@@ -62,6 +63,115 @@ test("fuseRubricScoreWithRules uses rubric agent scores as the base", async () =
     itemScores.reduce((sum, item) => sum + item.score, 0),
   );
   assert.equal(result.scoreFusionDetails.length, itemScores.length);
+});
+
+test("fuseRubricScoreWithRules assigns stable risk codes to rule violations", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础分满分。", overall_confidence: "high" },
+      item_scores: snapshot.dimension_summaries.flatMap((dimension) =>
+        dimension.item_summaries.map((item) => ({
+          dimension_name: dimension.name,
+          item_name: item.name,
+          score: item.scoring_bands[0].score,
+          max_score: item.weight,
+          matched_band_score: item.scoring_bands[0].score,
+          rationale: "未发现明显问题。",
+          evidence_used: [],
+          confidence: "high" as const,
+          review_required: false,
+        })),
+      ),
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKTS-MUST-001",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "存在命名冲突。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+    riskTaxonomy: taxonomy,
+  } as never);
+
+  const risk = result.risks.find((item) => item.source_rule_id === "ARKTS-MUST-001");
+  assert.equal(risk?.risk_code, "RULE_VIOLATION:ARKTS-MUST-001");
+});
+
+test("fuseRubricScoreWithRules normalizes rubric risks using taxonomy entries", async () => {
+  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "bug_fix",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "存在风险。", overall_confidence: "medium" },
+      item_scores: snapshot.dimension_summaries.flatMap((dimension) =>
+        dimension.item_summaries.map((item) => ({
+          dimension_name: dimension.name,
+          item_name: item.name,
+          score: item.scoring_bands[0].score,
+          max_score: item.weight,
+          matched_band_score: item.scoring_bands[0].score,
+          rationale: "未发现明显问题。",
+          evidence_used: [],
+          confidence: "high" as const,
+          review_required: false,
+        })),
+      ),
+      hard_gate_candidates: [],
+      risks: [
+        {
+          id: 1,
+          level: "low",
+          title: "随意生成的标题",
+          description: "需求目标没有在生成代码中落地。",
+          evidence: "EntryAbility.ets",
+          risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
+        } as never,
+      ],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+    riskTaxonomy: taxonomy,
+  } as never);
+
+  const risk = result.risks.find((item) => item.risk_code === "REQUIREMENT_NOT_IMPLEMENTED");
+  assert.equal(risk?.level, "high");
+  assert.equal(risk?.title, "需求未实现");
 });
 
 test("fuseRubricScoreWithRules records rule impacts on affected rubric items", async () => {

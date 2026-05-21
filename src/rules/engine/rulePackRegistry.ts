@@ -1,40 +1,11 @@
+import path from "node:path";
 import type { RegisteredRule, RegisteredRulePack } from "./ruleTypes.js";
 import type { CrossDeviceAdaptationUnderstanding } from "../../types.js";
-import { arktsForbiddenRules } from "../packs/arkts-language/forbidden.js";
-import { arktsMustRules } from "../packs/arkts-language/must.js";
-import { arktsShouldRules } from "../packs/arkts-language/should.js";
-import { arktsPerformanceForbiddenRules } from "../packs/arkts-performance/forbidden.js";
-import { arktsPerformanceMustRules } from "../packs/arkts-performance/must.js";
-import { arktsPerformanceShouldRules } from "../packs/arkts-performance/should.js";
-import { crossDeviceAdaptationForbiddenRules } from "../packs/cross-device-adaptation/forbidden.js";
-import { crossDeviceAdaptationMustRules } from "../packs/cross-device-adaptation/must.js";
-import { crossDeviceAdaptationShouldRules } from "../packs/cross-device-adaptation/should.js";
+import { loadRegisteredRulePacksFromYamlDirectory } from "./rulePackYamlLoader.js";
 
-const registeredRulePacks: RegisteredRulePack[] = [
-  {
-    packId: "arkts-language",
-    displayName: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
-    rules: [...arktsMustRules, ...arktsShouldRules, ...arktsForbiddenRules],
-  },
-  {
-    packId: "arkts-performance",
-    displayName: "ArkTS 高性能编程实践",
-    rules: [
-      ...arktsPerformanceMustRules,
-      ...arktsPerformanceShouldRules,
-      ...arktsPerformanceForbiddenRules,
-    ],
-  },
-  {
-    packId: "cross-device-adaptation",
-    displayName: "HarmonyOS 一多适配通用规则",
-    rules: [
-      ...crossDeviceAdaptationMustRules,
-      ...crossDeviceAdaptationShouldRules,
-      ...crossDeviceAdaptationForbiddenRules,
-    ],
-  },
-];
+const registeredRulePacks: RegisteredRulePack[] = loadRegisteredRulePacksFromYamlDirectory(
+  path.resolve(process.cwd(), "references/rules"),
+);
 
 export const defaultEnabledRulePackIds = ["arkts-language", "arkts-performance"] as const;
 export const crossDeviceAdaptationRulePackId = "cross-device-adaptation";

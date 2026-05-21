@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import test from "node:test";
 import {
   defaultEnabledRulePackIds,
@@ -128,15 +126,13 @@ test("all text pattern rules share consistent detector config shape", () => {
   }
 });
 
-test("arkts rule pack source files exist for runtime loading", () => {
-  for (const relativePath of [
-    "src/rules/packs/arkts-language/must.ts",
-    "src/rules/packs/arkts-language/should.ts",
-    "src/rules/packs/arkts-language/forbidden.ts",
-    "src/rules/packs/arkts-performance/must.ts",
-    "src/rules/packs/arkts-performance/should.ts",
-    "src/rules/packs/arkts-performance/forbidden.ts",
-  ]) {
-    assert.equal(fs.existsSync(path.resolve(process.cwd(), relativePath)), true, relativePath);
-  }
+test("registered rule packs use yaml source of truth", () => {
+  const packs = getRegisteredRulePacks();
+  const languagePack = packs.find((pack) => pack.packId === "arkts-language");
+  assert.ok(languagePack);
+  assert.ok(languagePack.rules.some((rule) => rule.rule_id === "ARKTS-MUST-002"));
+  assert.equal(
+    languagePack.rules.find((rule) => rule.rule_id === "ARKTS-MUST-001")?.decision_criteria?.fail?.[0],
+    "存在类型、枚举、接口或命名空间与变量或函数标识符冲突。",
+  );
 });

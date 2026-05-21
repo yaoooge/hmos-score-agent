@@ -240,12 +240,50 @@ body {
 
 .consistency-detail-actions {
   flex: 0 0 auto;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: flex-start;
 }
 
 .consistency-detail-actions .el-button {
   flex: 0 0 auto;
+}
+
+.consistency-round-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.consistency-round-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.consistency-round-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.consistency-round-header p {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.consistency-round-actions {
+  justify-content: flex-end;
+}
+
+.consistency-round-select {
+  min-width: 180px;
+}
+
+.consistency-round-metrics {
+  gap: 8px;
 }
 
 .consistency-report-table .el-scrollbar,

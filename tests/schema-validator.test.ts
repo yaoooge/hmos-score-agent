@@ -162,6 +162,25 @@ test("validateReportResult accepts result with bound_rule_packs", () => {
   assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
 });
 
+test("validateReportResult accepts normalized risk identity fields", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.risks = [
+    {
+      id: 1,
+      level: "high",
+      title: "需求未实现",
+      description: "核心需求没有形成可验证实现。",
+      evidence: "workspace/entry/src/main/ets/pages/Index.ets",
+      risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
+      risk_category: "high",
+      source_rule_id: "ARKTS-MUST-001",
+    },
+  ];
+
+  assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
+});
+
 test("validateReportResult accepts result with hvigor build_check_summary", () => {
   const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
   const valid = makeValidResultJson();

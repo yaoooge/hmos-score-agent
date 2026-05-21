@@ -1,4 +1,6 @@
 import type { LoadedRubric } from "./rubricLoader.js";
+import { normalizeRiskItem } from "./riskTaxonomy.js";
+import type { RiskTaxonomy } from "./riskTaxonomy.js";
 import {
   findOfficialLinterRuleProfile,
   officialLinterSeverityToImpactSeverity,
@@ -34,6 +36,7 @@ type FuseRubricScoreWithRulesInput = {
   evidenceSummary: EvidenceSummary;
   caseRuleDefinitions?: CaseRuleDefinition[];
   hvigorBuildCheckSummary?: HvigorBuildCheckSummary;
+  riskTaxonomy?: RiskTaxonomy;
 };
 
 type MetricPenaltyRule = {
@@ -582,10 +585,10 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     });
   }
 
-  const risks: RiskItem[] = (input.rubricScoringResult?.risks ?? []).map((risk, index) => ({
-    ...risk,
-    id: index + 1,
-  }));
+  const risks: RiskItem[] = (input.rubricScoringResult?.risks ?? []).map((risk, index) => {
+    const withId = { ...risk, id: index + 1 };
+    return input.riskTaxonomy ? normalizeRiskItem(withId, input.riskTaxonomy) : withId;
+  });
   const hvigorHardGateTriggered = isHvigorBuildHardGateTriggered(input.hvigorBuildCheckSummary);
   if (hvigorHardGateTriggered && input.hvigorBuildCheckSummary) {
     risks.push({
@@ -634,6 +637,9 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         title: `规则违规：${rule.rule_id}`,
         description: rule.conclusion,
         evidence: rule.conclusion,
+        risk_code: `RULE_VIOLATION:${rule.rule_id}`,
+        risk_category: level as "low" | "medium" | "high",
+        source_rule_id: rule.rule_id,
         score_effect: buildRiskScoreEffect({
           scoringInput: input,
           rule,

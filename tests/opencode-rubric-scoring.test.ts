@@ -648,6 +648,8 @@ test("runOpencodeRubricScoring retry prompt targets concrete protocol failures",
   assert.match(calls[1]?.prompt ?? "", /invalid_deduction_trace=功能正确性::缺陷修复完整度/);
   assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
   assert.match(calls[1]?.prompt ?? "", /invalid_deduction_trace/);
+  assert.match(calls[1]?.prompt ?? "", /risk_code/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /必须且只能包含 level、title、description、evidence 四个 string 字段/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
 });
 

@@ -19,9 +19,9 @@
 
    不引入 `pass/fail/not_applicable/review` 的通用 pattern 执行器。规则触发条件很难穷举，尤其不能用“没有命中反例 pattern”推断规则满足，否则容易造成漏判。
 
-3. 内置规则结构向用例规则靠拢，但仍按现有代码方式维护。
+3. 内置规则直接采用 YAML 源数据，结构向用例规则靠拢。
 
-   内置规则继续维护在 `src/rules/packs/**`，不再把“代码导出 YAML”作为实施路径。可以在规则定义中补充 agent 判定用的结构化标准，例如 `decision_criteria.pass/fail/not_applicable/review`，让 prompt 更稳定，但这些标准不自动等同于静态判定结果。
+   内置规则不再通过 TS 数组作为主数据源，也不再把“代码导出 YAML”作为实施路径。规则内容直接写成 YAML，沿用与用例规则相近的 `id / name / priority / rules / kit / llm` 结构，再由通用 loader 读入评分链路。可以在规则定义中补充 agent 判定用的结构化标准，例如 `decision_criteria.pass/fail/not_applicable/review`，让 prompt 更稳定，但这些标准不自动等同于静态判定结果。
 
 4. 确定性判定只处理强证据。
 
@@ -29,7 +29,7 @@
 
 5. 风险项必须枚举化。
 
-   风险项通过 `references/risks/risk-taxonomy.yaml` 管理，包含稳定 `code`、`level`、`title`、`description`、`matchHints`。rubric agent 优先从枚举中选择风险，评分融合和一致性分析使用 `risk_code` 作为稳定 key。
+   风险项通过 `references/risks/risk-taxonomy.yaml` 管理，重点覆盖工程级、语言级、需求实现级问题，包含稳定 `code`、`level`、`title`、`description`、`matchHints`。rubric agent 优先从枚举中选择风险，评分融合和一致性分析使用 `risk_code` 作为稳定 key。
 
 ## 规则链路
 
@@ -58,9 +58,9 @@ ruleMergeNode
 
 ## 内置规则结构
 
-内置规则仍使用 TypeScript 规则包定义，不新增规则 YAML 主数据。
+内置规则以 YAML 为主数据源，不再以 TS 数组作为规则真源。
 
-对需要 agent 判定的规则，可增加轻量 criteria：
+对需要 agent 判定的规则，可在 YAML 中增加轻量 criteria：
 
 ```ts
 decision_criteria?: {
@@ -85,18 +85,19 @@ decision_criteria?: {
 
 ## 风险枚举
 
-新增 `references/risks/risk-taxonomy.yaml`：
+新增 `references/risks/risk-taxonomy.yaml`，风险重点放在工程级、语言级、需求实现级问题：
 
 ```yaml
 version: v1
 entries:
-  - code: PRELOAD_API_MISSING
+  - code: REQUIREMENT_NOT_IMPLEMENTED
     level: high
-    title: 缺失核心预加载 API 调用
-    description: 未按任务约束使用预加载核心 API。
+    title: 需求未实现
+    description: 需求目标或关键约束没有在生成代码中落地。
     matchHints:
-      - cloudResPrefetch
-      - 预加载 API
+      - 未实现
+      - 缺失功能
+      - 需求偏离
 ```
 
 使用方式：
@@ -129,8 +130,9 @@ entries:
 ## 迁移策略
 
 1. 先锁定 Code Linter 与 rule agent 的边界。
-2. 再给规则定义增加可选 `decision_criteria`，只影响 prompt，不影响静态判定。
-3. 增加风险 taxonomy，并让 rubric agent 选择风险 code。
-4. 在 score fusion 和一致性分析中消费稳定 risk key。
+2. 将内置规则迁移为 YAML 源数据，并让通用 loader 直接读取。
+3. 再给规则定义增加可选 `decision_criteria`，只影响 prompt，不影响静态判定。
+4. 增加风险 taxonomy，并让 rubric agent 选择风险 code。
+5. 在 score fusion 和一致性分析中消费稳定 risk key。
 
 这条路径避免引入新规则服务，也避免把难以枚举的 trigger 条件误用为静态判定器。

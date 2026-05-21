@@ -963,5 +963,17 @@ export function createSqliteConsistencyTaskStore(db: ScoreDatabase): Consistency
       );
       return { ...merged };
     },
+
+    async delete(id: string): Promise<boolean> {
+      const existing = db.get<ConsistencyTaskRow>(
+        "SELECT id, sequence, payload_json FROM consistency_task WHERE id = ?",
+        [id],
+      );
+      if (!existing) {
+        return false;
+      }
+      db.run("DELETE FROM consistency_task WHERE id = ?", [id]);
+      return true;
+    },
   };
 }

@@ -10,6 +10,7 @@ import {
   createGetConsistencyTasksHandler,
   createGetRemoteTaskResultHandler,
   createGetRemoteTaskStatusesHandler,
+  createDeleteConsistencyTaskHandler,
   createReplaceConsistencyTasksHandler,
   createUpsertConsistencyTaskHandler,
   createRemoteTaskExecutionQueue,
@@ -505,6 +506,12 @@ test("API definitions include the remote task result endpoint", () => {
         definition.method === "PUT" && definition.path === "/score/consistency-tasks/:id",
     ),
   );
+  assert.ok(
+    API_DEFINITIONS.some(
+      (definition) =>
+        definition.method === "DELETE" && definition.path === "/score/consistency-tasks/:id",
+    ),
+  );
 });
 
 test("API definitions omit the deprecated local score endpoint", () => {
@@ -854,6 +861,61 @@ test("consistency task handlers read and replace persisted task collection", asy
   ]);
 });
 
+test("consistency task reader backfills missing sourceTask from original remote task payload", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  const originalCaseDir = path.join(localCaseRoot, "original-remote-case");
+  const sourceTask = {
+    taskId: 1263,
+    testCase: {
+      id: 229,
+      name: "电视台元服务完成一多适配",
+      type: "incremental",
+      description: "一多适配需求",
+      input: "完整原始需求",
+      expectedOutput: "完成一多适配",
+      fileUrl: "https://remote.example.com/original.zip",
+    },
+    executionResult: {
+      isBuildSuccess: true,
+      outputCodeUrl: "https://remote.example.com/generated.zip",
+    },
+    callback: "https://remote.example.com/callback",
+  };
+
+  await fs.mkdir(path.join(originalCaseDir, "inputs"), { recursive: true });
+  await fs.writeFile(
+    path.join(originalCaseDir, "inputs", "remote-task.json"),
+    JSON.stringify(sourceTask),
+    "utf-8",
+  );
+  await registry.upsert({
+    taskId: 1263,
+    status: "completed",
+    caseDir: originalCaseDir,
+    testCaseId: 229,
+    testCaseName: "电视台元服务完成一多适配",
+    testCaseType: "incremental",
+    remoteTaskFile: "inputs/remote-task.json",
+  });
+  await store.upsert({
+    id: "C-001",
+    sequence: 1,
+    originalTaskId: 1263,
+    caseId: 229,
+    caseName: "电视台元服务完成一多适配",
+    runs: [{ runIndex: 0, taskId: 126300101, status: "completed" }],
+  });
+
+  const getHandler = createGetConsistencyTasksHandler(store, { sourceTaskRegistry: registry });
+  const getResponse = createResponse();
+  await getHandler({} as never, getResponse.response as never);
+
+  const items = getResponse.responseState.body?.items as Array<Record<string, unknown>>;
+  assert.deepEqual(items[0]?.sourceTask, sourceTask);
+});
+
 test("consistency task upsert handler writes a single record", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const handler = createUpsertConsistencyTaskHandler(createConsistencyTaskStore(localCaseRoot));
@@ -875,6 +937,20 @@ test("consistency task upsert handler writes a single record", async (t) => {
   assert.equal(responseState.statusCode, 200);
   assert.equal(responseState.body?.success, true);
   assert.equal((responseState.body?.item as Record<string, unknown>).id, "C-010");
+});
+
+test("consistency task delete handler removes a single persisted record", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  await store.upsert({ id: "C-012", sequence: 12, runs: [] });
+  const handler = createDeleteConsistencyTaskHandler(store);
+  const { response, responseState } = createResponse();
+
+  await handler({ params: { id: "C-012" } } as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  assert.equal((await store.list()).length, 0);
 });
 
 test("consistency task replacement rejects empty collection over existing records", async (t) => {

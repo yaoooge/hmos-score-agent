@@ -42,13 +42,14 @@
             {{ formatDateTime(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220">
+        <el-table-column label="操作" width="280">
           <template #default="{ row }">
             <el-button link type="primary" :loading="refreshingTaskId === row.id" @click="refreshTaskStatus(row)">
               刷新状态
             </el-button>
             <el-button link type="primary" @click="openTaskDetail(row.id)">详情</el-button>
             <el-button link type="primary" @click="rerunTask(row.id)">重新运行</el-button>
+            <el-button link type="danger" @click="deleteTask(row.id)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -113,7 +114,7 @@
   </div>
 
   <div v-else class="page-stack consistency-detail-page">
-    <template v-if="selectedTask">
+    <template v-if="selectedTask && selectedRoundView">
       <div class="table-card consistency-detail-header">
         <div class="detail-title">
           <el-button class="detail-back-button" :icon="ArrowLeft" circle text @click="backToTaskList" />
@@ -131,26 +132,26 @@
           >
             下载结果 ZIP
           </el-button>
-          <el-button :icon="Refresh" :loading="refreshingTaskId === selectedTask.id" @click="refreshTaskStatus(selectedTask)">
+          <el-button
+            :icon="Refresh"
+            :loading="refreshingTaskId === selectedTask.id"
+            @click="refreshTaskStatus(selectedTask)"
+          >
             刷新状态
           </el-button>
           <el-button :icon="Refresh" @click="rerunTask(selectedTask.id)">重新运行</el-button>
+          <el-button :icon="Delete" type="danger" plain @click="deleteTask(selectedTask.id)">
+            删除任务
+          </el-button>
         </div>
       </div>
 
       <div class="metrics-grid">
+        <MetricCard label="已保存轮次" :value="String(historyRoundCount)" />
+        <MetricCard label="最新轮次" :value="latestRoundLabel" />
         <MetricCard label="完成数" :value="`${selectedTask.analysis.completedRuns}/10`" />
-        <MetricCard label="失败数" :value="selectedTask.analysis.failedRuns" />
+        <MetricCard label="平均一致性" :value="formatPercent(selectedTask.analysis.consistencyPercentage)" />
         <MetricCard label="平均分" :value="formatNullableNumber(selectedTask.analysis.averageScore)" />
-        <MetricCard
-          label="标准差"
-          :value="formatNullableNumber(selectedTask.analysis.scoreStandardDeviation)"
-        />
-        <MetricCard
-          label="规则不满足度"
-          :value="formatRatioPercent(selectedTask.analysis.averageRuleUnsatisfactionRatio)"
-        />
-        <MetricCard label="一致性" :value="formatPercent(selectedTask.analysis.consistencyPercentage)" />
       </div>
 
       <div class="consistency-history-grid">
@@ -168,10 +169,54 @@
         />
       </div>
 
-      <div class="table-card">
+      <div class="table-card consistency-round-panel">
+        <div class="consistency-round-header">
+          <div>
+            <h3>固定轮次信息</h3>
+            <p>当前查看 {{ selectedRoundLabel }}。切换后，下方的表格与报表只显示该轮快照。</p>
+          </div>
+          <div class="toolbar consistency-round-actions">
+            <el-select v-model="selectedRound" class="consistency-round-select" size="small">
+              <el-option
+                v-for="option in roundOptions"
+                :key="String(option.value)"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+            <el-button
+              v-if="selectedRoundDeleteable"
+              :icon="Delete"
+              type="danger"
+              plain
+              @click="deleteSelectedRound"
+            >
+              删除当前轮次
+            </el-button>
+          </div>
+        </div>
+
+        <div class="metrics-grid consistency-round-metrics">
+          <MetricCard label="完成数" :value="`${selectedRoundView.analysis.completedRuns}/10`" />
+          <MetricCard label="失败数" :value="selectedRoundView.analysis.failedRuns" />
+          <MetricCard label="平均分" :value="formatNullableNumber(selectedRoundView.analysis.averageScore)" />
+          <MetricCard
+            label="标准差"
+            :value="formatNullableNumber(selectedRoundView.analysis.scoreStandardDeviation)"
+          />
+          <MetricCard
+            label="规则不满足度"
+            :value="formatRatioPercent(selectedRoundView.analysis.averageRuleUnsatisfactionRatio)"
+          />
+          <MetricCard
+            label="一致性"
+            :value="formatPercent(selectedRoundView.analysis.consistencyPercentage)"
+          />
+        </div>
+
         <el-tabs v-model="detailTab">
           <el-tab-pane label="运行对比" name="runs">
-            <el-table :data="selectedTask.runs" stripe class="consistency-report-table">
+            <el-table :data="selectedRoundView.runs" stripe class="consistency-report-table">
               <el-table-column label="运行" width="70">
                 <template #default="{ row }">{{ row.runIndex + 1 }}</template>
               </el-table-column>
@@ -202,7 +247,7 @@
               </el-table-column>
               <el-table-column label="一致性" min-width="85">
                 <template #default="{ row }">
-                  {{ formatRunConsistency(selectedTask, row) }}
+                  {{ formatRunConsistency(row) }}
                 </template>
               </el-table-column>
               <el-table-column label="操作" min-width="100">
@@ -214,7 +259,7 @@
           </el-tab-pane>
 
           <el-tab-pane label="规则不满足报表" name="rules">
-            <el-table :data="selectedTask.ruleReport" stripe class="consistency-report-table">
+            <el-table :data="selectedRoundView.ruleReport" stripe class="consistency-report-table">
               <el-table-column prop="ruleId" label="规则ID" width="160" />
               <el-table-column prop="summary" label="摘要" min-width="260" show-overflow-tooltip />
               <el-table-column prop="unsatisfiedCount" label="不满足次数" width="120" />
@@ -229,7 +274,7 @@
           </el-tab-pane>
 
           <el-tab-pane label="风险项报表" name="risks">
-            <el-table :data="selectedTask.riskReport" stripe class="consistency-report-table">
+            <el-table :data="selectedRoundView.riskReport" stripe class="consistency-report-table">
               <el-table-column prop="level" label="等级" width="90" />
               <el-table-column prop="title" label="风险标题" min-width="260" show-overflow-tooltip />
               <el-table-column prop="appearanceCount" label="出现次数" width="110" />
@@ -266,13 +311,14 @@
 <script setup lang="ts">
 import type { EChartsOption } from "echarts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
-import { ArrowLeft, Download, Plus, Refresh } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { ArrowLeft, Delete, Download, Plus, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import CaseReportDrawer from "../components/CaseReportDrawer.vue";
 import EChartPanel from "../components/EChartPanel.vue";
 import MetricCard from "../components/MetricCard.vue";
 import {
+  deleteConsistencyTask,
   fetchConsistencyTasks,
   fetchRemoteScoreResult,
   fetchRemoteTaskStatuses,
@@ -291,14 +337,19 @@ import {
   buildConsistencyExportFiles,
   buildConsistencyExportPayload,
   buildConsistencyHistoryChartRows,
+  buildConsistencyTaskRoundOptions,
   buildConsistencyTaskPersistRecord,
   buildRiskReport,
   buildRuleReport,
   extractConsistencyRunSummary,
   generateSubmittedTaskIds,
+  getConsistencyTaskDefaultRoundSelection,
   hydrateConsistencyTaskSnapshot,
   isConsistencyTaskTerminal,
+  removeConsistencyAnalysisHistoryRound,
   createStoredZip,
+  selectConsistencyTaskRoundSnapshot,
+  validateRemoteEvaluationTaskInput,
   validateRemoteTaskJson,
   type ConsistencyAnalysisHistoryItem,
   type ConsistencyTaskCollectionRecord,
@@ -308,6 +359,8 @@ import {
   type ConsistencyRunSummary,
   type RemoteEvaluationTaskInput,
   type RiskConsistencyReportItem,
+  type ConsistencyTaskRoundOption,
+  type ConsistencyTaskRoundSelection,
   type RuleConsistencyReportItem,
 } from "./scoreConsistencyAnalysis";
 
@@ -404,6 +457,28 @@ const taskIdPreview = computed(() => {
 const selectedTaskDownloadable = computed(() => {
   return selectedTask.value ? isConsistencyTaskTerminal(selectedTask.value.runs) : false;
 });
+const historyRoundCount = computed(() => selectedTask.value?.analysisHistory.length ?? 0);
+const roundOptions = computed<ConsistencyTaskRoundOption[]>(() =>
+  selectedTask.value ? buildConsistencyTaskRoundOptions(selectedTask.value) : [],
+);
+const selectedRound = ref<ConsistencyTaskRoundSelection>("current");
+const selectedRoundOption = computed(() =>
+  roundOptions.value.find((option) => option.value === selectedRound.value),
+);
+const selectedRoundDeleteable = computed(
+  () => selectedRoundOption.value?.value !== "current" && selectedRoundOption.value?.round !== undefined,
+);
+const selectedRoundLabel = computed(() => selectedRoundOption.value?.label ?? "当前运行状态");
+const latestRoundLabel = computed(() => {
+  const latestRound = selectedTask.value?.analysisHistory.at(-1);
+  return latestRound ? `第 ${String(latestRound.round)} 轮` : "当前运行状态";
+});
+const selectedRoundView = computed<ConsistencyTask | null>(() => {
+  if (!selectedTask.value) {
+    return null;
+  }
+  return selectConsistencyTaskRoundSnapshot(selectedTask.value, selectedRound.value) as ConsistencyTask;
+});
 const historyChartRows = computed(() =>
   selectedTask.value ? buildConsistencyHistoryChartRows(selectedTask.value.analysisHistory) : [],
 );
@@ -465,6 +540,26 @@ const reportDrawerTitle = computed(() => {
     return "用例报告";
   }
   return `#${String(reportRun.value.taskId)} ${selectedTask.value.caseName}`;
+});
+
+watch(
+  selectedTask,
+  (task) => {
+    selectedRound.value = task ? getConsistencyTaskDefaultRoundSelection(task) : "current";
+    detailTab.value = "runs";
+    reportRun.value = null;
+    reportCase.value = null;
+    reportError.value = "";
+    reportDrawerVisible.value = false;
+  },
+  { immediate: true },
+);
+
+watch(selectedRound, () => {
+  reportRun.value = null;
+  reportCase.value = null;
+  reportError.value = "";
+  reportDrawerVisible.value = false;
 });
 
 function buildPersistPayload(task: ConsistencyTask, includeSourceTask = false) {
@@ -707,9 +802,82 @@ function backToTaskList() {
   void router.push("/consistency");
 }
 
+async function deleteTask(taskId: string) {
+  const task = tasks.value.find((item) => item.id === taskId);
+  if (!task) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除一致性任务 ${task.id} / ${task.caseName} 吗？此操作无法撤销。`,
+      "删除一致性任务",
+      {
+        confirmButtonText: "删除",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await deleteConsistencyTask(taskId);
+    tasks.value = tasks.value.filter((item) => item.id !== taskId);
+    for (const run of task.runs) {
+      rawResults.delete(run.taskId);
+    }
+    taskSequence = tasks.value.reduce((max, item) => Math.max(max, item.sequence), 0);
+    if (selectedTaskId.value === taskId || routeTaskId.value === taskId) {
+      selectedTaskId.value = tasks.value[0]?.id ?? "";
+      if (routeTaskId.value === taskId) {
+        backToTaskList();
+      }
+    }
+    ElMessage.success("一致性任务已删除");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function deleteSelectedRound() {
+  const task = selectedTask.value;
+  const roundOption = selectedRoundOption.value;
+  if (!task || !roundOption || roundOption.round === undefined) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除第 ${String(roundOption.round)} 轮吗？删除后会重新编号剩余轮次。`,
+      "删除轮次",
+      {
+        confirmButtonText: "删除",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+
+  const nextTask = removeConsistencyAnalysisHistoryRound(task, roundOption.round) as ConsistencyTask;
+  Object.assign(task, nextTask);
+  const nextSelection = roundOptions.value.some((option) => option.value === roundOption.value)
+    ? roundOption.value
+    : getConsistencyTaskDefaultRoundSelection(task);
+  selectedRound.value = nextSelection;
+  await persistTaskNow(task);
+  ElMessage.success("轮次已删除");
+}
+
 function rerunTask(taskId: string) {
   const task = tasks.value.find((item) => item.id === taskId);
   if (!task) {
+    return;
+  }
+  const validation = validateRemoteEvaluationTaskInput(task.sourceTask);
+  if (!validation.valid) {
+    ElMessage.error(`无法重新运行：原始远端任务信息不完整。${validation.errors.join("；")}`);
     return;
   }
   refreshTaskHistorySnapshot(task);
@@ -850,7 +1018,7 @@ function formatHistoryTooltip(params: unknown): string {
 }
 
 function formatScoreDelta(run: ConsistencyRunSummary) {
-  const baseline = selectedTask.value?.analysis.medianScore;
+  const baseline = selectedRoundView.value?.analysis.medianScore;
   if (baseline === null || baseline === undefined || run.totalScore === undefined) {
     return "-";
   }
@@ -865,11 +1033,11 @@ function formatHardGate(value: boolean | undefined) {
   return value ? "是" : "否";
 }
 
-function formatRunConsistency(task: ConsistencyTask, run: ConsistencyRunSummary) {
+function formatRunConsistency(run: ConsistencyRunSummary) {
   if (run.status !== "completed") {
     return "-";
   }
-  return task.analysis.runConsistencyByTaskId[run.taskId] ? "一致" : "波动";
+  return selectedRoundView.value?.analysis.runConsistencyByTaskId[run.taskId] ? "一致" : "波动";
 }
 
 function formatTaskStatus(status: ConsistencyTaskStatus) {

@@ -289,6 +289,11 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
       kit: ["Account Kit"],
       llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
       ast_signals: [{ type: "json_key", name: "metadata" }],
+      decision_criteria: {
+        pass: ["已确认 module.json5 中存在符合要求的 metadata 配置。"],
+        fail: ["module.json5 未配置 Client ID 相关 metadata。"],
+        review: ["证据不足，需人工复核 metadata 是否完整。"],
+      },
       target_checks: [
         {
           target: "**/module.json5",
@@ -336,6 +341,11 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
       llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
     },
   ]);
+  assert.deepEqual(payload.assisted_rule_candidates[0]?.decision_criteria, {
+    pass: ["已确认 module.json5 中存在符合要求的 metadata 配置。"],
+    fail: ["module.json5 未配置 Client ID 相关 metadata。"],
+    review: ["证据不足，需人工复核 metadata 是否完整。"],
+  });
   assert.equal(payload.assisted_rule_candidates[0]?.static_precheck?.signal_status, "all_matched");
 });
 

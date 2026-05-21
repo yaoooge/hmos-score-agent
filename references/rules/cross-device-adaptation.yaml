@@ -1,4 +1,4 @@
-name: HarmonyOS 一多适配通用规则包
+name: HarmonyOS 一多适配通用规则
 version: v1.0.0
 summary: 基于一多适配通用规则整理的内部条件规则包，仅在任务理解判定涉及一多适配时启用。
 rule_pack_meta:

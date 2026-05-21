@@ -9,7 +9,10 @@ import {
   type ConsistencyTaskStore,
 } from "./consistencyTaskStore.js";
 import { createSubmitHumanReviewHandler } from "./humanReviewHandler.js";
-import type { RemoteTaskRegistry } from "./remoteTaskRegistry.js";
+import type {
+  RemoteTaskRecord as StoredRemoteTaskRecord,
+  RemoteTaskRegistry,
+} from "./remoteTaskRegistry.js";
 import { uploadTaskCallback } from "../io/uploader.js";
 import {
   createHumanReviewEvidenceStore,
@@ -112,6 +115,37 @@ function readRisks(resultJson: Record<string, unknown>): Array<{ level?: string;
       };
     })
     .filter((risk): risk is { level?: string; title?: string } => Boolean(risk));
+}
+
+function hasStoredSourceTask(record: ConsistencyTaskRecord): boolean {
+  return asRecord(record.sourceTask) !== undefined;
+}
+
+function readConsistencyOriginalTaskId(record: ConsistencyTaskRecord): number | undefined {
+  const taskId = record.originalTaskId;
+  return typeof taskId === "number" && Number.isSafeInteger(taskId) && taskId > 0
+    ? taskId
+    : undefined;
+}
+
+function resolveRemoteTaskPayloadPath(record: StoredRemoteTaskRecord): string | undefined {
+  if (!record.caseDir || !record.remoteTaskFile) {
+    return undefined;
+  }
+  return path.isAbsolute(record.remoteTaskFile)
+    ? record.remoteTaskFile
+    : path.join(record.caseDir, record.remoteTaskFile);
+}
+
+async function readStoredRemoteTaskPayload(
+  record: StoredRemoteTaskRecord,
+): Promise<unknown | undefined> {
+  const payloadPath = resolveRemoteTaskPayloadPath(record);
+  if (!payloadPath) {
+    return undefined;
+  }
+  const text = await fs.readFile(payloadPath, "utf-8");
+  return JSON.parse(text) as unknown;
 }
 
 type AcceptedRemoteEvaluationTask = Parameters<AppDeps["executeAcceptedRemoteEvaluationTask"]>[0];
@@ -837,10 +871,38 @@ export function createGetRemoteTaskStatusesHandler(registry: RemoteTaskRegistry)
   };
 }
 
-export function createGetConsistencyTasksHandler(store: ConsistencyTaskStore) {
+export function createGetConsistencyTasksHandler(
+  store: ConsistencyTaskStore,
+  options: { sourceTaskRegistry?: Pick<RemoteTaskRegistry, "get"> } = {},
+) {
   return async (_req: Request, res: Response) => {
     try {
-      res.json({ success: true, items: await store.list() });
+      const records = await store.list();
+      const items = await Promise.all(
+        records.map(async (record) => {
+          if (hasStoredSourceTask(record)) {
+            return record;
+          }
+          const originalTaskId = readConsistencyOriginalTaskId(record);
+          if (!originalTaskId || !options.sourceTaskRegistry) {
+            return record;
+          }
+          const remoteTask = await options.sourceTaskRegistry.get(originalTaskId);
+          if (!remoteTask) {
+            return record;
+          }
+          try {
+            const sourceTask = await readStoredRemoteTaskPayload(remoteTask);
+            return sourceTask === undefined ? record : { ...record, sourceTask };
+          } catch (error) {
+            console.warn(
+              `consistency_task_source_task_backfill_failed id=${record.id} originalTaskId=${String(originalTaskId)} error=${formatError(error)}`,
+            );
+            return record;
+          }
+        }),
+      );
+      res.json({ success: true, items });
     } catch (error) {
       console.error(`consistency_task_table_read_failed error=${formatError(error)}`);
       res.status(500).json({ success: false, message: "Consistency task table is unavailable" });
@@ -889,6 +951,28 @@ export function createUpsertConsistencyTaskHandler(store: ConsistencyTaskStore) 
   };
 }
 
+export function createDeleteConsistencyTaskHandler(store: ConsistencyTaskStore) {
+  return async (req: Request, res: Response) => {
+    const { id } = req.params as { id?: string };
+    if (!id || id.trim().length === 0) {
+      res.status(400).json({ success: false, message: "Invalid consistency task id" });
+      return;
+    }
+
+    try {
+      const deleted = await store.delete(id);
+      if (!deleted) {
+        res.status(404).json({ success: false, message: "Consistency task not found" });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error(`consistency_task_record_delete_failed error=${formatError(error)}`);
+      res.status(500).json({ success: false, message: "Consistency task table is unavailable" });
+    }
+  };
+}
+
 export function createCorsMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
     const origin = req.header("Origin") ?? "*";
@@ -896,7 +980,7 @@ export function createCorsMiddleware() {
 
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin, Access-Control-Request-Headers");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
       requestedHeaders && requestedHeaders.length > 0
@@ -973,9 +1057,16 @@ export function createApp(
   );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
   app.get(API_PATHS.remoteTaskStatuses, createGetRemoteTaskStatusesHandler(registry));
-  app.get(API_PATHS.consistencyTasks, createGetConsistencyTasksHandler(consistencyTaskStore));
+  app.get(
+    API_PATHS.consistencyTasks,
+    createGetConsistencyTasksHandler(consistencyTaskStore, { sourceTaskRegistry: registry }),
+  );
   app.put(API_PATHS.consistencyTasks, createReplaceConsistencyTasksHandler(consistencyTaskStore));
   app.put(API_PATHS.consistencyTask, createUpsertConsistencyTaskHandler(consistencyTaskStore));
+  app.delete(
+    API_PATHS.consistencyTask,
+    createDeleteConsistencyTaskHandler(consistencyTaskStore),
+  );
   app.use(
     createDashboardRouter({
       registry,

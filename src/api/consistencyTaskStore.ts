@@ -11,6 +11,7 @@ export type ConsistencyTaskStore = {
   list(): Promise<ConsistencyTaskRecord[]>;
   replace(items: ConsistencyTaskRecord[]): Promise<ConsistencyTaskRecord[]>;
   upsert(item: ConsistencyTaskRecord): Promise<ConsistencyTaskRecord>;
+  delete(id: string): Promise<boolean>;
 };
 
 function isRecord(value: unknown): value is ConsistencyTaskRecord {
@@ -137,6 +138,19 @@ export function createConsistencyTaskStore(localCaseRoot: string): ConsistencyTa
         }
         await save();
         return { ...merged };
+      });
+    },
+
+    async delete(id: string): Promise<boolean> {
+      return await runExclusive(async () => {
+        await load();
+        const beforeLength = records.length;
+        records = records.filter((record) => record.id !== id);
+        if (records.length === beforeLength) {
+          return false;
+        }
+        await save();
+        return true;
       });
     },
   };

@@ -29,6 +29,16 @@ export type RemoteTaskValidationResult =
       errors: string[];
     };
 
+export type SourceTaskValidationResult =
+  | {
+      valid: true;
+      errors: [];
+    }
+  | {
+      valid: false;
+      errors: string[];
+    };
+
 export type ConsistencyRunStatus =
   | "pending_submit"
   | "submitted"
@@ -71,6 +81,8 @@ export type ConsistencyRiskSummary = {
   title?: string;
   description?: string;
   evidence?: string;
+  riskCode?: string;
+  sourceRuleId?: string;
 };
 
 export type ConsistencyRunSummary = {
@@ -98,6 +110,21 @@ export type ConsistencyAnalysisSummary = {
   scoreStandardDeviation: number | null;
   averageRuleUnsatisfactionRatio: number | null;
   averageRiskCount: number | null;
+  scoreStability?: {
+    average: number | null;
+    median: number | null;
+    min: number | null;
+    max: number | null;
+    standardDeviation: number | null;
+  };
+  gateStability?: {
+    majorityHardGateTriggered: boolean | undefined;
+    hardGateConsistencyPercentage: number | null;
+  };
+  findingStability?: {
+    averageRuleJaccard: number | null;
+    averageRiskJaccard: number | null;
+  };
   conclusion: string;
   runConsistencyByTaskId: Record<number, boolean>;
 };
@@ -226,6 +253,15 @@ export type ConsistencyTaskSnapshot = ConsistencyTaskCollectionRecord & {
   riskReport?: RiskConsistencyReportItem[];
 };
 
+export type ConsistencyTaskRoundSelection = string | "current";
+
+export type ConsistencyTaskRoundOption = {
+  value: ConsistencyTaskRoundSelection;
+  round?: number;
+  label: string;
+  capturedAt?: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -305,6 +341,52 @@ function createFallbackSourceTask(record: ConsistencyTaskCollectionRecord): Remo
   };
 }
 
+export function validateRemoteEvaluationTaskInput(
+  task: RemoteEvaluationTaskInput | undefined,
+): SourceTaskValidationResult {
+  const errors: string[] = [];
+  if (!task) {
+    return { valid: false, errors: ["缺少原始远端任务 sourceTask"] };
+  }
+  if (!Number.isSafeInteger(task.taskId) || task.taskId <= 0) {
+    errors.push("sourceTask.taskId 必须是正整数");
+  }
+  if (!Number.isSafeInteger(task.testCase.id) || task.testCase.id <= 0) {
+    errors.push("sourceTask.testCase.id 必须是正整数");
+  }
+  if (!isNonEmptyString(task.testCase.name)) {
+    errors.push("sourceTask.testCase.name 必须是非空字符串");
+  }
+  if (!isNonEmptyString(task.testCase.type)) {
+    errors.push("sourceTask.testCase.type 必须是非空字符串");
+  }
+  if (!isNonEmptyString(task.testCase.description)) {
+    errors.push("sourceTask.testCase.description 必须是非空字符串");
+  }
+  if (!isNonEmptyString(task.testCase.input)) {
+    errors.push("sourceTask.testCase.input 必须是非空字符串");
+  }
+  if (typeof task.testCase.expectedOutput !== "string") {
+    errors.push("sourceTask.testCase.expectedOutput 必须是字符串");
+  }
+  if (!isNonEmptyString(task.testCase.fileUrl)) {
+    errors.push("sourceTask.testCase.fileUrl 必须是非空字符串");
+  }
+  if (typeof task.executionResult.isBuildSuccess !== "boolean") {
+    errors.push("sourceTask.executionResult.isBuildSuccess 必须是布尔值");
+  }
+  if (!isNonEmptyString(task.executionResult.outputCodeUrl)) {
+    errors.push("sourceTask.executionResult.outputCodeUrl 必须是非空字符串");
+  }
+  if (
+    task.executionResult.diffFileUrl !== undefined &&
+    !isNonEmptyString(task.executionResult.diffFileUrl)
+  ) {
+    errors.push("sourceTask.executionResult.diffFileUrl 必须是非空字符串");
+  }
+  return errors.length > 0 ? { valid: false, errors } : { valid: true, errors: [] };
+}
+
 function normalizeRunSnapshot(run: ConsistencyRunSummary): ConsistencyRunSummary {
   return {
     ...run,
@@ -326,6 +408,56 @@ function cloneRunSummary(run: ConsistencyRunSummary): ConsistencyRunSummary {
     ...run,
     unsatisfiedRules: run.unsatisfiedRules.map((rule) => ({ ...rule })),
     risks: run.risks.map((risk) => ({ ...risk })),
+  };
+}
+
+function cloneConsistencyAnalysisHistoryItem(
+  item: ConsistencyAnalysisHistoryItem,
+): ConsistencyAnalysisHistoryItem {
+  return {
+    round: item.round,
+    capturedAt: item.capturedAt,
+    summary: {
+      ...item.summary,
+      scoreStability: item.summary.scoreStability
+        ? { ...item.summary.scoreStability }
+        : undefined,
+      gateStability: item.summary.gateStability
+        ? { ...item.summary.gateStability }
+        : undefined,
+      findingStability: item.summary.findingStability
+        ? { ...item.summary.findingStability }
+        : undefined,
+      runConsistencyByTaskId: { ...item.summary.runConsistencyByTaskId },
+    },
+    ruleReport: item.ruleReport.map((rule) => ({ ...rule, runIndexes: [...rule.runIndexes] })),
+    riskReport: item.riskReport.map((risk) => ({ ...risk, runIndexes: [...risk.runIndexes] })),
+    runs: item.runs.map(cloneRunSummary),
+  };
+}
+
+function cloneConsistencyTaskSnapshot(task: ConsistencyTaskSnapshot): ConsistencyTaskSnapshot {
+  return {
+    ...task,
+    runs: task.runs.map(cloneRunSummary),
+    analysis: task.analysis
+      ? {
+          ...task.analysis,
+          scoreStability: task.analysis.scoreStability
+            ? { ...task.analysis.scoreStability }
+            : undefined,
+          gateStability: task.analysis.gateStability
+            ? { ...task.analysis.gateStability }
+            : undefined,
+          findingStability: task.analysis.findingStability
+            ? { ...task.analysis.findingStability }
+            : undefined,
+          runConsistencyByTaskId: { ...task.analysis.runConsistencyByTaskId },
+        }
+      : undefined,
+    ruleReport: task.ruleReport?.map((rule) => ({ ...rule, runIndexes: [...rule.runIndexes] })),
+    riskReport: task.riskReport?.map((risk) => ({ ...risk, runIndexes: [...risk.runIndexes] })),
+    analysisHistory: task.analysisHistory?.map(cloneConsistencyAnalysisHistoryItem),
   };
 }
 
@@ -362,6 +494,110 @@ export function isConsistencyTaskTerminal(runs: ConsistencyRunSummary[]): boolea
   return runs.length > 0 && runs.every((run) => isTerminalRunStatus(run.status));
 }
 
+export function buildConsistencyTaskRoundOptions(task: ConsistencyTaskSnapshot): ConsistencyTaskRoundOption[] {
+  const options: ConsistencyTaskRoundOption[] = [{ value: "current", label: "当前运行状态" }];
+  for (const item of task.analysisHistory ?? []) {
+    options.push({
+      value: item.capturedAt,
+      round: item.round,
+      label: `第 ${String(item.round)} 轮`,
+      capturedAt: item.capturedAt,
+    });
+  }
+  return options;
+}
+
+export function getConsistencyTaskDefaultRoundSelection(
+  task: ConsistencyTaskSnapshot,
+): ConsistencyTaskRoundSelection {
+  return task.analysisHistory?.at(-1)?.capturedAt ?? "current";
+}
+
+export function selectConsistencyTaskRoundSnapshot(
+  task: ConsistencyTaskSnapshot,
+  selection: ConsistencyTaskRoundSelection,
+): ConsistencyTaskSnapshot {
+  if (selection === "current") {
+    return cloneConsistencyTaskSnapshot(task);
+  }
+  const history = task.analysisHistory?.find((item) => item.capturedAt === selection);
+  if (!history) {
+    return cloneConsistencyTaskSnapshot(task);
+  }
+  return {
+    ...cloneConsistencyTaskSnapshot(task),
+    runs: history.runs.map(cloneRunSummary),
+    analysis: {
+      ...history.summary,
+      scoreStability: history.summary.scoreStability
+        ? { ...history.summary.scoreStability }
+        : undefined,
+      gateStability: history.summary.gateStability
+        ? { ...history.summary.gateStability }
+        : undefined,
+      findingStability: history.summary.findingStability
+        ? { ...history.summary.findingStability }
+        : undefined,
+      runConsistencyByTaskId: { ...history.summary.runConsistencyByTaskId },
+    },
+    ruleReport: history.ruleReport.map((rule) => ({ ...rule, runIndexes: [...rule.runIndexes] })),
+    riskReport: history.riskReport.map((risk) => ({ ...risk, runIndexes: [...risk.runIndexes] })),
+  };
+}
+
+export function removeConsistencyAnalysisHistoryRound(
+  task: ConsistencyTaskSnapshot,
+  round: number,
+): ConsistencyTaskSnapshot {
+  const history = task.analysisHistory ?? [];
+  if (!history.some((item) => item.round === round)) {
+    return cloneConsistencyTaskSnapshot(task);
+  }
+
+  const remainingHistory = history
+    .filter((item) => item.round !== round)
+    .map((item, index) => ({
+      ...cloneConsistencyAnalysisHistoryItem(item),
+      round: index + 1,
+    }));
+  const latestHistory = remainingHistory.at(-1);
+  if (!latestHistory) {
+    return {
+      ...cloneConsistencyTaskSnapshot(task),
+      analysisHistory: [],
+    };
+  }
+
+  const wasLatestRound = history.at(-1)?.round === round;
+  if (!wasLatestRound) {
+    return {
+      ...cloneConsistencyTaskSnapshot(task),
+      analysisHistory: remainingHistory,
+    };
+  }
+
+  return {
+    ...cloneConsistencyTaskSnapshot(task),
+    runs: latestHistory.runs.map(cloneRunSummary),
+    analysis: {
+      ...latestHistory.summary,
+      scoreStability: latestHistory.summary.scoreStability
+        ? { ...latestHistory.summary.scoreStability }
+        : undefined,
+      gateStability: latestHistory.summary.gateStability
+        ? { ...latestHistory.summary.gateStability }
+        : undefined,
+      findingStability: latestHistory.summary.findingStability
+        ? { ...latestHistory.summary.findingStability }
+        : undefined,
+      runConsistencyByTaskId: { ...latestHistory.summary.runConsistencyByTaskId },
+    },
+    ruleReport: latestHistory.ruleReport.map((rule) => ({ ...rule, runIndexes: [...rule.runIndexes] })),
+    riskReport: latestHistory.riskReport.map((risk) => ({ ...risk, runIndexes: [...risk.runIndexes] })),
+    analysisHistory: remainingHistory,
+  };
+}
+
 export function compactConsistencyTaskSnapshots(
   snapshots: ConsistencyTaskSnapshot[],
 ): ConsistencyTaskCollectionRecord[] {
@@ -384,7 +620,11 @@ export function buildConsistencyTaskPersistRecord(
   if (!compacted) {
     throw new Error("一致性任务记录不能为空");
   }
-  if (includeSourceTask || compacted.sourceTask === undefined) {
+  if (
+    includeSourceTask ||
+    compacted.sourceTask === undefined ||
+    validateRemoteEvaluationTaskInput(compacted.sourceTask).valid
+  ) {
     return compacted;
   }
   const { sourceTask: _sourceTask, ...record } = compacted;
@@ -590,8 +830,14 @@ export function extractConsistencyRunSummary(
       const title = optionalString(row.title);
       const description = optionalString(row.description);
       const id = numberValue(row.id);
+      const riskCode = optionalString(row.risk_code);
+      const sourceRuleId = optionalString(row.source_rule_id);
       const identityText = title ?? description ?? (id !== undefined ? String(id) : "");
-      const key = `${normalizeText(level).toLowerCase()}|${normalizeText(identityText)}`;
+      const key = riskCode
+        ? `risk_code|${riskCode}`
+        : sourceRuleId
+          ? `source_rule|${sourceRuleId}`
+          : `${normalizeText(level).toLowerCase()}|${normalizeText(identityText)}`;
       return {
         key,
         ...(id !== undefined ? { id } : {}),
@@ -599,6 +845,8 @@ export function extractConsistencyRunSummary(
         ...(title ? { title } : {}),
         ...(description ? { description } : {}),
         ...(optionalString(row.evidence) ? { evidence: optionalString(row.evidence) } : {}),
+        ...(riskCode ? { riskCode } : {}),
+        ...(sourceRuleId ? { sourceRuleId } : {}),
       };
     })
     .filter((risk) => risk.key !== "|");
@@ -730,6 +978,33 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
   const averageRiskCount = completedRuns.length
     ? roundNumber(completedRuns.reduce((sum, run) => sum + run.risks.length, 0) / completedRuns.length)
     : null;
+  const averageRuleJaccard =
+    signatures.length > 0
+      ? roundNumber(
+          signatures.reduce(
+            (sum, signature) => sum + jaccardSimilarity(signature.unsatisfiedRuleKeys, majorityRules),
+            0,
+          ) / signatures.length,
+          4,
+        )
+      : null;
+  const averageRiskJaccard =
+    signatures.length > 0
+      ? roundNumber(
+          signatures.reduce(
+            (sum, signature) => sum + jaccardSimilarity(signature.riskKeys, majorityRisks),
+            0,
+          ) / signatures.length,
+          4,
+        )
+      : null;
+  const hardGateConsistencyPercentage =
+    majorityHardGate === undefined
+      ? null
+      : percentage(
+          signatures.filter((signature) => signature.hardGateTriggered === majorityHardGate).length,
+          signatures.length,
+        );
 
   const volatilityParts: string[] = [];
   const fluctuatingRules = buildRuleReport(completedRuns).filter(
@@ -753,6 +1028,13 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
   const lowSampleText = signatures.length < 3 ? "已完成运行少于 3 次，样本数不足。" : "";
   const volatilityText =
     volatilityParts.length > 0 ? `主要波动来自 ${volatilityParts.join("和")}。` : "";
+  const splitMetricText =
+    scoreStandardDeviation !== null &&
+    scoreStandardDeviation <= 1 &&
+    ((averageRuleJaccard !== null && averageRuleJaccard < 0.8) ||
+      (averageRiskJaccard !== null && averageRiskJaccard < 0.8))
+      ? "总分稳定，但规则或风险集合存在波动。"
+      : "";
 
   return {
     completedRuns: completedRuns.length,
@@ -766,7 +1048,22 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
     scoreStandardDeviation,
     averageRuleUnsatisfactionRatio,
     averageRiskCount,
-    conclusion: `本次 AI 评分结果一致性为 ${String(consistencyPercentage)}%。${levelText}。${lowSampleText}${volatilityText}`,
+    scoreStability: {
+      average: averageScore,
+      median: medianScore === null ? null : roundNumber(medianScore),
+      min: scores.length ? Math.min(...scores) : null,
+      max: scores.length ? Math.max(...scores) : null,
+      standardDeviation: scoreStandardDeviation,
+    },
+    gateStability: {
+      majorityHardGateTriggered: majorityHardGate,
+      hardGateConsistencyPercentage,
+    },
+    findingStability: {
+      averageRuleJaccard,
+      averageRiskJaccard,
+    },
+    conclusion: `本次 AI 评分结果一致性为 ${String(consistencyPercentage)}%。${levelText}。${lowSampleText}${volatilityText}${splitMetricText}`,
     runConsistencyByTaskId,
   };
 }

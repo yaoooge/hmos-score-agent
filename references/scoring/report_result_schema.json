@@ -550,6 +550,20 @@
           "evidence": {
             "type": "string"
           },
+          "risk_code": {
+            "type": "string"
+          },
+          "risk_category": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "source_rule_id": {
+            "type": "string"
+          },
           "score_effect": {
             "type": "object",
             "properties": {

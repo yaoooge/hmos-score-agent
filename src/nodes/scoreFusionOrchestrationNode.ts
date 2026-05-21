@@ -1,6 +1,8 @@
+import path from "node:path";
 import { buildRubricSnapshot } from "../agent/ruleAssistance.js";
 import { getConfig } from "../config.js";
 import { fuseRubricScoreWithRules } from "../scoring/scoreFusion.js";
+import { loadRiskTaxonomy } from "../scoring/riskTaxonomy.js";
 import { loadRubricForTaskType } from "../scoring/rubricLoader.js";
 import { emitNodeFailed, emitNodeStarted } from "../workflow/observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../workflow/state.js";
@@ -16,6 +18,9 @@ export async function scoreFusionOrchestrationNode(
         ? state.mergedRuleAuditResults
         : (state.deterministicRuleResults ?? []);
     const rubric = await loadRubricForTaskType(state.taskType, config.referenceRoot);
+    const riskTaxonomy = loadRiskTaxonomy(
+      path.resolve(config.referenceRoot, "..", "risks", "risk-taxonomy.yaml"),
+    );
     const scoreComputation = fuseRubricScoreWithRules({
       taskType: state.taskType,
       rubric,
@@ -33,6 +38,7 @@ export async function scoreFusionOrchestrationNode(
       },
       caseRuleDefinitions: state.caseRuleDefinitions ?? [],
       hvigorBuildCheckSummary: state.hvigorBuildCheckSummary,
+      riskTaxonomy,
     });
 
     return { scoreComputation };

@@ -248,6 +248,19 @@ test("sqlite consistency task store replaces and upserts normalized records", as
   ]);
 });
 
+test("sqlite consistency task store deletes records by id", async (t) => {
+  const root = await makeTempDir(t);
+  const db = createScoreDatabase(path.join(root, "score-index.sqlite3"));
+  t.after(() => db.close());
+  const store = createSqliteConsistencyTaskStore(db);
+
+  await store.upsert({ id: "C-001", sequence: 1, runs: [] });
+
+  assert.equal(await store.delete("C-001"), true);
+  assert.equal(await store.delete("C-001"), false);
+  assert.deepEqual(await store.list(), []);
+});
+
 test("sqlite remote task summaries support dashboard task queries without result files", async (t) => {
   const root = await makeTempDir(t);
   const db = createScoreDatabase(path.join(root, "score-index.sqlite3"));
