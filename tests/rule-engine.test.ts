@@ -136,6 +136,78 @@ test("rule pack registry filters built-in packs by enabled pack ids", () => {
   );
 });
 
+test("cross-device component precheck uses full changed file content for kit anchors", async (t) => {
+  const caseDir = await makeTempDir(t);
+  const relativePath = "entry/src/main/ets/pages/Index.ets";
+  const workspaceFile = [
+    "@Entry",
+    "@Component",
+    "struct Index {",
+    "  private currentDisplayCount: number = 2;",
+    "",
+    "  build() {",
+    "    Swiper() {",
+    "      Text('A')",
+    "      Text('B')",
+    "    }",
+    "    .displayCount(this.currentDisplayCount)",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  await fs.mkdir(path.join(caseDir, "original", path.dirname(relativePath)), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(caseDir, "workspace", path.dirname(relativePath)), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(caseDir, "diff"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "workspace", relativePath), workspaceFile, "utf-8");
+  await fs.writeFile(
+    path.join(caseDir, "original", relativePath),
+    workspaceFile.replace(
+      ".displayCount(this.currentDisplayCount)",
+      ".displayCount(1)",
+    ),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${relativePath} b/${relativePath}`,
+      `--- a/${relativePath}`,
+      `+++ b/${relativePath}`,
+      "@@ -8,7 +8,7 @@ struct Index {",
+      "       Text('A')",
+      "       Text('B')",
+      "     }",
+      "-    .displayCount(1)",
+      "+    .displayCount(this.currentDisplayCount)",
+      "   }",
+      " }",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+    enabledRulePackIds: ["cross-device-adaptation"],
+  });
+
+  const candidate = result.assistedRuleCandidates.find(
+    (item) => item.rule_id === "CMP-MUST-03",
+  );
+
+  assert.ok(candidate);
+  assert.equal(candidate.static_precheck?.signal_status, "all_matched");
+  assert.deepEqual(candidate.static_precheck?.matched_tokens, ["Swiper"]);
+  assert.deepEqual(candidate.evidence_files, [relativePath]);
+});
+
 test("ARKTS-FORBID-006 ignores typed arrow function callbacks", () => {
   const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-006");
   assert.ok(rule);

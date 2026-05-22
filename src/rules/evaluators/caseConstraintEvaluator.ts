@@ -120,13 +120,15 @@ function hasExternalKitStrongEvidence(
 function findFilesContainingToken(
   candidateFiles: CollectedEvidence["workspaceFiles"],
   token: string,
+  options: { patchScoped: boolean },
 ): CollectedEvidence["workspaceFiles"] {
-  return candidateFiles.filter((file) => getPatchScopedContent(file).includes(token));
+  return candidateFiles.filter((file) => getSearchableContent(file, options).includes(token));
 }
 
 function collectKitEvidence(
   candidateFiles: CollectedEvidence["workspaceFiles"],
   kit: string[],
+  options: { patchScoped: boolean },
 ): KitEvidence {
   const matchedTokens = new Set<string>();
   const matchedFiles = new Set<string>();
@@ -142,7 +144,7 @@ function collectKitEvidence(
     if (requirement.kind === "arkui_builtin_component") {
       const matchedSymbols = requirement.symbols.filter((symbol) => {
         const matchedCandidateFiles = candidateFiles.filter((file) =>
-          hasArkuiSymbolEvidence(getPatchScopedContent(file), symbol),
+          hasArkuiSymbolEvidence(getSearchableContent(file, options), symbol),
         );
         for (const file of matchedCandidateFiles) {
           matchedFiles.add(file.relativePath);
@@ -167,7 +169,7 @@ function collectKitEvidence(
 
     const strongMatchedSymbols = requirement.symbols.filter((symbol) => {
       const matchedCandidateFiles = candidateFiles.filter((file) =>
-        hasExternalKitStrongEvidence(getPatchScopedContent(file), requirement, symbol),
+        hasExternalKitStrongEvidence(getSearchableContent(file, options), requirement, symbol),
       );
       for (const file of matchedCandidateFiles) {
         matchedFiles.add(file.relativePath);
@@ -178,7 +180,7 @@ function collectKitEvidence(
       if (strongMatchedSymbols.includes(symbol)) {
         return false;
       }
-      const matchedCandidateFiles = findFilesContainingToken(candidateFiles, symbol);
+      const matchedCandidateFiles = findFilesContainingToken(candidateFiles, symbol, options);
       for (const file of matchedCandidateFiles) {
         matchedFiles.add(file.relativePath);
       }
@@ -224,6 +226,13 @@ function getPatchScopedContent(file: CollectedEvidence["workspaceFiles"][number]
   return file.patchLineNumbers.map((lineNumber) => lines[lineNumber - 1] ?? "").join("\n");
 }
 
+function getSearchableContent(
+  file: CollectedEvidence["workspaceFiles"][number],
+  options: { patchScoped: boolean },
+): string {
+  return options.patchScoped ? getPatchScopedContent(file) : file.content;
+}
+
 function buildStaticPrecheck(
   candidateFiles: CollectedEvidence["workspaceFiles"],
   astSignals: Array<Record<string, string>>,
@@ -244,7 +253,7 @@ function buildStaticPrecheck(
   const matchedFiles = new Set<string>();
   let matchedSignalCount = 0;
   const kitRequirements = kit.map(classifyKitRequirement).filter((requirement) => requirement.symbols.length > 0);
-  const kitEvidence = collectKitEvidence(candidateFiles, kit);
+  const kitEvidence = collectKitEvidence(candidateFiles, kit, { patchScoped: false });
 
   for (const signal of astSignals) {
     const tokens = getSignalTokens(signal);
