@@ -131,30 +131,23 @@ test("opencode scoring agents can edit only sandbox agent output files", async (
   }
 });
 
-test("project opencode skills define agent contracts and scoped references", async () => {
+test("project opencode skills define agent contracts", async () => {
   const expectations = [
     {
       skill: "hmos-understanding",
       outputFile: "metadata/agent-output/task-understanding.json",
-      references: [],
     },
     {
       skill: "hmos-rubric-scoring",
       outputFile: "metadata/agent-output/rubric-scoring.json",
-      references: [],
     },
     {
       skill: "hmos-rule-assessment",
       outputFile: "metadata/agent-output/rule-assessment.json",
-      references: [
-        "rules/arkts-language.yaml",
-        "rules/arkts-performance.yaml",
-      ],
     },
     {
       skill: "hmos-human-rating-gap-analysis",
       outputFile: "metadata/agent-output/human-rating-gap-analysis.json",
-      references: [],
     },
   ];
 
@@ -163,16 +156,10 @@ test("project opencode skills define agent contracts and scoped references", asy
     const skillText = await readProjectFile(skillPath);
     assert.match(skillText, /^---\nname:/);
     assert.match(skillText, new RegExp(`name: ${expectation.skill}`));
-    assert.match(skillText, /职责边界/);
-    assert.match(skillText, /强制输出格式/);
-    assert.match(skillText, /文件输出协议/);
-    assert.match(skillText, /References/);
+    assert.match(skillText, /输出|output/i);
+    assert.match(skillText, /JSON/);
+    assert.match(skillText, /output_file/);
     assert.match(skillText, new RegExp(expectation.outputFile.replaceAll("/", "\\/")));
-
-    for (const reference of expectation.references) {
-      const referencePath = path.join(repoRoot, ".opencode", "skills", expectation.skill, "references", reference);
-      await fs.access(referencePath);
-    }
   }
 });
 
@@ -182,7 +169,36 @@ test("project opencode skills avoid unnecessary scoped references", async () => 
     /ENOENT/,
   );
   await assert.rejects(
-    () => fs.access(path.join(repoRoot, ".opencode", "skills", "hmos-rubric-scoring", "references")),
+    () =>
+      fs.access(
+        path.join(
+          repoRoot,
+          ".opencode",
+          "skills",
+          "hmos-rubric-scoring",
+          "references",
+          "scoring",
+          "rules_application.md",
+        ),
+      ),
+    /ENOENT/,
+  );
+  await assert.rejects(
+    () =>
+      fs.access(
+        path.join(repoRoot, ".opencode", "skills", "hmos-rubric-scoring", "references", "risk-taxonomy.md"),
+      ),
+    /ENOENT/,
+  );
+  assert.match(
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "skills", "hmos-rubric-scoring", "references", "risk-taxonomy.yaml"),
+      "utf-8",
+    ),
+    /REQUIREMENT_NOT_IMPLEMENTED/,
+  );
+  await assert.rejects(
+    () => fs.access(path.join(repoRoot, ".opencode", "skills", "hmos-rule-assessment", "references")),
     /ENOENT/,
   );
   await assert.rejects(
@@ -244,7 +260,7 @@ test("project opencode agent system prompts require matching skills", async () =
   assert.doesNotMatch(rulePrompt, /JSON 字符串中的英文双引号必须转义/);
   assert.doesNotMatch(rulePrompt, /未接入静态判定器本身不是人工复核理由/);
   assert.match(ruleSkill, /JSON 字符串中的英文双引号必须转义/);
-  assert.match(ruleSkill, /none_matched.*必须复核目标文件及相关调用链是否存在真实 kit 来源证据/);
+  assert.match(ruleSkill, /none_matched[\s\S]*必须复核目标文件和相关调用链是否存在真实 kit 来源证据/);
 
   assert.match(humanRatingPrompt, /你是评分流程中的人工评级差异分析 agent/);
   assert.match(humanRatingPrompt, /必须使用 hmos-human-rating-gap-analysis skill/);

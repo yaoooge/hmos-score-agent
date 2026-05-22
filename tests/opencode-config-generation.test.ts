@@ -166,6 +166,23 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
     ),
     /必须使用 hmos-human-rating-gap-analysis skill/,
   );
+  await assert.rejects(
+    () =>
+      fs.access(
+        path.join(
+          repoRoot,
+          ".opencode",
+          "runtime",
+          "xdg-config",
+          "opencode",
+          "skills",
+          "hmos-rubric-scoring",
+          "references",
+          "risk-taxonomy.md",
+        ),
+      ),
+    /ENOENT/,
+  );
   assert.match(
     await fs.readFile(
       path.join(
@@ -275,34 +292,48 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
         "xdg-config",
         "opencode",
         "skills",
-        "hmos-rule-assessment",
+        "hmos-rubric-scoring",
         "references",
-        "rules",
-        "arkts-language.yaml",
+        "risk-taxonomy.yaml",
       ),
       "utf-8",
     ),
-    /arkts-language/,
-  );
-  await assert.rejects(
-    () =>
-      fs.access(
-        path.join(
-          repoRoot,
-          ".opencode",
-          "runtime",
-          "xdg-config",
-          "opencode",
-          "skills",
-          "hmos-rubric-scoring",
-          "references",
-        ),
-      ),
-    /ENOENT/,
+    /REQUIREMENT_NOT_IMPLEMENTED/,
   );
 
   assert.equal(runtime.env.OPENCODE_CONFIG, runtime.configPath);
   assert.equal(runtime.env.OPENCODE_CONFIG_DIR, runtime.configDir);
+});
+
+test("createOpencodeRuntimeConfig overlays built-in zhipu coding plan provider with api key only", async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-config-zhipu-"));
+  await copyOpencodeTemplate(repoRoot);
+
+  const runtime = await createOpencodeRuntimeConfig({
+    repoRoot,
+    env: {
+      ...requiredEnv,
+      HMOS_OPENCODE_PROVIDER_ID: "zhipuai-coding-plan",
+      HMOS_OPENCODE_MODEL_ID: "glm-5.1",
+      HMOS_OPENCODE_MODEL_NAME: "GLM-5.1",
+      HMOS_OPENCODE_BASE_URL: "https://open.bigmodel.cn/api/coding/paas/v4",
+      HMOS_OPENCODE_API_KEY: "zhipu-real-api-key",
+    },
+  });
+
+  const generated = JSON.parse(await fs.readFile(runtime.configPath, "utf-8")) as {
+    model?: string;
+    small_model?: string;
+    provider?: Record<string, unknown>;
+  };
+
+  assert.equal(generated.model, "zhipuai-coding-plan/glm-5.1");
+  assert.equal(generated.small_model, "zhipuai-coding-plan/glm-5.1");
+  assert.deepEqual(generated.provider?.["zhipuai-coding-plan"], {
+    options: {
+      apiKey: "zhipu-real-api-key",
+    },
+  });
 });
 
 test("createOpencodeRuntimeConfig supports isolated worker runtime overrides", async () => {

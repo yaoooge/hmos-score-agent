@@ -242,7 +242,7 @@ function renderRubricScoringPrompt(input: {
     "1. 按 rubric_summary 中的每个维度和评分项完成评分。",
     "2. 优先阅读 patch/effective.patch，评分范围仅限 patch 代码；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文，避免大量阅读无关代码。",
     "3. 按 hmos-rubric-scoring skill 的评分契约覆盖 rubric_summary.dimension_summaries 中每一个 item。",
-    "4. 输出 risks 前必须读取 hmos-rubric-scoring skill 的 references/risk-taxonomy.md，并按其中规则选择、归并和过滤风险。",
+    "4. 输出 risks 前必须读取 hmos-rubric-scoring skill 的 references/risk-taxonomy.yaml，并按其中规则选择、归并和过滤风险。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",

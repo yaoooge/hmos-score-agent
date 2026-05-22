@@ -34,6 +34,10 @@ const REQUIRED_ENV_KEYS = [
 
 type RequiredEnvKey = (typeof REQUIRED_ENV_KEYS)[number];
 
+type JsonObject = Record<string, unknown>;
+
+const BUILT_IN_PROVIDER_API_KEY_OVERLAY_IDS = new Set(["zhipuai-coding-plan"]);
+
 function requiredEnv(env: NodeJS.ProcessEnv): Record<RequiredEnvKey, string> {
   const missing = REQUIRED_ENV_KEYS.filter((key) => !env[key]?.trim());
   if (missing.length > 0) {
@@ -76,6 +80,32 @@ function replaceTemplateVariables(
     }
     return values[key as RequiredEnvKey];
   });
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function applyBuiltInProviderOverlay(
+  config: unknown,
+  values: Record<RequiredEnvKey, string>,
+): unknown {
+  if (!BUILT_IN_PROVIDER_API_KEY_OVERLAY_IDS.has(values.HMOS_OPENCODE_PROVIDER_ID)) {
+    return config;
+  }
+  if (!isJsonObject(config)) {
+    return config;
+  }
+
+  const providerId = values.HMOS_OPENCODE_PROVIDER_ID;
+  config.provider = {
+    [providerId]: {
+      options: {
+        apiKey: values.HMOS_OPENCODE_API_KEY,
+      },
+    },
+  };
+  return config;
 }
 
 async function ensureRuntimeDirectories(runtimeDir: string): Promise<void> {
@@ -193,9 +223,10 @@ export async function createOpencodeRuntimeConfig(input: {
     HMOS_OPENCODE_PORT: String(port),
   };
   const generatedText = replaceTemplateVariables(template, runtimeValues);
+  let generatedConfig: unknown;
 
   try {
-    JSON.parse(generatedText) as unknown;
+    generatedConfig = applyBuiltInProviderOverlay(JSON.parse(generatedText) as unknown, runtimeValues);
   } catch (error) {
     throw new OpencodeConfigError(
       `生成的 opencode 配置不是合法 JSON：${error instanceof Error ? error.message : String(error)}`,
@@ -231,7 +262,7 @@ export async function createOpencodeRuntimeConfig(input: {
     sourceDir: skillsDir,
     targetDir: path.join(runtimeDir, "xdg-config", "opencode", "skills"),
   });
-  const generatedConfigText = `${generatedText.trim()}\n`;
+  const generatedConfigText = `${JSON.stringify(generatedConfig, null, 2)}\n`;
   await fs.writeFile(configPath, generatedConfigText, "utf-8");
   await fs.writeFile(
     path.join(runtimeDir, "xdg-config", "opencode", "opencode.json"),

@@ -76,7 +76,7 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 4. 按 HarmonyOS / OpenHarmony 应用工程语境审查实现质量。
 5. 覆盖 `rubric_summary.dimension_summaries` 中每一个 `dimension_name + item_name`，逐项匹配 scoring band。
 6. 对扣分项补全 `deduction_trace`；满分项不要编造扣分链路。
-7. 输出 `risks` 前读取 `references/risk-taxonomy.md`，按 taxonomy 选择、归并、阈值和自检规则处理风险。
+7. 输出 `risks` 前读取 `references/risk-taxonomy.yaml`，按 taxonomy 选择、归并、阈值和自检规则处理风险。
 8. 执行输出前自检，将最终 JSON object 写入 `output_file`。
 9. assistant 最终回复只返回 `{"output_file":"..."}`。
 
@@ -112,16 +112,38 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 
 ## 风险输出规则
 
-输出 `risks` 前必须读取 `references/risk-taxonomy.md`。
+### 归并规则
 
-风险是高信号问题列表，不是所有扣分点、代码坏味道或低置信度猜测的清单：
-
-- 优先匹配 taxonomy 的 `risk_code`、`level` 和 `title`；匹配后 `level` 和 `title` 必须完全一致。
-- 同根因、同证据链、同代码位置的近义风险只输出一个。
-- 规则融合阶段已经覆盖的规则违规风险，不要在 rubric 风险中重复表达。
+- 同一组代码位置、同一条证据链、同一个根因只输出一个风险。
+- 不要把同一事实拆成需求、接口、平台、状态、异常等多个近义风险。
+- 规则违规类风险由规则融合阶段生成；rubric agent 不要用自由风险重复表达同一条规则编号已经覆盖的事实。
 - 只有存在规则之外的独立运行时、数据流、状态、异常处理或平台约束后果时，才另列 rubric 风险。
-- 低置信度、轻微风格、局部可读性、未证实性能问题，放入 `rationale`、`main_issues` 或扣分说明，不进入 `risks`。
-- 若没有达到风险阈值，输出空数组 `[]`。
+
+### 输出阈值
+
+候选风险必须至少满足以下条件之一，才可进入 `risks`：
+
+- 对应明确扣分项的 `deduction_trace`。
+- 有真实 `generated/` 代码位置和可复核后果。
+- 触发 hard gate 候选。
+- 会导致功能链路、数据状态、异常处理、安全隐私、外部服务集成或平台约束出现明确问题。
+
+以下内容默认不进入 `risks`，应写入 `rationale`、`main_issues` 或扣分说明：
+
+- 低置信度推测。
+- 轻微风格或命名问题。
+- 局部可读性问题。
+- 轻微重复代码。
+- 可能但未证实的性能问题。
+- 不影响功能链路、构建、平台约束或用户可见行为的局部实现偏好。
+
+### 输出字段规则
+
+- 已匹配 taxonomy 的风险必须包含稳定 `risk_code`。
+- 已匹配 taxonomy 的 `level` 和 `title` 必须与表格完全一致。
+- 已匹配 taxonomy 时，`risk_category` 应与 taxonomy 的 `level` 相同。
+- `description` 说明风险后果，不要只复述代码现象。
+- `evidence` 给出可复核证据摘要；如包含行号，必须使用 `generated/` 工程文件真实行号，不要使用 patch hunk 行号。
 
 ## 输出语言与 JSON 约束
 
@@ -158,7 +180,7 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 - 已按 HarmonyOS / OpenHarmony 语境检查 ArkTS / ArkUI、Kit / API、权限能力声明、生命周期、状态、路由、资源、异步流程和 API 兼容性。
 - 已结合用户用例或任务目标检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
 - `rationale`、`overall_assessment`、`main_issues` 给出基于完整功能链路的评分依据。
-- 已读取 `references/risk-taxonomy.md` 并按其中规则处理风险。
+- 已读取 `references/risk-taxonomy.yaml` 并按其中规则处理风险。
 - 已匹配 taxonomy 的风险包含稳定 `risk_code`，且 `level`、`title` 未被改写。
 - 已合并同根因、同证据链、同代码位置的近义风险。
 - 已避免重复输出规则融合阶段会生成的规则违规风险。
