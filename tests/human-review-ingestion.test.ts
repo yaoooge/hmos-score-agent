@@ -772,6 +772,60 @@ test("submit human review handler preserves agreed hard gate when risk review re
   });
 });
 
+test("submit human review handler preserves build check cap when agreeing another hard gate", async (t) => {
+  const { registry, caseDir } = await writeRecalculableCompletedTask(t);
+  const resultPath = path.join(caseDir, "outputs", "result.json");
+  const resultJson = JSON.parse(await fs.readFile(resultPath, "utf-8")) as Record<string, unknown>;
+  resultJson.overall_conclusion = {
+    total_score: 59,
+    hard_gate_triggered: true,
+    summary: "已完成评分，并触发硬门槛：G1, BUILD-CHECK。",
+  };
+  const humanReviewItems = resultJson.human_review_items as Array<Record<string, unknown>>;
+  const hardGateReview = humanReviewItems[0];
+  hardGateReview.current_assessment = "G1";
+  hardGateReview.score_effect = {
+    type: "hard_gate",
+    gate_ids: ["G1"],
+    gate_caps: { G1: 69 },
+  };
+  resultJson.build_check_summary = {
+    enabled: true,
+    status: "failed",
+    checked_modules: ["entry"],
+    hard_gate_triggered: true,
+    score_cap: 59,
+    diagnostics: "远端平台构建失败，已跳过本地 hvigor 编译复验。",
+    duration_ms: 0,
+    module_results: [],
+  };
+  await fs.writeFile(resultPath, `${JSON.stringify(resultJson, null, 2)}\n`);
+
+  const root = await makeTempDir(t);
+  const store = createHumanReviewEvidenceStore(root);
+  const handler = createSubmitHumanReviewHandler({ registry, store });
+  const { response, state } = createResponse();
+
+  await handler(
+    createReviewRequest(88, undefined, {
+      itemReviews: [{ itemId: 1, agree: true }],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(state.statusCode, 200);
+
+  const revisedResultJson = JSON.parse(await fs.readFile(resultPath, "utf-8")) as Record<
+    string,
+    unknown
+  >;
+  assert.deepEqual(revisedResultJson.overall_conclusion, {
+    total_score: 59,
+    hard_gate_triggered: true,
+    summary: "已完成评分，并触发硬门槛：G1, BUILD-CHECK。",
+  });
+});
+
 test("submit human review handler records item review without corrected assessment", async (t) => {
   const { registry, caseDir } = await writeRecalculableCompletedTask(t);
   const root = await makeTempDir(t);

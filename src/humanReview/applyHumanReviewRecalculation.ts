@@ -298,6 +298,10 @@ function collectInitialGateCaps(
   fallback: { originalHardGateTriggered: boolean; originalTotalScore: number },
 ): Map<string, number> {
   const active = new Map<string, number>();
+  const buildCheckCap = readBuildCheckGateCap(resultJson);
+  if (buildCheckCap !== undefined) {
+    active.set("BUILD-CHECK", buildCheckCap);
+  }
   for (const risk of readRecords(resultJson.risks)) {
     const effect = asRecord(risk.score_effect);
     if (effect?.type !== "risk_level_rule_impact") {
@@ -325,6 +329,19 @@ function collectInitialGateCaps(
     active.set("legacy-hard-gate", fallback.originalTotalScore);
   }
   return active;
+}
+
+function readBuildCheckGateCap(resultJson: Record<string, unknown>): number | undefined {
+  const summary = asRecord(resultJson.build_check_summary);
+  if (!summary) {
+    return undefined;
+  }
+  const hardGateTriggered =
+    summary.hard_gate_triggered === true || summary.hardGateTriggered === true;
+  if (!hardGateTriggered) {
+    return undefined;
+  }
+  return readNumber(summary.score_cap) ?? readNumber(summary.scoreCap) ?? 59;
 }
 
 function parseHardGateAssessment(value: string | undefined): string[] {
