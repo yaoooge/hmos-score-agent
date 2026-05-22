@@ -107,6 +107,10 @@ test("sqlite remote task registry preserves upsert and list behavior", async (t)
     (await registry.list()).map((record) => record.taskId),
     [202],
   );
+
+  assert.equal(await registry.delete(202), true);
+  assert.equal(await registry.delete(202), false);
+  assert.deepEqual(await registry.list(), []);
 });
 
 function createRuleSnapshot(

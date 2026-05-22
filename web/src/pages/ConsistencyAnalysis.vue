@@ -15,41 +15,46 @@
       <MetricCard label="平均一致性" :value="averageConsistencyText" />
     </div>
 
-    <div class="table-card" v-loading="loadingTasks">
-      <el-table :data="pagedTasks" stripe highlight-current-row>
-        <el-table-column prop="id" label="任务ID" width="110" />
-        <el-table-column prop="originalTaskId" label="原始taskId" width="120" />
-        <el-table-column prop="caseName" label="用例名称" min-width="240" show-overflow-tooltip />
-        <el-table-column label="进度" width="120">
+    <div class="table-card consistency-task-table-card" v-loading="loadingTasks || refreshingAllTasks">
+      <el-table :data="pagedTasks" stripe highlight-current-row class="consistency-task-table">
+        <el-table-column prop="id" label="任务ID" width="96" />
+        <el-table-column prop="originalTaskId" label="原始taskId" width="112" />
+        <el-table-column prop="caseName" label="用例名称" min-width="180" show-overflow-tooltip />
+        <el-table-column label="进度" width="86">
           <template #default="{ row }">
             {{ completedRunCount(row) }}/{{ row.runs.length }}
           </template>
         </el-table-column>
-        <el-table-column label="一致性" width="110">
+        <el-table-column label="一致性" width="86">
           <template #default="{ row }">
             {{ formatPercent(row.analysis.consistencyPercentage) }}
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="130">
+        <el-table-column label="状态" width="104">
           <template #default="{ row }">
             <el-tag size="small" effect="plain" :type="taskStatusTagType(row.status)">
               {{ formatTaskStatus(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" min-width="170">
+        <el-table-column label="创建时间" min-width="152">
           <template #default="{ row }">
             {{ formatDateTime(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="128" align="right">
           <template #default="{ row }">
-            <el-button link type="primary" :loading="refreshingTaskId === row.id" @click="refreshTaskStatus(row)">
-              刷新状态
-            </el-button>
             <el-button link type="primary" @click="openTaskDetail(row.id)">详情</el-button>
-            <el-button link type="primary" @click="rerunTask(row.id)">重新运行</el-button>
-            <el-button link type="danger" @click="deleteTask(row.id)">删除</el-button>
+            <el-dropdown trigger="click" @command="(command: string) => handleTaskAction(row, command)">
+              <el-button link type="primary" :icon="MoreFilled" class="consistency-more-button" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="refresh">刷新状态</el-dropdown-item>
+                  <el-dropdown-item command="rerun" :disabled="!canRerunTask(row)">重新运行</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -139,7 +144,9 @@
           >
             刷新状态
           </el-button>
-          <el-button :icon="Refresh" @click="rerunTask(selectedTask.id)">重新运行</el-button>
+          <el-button :icon="Refresh" :disabled="!canRerunTask(selectedTask)" @click="rerunTask(selectedTask.id)">
+            重新运行
+          </el-button>
           <el-button :icon="Delete" type="danger" plain @click="deleteTask(selectedTask.id)">
             删除任务
           </el-button>
@@ -312,13 +319,14 @@
 import type { EChartsOption } from "echarts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft, Delete, Download, Plus, Refresh } from "@element-plus/icons-vue";
+import { ArrowLeft, Delete, Download, MoreFilled, Plus, Refresh } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import CaseReportDrawer from "../components/CaseReportDrawer.vue";
 import EChartPanel from "../components/EChartPanel.vue";
 import MetricCard from "../components/MetricCard.vue";
 import {
   deleteConsistencyTask,
+  deleteRemoteTasks,
   fetchConsistencyTasks,
   fetchRemoteScoreResult,
   fetchRemoteTaskStatuses,
@@ -341,8 +349,10 @@ import {
   buildConsistencyTaskPersistRecord,
   buildRiskReport,
   buildRuleReport,
+  collectExclusiveRoundTaskIds,
   extractConsistencyRunSummary,
   generateSubmittedTaskIds,
+  generateNextSubmittedTaskIds,
   getConsistencyTaskDefaultRoundSelection,
   hydrateConsistencyTaskSnapshot,
   isConsistencyTaskTerminal,
@@ -405,6 +415,7 @@ const validationErrors = ref<string[]>([]);
 const creating = ref(false);
 const loadingTasks = ref(false);
 const refreshingTaskId = ref("");
+const refreshingAllTasks = ref(false);
 const rawResults = new Map<number, unknown>();
 const pendingPersistTaskIds = new Set<string>();
 let taskSequence = 0;
@@ -622,6 +633,11 @@ async function loadTasks() {
   }
 }
 
+async function refreshConsistencyMenu() {
+  await loadTasks();
+  await refreshAllTaskStatuses();
+}
+
 function refreshTaskAggregates(task: ConsistencyTask) {
   task.analysis = analyzeConsistency(task.runs);
   task.ruleReport = buildRuleReport(task.runs);
@@ -707,7 +723,7 @@ async function ensureRunResult(task: ConsistencyTask, run: ConsistencyRunSummary
   return rawResults.get(run.taskId);
 }
 
-async function refreshTaskStatus(task: ConsistencyTask) {
+async function refreshTaskStatus(task: ConsistencyTask, options: { silent?: boolean } = {}) {
   refreshingTaskId.value = task.id;
   try {
     const response = await fetchRemoteTaskStatuses(
@@ -732,11 +748,41 @@ async function refreshTaskStatus(task: ConsistencyTask) {
     }
     refreshTaskAggregates(task);
     await persistTaskNow(task);
-    ElMessage.success("任务状态已刷新");
+    if (!options.silent) {
+      ElMessage.success("任务状态已刷新");
+    }
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : String(error));
+    if (!options.silent) {
+      ElMessage.error(error instanceof Error ? error.message : String(error));
+    }
+    if (options.silent) {
+      throw error;
+    }
   } finally {
     refreshingTaskId.value = "";
+  }
+}
+
+async function refreshAllTaskStatuses() {
+  if (tasks.value.length === 0) {
+    return;
+  }
+  refreshingAllTasks.value = true;
+  try {
+    const refreshableTasks = [...tasks.value];
+    const failures: string[] = [];
+    for (const task of refreshableTasks) {
+      try {
+        await refreshTaskStatus(task, { silent: true });
+      } catch (error) {
+        failures.push(`${task.id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (failures.length > 0) {
+      ElMessage.warning(`部分一致性任务状态刷新失败：${failures[0]}`);
+    }
+  } finally {
+    refreshingAllTasks.value = false;
   }
 }
 
@@ -843,7 +889,8 @@ async function deleteTask(taskId: string) {
 async function deleteSelectedRound() {
   const task = selectedTask.value;
   const roundOption = selectedRoundOption.value;
-  if (!task || !roundOption || roundOption.round === undefined) {
+  const roundView = selectedRoundView.value;
+  if (!task || !roundOption || roundOption.round === undefined || !roundView) {
     return;
   }
   try {
@@ -860,19 +907,34 @@ async function deleteSelectedRound() {
     return;
   }
 
-  const nextTask = removeConsistencyAnalysisHistoryRound(task, roundOption.round) as ConsistencyTask;
-  Object.assign(task, nextTask);
-  const nextSelection = roundOptions.value.some((option) => option.value === roundOption.value)
-    ? roundOption.value
-    : getConsistencyTaskDefaultRoundSelection(task);
-  selectedRound.value = nextSelection;
-  await persistTaskNow(task);
-  ElMessage.success("轮次已删除");
+  try {
+    const taskIds = collectExclusiveRoundTaskIds(task, roundOption.round);
+    if (taskIds.length > 0) {
+      await deleteRemoteTasks(taskIds);
+      for (const taskId of taskIds) {
+        rawResults.delete(taskId);
+      }
+    }
+    const nextTask = removeConsistencyAnalysisHistoryRound(task, roundOption.round) as ConsistencyTask;
+    Object.assign(task, nextTask);
+    const nextSelection = roundOptions.value.some((option) => option.value === roundOption.value)
+      ? roundOption.value
+      : getConsistencyTaskDefaultRoundSelection(task);
+    selectedRound.value = nextSelection;
+    await persistTaskNow(task);
+    ElMessage.success("轮次已删除");
+  } catch (error) {
+    ElMessage.error(`轮次删除失败：${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function rerunTask(taskId: string) {
   const task = tasks.value.find((item) => item.id === taskId);
   if (!task) {
+    return;
+  }
+  if (!canRerunTask(task)) {
+    ElMessage.warning("当前任务仍在运行，结束后才能重新运行");
     return;
   }
   const validation = validateRemoteEvaluationTaskInput(task.sourceTask);
@@ -881,7 +943,9 @@ function rerunTask(taskId: string) {
     return;
   }
   refreshTaskHistorySnapshot(task);
+  const nextTaskIds = generateNextSubmittedTaskIds(task, RUN_COUNT);
   for (const run of task.runs) {
+    run.taskId = nextTaskIds[run.runIndex] ?? run.taskId;
     run.status = "pending_submit";
     run.totalScore = undefined;
     run.hardGateTriggered = undefined;
@@ -897,6 +961,24 @@ function rerunTask(taskId: string) {
   reportCase.value = null;
   reportError.value = "";
   void runTask(task);
+}
+
+function canRerunTask(task: ConsistencyTask) {
+  return task.status !== "running";
+}
+
+function handleTaskAction(task: ConsistencyTask, command: string) {
+  if (command === "refresh") {
+    void refreshTaskStatus(task);
+    return;
+  }
+  if (command === "rerun") {
+    rerunTask(task.id);
+    return;
+  }
+  if (command === "delete") {
+    void deleteTask(task.id);
+  }
 }
 
 async function openRunReport(run: ConsistencyRunSummary) {
@@ -1078,7 +1160,7 @@ function runStatusTagType(status: ConsistencyRunStatus) {
 }
 
 async function refreshFromHeader() {
-  await loadTasks();
+  await refreshConsistencyMenu();
 }
 
 watch([tasks, pageSize], () => {
@@ -1087,8 +1169,14 @@ watch([tasks, pageSize], () => {
   }
 });
 
+watch(isDetailPage, (inDetailPage, wasDetailPage) => {
+  if (!inDetailPage && wasDetailPage) {
+    void refreshConsistencyMenu();
+  }
+});
+
 onMounted(() => {
-  void loadTasks();
+  void refreshConsistencyMenu();
   window.addEventListener("dashboard:refresh", refreshFromHeader as EventListener);
 });
 

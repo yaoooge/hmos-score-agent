@@ -218,6 +218,18 @@ export function createSqliteRemoteTaskRegistry(db: ScoreDatabase): RemoteTaskReg
 
       return record;
     },
+
+    async delete(taskId: number): Promise<boolean> {
+      const existing = getExisting(taskId);
+      if (!existing) {
+        return false;
+      }
+      db.transaction(() => {
+        db.run("DELETE FROM rule_violation_run WHERE task_id = ?", [taskId]);
+        db.run("DELETE FROM remote_task WHERE task_id = ?", [taskId]);
+      });
+      return true;
+    },
   };
 }
 

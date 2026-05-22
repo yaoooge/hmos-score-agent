@@ -11,6 +11,7 @@ import {
   createGetRemoteTaskResultHandler,
   createGetRemoteTaskStatusesHandler,
   createDeleteConsistencyTaskHandler,
+  createDeleteRemoteTasksHandler,
   createReplaceConsistencyTasksHandler,
   createUpsertConsistencyTaskHandler,
   createRemoteTaskExecutionQueue,
@@ -72,6 +73,12 @@ function createResultRequest(taskId: number, token?: string) {
 }
 
 function createStatusesRequest(taskIds: string) {
+  return {
+    query: { taskIds },
+  };
+}
+
+function createDeleteRemoteTasksRequest(taskIds: string) {
   return {
     query: { taskIds },
   };
@@ -474,6 +481,7 @@ function notInvolvedCrossDevice() {
 test("API definitions include the remote task result endpoint", () => {
   assert.equal(API_PATHS.remoteTaskResult, "/score/remote-tasks/:taskId/result");
   assert.equal(API_PATHS.remoteTaskStatuses, "/score/remote-tasks/status");
+  assert.equal(API_PATHS.remoteTasks, "/score/remote-tasks");
   assert.equal(API_PATHS.consistencyTasks, "/score/consistency-tasks");
   assert.equal(API_PATHS.consistencyTask, "/score/consistency-tasks/:id");
   assert.ok(
@@ -486,6 +494,11 @@ test("API definitions include the remote task result endpoint", () => {
     API_DEFINITIONS.some(
       (definition) =>
         definition.method === "GET" && definition.path === "/score/remote-tasks/status",
+    ),
+  );
+  assert.ok(
+    API_DEFINITIONS.some(
+      (definition) => definition.method === "DELETE" && definition.path === "/score/remote-tasks",
     ),
   );
   assert.ok(
@@ -951,6 +964,52 @@ test("consistency task delete handler removes a single persisted record", async 
   assert.equal(responseState.statusCode, 200);
   assert.equal(responseState.body?.success, true);
   assert.equal((await store.list()).length, 0);
+});
+
+test("consistency task delete handler removes derived remote tasks", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await store.upsert({
+    id: "C-013",
+    sequence: 13,
+    runs: [{ runIndex: 0, taskId: 130600101, status: "completed" }],
+    analysisHistory: [
+      {
+        round: 1,
+        capturedAt: "2026-05-13T08:00:00.000Z",
+        summary: {},
+        ruleReport: [],
+        riskReport: [],
+        runs: [{ runIndex: 0, taskId: 130600201, status: "completed" }],
+      },
+    ],
+  });
+  await registry.upsert({ taskId: 130600101, status: "completed" });
+  await registry.upsert({ taskId: 130600201, status: "completed" });
+  const handler = createDeleteConsistencyTaskHandler(store, { remoteTaskRegistry: registry });
+  const { response, responseState } = createResponse();
+
+  await handler({ params: { id: "C-013" } } as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(await registry.get(130600101), undefined);
+  assert.equal(await registry.get(130600201), undefined);
+});
+
+test("remote task batch delete handler removes requested records", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({ taskId: 901, status: "completed" });
+  await registry.upsert({ taskId: 902, status: "failed" });
+  const handler = createDeleteRemoteTasksHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createDeleteRemoteTasksRequest("901,902") as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.deepEqual(responseState.body?.deletedTaskIds, [901, 902]);
+  assert.deepEqual(await registry.list(), []);
 });
 
 test("consistency task replacement rejects empty collection over existing records", async (t) => {

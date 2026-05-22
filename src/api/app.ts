@@ -668,6 +668,35 @@ function readRemoteTaskStatusIds(req: Request): number[] | string {
   return taskIds;
 }
 
+function readConsistencyRunTaskIds(record: ConsistencyTaskRecord): number[] {
+  const ids = new Set<number>();
+  const addRuns = (runs: unknown) => {
+    if (!Array.isArray(runs)) {
+      return;
+    }
+    for (const run of runs) {
+      const taskId =
+        typeof run === "object" && run !== null
+          ? (run as { taskId?: unknown }).taskId
+          : undefined;
+      if (Number.isSafeInteger(taskId) && Number(taskId) > 0) {
+        ids.add(Number(taskId));
+      }
+    }
+  };
+
+  addRuns(record.runs);
+  const history = record.analysisHistory;
+  if (Array.isArray(history)) {
+    for (const item of history) {
+      if (typeof item === "object" && item !== null) {
+        addRuns((item as { runs?: unknown }).runs);
+      }
+    }
+  }
+  return [...ids];
+}
+
 function isConsistencyTaskRecord(value: unknown): value is ConsistencyTaskRecord {
   const record = value as { id?: unknown; sequence?: unknown };
   return (
@@ -871,6 +900,25 @@ export function createGetRemoteTaskStatusesHandler(registry: RemoteTaskRegistry)
   };
 }
 
+export function createDeleteRemoteTasksHandler(registry: Pick<RemoteTaskRegistry, "delete">) {
+  return async (req: Request, res: Response) => {
+    const taskIds = readRemoteTaskStatusIds(req);
+    if (typeof taskIds === "string") {
+      res.status(400).json({ success: false, message: taskIds });
+      return;
+    }
+
+    const deletedTaskIds: number[] = [];
+    for (const taskId of taskIds) {
+      if (await registry.delete(taskId)) {
+        deletedTaskIds.push(taskId);
+      }
+    }
+
+    res.json({ success: true, deletedTaskIds });
+  };
+}
+
 export function createGetConsistencyTasksHandler(
   store: ConsistencyTaskStore,
   options: { sourceTaskRegistry?: Pick<RemoteTaskRegistry, "get"> } = {},
@@ -951,7 +999,10 @@ export function createUpsertConsistencyTaskHandler(store: ConsistencyTaskStore) 
   };
 }
 
-export function createDeleteConsistencyTaskHandler(store: ConsistencyTaskStore) {
+export function createDeleteConsistencyTaskHandler(
+  store: ConsistencyTaskStore,
+  options: { remoteTaskRegistry?: Pick<RemoteTaskRegistry, "delete"> } = {},
+) {
   return async (req: Request, res: Response) => {
     const { id } = req.params as { id?: string };
     if (!id || id.trim().length === 0) {
@@ -960,6 +1011,16 @@ export function createDeleteConsistencyTaskHandler(store: ConsistencyTaskStore) 
     }
 
     try {
+      const record = (await store.list()).find((item) => item.id === id);
+      if (!record) {
+        res.status(404).json({ success: false, message: "Consistency task not found" });
+        return;
+      }
+      if (options.remoteTaskRegistry) {
+        for (const taskId of readConsistencyRunTaskIds(record)) {
+          await options.remoteTaskRegistry.delete(taskId);
+        }
+      }
       const deleted = await store.delete(id);
       if (!deleted) {
         res.status(404).json({ success: false, message: "Consistency task not found" });
@@ -1057,6 +1118,7 @@ export function createApp(
   );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
   app.get(API_PATHS.remoteTaskStatuses, createGetRemoteTaskStatusesHandler(registry));
+  app.delete(API_PATHS.remoteTasks, createDeleteRemoteTasksHandler(registry));
   app.get(
     API_PATHS.consistencyTasks,
     createGetConsistencyTasksHandler(consistencyTaskStore, { sourceTaskRegistry: registry }),
@@ -1065,7 +1127,7 @@ export function createApp(
   app.put(API_PATHS.consistencyTask, createUpsertConsistencyTaskHandler(consistencyTaskStore));
   app.delete(
     API_PATHS.consistencyTask,
-    createDeleteConsistencyTaskHandler(consistencyTaskStore),
+    createDeleteConsistencyTaskHandler(consistencyTaskStore, { remoteTaskRegistry: registry }),
   );
   app.use(
     createDashboardRouter({

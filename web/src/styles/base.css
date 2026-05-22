@@ -169,6 +169,31 @@ body {
   margin-top: 12px;
 }
 
+.consistency-task-table-card {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.consistency-task-table {
+  width: 100%;
+}
+
+.consistency-task-table .el-table__inner-wrapper,
+.consistency-task-table .el-table__body-wrapper,
+.consistency-task-table .el-scrollbar,
+.consistency-task-table .el-scrollbar__wrap {
+  min-width: 0;
+}
+
+.consistency-task-table .el-scrollbar__wrap {
+  overflow-x: hidden !important;
+}
+
+.consistency-more-button {
+  width: 24px;
+  padding: 0;
+}
+
 .consistency-header,
 .consistency-detail-header {
   display: flex;

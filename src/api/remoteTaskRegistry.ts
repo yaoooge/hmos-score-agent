@@ -43,6 +43,7 @@ export type RemoteTaskRegistry = {
   get(taskId: number): Promise<RemoteTaskRecord | undefined>;
   list(): Promise<RemoteTaskRecord[]>;
   upsert(patch: RemoteTaskRecordPatch): Promise<RemoteTaskRecord>;
+  delete(taskId: number): Promise<boolean>;
 };
 
 function isRecord(value: unknown): value is RemoteTaskRecord {
@@ -148,6 +149,17 @@ export function createRemoteTaskRegistry(localCaseRoot: string): RemoteTaskRegis
         records.set(record.taskId, record);
         await save();
         return record;
+      });
+    },
+
+    async delete(taskId: number): Promise<boolean> {
+      return await runExclusive(async () => {
+        await load();
+        const deleted = records.delete(taskId);
+        if (deleted) {
+          await save();
+        }
+        return deleted;
       });
     },
   };

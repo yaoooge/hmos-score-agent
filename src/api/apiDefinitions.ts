@@ -54,6 +54,7 @@ export type ApiDefinition = {
 export const API_PATHS = {
   health: "/health",
   runRemoteTask: "/score/run-remote-task",
+  remoteTasks: "/score/remote-tasks",
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
   remoteTaskStatuses: "/score/remote-tasks/status",
   consistencyTasks: "/score/consistency-tasks",
@@ -455,6 +456,31 @@ export const API_DEFINITIONS: ApiDefinition[] = [
                   },
                 },
               },
+            },
+          },
+        },
+      },
+      { status: 400, description: "Invalid query parameter.", body: errorResponseBody },
+    ],
+  },
+  {
+    method: "DELETE",
+    path: API_PATHS.remoteTasks,
+    description: "Delete registry records for a batch of remote task ids.",
+    responses: [
+      {
+        status: 200,
+        description: "Remote task records were deleted when present.",
+        body: {
+          type: "object",
+          description: "Remote task batch deletion response.",
+          properties: {
+            success: successField,
+            deletedTaskIds: {
+              type: "array",
+              required: true,
+              description: "Task ids that existed and were deleted.",
+              items: taskIdField,
             },
           },
         },

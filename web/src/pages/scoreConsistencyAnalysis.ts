@@ -568,34 +568,38 @@ export function removeConsistencyAnalysisHistoryRound(
     };
   }
 
-  const wasLatestRound = history.at(-1)?.round === round;
-  if (!wasLatestRound) {
-    return {
-      ...cloneConsistencyTaskSnapshot(task),
-      analysisHistory: remainingHistory,
-    };
-  }
-
   return {
     ...cloneConsistencyTaskSnapshot(task),
-    runs: latestHistory.runs.map(cloneRunSummary),
-    analysis: {
-      ...latestHistory.summary,
-      scoreStability: latestHistory.summary.scoreStability
-        ? { ...latestHistory.summary.scoreStability }
-        : undefined,
-      gateStability: latestHistory.summary.gateStability
-        ? { ...latestHistory.summary.gateStability }
-        : undefined,
-      findingStability: latestHistory.summary.findingStability
-        ? { ...latestHistory.summary.findingStability }
-        : undefined,
-      runConsistencyByTaskId: { ...latestHistory.summary.runConsistencyByTaskId },
-    },
-    ruleReport: latestHistory.ruleReport.map((rule) => ({ ...rule, runIndexes: [...rule.runIndexes] })),
-    riskReport: latestHistory.riskReport.map((risk) => ({ ...risk, runIndexes: [...risk.runIndexes] })),
     analysisHistory: remainingHistory,
   };
+}
+
+export function collectExclusiveRoundTaskIds(
+  task: ConsistencyTaskSnapshot,
+  round: number,
+): number[] {
+  const history = task.analysisHistory ?? [];
+  const targetRound = history.find((item) => item.round === round);
+  if (!targetRound) {
+    return [];
+  }
+
+  const retainedTaskIds = new Set<number>();
+  for (const run of task.runs) {
+    retainedTaskIds.add(run.taskId);
+  }
+  for (const item of history) {
+    if (item.round === round) {
+      continue;
+    }
+    for (const run of item.runs) {
+      retainedTaskIds.add(run.taskId);
+    }
+  }
+
+  return [...new Set(targetRound.runs.map((run) => run.taskId))].filter(
+    (taskId) => !retainedTaskIds.has(taskId),
+  );
 }
 
 export function compactConsistencyTaskSnapshots(
@@ -785,6 +789,24 @@ export function generateSubmittedTaskIds(
 ): number[] {
   const taskSeed = baseTaskId * 100000 + taskSequence * 100 + 1;
   const ids = Array.from({ length: runCount }, (_, index) => taskSeed + index);
+  if (!ids.every(Number.isSafeInteger)) {
+    throw new Error("生成后的 taskId 超出安全整数范围");
+  }
+  return ids;
+}
+
+export function generateNextSubmittedTaskIds(
+  task: Pick<ConsistencyTaskCollectionRecord, "originalTaskId" | "sequence" | "runs" | "analysisHistory">,
+  runCount = 10,
+): number[] {
+  const initialIds = generateSubmittedTaskIds(task.originalTaskId, task.sequence, runCount);
+  const existingTaskIds = [
+    ...task.runs.map((run) => run.taskId),
+    ...(task.analysisHistory ?? []).flatMap((item) => item.runs.map((run) => run.taskId)),
+  ].filter((taskId) => Number.isSafeInteger(taskId) && taskId > 0);
+  const maxExistingTaskId = existingTaskIds.length > 0 ? Math.max(...existingTaskIds) : 0;
+  const startTaskId = Math.max(initialIds[0] ?? 1, maxExistingTaskId + 1);
+  const ids = Array.from({ length: runCount }, (_, index) => startTaskId + index);
   if (!ids.every(Number.isSafeInteger)) {
     throw new Error("生成后的 taskId 超出安全整数范围");
   }

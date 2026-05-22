@@ -4,6 +4,7 @@ import {
   analyzeConsistency,
   appendAnalysisHistorySnapshot,
   buildConsistencyTaskPersistRecord,
+  collectExclusiveRoundTaskIds,
   buildConsistencyTaskRoundOptions,
   buildConsistencyExportFiles,
   buildConsistencyExportPayload,
@@ -13,6 +14,7 @@ import {
   buildRuleReport,
   compactConsistencyTaskSnapshots,
   extractConsistencyRunSummary,
+  generateNextSubmittedTaskIds,
   generateSubmittedTaskIds,
   hydrateConsistencyTaskSnapshot,
   isConsistencyTaskTerminal,
@@ -110,6 +112,36 @@ test("generateSubmittedTaskIds derives ten increasing safe ids", () => {
     130600101, 130600102, 130600103, 130600104, 130600105, 130600106, 130600107,
     130600108, 130600109, 130600110,
   ]);
+});
+
+test("generateNextSubmittedTaskIds derives the next unused block across rounds", () => {
+  const firstRoundRuns = generateSubmittedTaskIds(1263, 2).map((taskId, index) =>
+    completedRun(index, { taskId }),
+  );
+  const history = appendAnalysisHistorySnapshot(
+    [],
+    firstRoundRuns,
+    "2026-05-20T01:00:00.000Z",
+  );
+
+  assert.deepEqual(
+    generateNextSubmittedTaskIds({
+      id: "C-002",
+      sequence: 2,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1263,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs: firstRoundRuns,
+      analysisHistory: history,
+    }),
+    [
+      126300211, 126300212, 126300213, 126300214, 126300215, 126300216, 126300217,
+      126300218, 126300219, 126300220,
+    ],
+  );
 });
 
 test("extractConsistencyRunSummary reads score, unsatisfied rules, and risks", () => {
@@ -374,7 +406,7 @@ test("selectConsistencyTaskRoundSnapshot returns a historical round view", () =>
   assert.deepEqual(selected.runs.map((run) => run.taskId), [130600101, 130600102]);
 });
 
-test("removeConsistencyAnalysisHistoryRound removes the latest history round and rolls back current data", () => {
+test("removeConsistencyAnalysisHistoryRound removes the latest history round without changing current data", () => {
   const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
   const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
   const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
@@ -401,8 +433,36 @@ test("removeConsistencyAnalysisHistoryRound removes the latest history round and
 
   assert.equal(removed.analysisHistory?.length, 1);
   assert.equal(removed.analysisHistory?.[0]?.round, 1);
-  assert.equal(removed.analysis?.averageScore, 84);
-  assert.deepEqual(removed.runs.map((run) => run.totalScore), [82, 86]);
+  assert.equal(removed.analysis?.averageScore, 72);
+  assert.deepEqual(removed.runs.map((run) => run.totalScore), [70, 74]);
+});
+
+test("collectExclusiveRoundTaskIds skips ids still referenced by current data or other rounds", () => {
+  const firstRuns = [completedRun(0, { taskId: 130600101 }), completedRun(1, { taskId: 130600102 })];
+  const sharedRuns = [completedRun(0, { taskId: 130600201 }), completedRun(1, { taskId: 130600202 })];
+  const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
+  const history = appendAnalysisHistorySnapshot(firstHistory, sharedRuns, "2026-05-20T02:00:00.000Z");
+
+  const exclusiveIds = collectExclusiveRoundTaskIds(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs: sharedRuns,
+      analysis: analyzeConsistency(sharedRuns),
+      ruleReport: buildRuleReport(sharedRuns),
+      riskReport: buildRiskReport(sharedRuns),
+      analysisHistory: history,
+    },
+    2,
+  );
+
+  assert.deepEqual(exclusiveIds, []);
 });
 
 test("removeConsistencyAnalysisHistoryRound removes an earlier history round without changing current data", () => {

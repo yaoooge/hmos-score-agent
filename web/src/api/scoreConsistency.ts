@@ -103,6 +103,19 @@ export async function fetchRemoteTaskStatuses(
   return (await response.json()) as RemoteTaskStatusesResponse;
 }
 
+export async function deleteRemoteTasks(taskIds: number[]): Promise<{ success: true; deletedTaskIds: number[] }> {
+  const params = new URLSearchParams({
+    taskIds: taskIds.map(String).join(","),
+  });
+  const response = await fetch(`/score/remote-tasks?${params.toString()}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return (await response.json()) as { success: true; deletedTaskIds: number[] };
+}
+
 export async function fetchConsistencyTasks(): Promise<ConsistencyTaskCollectionResponse> {
   const response = await fetch("/score/consistency-tasks");
   if (!response.ok) {
