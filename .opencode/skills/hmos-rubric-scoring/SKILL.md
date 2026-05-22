@@ -27,9 +27,7 @@ description: Score HarmonyOS generated code against rubric items and return only
 
 ## References
 
-本 skill 正常评分时不需要读取 skill 目录下的 `references/`。`scoring_payload.rubric_summary` 是评分项、分值档位和 hard gate 的权威来源；额外读取完整 rubric 或通用评分文档容易扩大阅读范围并干扰扣分依据。
-
-如果 sandbox 根目录下存在业务 `references/`，也只有在 `scoring_payload` 明确要求或 patch 证据必须借助该业务资料解释时才读取相关最小文件；不要把业务资料当作新的评分项来源。
+输出 `risks` 前必须读取 `references/risk-taxonomy.md`，并按其中的风险选择、归并、阈值和自检规则处理风险项。
 
 ## 强制输出格式
 
@@ -38,7 +36,8 @@ description: Score HarmonyOS generated code against rubric items and return only
 - 最终 JSON 的最后一个非空字符必须是 `}`。
 - JSON 字段必须完全符合正确输出格式，不能增加额外字段，不能替换字段名。
 - 不要输出 `total_score`、`item_id`、`reason`、`risk_level`、`message` 等未声明字段。
-- `risks` 必须是 array；其中每一项只能包含 `level`、`title`、`description`、`evidence` 四个 string 字段；如果没有风险，输出 `[]`。
+- `risks` 必须是 array；其中每一项必须包含 `level`、`title`、`description`、`evidence` 四个 string 字段；可额外包含 `risk_code`、`risk_category`、`source_rule_id`；如果没有风险，输出 `[]`。
+- `risk_category` 只能是 `low`、`medium`、`high` 之一；如果输出 `risk_code` 且已匹配 taxonomy，`risk_category` 应与 taxonomy 的 `level` 相同。
 - 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
 - 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
 - JSON 字符串中的英文双引号必须转义；如果必须引用原文，先改写为不含双引号的中文转述再写入字段。
@@ -84,7 +83,9 @@ description: Score HarmonyOS generated code against rubric items and return only
       "level": "low",
       "title": "风险标题",
       "description": "风险描述",
-      "evidence": "证据摘要"
+      "evidence": "证据摘要",
+      "risk_code": "TAXONOMY_CODE",
+      "risk_category": "low"
     }
   ],
   "strengths": ["优势"],
@@ -111,6 +112,10 @@ description: Score HarmonyOS generated code against rubric items and return only
 - 已结合用户用例或任务目标检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
 - `rationale`、`overall_assessment`、`main_issues` 不是只描述孤立片段，而是给出基于完整功能链路的评分依据。
 - `risks` 是数组且字段名正确。
+- 已读取 `references/risk-taxonomy.md` 并按其中规则处理风险；已匹配 taxonomy 的风险包含稳定 `risk_code`，且 `level`、`title` 未被改写。
+- 已合并同根因、同证据链、同代码位置的近义风险；没有把同一事实拆成需求、接口、平台、状态等多个重复风险。
+- 已避免重复输出规则融合阶段会生成的规则违规风险；rubric 风险只保留规则之外的独立后果或达到阈值的实现风险。
+- 已将低置信度、轻微风格或未证实问题留在评分说明中，而不是放入 `risks`。
 - 文案类字符串均为中文；英文枚举值、文件路径、代码标识符和原始专有名词除外。
 - JSON 字符串中的英文双引号均已转义，或已改写为不含双引号的中文转述。
 - 没有额外字段、Markdown、代码块或自然语言前后缀。

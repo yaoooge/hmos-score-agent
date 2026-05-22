@@ -55,7 +55,7 @@ function payload(): RubricScoringPayload {
   };
 }
 
-test("runOpencodeRubricScoring asks agent to choose risks from taxonomy", async () => {
+test("runOpencodeRubricScoring points risk handling to the skill reference without embedding taxonomy", async () => {
   let prompt = "";
 
   const result = await runOpencodeRubricScoring({
@@ -83,8 +83,7 @@ test("runOpencodeRubricScoring asks agent to choose risks from taxonomy", async 
   });
 
   assert.equal(result.outcome, "success");
-  assert.match(prompt, /risk_taxonomy/);
-  assert.match(prompt, /REQUIREMENT_NOT_IMPLEMENTED/);
-  assert.match(prompt, /不要创造新的风险名称/);
-  assert.match(prompt, /risk_code/);
+  assert.match(prompt, /references\/risk-taxonomy\.md/);
+  assert.doesNotMatch(prompt, /risk_taxonomy/);
+  assert.doesNotMatch(prompt, /REQUIREMENT_NOT_IMPLEMENTED/);
 });

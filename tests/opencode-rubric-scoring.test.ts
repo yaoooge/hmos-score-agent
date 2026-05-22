@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildOpencodeRubricPayload } from "../src/agent/opencodeRubricPrompt.js";
 import { runOpencodeRubricScoring } from "../src/agent/opencodeRubricScoring.js";
-import type { RubricScoringPayload, RubricScoringResult } from "../src/types.js";
+import type { LoadedRubricSnapshot, RubricScoringPayload, RubricScoringResult } from "../src/types.js";
 
 function payload(): RubricScoringPayload {
   return {
@@ -104,6 +105,35 @@ function finalAnswer(): RubricScoringResult {
   };
 }
 
+test("buildOpencodeRubricPayload omits risk taxonomy from rubric summary", () => {
+  const rubricSnapshot: LoadedRubricSnapshot = {
+    ...payload().rubric_summary,
+    risk_taxonomy: [
+      {
+        code: "REQUIREMENT_NOT_IMPLEMENTED",
+        level: "high",
+        title: "需求未实现",
+        description: "需求目标没有在生成代码中落地。",
+      },
+    ],
+  };
+
+  const scoringPayload = buildOpencodeRubricPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "修复登录按钮无响应",
+      originalProjectPath: "/case/original",
+      generatedProjectPath: "/case/generated",
+    },
+    caseRoot: "/case",
+    taskType: "bug_fix",
+    constraintSummary: payload().task_understanding,
+    rubricSnapshot,
+  });
+
+  assert.equal("risk_taxonomy" in scoringPayload.rubric_summary, false);
+});
+
 test("runOpencodeRubricScoring returns existing rubric result shape without replacement fields", async () => {
   let prompt = "";
   let requestTag = "";
@@ -135,7 +165,7 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   assert.match(prompt, /该 skill 中的输出契约和自检清单是本次输出的强制要求/);
   assert.match(prompt, /generated\//);
   assert.match(prompt, /patch\//);
-  assert.doesNotMatch(prompt, /references\//);
+  assert.match(prompt, /references\/risk-taxonomy\.md/);
   assert.match(prompt, /优先阅读 patch\/effective\.patch/);
   assert.match(prompt, /根据 patch 中出现的文件路径继续阅读相关 generated\/ 或 original\/ 上下文/);
   assert.doesNotMatch(prompt, /initial_target_files/);

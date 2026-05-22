@@ -18,6 +18,11 @@ type BuildOpencodeRubricPayloadInput = {
   workspaceProjectStructureNote?: string;
 };
 
+function omitRiskTaxonomy(rubricSnapshot: LoadedRubricSnapshot): LoadedRubricSnapshot {
+  const { risk_taxonomy: _riskTaxonomy, ...rubricSummary } = rubricSnapshot;
+  return rubricSummary;
+}
+
 export function buildOpencodeRubricPayload(
   input: BuildOpencodeRubricPayloadInput,
 ): RubricScoringPayload {
@@ -32,7 +37,7 @@ export function buildOpencodeRubricPayload(
       effective_patch_path: input.effectivePatchPath,
     },
     task_understanding: input.constraintSummary,
-    rubric_summary: input.rubricSnapshot,
+    rubric_summary: omitRiskTaxonomy(input.rubricSnapshot),
     workspace_project_structure: input.workspaceProjectStructure,
     workspace_project_structure_note: input.workspaceProjectStructureNote,
     response_contract: {

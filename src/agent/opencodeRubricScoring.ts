@@ -103,6 +103,11 @@ function trimExpectedOutputFromPromptSummary(summary: string): string {
   return summary.replace(/\n{0,2}(?:期望输出|Expected\s+Output)\s*[：:][\s\S]*$/iu, "").trim();
 }
 
+function compactRubricSummary(payload: RubricScoringPayload): LoadedRubricSnapshot {
+  const { risk_taxonomy: _riskTaxonomy, ...rubricSummary } = payload.rubric_summary;
+  return rubricSummary;
+}
+
 function compactRubricScoringPayload(payload: RubricScoringPayload): Record<string, unknown> {
   return {
     case_context: {
@@ -112,7 +117,7 @@ function compactRubricScoringPayload(payload: RubricScoringPayload): Record<stri
       ),
     },
     task_understanding: payload.task_understanding,
-    rubric_summary: payload.rubric_summary,
+    rubric_summary: compactRubricSummary(payload),
     workspace_project_structure: payload.workspace_project_structure,
     workspace_project_structure_note: payload.workspace_project_structure_note,
   };
@@ -196,7 +201,7 @@ function renderRubricScoringRetryPrompt(input: {
     "4. 对扣分项必须提供 deduction_trace。",
     "5. evidence_used 只能填写 sandbox 内文件相对路径，不要带行号；deduction_trace.code_locations 可填写带行号的位置，但必须使用 generated/ 工程文件中的真实行号，禁止使用 patch hunk 行号。",
     "6. risks 必须是 array；其中每一项必须包含 level、title、description、evidence 四个 string 字段，可包含 risk_code、risk_category、source_rule_id。",
-    "7. risks 应优先沿用上一轮 scoring_payload.rubric_summary.risk_taxonomy 中的 risk_code、level 和 title；禁止使用 risk_level、message、reason 等自造字段；如果没有风险，risks 必须输出空数组 []。",
+    "7. risks 必须遵守 hmos-rubric-scoring skill 的风险 reference 规则；禁止使用 risk_level、message、reason 等自造字段；如果没有风险，risks 必须输出空数组 []。",
     "8. JSON 字符串中的英文双引号必须转义；如果必须引用原文，先改写为不含双引号的中文转述再写入字段。",
     "",
     "最终输出要求:",
@@ -237,7 +242,7 @@ function renderRubricScoringPrompt(input: {
     "1. 按 rubric_summary 中的每个维度和评分项完成评分。",
     "2. 优先阅读 patch/effective.patch，评分范围仅限 patch 代码；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文，避免大量阅读无关代码。",
     "3. 按 hmos-rubric-scoring skill 的评分契约覆盖 rubric_summary.dimension_summaries 中每一个 item。",
-    "4. risks 必须优先从 rubric_summary.risk_taxonomy 中选择 risk_code、level 和 title；不要创造新的风险名称。只有确实无法匹配时，risk_code 可省略，但 title 仍应简洁稳定。",
+    "4. 输出 risks 前必须读取 hmos-rubric-scoring skill 的 references/risk-taxonomy.md，并按其中规则选择、归并和过滤风险。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",
