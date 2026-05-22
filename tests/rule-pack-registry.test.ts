@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import {
   defaultEnabledRulePackIds,
@@ -135,4 +137,19 @@ test("registered rule packs use yaml source of truth", () => {
     languagePack.rules.find((rule) => rule.rule_id === "ARKTS-MUST-001")?.decision_criteria?.fail?.[0],
     "存在类型、枚举、接口或命名空间与变量或函数标识符冲突。",
   );
+});
+
+test("registered rule packs are sourced only from references/rules yaml", () => {
+  const ruleReferenceDirectory = path.resolve(process.cwd(), "references/rules");
+  const legacyRulePackDirectory = path.resolve(process.cwd(), "src/rules/packs");
+
+  assert.equal(fs.existsSync(ruleReferenceDirectory), true);
+  assert.deepEqual(
+    fs
+      .readdirSync(ruleReferenceDirectory)
+      .filter((fileName) => fileName.endsWith(".yaml"))
+      .sort(),
+    ["arkts-language.yaml", "arkts-performance.yaml", "cross-device-adaptation.yaml"],
+  );
+  assert.equal(fs.existsSync(legacyRulePackDirectory), false);
 });

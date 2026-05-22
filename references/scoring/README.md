@@ -8,6 +8,6 @@ Files in this directory are the repo-local source of truth for:
 - `report_result_schema.json`
 - task-type rubric notes and rule application notes
 
-Static scoring rules are maintained in `src/rules/packs/`, not in this references directory.
+Static scoring rule packs are maintained as YAML files in `references/rules/`, not in this scoring reference directory.
 
 The runtime default `referenceRoot` resolves to `references/scoring` unless `DEFAULT_REFERENCE_ROOT` is explicitly set.
