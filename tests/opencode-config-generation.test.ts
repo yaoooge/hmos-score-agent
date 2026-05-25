@@ -42,6 +42,11 @@ async function copyOpencodeTemplate(repoRoot: string): Promise<void> {
     path.join(repoRoot, ".opencode", "skills"),
     { recursive: true },
   );
+  await fs.mkdir(path.join(repoRoot, "references", "risks"), { recursive: true });
+  await fs.copyFile(
+    path.join(sourceRoot, "references", "risks", "risk-taxonomy.yaml"),
+    path.join(repoRoot, "references", "risks", "risk-taxonomy.yaml"),
+  );
 }
 
 test("createOpencodeRuntimeConfig reports missing required environment variables", async () => {
@@ -283,7 +288,11 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
     ),
     /metadata\/agent-output\/human-rating-gap-analysis\.json/,
   );
-  assert.match(
+  const canonicalRiskTaxonomy = await fs.readFile(
+    path.join(repoRoot, "references", "risks", "risk-taxonomy.yaml"),
+    "utf-8",
+  );
+  assert.equal(
     await fs.readFile(
       path.join(
         repoRoot,
@@ -298,7 +307,22 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
       ),
       "utf-8",
     ),
-    /REQUIREMENT_NOT_IMPLEMENTED/,
+    canonicalRiskTaxonomy,
+  );
+  assert.equal(
+    await fs.readFile(
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "skills",
+        "hmos-rubric-scoring",
+        "references",
+        "risk-taxonomy.yaml",
+      ),
+      "utf-8",
+    ),
+    canonicalRiskTaxonomy,
   );
 
   assert.equal(runtime.env.OPENCODE_CONFIG, runtime.configPath);

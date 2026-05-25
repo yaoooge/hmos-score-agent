@@ -1,6 +1,10 @@
 import type { LoadedRubric } from "./rubricLoader.js";
-import { normalizeRiskItem } from "./riskTaxonomy.js";
-import type { RiskTaxonomy } from "./riskTaxonomy.js";
+import {
+  findRiskTaxonomyEntry,
+  normalizeRiskItem,
+  resolveRiskTaxonomyPrimaryItem,
+} from "./riskTaxonomy.js";
+import type { RiskTaxonomy, RiskTaxonomyEntry, RiskTaxonomyPrimaryItem } from "./riskTaxonomy.js";
 import {
   findOfficialLinterRuleProfile,
   officialLinterSeverityToImpactSeverity,
@@ -45,6 +49,17 @@ type MetricPenaltyRule = {
   severity: RuleImpactDetail["severity"];
 };
 
+type CanonicalIssueSource = "rubric" | "rule" | "build";
+
+type CanonicalIssue = {
+  issueId: string;
+  canonicalCode: string;
+  source: CanonicalIssueSource;
+  primaryDimension: string;
+  primaryItem: string;
+  evidenceAnchor: string;
+};
+
 function roundScore(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -61,6 +76,112 @@ const stateFlowMetrics = ["状态与数据流组织", "状态接入合理性"];
 const stabilityRiskMetrics = ["稳定性风险", "回归风险控制"];
 const securityBoundaryMetrics = ["安全与边界意识", "安全/边界意识"];
 const performanceRiskMetrics = ["性能风险"];
+
+function normalizeEvidenceAnchor(value: string | undefined): string {
+  const source = value ?? "";
+  const pathMatch = source.match(/(?:generated\/|workspace\/)?([A-Za-z0-9_.@/-]+\.(?:ets|ts|json|yaml|yml|c|cpp|h|hpp|xml|txt))/);
+  if (pathMatch?.[1]) {
+    return pathMatch[1].replace(/^generated\//, "").replace(/^workspace\//, "");
+  }
+  return source.trim().replace(/:\d+:\d+/g, "").replace(/:\d+/g, "").slice(0, 160);
+}
+
+function makeCanonicalIssueId(input: {
+  canonicalCode: string;
+  taskType: TaskType;
+  primaryItem: RiskTaxonomyPrimaryItem;
+  evidenceAnchor: string;
+}): string {
+  return [
+    input.canonicalCode,
+    input.taskType,
+    input.primaryItem.dimension,
+    input.primaryItem.item,
+    input.evidenceAnchor,
+  ].join(":");
+}
+
+function buildRubricCanonicalIssue(input: {
+  risk: RiskItem;
+  taxonomy: RiskTaxonomy | undefined;
+  taskType: TaskType;
+}): CanonicalIssue | undefined {
+  if (!input.taxonomy) {
+    return undefined;
+  }
+  const entry = findRiskTaxonomyEntry(input.taxonomy, input.risk.risk_code);
+  if (!entry) {
+    return undefined;
+  }
+  const primaryItem = resolveRiskTaxonomyPrimaryItem(entry, input.taskType);
+  if (!primaryItem) {
+    return undefined;
+  }
+  const evidenceAnchor = normalizeEvidenceAnchor(input.risk.evidence || input.risk.description);
+  if (!evidenceAnchor) {
+    return undefined;
+  }
+  return {
+    issueId: makeCanonicalIssueId({
+      canonicalCode: entry.code,
+      taskType: input.taskType,
+      primaryItem,
+      evidenceAnchor,
+    }),
+    canonicalCode: entry.code,
+    source: "rubric",
+    primaryDimension: primaryItem.dimension,
+    primaryItem: primaryItem.item,
+    evidenceAnchor,
+  };
+}
+
+function ruleCanonicalTaxonomyEntry(
+  rule: RuleAuditResult,
+  taxonomy: RiskTaxonomy | undefined,
+): RiskTaxonomyEntry | undefined {
+  if (!taxonomy) {
+    return undefined;
+  }
+  const languageRulePrefixes = ["ARKTS-"];
+  if (languageRulePrefixes.some((prefix) => rule.rule_id.startsWith(prefix))) {
+    return findRiskTaxonomyEntry(taxonomy, "LANGUAGE_CONSTRAINT_VIOLATION");
+  }
+  return undefined;
+}
+
+function buildRuleCanonicalIssue(input: {
+  rule: RuleAuditResult;
+  taxonomy: RiskTaxonomy | undefined;
+  taskType: TaskType;
+}): CanonicalIssue | undefined {
+  const entry = ruleCanonicalTaxonomyEntry(input.rule, input.taxonomy);
+  if (!entry) {
+    return undefined;
+  }
+  const primaryItem = resolveRiskTaxonomyPrimaryItem(entry, input.taskType);
+  if (!primaryItem) {
+    return undefined;
+  }
+  const evidenceAnchor = normalizeEvidenceAnchor(input.rule.conclusion);
+  if (!evidenceAnchor) {
+    return undefined;
+  }
+  return {
+    issueId: makeCanonicalIssueId({
+      canonicalCode: entry.code,
+      taskType: input.taskType,
+      primaryItem,
+      evidenceAnchor,
+    }),
+    canonicalCode: entry.code,
+    source: "rule",
+    primaryDimension: primaryItem.dimension,
+    primaryItem: primaryItem.item,
+    evidenceAnchor,
+  };
+}
+
 
 function makePenaltyRule(input: {
   metricNames: string[];
@@ -585,10 +706,32 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     });
   }
 
-  const risks: RiskItem[] = (input.rubricScoringResult?.risks ?? []).map((risk, index) => {
-    const withId = { ...risk, id: index + 1 };
-    return input.riskTaxonomy ? normalizeRiskItem(withId, input.riskTaxonomy) : withId;
-  });
+  const ruleCanonicalIssueIds = new Set(
+    input.ruleAuditResults.flatMap((rule) => {
+      if (rule.result !== "不满足") {
+        return [];
+      }
+      const issue = buildRuleCanonicalIssue({
+        rule,
+        taxonomy: input.riskTaxonomy,
+        taskType: input.taskType,
+      });
+      return issue ? [issue.issueId] : [];
+    }),
+  );
+  const risks: RiskItem[] = (input.rubricScoringResult?.risks ?? [])
+    .map((risk, index) => {
+      const withId = { ...risk, id: index + 1 };
+      return input.riskTaxonomy ? normalizeRiskItem(withId, input.riskTaxonomy) : withId;
+    })
+    .filter((risk) => {
+      const issue = buildRubricCanonicalIssue({
+        risk,
+        taxonomy: input.riskTaxonomy,
+        taskType: input.taskType,
+      });
+      return !issue || !ruleCanonicalIssueIds.has(issue.issueId);
+    });
   const hvigorHardGateTriggered = isHvigorBuildHardGateTriggered(input.hvigorBuildCheckSummary);
   if (hvigorHardGateTriggered && input.hvigorBuildCheckSummary) {
     risks.push({

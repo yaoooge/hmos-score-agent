@@ -1237,7 +1237,9 @@ function writeUint32(output: number[], value: number) {
 }
 
 function writeBytes(output: number[], bytes: Uint8Array) {
-  output.push(...bytes);
+  for (const byte of bytes) {
+    output.push(byte);
+  }
 }
 
 export function createStoredZip(files: Map<string, string>): Uint8Array {

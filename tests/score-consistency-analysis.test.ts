@@ -611,6 +611,20 @@ test("createStoredZip writes a zip archive containing provided files", () => {
   assert.match(text, /PK\u0005\u0006/);
 });
 
+test("createStoredZip writes large result files without exceeding the call stack", () => {
+  const largeResult = JSON.stringify({
+    overall_conclusion: { total_score: 82 },
+    details: "x".repeat(200_000),
+  });
+
+  const archive = createStoredZip(new Map([["rounds/round-001/run-01.json", largeResult]]));
+  const text = new TextDecoder().decode(archive);
+
+  assert.match(text, /rounds\/round-001\/run-01\.json/);
+  assert.match(text, /overall_conclusion/);
+  assert.match(text, /PK\u0005\u0006/);
+});
+
 test("buildConsistencyHistoryChartRows derives percent values for charting", () => {
   const history: ConsistencyAnalysisHistoryItem[] = [
     {

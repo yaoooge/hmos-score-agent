@@ -173,10 +173,46 @@ function compactRuleRetryPayload(payload: AgentBootstrapPayload): Record<string,
 }
 
 function renderRuleAssessmentRetryPrompt(input: {
+  sandboxRoot: string;
   bootstrapPayload: AgentBootstrapPayload;
   retryContext: { failureReason: string; rawText: string };
 }): string {
   const hasPreviousOutput = input.retryContext.rawText.trim().length > 0;
+  if (!hasPreviousOutput) {
+    return [
+      "你是评分流程中的规则判定 agent。本次是重试，但上一轮没有可复用的有效输出。",
+      "本次是重试。仍必须使用 hmos-rule-assessment skill；由于没有上一轮有效 rule_assessments，必须重新阅读 bootstrap_payload 和 patch，重新完成所有候选规则判定。",
+      "该 skill 中的输出契约和自检清单是本次输出的强制要求。",
+      `上一次失败原因: ${summarizeRetryFailureReason(input.retryContext.failureReason)}`,
+      "",
+      `Sandbox 根目录: ${input.sandboxRoot}`,
+      "可阅读目录约定:",
+      "- generated/: 待评分的生成结果代码。",
+      "- original/: 原始工程代码；如果不存在，说明本用例没有提供原始工程。",
+      "- patch/: 生成结果相对原始工程的补丁，优先查看 patch/effective.patch。",
+      "- metadata/: 用例元数据。",
+      "",
+      "任务:",
+      "1. 阅读 bootstrap_payload 中的候选规则和任务理解。",
+      "2. 优先阅读 patch/effective.patch，只基于 patch 内可见文件完成每条候选规则的判定；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文辅助理解。",
+      "3. 按 hmos-rule-assessment skill 的判定契约覆盖 assisted_rule_candidates 中每一个 rule_id。",
+      "4. 不要根据 rule_id 名称或泛化工程质量描述猜测结论；每条 reason 必须直接回答对应 rule_summary / llm_prompt，并引用相关证据路径。",
+      "",
+      "最终输出要求:",
+      "- 将最终 JSON object 写入 output_file。",
+      "- assistant 最终回复只输出 {\"output_file\":\"metadata/agent-output/rule-assessment.json\"}。",
+      "- 覆盖写入 output_file，不要沿用旧文件内容。",
+      `output_file: ${RULE_ASSESSMENT_OUTPUT_FILE}`,
+      "- 严格遵守 system prompt 中的正确输出格式。",
+      "- 不要输出分析过程、说明文字、Markdown、代码块或自然语言前后缀。",
+      "- JSON 字段必须完全符合 system prompt 中的结构，不能增加额外字段。",
+      "- 最终答案的第一个非空字符必须是 {。",
+      "- 最后一个非空字符必须是 }。",
+      "",
+      "bootstrap_payload:",
+      stringifyForPrompt(compactRuleAssessmentPayload(input.bootstrapPayload)),
+    ].join("\n");
+  }
   return [
     "你是评分流程中的规则判定 agent。本次是重试，只修正最终 JSON 输出格式。",
     "本次是重试。仍必须使用 hmos-rule-assessment skill，但只修复 listed protocol errors，不重新判定。",
@@ -223,6 +259,7 @@ function renderRuleAssessmentPrompt(input: {
   const payload = input.bootstrapPayload;
   if (input.retryContext) {
     return renderRuleAssessmentRetryPrompt({
+      sandboxRoot: input.sandboxRoot,
       bootstrapPayload: input.bootstrapPayload,
       retryContext: input.retryContext,
     });

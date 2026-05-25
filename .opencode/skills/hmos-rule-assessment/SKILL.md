@@ -84,8 +84,9 @@ description: Use when evaluating assisted HarmonyOS/OpenHarmony rule candidates 
 - 非 ArkUI kit 的 `signal_status=all_matched` 表示已有导入、调用链等强证据；重点核查调用时机、参数、错误处理和数据流。
 - 非 ArkUI kit 的 `signal_status=partial_matched` 只表示同名函数、相似命名或弱文本命中；不能仅凭这些弱证据判定 `pass`。
 - 非 ArkUI kit 的 `signal_status=none_matched` 时，必须复核目标文件和相关调用链是否存在真实 kit 来源证据，例如对应 kit import、从该 kit 导入的符号调用、或可追溯到该 kit import/API 调用的封装。
-- 只看到项目本地函数、业务 API、HTTP 封装、同名函数或相似命名时，不能当成 kit/API 使用证据。
-- 如果规则要求指定 kit/API 必须出现，但没有真实来源证据，判定 `violation`；只有证据不足以确认时才使用 `uncertain`。
+- 只看到项目本地函数、业务 API、Axios 调用、HTTP endpoint、HTTP 封装、同名函数或相似命名时，不能当成 kit/API 使用证据。
+- 如果规则要求指定 Kit/API 必须出现，`pass` 必须有真实 import、从该 import 引入的符号调用，或可追溯到该 Kit/API import 与调用的封装。
+- 如果规则要求指定 Kit/API 必须出现，但没有真实来源证据，判定 `violation`；只有证据不足以确认时才使用 `uncertain`。
 
 ## 决策规则
 
@@ -103,11 +104,25 @@ description: Use when evaluating assisted HarmonyOS/OpenHarmony rule candidates 
 - 依赖数量、配置完整性。
 - 命名规范、重复代码、普通可维护性问题。
 
+
+
+## 规则到 canonical taxonomy 的归类要求
+
+规则判定输出仍只包含既有 JSON 字段，但 `reason` 必须体现该规则违规的风险本质和稳定映射口径：
+
+1. 每个 `violation` 必须保留稳定 `rule_id` 语义，后续融合阶段据此生成 `sourceRuleId` / `source_rule_id`。
+2. 每个 `violation` 必须在 `reason` 中说明唯一的 canonical taxonomy code 归属，不要把同一规则同时解释成多个一级风险。
+3. 行业/场景规则不得新增行业 taxonomy code；电商、医疗、停车、Web、折叠屏等规则都按风险本质映射到既有 taxonomy，例如 API 使用偏离、需求不完整、布局或断点不匹配、数据或状态一致性风险。
+4. 多个规则触发同一维度时仍保留多条规则违规；不同 `rule_id` 必须分别判定、分别说明证据，不要因为维度相同而合并。
+5. 只有同一代码位置、同一失败机制、同一 canonical code 的 rule violation 与 rubric risk，才允许在融合阶段抑制重复 rubric 风险。
+6. 同一维度下不同规则、不同证据、不同失败机制不得互相抑制，也不得因为归到同一 canonical taxonomy code 就跳过其中一条规则判定。
+
 ## Reason 写作规则
 
 每条 `reason` 必须直接回答当前 `rule_id` 的 `rule_summary` / `rule_name` / `llm_prompt`：
 
 - 围绕规则文本中的核心对象、API、Kit、组件、状态、场景、适用条件或禁止事项展开。
+- 每条规则只说明一个主要 rubric 落点；多个独立规则即使落在同一维度，也仍各自判定，不要因为维度相同而合并解释。
 - 把 patch、相关上下文、候选规则语义、用例目标、功能流程和鸿蒙特性放在一起判断。
 - 说明完整功能链路上的依据，不要只根据零散代码片段下结论。
 - 如果规则要求某个 API / Kit / 设备形态 / 输入方式 / 硬件能力 / 避让区域 / 方向或折展场景，而工程不涉及该能力，必须说明“不涉及”的规则原因和证据。
@@ -156,7 +171,9 @@ description: Use when evaluating assisted HarmonyOS/OpenHarmony rule candidates 
 - 已按 HarmonyOS / OpenHarmony 语境检查 ArkTS / ArkUI、Kit / API、权限能力声明、生命周期、状态、路由、资源、异步流程和 API 兼容性。
 - 已对候选规则中的每个 `target_checks` 逐项审视，且已重点核查 `kit` 指定能力。
 - 已按 `static_precheck.summary` 和 `signal_status` 区分 ArkUI 内置组件、非 ArkUI 强证据、非 ArkUI 弱证据和无证据。
-- 当非 ArkUI kit 为 `none_matched` 时，已复核真实 kit import/API 来源，没有把本地函数、业务 API、HTTP 封装、同名函数或相似命名直接当成 kit/API 使用证据。
+- 当非 ArkUI kit 为 `none_matched` 时，已复核真实 kit import/API 来源，没有把本地函数、业务 API、Axios 调用、HTTP endpoint、HTTP 封装、同名函数或相似命名直接当成 kit/API 使用证据。
+- 若判定 `pass` 且规则要求指定 Kit/API，已确认存在真实 import、符号调用或可追溯到 Kit/API 的封装。
+- 每个 `reason` 只说明一个主要 rubric 落点；多个独立规则即使落在同一维度，也没有被合并成一条解释。
 - 已结合用户用例或规则语义检查功能完备度、流程闭环、入口可达性、交互状态、数据流、异常和空状态处理。
 - 每个 `reason` 都基于候选规则、相关上下文和完整功能链路，不是孤立片段结论。
 - 每个 `reason` 都与对应候选规则语义、任务期望、`decision` 和 `evidence_used` 直接相关；若不相关，已重新判定该条规则。

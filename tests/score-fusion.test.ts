@@ -1106,3 +1106,140 @@ test("fuseRubricScoreWithRules caps total score at 59 when remote build check fa
   assert.match(buildRisk.description, /远端构建结果状态为 failed/);
   assert.doesNotMatch(buildRisk.description, /hvigor 编译校验状态/);
 });
+
+
+test("fuseRubricScoreWithRules suppresses rubric risk when a rule reports the same canonical issue", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "存在语言约束风险。", overall_confidence: "high" },
+      item_scores: snapshot.dimension_summaries.flatMap((dimension) =>
+        dimension.item_summaries.map((item) => ({
+          dimension_name: dimension.name,
+          item_name: item.name,
+          score: item.scoring_bands[0].score,
+          max_score: item.weight,
+          matched_band_score: item.scoring_bands[0].score,
+          rationale: "未发现明显问题。",
+          evidence_used: [],
+          confidence: "high" as const,
+          review_required: false,
+        })),
+      ),
+      hard_gate_candidates: [],
+      risks: [
+        {
+          id: 1,
+          level: "medium",
+          title: "语言问题",
+          description: "存在 ArkTS 类型约束违规。",
+          evidence: "entry/src/main/ets/pages/Index.ets",
+          risk_code: "LANGUAGE_CONSTRAINT_VIOLATION",
+        } as never,
+      ],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKTS-FORBID-005",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 使用 any 违反 ArkTS 类型约束。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+    riskTaxonomy: taxonomy,
+  } as never);
+
+  assert.equal(
+    result.risks.some((risk) => risk.risk_code === "LANGUAGE_CONSTRAINT_VIOLATION"),
+    false,
+  );
+  assert.equal(
+    result.risks.some((risk) => risk.risk_code === "RULE_VIOLATION:ARKTS-FORBID-005"),
+    true,
+  );
+});
+
+test("fuseRubricScoreWithRules keeps cumulative deductions for multiple rules on the same item", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础评分较高。", overall_confidence: "high" },
+      item_scores: snapshot.dimension_summaries.flatMap((dimension) =>
+        dimension.item_summaries.map((item) => ({
+          dimension_name: dimension.name,
+          item_name: item.name,
+          score: item.scoring_bands[0].score,
+          max_score: item.weight,
+          matched_band_score: item.scoring_bands[0].score,
+          rationale: "未发现明显问题。",
+          evidence_used: [],
+          confidence: "high" as const,
+          review_required: false,
+        })),
+      ),
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKTS-MUST-001",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 存在命名冲突。",
+      },
+      {
+        rule_id: "ARKTS-FORBID-005",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:2:1 使用 any。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const arktsDetail = result.scoreFusionDetails.find(
+    (detail) => detail.item_name === "ArkTS/ArkUI语法与类型安全",
+  );
+  assert.ok(arktsDetail);
+  assert.deepEqual(
+    arktsDetail.rule_impacts.map((impact) => impact.rule_id).sort(),
+    ["ARKTS-FORBID-005", "ARKTS-MUST-001"].sort(),
+  );
+  assert.equal(
+    arktsDetail.score_fusion.rule_delta,
+    arktsDetail.rule_impacts.reduce((sum, impact) => sum + impact.score_delta, 0),
+  );
+  assert.ok(arktsDetail.score_fusion.rule_delta < arktsDetail.rule_impacts[0].score_delta);
+});

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import { buildOpencodeRubricPayload } from "../src/agent/opencodeRubricPrompt.js";
 import { runOpencodeRubricScoring } from "../src/agent/opencodeRubricScoring.js";
@@ -165,7 +167,7 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   assert.match(prompt, /该 skill 中的输出契约和自检清单是本次输出的强制要求/);
   assert.match(prompt, /generated\//);
   assert.match(prompt, /patch\//);
-  assert.match(prompt, /references\/risk-taxonomy\.md/);
+  assert.match(prompt, /references\/risk-taxonomy\.yaml/);
   assert.match(prompt, /优先阅读 patch\/effective\.patch/);
   assert.match(prompt, /根据 patch 中出现的文件路径继续阅读相关 generated\/ 或 original\/ 上下文/);
   assert.doesNotMatch(prompt, /initial_target_files/);
@@ -710,4 +712,16 @@ test("runOpencodeRubricScoring does not hard-validate rubric comparison wording"
   });
 
   assert.equal(result.outcome, "success");
+});
+
+test("rubric skill documents risk taxonomy priority and duplicate suppression rules", () => {
+  const skillText = fs.readFileSync(
+    path.resolve(process.cwd(), ".opencode/skills/hmos-rubric-scoring/SKILL.md"),
+    "utf8",
+  );
+
+  assert.match(skillText, /风险 taxonomy 判定优先级/);
+  assert.match(skillText, /真实 import、符号调用或可追溯到 Kit\/API 的封装/);
+  assert.match(skillText, /同一代码位置、同一失败机制、同一 canonical code/);
+  assert.match(skillText, /先判断是否为明确需求缺失/);
 });

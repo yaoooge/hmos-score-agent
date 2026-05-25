@@ -181,6 +181,26 @@ async function copySkillDirectory(input: {
   await ensureRequiredSkillFiles(input.targetDir);
 }
 
+async function copySharedRiskTaxonomyReference(input: {
+  repoRoot: string;
+  targetSkillsDir: string;
+}): Promise<void> {
+  const sourcePath = path.join(input.repoRoot, "references", "risks", "risk-taxonomy.yaml");
+  const targetPath = path.join(
+    input.targetSkillsDir,
+    "hmos-rubric-scoring",
+    "references",
+    "risk-taxonomy.yaml",
+  );
+  await fs.access(sourcePath).catch((error: unknown) => {
+    throw new OpencodeConfigError(
+      `缺少共享 risk taxonomy 文件：references/risks/risk-taxonomy.yaml (${error instanceof Error ? error.message : String(error)})`,
+    );
+  });
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.copyFile(sourcePath, targetPath);
+}
+
 export async function createOpencodeRuntimeConfig(input: {
   repoRoot: string;
   env?: NodeJS.ProcessEnv;
@@ -254,13 +274,23 @@ export async function createOpencodeRuntimeConfig(input: {
     targetDir: path.join(runtimeDir, "xdg-config", "opencode", "formatters"),
     label: "formatter",
   });
+  const runtimeSkillsDir = path.join(runtimeDir, "skills");
+  const xdgSkillsDir = path.join(runtimeDir, "xdg-config", "opencode", "skills");
   await copySkillDirectory({
     sourceDir: skillsDir,
-    targetDir: path.join(runtimeDir, "skills"),
+    targetDir: runtimeSkillsDir,
+  });
+  await copySharedRiskTaxonomyReference({
+    repoRoot,
+    targetSkillsDir: runtimeSkillsDir,
   });
   await copySkillDirectory({
     sourceDir: skillsDir,
-    targetDir: path.join(runtimeDir, "xdg-config", "opencode", "skills"),
+    targetDir: xdgSkillsDir,
+  });
+  await copySharedRiskTaxonomyReference({
+    repoRoot,
+    targetSkillsDir: xdgSkillsDir,
   });
   const generatedConfigText = `${JSON.stringify(generatedConfig, null, 2)}\n`;
   await fs.writeFile(configPath, generatedConfigText, "utf-8");

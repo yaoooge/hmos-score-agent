@@ -190,12 +190,12 @@ test("project opencode skills avoid unnecessary scoped references", async () => 
       ),
     /ENOENT/,
   );
-  assert.match(
-    await fs.readFile(
-      path.join(repoRoot, ".opencode", "skills", "hmos-rubric-scoring", "references", "risk-taxonomy.yaml"),
-      "utf-8",
-    ),
-    /REQUIREMENT_NOT_IMPLEMENTED/,
+  await assert.rejects(
+    () =>
+      fs.access(
+        path.join(repoRoot, ".opencode", "skills", "hmos-rubric-scoring", "references", "risk-taxonomy.yaml"),
+      ),
+    /ENOENT/,
   );
   await assert.rejects(
     () => fs.access(path.join(repoRoot, ".opencode", "skills", "hmos-rule-assessment", "references")),

@@ -6,6 +6,26 @@ rule_pack_meta:
   source_name: HarmonyOS-Cross-Device-Adaptation-General-Rules
   source_version: general-rules-2026-05-20
 must_rules:
+  - id: CFG-MUST-01
+    rule: >-
+      module.json5 的 deviceTypes 必须包含多设备类型。检查所有 HAR 包或 HAP 模块下的 module.json5 文件中的 deviceTypes
+      字段，该字段的枚举值必须至少包含 phone 和 tablet，建议同时包含 phone、tablet、2in1。deviceTypes 中缺少 phone 或 tablet 即判定失败
+    detector_kind: case_constraint
+    detector_config:
+      targetPatterns:
+        - '**/module.json5'
+      kit:
+        - 'HarmonyOS: module.json5'
+      targetChecks:
+        - target: '**/module.json5'
+          astSignals: []
+          llmPrompt: >-
+            检查所有 HAR 包或 HAP 模块下的 module.json5 文件中的 deviceTypes 字段，该字段的枚举值必须至少包含 phone 和
+            tablet，建议同时包含 phone、tablet、2in1。deviceTypes 中缺少 phone 或 tablet 即判定失败
+      llmPrompt: >-
+        检查所有 HAR 包或 HAP 模块下的 module.json5 文件中的 deviceTypes 字段，该字段的枚举值必须至少包含 phone 和
+        tablet，建议同时包含 phone、tablet、2in1。deviceTypes 中缺少 phone 或 tablet 即判定失败
+    fallback_policy: agent_assisted
   - id: RSP-MUST-01
     rule: >-
       横向断点划分范围必须符合系统推荐值。检查工程中自定义断点系统或 WidthBreakpointType 工具类的断点边界定义，横向断点划分必须为
@@ -108,23 +128,25 @@ must_rules:
     fallback_policy: agent_assisted
   - id: RSP-MUST-05
     rule: >-
-      窗口尺寸监听必须基于 on('windowSizeChange') 或者 mediaquery.matchMediaSync。检查断点更新逻辑是否通过 window.on('windowSizeChange') 回调或
-      mediaquery.matchMediaSync 监听断点变化。使用 foldStatusChange 或设备方向 API 驱动断点更新即判定失败
+      窗口尺寸监听必须基于 on('windowSizeChange')、mediaquery.matchMediaSync 或 display.on('change')。检查断点更新逻辑是否通过
+      window.on('windowSizeChange') 回调、mediaquery.matchMediaSync 或 display.on('change') 监听断点变化。display.on('change') 可在 callback
+      中通过 Display 实例获取屏幕的宽度、高度和方向等信息，从而感知屏幕尺寸变化。使用 foldStatusChange 或设备方向 API 驱动断点更新即判定失败
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
         - '**/*.ets'
       kit:
-        - 'ArkUI: Window'
+        - 'ArkUI: Window / display'
       targetChecks:
         - target: '**/*.ets'
           astSignals: []
           llmPrompt: >-
-            检查断点更新逻辑是否通过 window.on('windowSizeChange') 回调或 mediaquery.matchMediaSync 监听断点变化。使用 foldStatusChange 或设备方向
-            API 驱动断点更新即判定失败
+            检查断点更新逻辑是否通过 window.on('windowSizeChange') 回调、mediaquery.matchMediaSync 或 display.on('change')
+            监听断点变化。display.on('change') 可在 callback 中通过 Display
+            实例获取屏幕的宽度、高度和方向等信息，从而感知屏幕尺寸变化。使用 foldStatusChange 或设备方向 API 驱动断点更新即判定失败
       llmPrompt: >-
-        检查断点更新逻辑是否通过 window.on('windowSizeChange') 回调或 mediaquery.matchMediaSync 监听断点变化。使用 foldStatusChange 或设备方向 API
-        驱动断点更新即判定失败
+        检查断点更新逻辑是否通过 window.on('windowSizeChange') 回调、mediaquery.matchMediaSync 或 display.on('change') 监听断点变化。display.on('change')
+        可在 callback 中通过 Display 实例获取屏幕的宽度、高度和方向等信息，从而感知屏幕尺寸变化。使用 foldStatusChange 或设备方向 API 驱动断点更新即判定失败
     fallback_policy: agent_assisted
   - id: RSP-MUST-06
     rule: >-
@@ -176,8 +198,9 @@ must_rules:
     fallback_policy: agent_assisted
   - id: CMP-MUST-01
     rule: >-
-      List lanes 必须按断点递增设置列数。检查使用 List 组件展示重复内容的页面，lanes 属性必须按断点从小到大非递减设置列数。对同一个 List，sm/md/lg/xl 的列数序列不得下降。例如 1/2/3
-      满足，2/2/3 满足，4/4/3 不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+      List lanes 必须按断点非递减设置列数。检查使用 List 组件展示重复内容的页面，lanes 属性必须按断点从小到大非递减设置列数。对同一个 List，sm/md/lg/xl
+      的列数序列不得下降，允许相邻断点列数相同。例如 1/2/3 满足，2/2/3 满足，1/2/2 满足，2/2/2 满足，4/4/3 不满足，4/3/3
+      不满足。较大断点列数小于较小断点即判定失败
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
@@ -188,16 +211,18 @@ must_rules:
         - target: '**/*.ets'
           astSignals: []
           llmPrompt: >-
-            检查使用 List 组件展示重复内容的页面，lanes 属性必须按断点从小到大非递减设置列数。对同一个 List，sm/md/lg/xl 的列数序列不得下降。例如 1/2/3 满足，2/2/3 满足，4/4/3
-            不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+            检查使用 List 组件展示重复内容的页面，lanes 属性必须按断点从小到大非递减设置列数。对同一个 List，sm/md/lg/xl
+            的列数序列不得下降，允许相邻断点列数相同。例如 1/2/3 满足，2/2/3 满足，1/2/2 满足，2/2/2 满足，4/4/3 不满足，4/3/3
+            不满足。较大断点列数小于较小断点即判定失败
       llmPrompt: >-
-        检查使用 List 组件展示重复内容的页面，lanes 属性必须按断点从小到大非递减设置列数。对同一个 List，sm/md/lg/xl 的列数序列不得下降。例如 1/2/3 满足，2/2/3 满足，4/4/3
-        不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+        检查使用 List 组件展示重复内容的页面，lanes 属性必须按断点从小到大非递减设置列数。对同一个 List，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。例如
+        1/2/3 满足，2/2/3 满足，1/2/2 满足，2/2/2 满足，4/4/3 不满足，4/3/3 不满足。较大断点列数小于较小断点即判定失败
     fallback_policy: agent_assisted
   - id: CMP-MUST-02
     rule: >-
       WaterFlow columnsTemplate 必须按断点非递减设置列数。检查 WaterFlow 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个
-      WaterFlow，sm/md/lg/xl 的列数序列不得下降。例如 2/3/4 满足，3/3/4 满足，4/4/3 不满足，3/2/2 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+      WaterFlow，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。例如 2/3/4 满足，3/3/4 满足，2/2/2 满足，4/4/3
+      不满足，3/2/2 不满足。较大断点列数小于较小断点即判定失败
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
@@ -208,16 +233,18 @@ must_rules:
         - target: '**/*.ets'
           astSignals: []
           llmPrompt: >-
-            检查 WaterFlow 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 WaterFlow，sm/md/lg/xl 的列数序列不得下降。例如 2/3/4 满足，3/3/4
-            满足，4/4/3 不满足，3/2/2 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+            检查 WaterFlow 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 WaterFlow，sm/md/lg/xl
+            的列数序列不得下降，允许相邻断点列数相同。例如 2/3/4 满足，3/3/4 满足，2/2/2 满足，4/4/3 不满足，3/2/2
+            不满足。较大断点列数小于较小断点即判定失败
       llmPrompt: >-
-        检查 WaterFlow 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 WaterFlow，sm/md/lg/xl 的列数序列不得下降。例如 2/3/4 满足，3/3/4
-        满足，4/4/3 不满足，3/2/2 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+        检查 WaterFlow 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 WaterFlow，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。例如
+        2/3/4 满足，3/3/4 满足，2/2/2 满足，4/4/3 不满足，3/2/2 不满足。较大断点列数小于较小断点即判定失败
     fallback_policy: agent_assisted
   - id: CMP-MUST-03
     rule: >-
-      Swiper displayCount 必须按断点递增。检查 Swiper 组件的 displayCount 是否按断点从小到大非递减设置。对同一个 Swiper，sm/md/lg/xl 的 displayCount
-      序列不得下降。例如 1/2/3 满足，2/2/3 满足，3/2/2 不满足，2/1/1 不满足。所有断点 displayCount 相同，或较大断点值小于较小断点，均判定失败
+      Swiper displayCount 必须按断点非递减设置。检查 Swiper 组件的 displayCount 是否按断点从小到大非递减设置。对同一个 Swiper，sm/md/lg/xl
+      的 displayCount 序列不得下降，允许相邻断点值相同。例如 1/2/3 满足，2/2/3 满足，1/1/1 满足，3/2/2 不满足，2/1/1
+      不满足。较大断点值小于较小断点即判定失败
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
@@ -228,16 +255,18 @@ must_rules:
         - target: '**/*.ets'
           astSignals: []
           llmPrompt: >-
-            检查 Swiper 组件的 displayCount 是否按断点从小到大非递减设置。对同一个 Swiper，sm/md/lg/xl 的 displayCount 序列不得下降。例如 1/2/3 满足，2/2/3
-            满足，3/2/2 不满足，2/1/1 不满足。所有断点 displayCount 相同，或较大断点值小于较小断点，均判定失败
+            检查 Swiper 组件的 displayCount 是否按断点从小到大非递减设置。对同一个 Swiper，sm/md/lg/xl 的 displayCount
+            序列不得下降，允许相邻断点值相同。例如 1/2/3 满足，2/2/3 满足，1/1/1 满足，3/2/2 不满足，2/1/1
+            不满足。较大断点值小于较小断点即判定失败
       llmPrompt: >-
-        检查 Swiper 组件的 displayCount 是否按断点从小到大非递减设置。对同一个 Swiper，sm/md/lg/xl 的 displayCount 序列不得下降。例如 1/2/3 满足，2/2/3
-        满足，3/2/2 不满足，2/1/1 不满足。所有断点 displayCount 相同，或较大断点值小于较小断点，均判定失败
+        检查 Swiper 组件的 displayCount 是否按断点从小到大非递减设置。对同一个 Swiper，sm/md/lg/xl 的 displayCount 序列不得下降，允许相邻断点值相同。例如
+        1/2/3 满足，2/2/3 满足，1/1/1 满足，3/2/2 不满足，2/1/1 不满足。较大断点值小于较小断点即判定失败
     fallback_policy: agent_assisted
   - id: CMP-MUST-04
     rule: >-
       Swiper indicator 必须按 displayCount 正确显隐。检查 Swiper 组件的 indicator 属性：displayCount 为 1（单元素展示）时应显示圆点指示器
-      Indicator.dot()，displayCount >= 2（多元素展示）时必须设为 false。多元素展示时仍显示圆点指示器会导致指示点位置错乱即判定失败
+      Indicator.dot()，displayCount >= 2（多元素展示）时必须设为 false。多元素展示时仍显示圆点指示器会导致指示点位置错乱即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper
+      撑满整个页面且每个子项为全屏内容），此类场景下 Swiper 用于全屏页面间切换而非轮播展示，无论 displayCount 为何值均不要求显示指示器
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
@@ -249,29 +278,43 @@ must_rules:
           astSignals: []
           llmPrompt: >-
             检查 Swiper 组件的 indicator 属性：displayCount 为 1（单元素展示）时应显示圆点指示器 Indicator.dot()，displayCount >= 2（多元素展示）时必须设为
-            false。多元素展示时仍显示圆点指示器会导致指示点位置错乱即判定失败
+            false。多元素展示时仍显示圆点指示器会导致指示点位置错乱即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper
+            撑满整个页面且每个子项为全屏内容），此类场景下 Swiper 用于全屏页面间切换而非轮播展示，无论 displayCount 为何值均不要求显示指示器
       llmPrompt: >-
         检查 Swiper 组件的 indicator 属性：displayCount 为 1（单元素展示）时应显示圆点指示器 Indicator.dot()，displayCount >= 2（多元素展示）时必须设为
-        false。多元素展示时仍显示圆点指示器会导致指示点位置错乱即判定失败
+        false。多元素展示时仍显示圆点指示器会导致指示点位置错乱即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper 撑满整个页面且每个子项为全屏内容），此类场景下 Swiper
+        用于全屏页面间切换而非轮播展示，无论 displayCount 为何值均不要求显示指示器
     fallback_policy: agent_assisted
   - id: CMP-MUST-17
-    rule: Swiper 多元素展示必须设置前后边距。横向sm断点下如果只展示一个元素，则无需设置前后边距，横向md断点下如果展示两个元素则建议设置前后边距12vp，横向lg断点下如果展示三个元素建议设置前后边距64vp
+    rule: >-
+      Swiper 多元素展示必须设置前后边距。检查 Swiper 组件在 displayCount >= 2（多元素展示）时是否设置了 prevMargin 和 nextMargin。sm 断点下 displayCount 为
+      1 时无需设置前后边距，判定为不涉及；md 断点下展示两个元素时应设置 prevMargin 和 nextMargin 为 12vp；lg 断点下展示三个元素时应设置 prevMargin 和
+      nextMargin 为 64vp。displayCount >= 2 时未设置 prevMargin 和 nextMargin 即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper
+      撑满整个页面且每个子项为全屏内容），此类场景不适用前后边距要求
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
         - '**/*.ets'
       kit:
-        - 'ArkUI: Swiper / indicator / displayCount'
+        - 'ArkUI: Swiper / prevMargin / nextMargin'
       targetChecks:
         - target: '**/*.ets'
           astSignals: []
-          llmPrompt: 横向sm断点下如果只展示一个元素，则无需设置前后边距，横向md断点下如果展示两个元素则建议设置前后边距12vp，横向lg断点下如果展示三个元素建议设置前后边距64vp
-      llmPrompt: 横向sm断点下如果只展示一个元素，则无需设置前后边距，横向md断点下如果展示两个元素则建议设置前后边距12vp，横向lg断点下如果展示三个元素建议设置前后边距64vp
+          llmPrompt: >-
+            检查 Swiper 组件在 displayCount >= 2（多元素展示）时是否设置了 prevMargin 和 nextMargin。sm 断点下 displayCount 为 1
+            时无需设置前后边距，判定为不涉及；md 断点下展示两个元素时应设置 prevMargin 和 nextMargin 为 12vp；lg 断点下展示三个元素时应设置 prevMargin 和
+            nextMargin 为 64vp。displayCount >= 2 时未设置 prevMargin 和 nextMargin 即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper
+            撑满整个页面且每个子项为全屏内容），此类场景不适用前后边距要求
+      llmPrompt: >-
+        检查 Swiper 组件在 displayCount >= 2（多元素展示）时是否设置了 prevMargin 和 nextMargin。sm 断点下 displayCount 为 1
+        时无需设置前后边距，判定为不涉及；md 断点下展示两个元素时应设置 prevMargin 和 nextMargin 为 12vp；lg 断点下展示三个元素时应设置 prevMargin 和
+        nextMargin 为 64vp。displayCount >= 2 时未设置 prevMargin 和 nextMargin 即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper
+        撑满整个页面且每个子项为全屏内容），此类场景不适用前后边距要求
     fallback_policy: agent_assisted
   - id: CMP-MUST-05
     rule: >-
       Grid columnsTemplate 必须按断点非递减设置列数。检查 Grid 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 Grid，sm/md/lg/xl 的列数序列不得下降。例如
-      1/2/3 满足，2/2/3 满足，4/4/3 不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+      1/2/3 满足，2/2/3 满足，4/4/4 满足，4/4/3 不满足，4/3/3 不满足。较大断点列数小于较小断点即判定失败
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
@@ -282,11 +325,11 @@ must_rules:
         - target: '**/*.ets'
           astSignals: []
           llmPrompt: >-
-            检查 Grid 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 Grid，sm/md/lg/xl 的列数序列不得下降。例如 1/2/3 满足，2/2/3 满足，4/4/3
-            不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+            检查 Grid 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 Grid，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。例如 1/2/3
+            满足，2/2/3 满足，4/4/4 满足，4/4/3 不满足，4/3/3 不满足。较大断点列数小于较小断点即判定失败
       llmPrompt: >-
-        检查 Grid 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 Grid，sm/md/lg/xl 的列数序列不得下降。例如 1/2/3 满足，2/2/3 满足，4/4/3
-        不满足，4/3/3 不满足。所有断点列数相同，或较大断点列数小于较小断点，均判定失败
+        检查 Grid 组件的 columnsTemplate 是否按断点从小到大非递减设置列数。对同一个 Grid，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。例如 1/2/3 满足，2/2/3
+        满足，4/4/4 满足，4/4/3 不满足，4/3/3 不满足。较大断点列数小于较小断点即判定失败
     fallback_policy: agent_assisted
   - id: CMP-MUST-06
     rule: >-
@@ -401,7 +444,7 @@ must_rules:
   - id: CMP-MUST-13
     rule: >-
       GridRow columns 必须按断点非递减设置列数。检查 GridRow 组件的 columns 属性是否按断点从小到大非递减设置列数。columns 必须设置为按断点区分的对象（如 {sm:4, md:8, lg:12,
-      xl:12}），不得使用固定数值（如 columns:12）。对同一个 GridRow，sm/md/lg/xl 的列数序列不得下降。列数不随断点非递减、所有断点列数相同、或较大断点列数小于较小断点，均判定失败。注意：此规则仅检查
+      xl:12}），不得使用固定数值（如 columns:12）。对同一个 GridRow，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。较大断点列数小于较小断点即判定失败。注意：此规则仅检查
       columns 属性本身的断点区分度，GridCol 的 span/offset 配置不影响 columns 的判定，不得因 span 或 offset 已做响应式就判定 columns 合规
     detector_kind: case_constraint
     detector_config:
@@ -414,18 +457,20 @@ must_rules:
           astSignals: []
           llmPrompt: >-
             检查 GridRow 组件的 columns 属性是否按断点从小到大非递减设置列数。columns 必须设置为按断点区分的对象（如 {sm:4, md:8, lg:12, xl:12}），不得使用固定数值（如
-            columns:12）。对同一个 GridRow，sm/md/lg/xl 的列数序列不得下降。列数不随断点非递减、所有断点列数相同、或较大断点列数小于较小断点，均判定失败。注意：此规则仅检查 columns
+            columns:12）。对同一个 GridRow，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。较大断点列数小于较小断点即判定失败。注意：此规则仅检查 columns
             属性本身的断点区分度，GridCol 的 span/offset 配置不影响 columns 的判定，不得因 span 或 offset 已做响应式就判定 columns 合规
       llmPrompt: >-
         检查 GridRow 组件的 columns 属性是否按断点从小到大非递减设置列数。columns 必须设置为按断点区分的对象（如 {sm:4, md:8, lg:12, xl:12}），不得使用固定数值（如
-        columns:12）。对同一个 GridRow，sm/md/lg/xl 的列数序列不得下降。列数不随断点非递减、所有断点列数相同、或较大断点列数小于较小断点，均判定失败。注意：此规则仅检查 columns
+        columns:12）。对同一个 GridRow，sm/md/lg/xl 的列数序列不得下降，允许相邻断点列数相同。较大断点列数小于较小断点即判定失败。注意：此规则仅检查 columns
         属性本身的断点区分度，GridCol 的 span/offset 配置不影响 columns 的判定，不得因 span 或 offset 已做响应式就判定 columns 合规
     fallback_policy: agent_assisted
   - id: CMP-MUST-14
     rule: >-
-      GridCol span 必须按断点声明不同的占据列数。检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下 span 值必须不同，以实现挪移或缩进等响应式布局效果。判定条件：如果 GridCol 所在
-      GridRow 的 columns 按断点变化（即 GridRow 本身是响应式的），则该 GridCol 的 span 必须按断点设置不同值；如果 GridCol 在所有断点都占据全部列数（如全宽横幅），或 GridRow 的
-      columns 在所有断点都相同，则判定为不涉及。在需要响应式适配的情况下，所有断点 span 相同即判定失败
+      GridCol span 必须按断点声明不同的占据列数。检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下的实际布局占比应随断点变化，以实现挪移或缩进等响应式布局效果。判定条件：如果
+      GridCol 所在 GridRow 的 columns 按断点变化（即 GridRow 本身是响应式的），则 GridCol 的 span 或 span/columns 比值应在断点间体现差异；如果
+      GridCol 在所有断点都占据全部列数（如全宽横幅），或 GridRow 的 columns 在所有断点都相同，则判定为不涉及。满足以下任一条件即视为合规：1. span 值在不同断点间不同；2.
+      span 值相同但 GridRow 的 columns 不同（此时 span/columns 实际占比不同，如 md 断点 span=8/columns=8 占满全宽，lg 断点 span=8/columns=12
+      留白居中，效果不同）。仅在 GridRow columns 按断点变化、且 GridCol 的 span 值在所有断点完全相同且 span/columns 占比也完全相同时，才判定失败
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
@@ -436,13 +481,18 @@ must_rules:
         - target: '**/*.ets'
           astSignals: []
           llmPrompt: >-
-            检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下 span 值必须不同，以实现挪移或缩进等响应式布局效果。判定条件：如果 GridCol 所在 GridRow 的 columns 按断点变化（即
-            GridRow 本身是响应式的），则该 GridCol 的 span 必须按断点设置不同值；如果 GridCol 在所有断点都占据全部列数（如全宽横幅），或 GridRow 的 columns
-            在所有断点都相同，则判定为不涉及。在需要响应式适配的情况下，所有断点 span 相同即判定失败
+            检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下的实际布局占比应随断点变化，以实现挪移或缩进等响应式布局效果。判定条件：如果 GridCol 所在 GridRow
+            的 columns 按断点变化（即 GridRow 本身是响应式的），则 GridCol 的 span 或 span/columns 比值应在断点间体现差异；如果 GridCol
+            在所有断点都占据全部列数（如全宽横幅），或 GridRow 的 columns 在所有断点都相同，则判定为不涉及。满足以下任一条件即视为合规：1. span 值在不同断点间不同；2. span
+            值相同但 GridRow 的 columns 不同（此时 span/columns 实际占比不同，如 md 断点 span=8/columns=8 占满全宽，lg 断点
+            span=8/columns=12 留白居中，效果不同）。仅在 GridRow columns 按断点变化、且 GridCol 的 span 值在所有断点完全相同且 span/columns
+            占比也完全相同时，才判定失败
       llmPrompt: >-
-        检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下 span 值必须不同，以实现挪移或缩进等响应式布局效果。判定条件：如果 GridCol 所在 GridRow 的 columns 按断点变化（即
-        GridRow 本身是响应式的），则该 GridCol 的 span 必须按断点设置不同值；如果 GridCol 在所有断点都占据全部列数（如全宽横幅），或 GridRow 的 columns
-        在所有断点都相同，则判定为不涉及。在需要响应式适配的情况下，所有断点 span 相同即判定失败
+        检查需要响应式适配的 GridCol 组件，sm/md/lg 断点下的实际布局占比应随断点变化，以实现挪移或缩进等响应式布局效果。判定条件：如果 GridCol 所在 GridRow 的 columns
+        按断点变化（即 GridRow 本身是响应式的），则 GridCol 的 span 或 span/columns 比值应在断点间体现差异；如果 GridCol
+        在所有断点都占据全部列数（如全宽横幅），或 GridRow 的 columns 在所有断点都相同，则判定为不涉及。满足以下任一条件即视为合规：1. span 值在不同断点间不同；2. span
+        值相同但 GridRow 的 columns 不同（此时 span/columns 实际占比不同，如 md 断点 span=8/columns=8 占满全宽，lg 断点 span=8/columns=12
+        留白居中，效果不同）。仅在 GridRow columns 按断点变化、且 GridCol 的 span 值在所有断点完全相同且 span/columns 占比也完全相同时，才判定失败
     fallback_policy: agent_assisted
   - id: CMP-MUST-15
     rule: >-
@@ -501,8 +551,10 @@ must_rules:
     fallback_policy: agent_assisted
   - id: HOV-MUST-03
     rule: >-
-      FolderStack 必须撑满页面全屏。检查 FolderStack 组件的尺寸设置，宽高必须为 100% 或通过 .expandSafeArea 等方式撑满页面全屏。FolderStack 未撑满全屏时只会作为普通
-      Stack 使用，不具备悬停态布局能力即判定失败
+      FolderStack 必须撑满页面全屏。检查 FolderStack 组件是否撑满页面全屏。满足以下任一条件即视为合规：1. FolderStack 自身显式设置 .width('100%') 和
+      .height('100%') 或通过 .expandSafeArea() 撑满全屏；2. FolderStack 内部子组件设置了 .width('100%') 和
+      .height('100%')，FolderStack 作为父容器被子组件撑满；3. 页面通过 windowClass.setWindowLayoutFullScreen(true)
+      设置了全局沉浸式全屏布局。以上三种方式均能使 FolderStack 占满页面区域，具备悬停态布局能力。未满足任一条件即判定失败
     detector_kind: case_constraint
     detector_config:
       targetPatterns:
@@ -513,11 +565,15 @@ must_rules:
         - target: '**/*.ets'
           astSignals: []
           llmPrompt: >-
-            检查 FolderStack 组件的尺寸设置，宽高必须为 100% 或通过 .expandSafeArea 等方式撑满页面全屏。FolderStack 未撑满全屏时只会作为普通 Stack
-            使用，不具备悬停态布局能力即判定失败
+            检查 FolderStack 组件是否撑满页面全屏。满足以下任一条件即视为合规：1. FolderStack 自身显式设置 .width('100%') 和
+            .height('100%') 或通过 .expandSafeArea() 撑满全屏；2. FolderStack 内部子组件设置了 .width('100%') 和
+            .height('100%')，FolderStack 作为父容器被子组件撑满；3. 页面通过 windowClass.setWindowLayoutFullScreen(true)
+            设置了全局沉浸式全屏布局。以上三种方式均能使 FolderStack 占满页面区域，具备悬停态布局能力。未满足任一条件即判定失败
       llmPrompt: >-
-        检查 FolderStack 组件的尺寸设置，宽高必须为 100% 或通过 .expandSafeArea 等方式撑满页面全屏。FolderStack 未撑满全屏时只会作为普通 Stack
-        使用，不具备悬停态布局能力即判定失败
+        检查 FolderStack 组件是否撑满页面全屏。满足以下任一条件即视为合规：1. FolderStack 自身显式设置 .width('100%') 和 .height('100%') 或通过
+        .expandSafeArea() 撑满全屏；2. FolderStack 内部子组件设置了 .width('100%') 和 .height('100%')，FolderStack
+        作为父容器被子组件撑满；3. 页面通过 windowClass.setWindowLayoutFullScreen(true)
+        设置了全局沉浸式全屏布局。以上三种方式均能使 FolderStack 占满页面区域，具备悬停态布局能力。未满足任一条件即判定失败
     fallback_policy: agent_assisted
   - id: HOV-MUST-04
     rule: >-

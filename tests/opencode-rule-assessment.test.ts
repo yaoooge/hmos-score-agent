@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import { runOpencodeRuleAssessment } from "../src/agent/opencodeRuleAssessment.js";
 import type { AgentBootstrapPayload } from "../src/types.js";
@@ -423,7 +425,7 @@ test("runOpencodeRuleAssessment succeeds on the second retry after repeated prot
   ]);
 });
 
-test("runOpencodeRuleAssessment retries once with strict format guidance after request failure", async () => {
+test("runOpencodeRuleAssessment retries with full assessment context after request failure without prior output", async () => {
   const calls: Array<{ requestTag: string; title?: string; prompt: string }> = [];
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
@@ -446,24 +448,26 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after r
   assert.equal(calls.length, 2);
   assert.equal(calls[1]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
-  assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试/);
+  assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试，但上一轮没有可复用的有效输出/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rule-assessment skill/);
-  assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
+  assert.match(calls[1]?.prompt ?? "", /必须重新阅读 bootstrap_payload 和 patch/);
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
-  assert.match(calls[1]?.prompt ?? "", /candidate_rule_ids/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /正确输出格式:/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /rule_retry_payload/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /bootstrap_payload:/);
+  assert.match(calls[1]?.prompt ?? "", /bootstrap_payload:/);
+  assert.match(calls[1]?.prompt ?? "", /task_understanding/);
+  assert.match(calls[1]?.prompt ?? "", /why_uncertain/);
+  assert.match(calls[1]?.prompt ?? "", /original_prompt_summary/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /candidate_rule_ids/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /只根据 candidate_rule_ids/);
 });
 
-test("runOpencodeRuleAssessment retries once after initial opencode timeout", async () => {
-  const calls: string[] = [];
+test("runOpencodeRuleAssessment retries with full assessment context after initial opencode timeout", async () => {
+  const calls: Array<{ requestTag: string; prompt: string }> = [];
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
     bootstrapPayload: payload(),
     runPrompt: async (request) => {
-      calls.push(request.requestTag);
+      calls.push({ requestTag: request.requestTag, prompt: request.prompt });
       if (calls.length === 1) {
         throw new Error(`opencode 调用超时 request=${request.requestTag}`);
       }
@@ -477,10 +481,18 @@ test("runOpencodeRuleAssessment retries once after initial opencode timeout", as
   });
 
   assert.equal(result.outcome, "success");
-  assert.deepEqual(calls, [
+  assert.deepEqual(calls.map((call) => call.requestTag), [
     "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a",
     "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
   ]);
+  assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试，但上一轮没有可复用的有效输出/);
+  assert.match(calls[1]?.prompt ?? "", /opencode 调用超时/);
+  assert.match(calls[1]?.prompt ?? "", /必须重新阅读 bootstrap_payload 和 patch/);
+  assert.match(calls[1]?.prompt ?? "", /bootstrap_payload:/);
+  assert.match(calls[1]?.prompt ?? "", /task_understanding/);
+  assert.match(calls[1]?.prompt ?? "", /why_uncertain/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /candidate_rule_ids/);
+  assert.doesNotMatch(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
 });
 
 test("runOpencodeRuleAssessment succeeds on the second retry after an initial timeout", async () => {
@@ -704,4 +716,16 @@ test("runOpencodeRuleAssessment retry prompt targets concrete protocol failures"
   assert.match(calls[1]?.prompt ?? "", /schema_error/);
   assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
   assert.match(calls[1]?.prompt ?? "", /删除未声明字段/);
+});
+
+test("rule assessment skill documents canonical taxonomy mapping and multi-rule retention", () => {
+  const skillText = fs.readFileSync(
+    path.resolve(process.cwd(), ".opencode/skills/hmos-rule-assessment/SKILL.md"),
+    "utf8",
+  );
+
+  assert.match(skillText, /canonical taxonomy code/);
+  assert.match(skillText, /行业\/场景规则不得新增行业 taxonomy code/);
+  assert.match(skillText, /多个规则触发同一维度时仍保留多条规则违规/);
+  assert.match(skillText, /同一维度下不同规则、不同证据、不同失败机制不得互相抑制/);
 });
