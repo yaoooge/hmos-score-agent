@@ -279,6 +279,10 @@ export function fetchTaskResult(taskId: number) {
   return getJson<TaskResultResponse>(`/score/remote-tasks/${String(taskId)}/result`);
 }
 
+export function fetchTaskRawResult(taskId: number) {
+  return fetch(`/score/remote-tasks/${String(taskId)}/result/raw`);
+}
+
 export function fetchDailyReport(params?: Record<string, string | number | undefined>) {
   return getJson<{ success: true; items: DailyReportItem[] }>("/dashboard/reports/daily", params);
 }

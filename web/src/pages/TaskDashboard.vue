@@ -54,7 +54,7 @@
         />
       </div>
 
-      <el-table :data="tasks" v-loading="loading" stripe height="560">
+      <el-table :data="tasks" v-loading="loading" stripe>
         <el-table-column prop="taskId" label="taskId" width="100" />
         <el-table-column label="名称" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
@@ -76,9 +76,21 @@
             {{ formatDashboardDateTime(row.updatedAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openLog(row)">查看日志</el-button>
+            <div class="toolbar task-action-bar">
+              <el-button link type="primary" @click="openLog(row)">查看日志</el-button>
+              <el-button
+                link
+                type="primary"
+                :icon="Download"
+                :loading="downloadingTaskId === row.taskId"
+                :disabled="!row.resultAvailable"
+                @click="downloadRawResult(row)"
+              >
+                下载json
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -122,7 +134,8 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onBeforeUnmount, reactive, ref, watch, type Ref } from "vue";
-import { Refresh } from "@element-plus/icons-vue";
+import { Download, Refresh } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
 import CaseReportDrawer from "../components/CaseReportDrawer.vue";
 import MetricCard from "../components/MetricCard.vue";
 import TaskStatusTag from "../components/TaskStatusTag.vue";
@@ -130,6 +143,7 @@ import {
   fetchSummary,
   fetchTasks,
   fetchTaskLog,
+  fetchTaskRawResult,
   fetchTaskResult,
   type DashboardTask,
   type DashboardSummary,
@@ -155,6 +169,7 @@ const page = ref(1);
 const pageSize = ref(20);
 const drawerVisible = ref(false);
 const drawerTask = ref<DashboardTask | null>(null);
+const downloadingTaskId = ref<number | null>(null);
 const logState = reactive({ available: false, content: "", truncated: false });
 const reportDrawerVisible = ref(false);
 const reportTask = ref<DashboardTask | null>(null);
@@ -277,6 +292,56 @@ async function openLog(task: DashboardTask) {
   await reloadLog();
 }
 
+function resolveRawResultFilename(contentDisposition: string | null, taskId: number): string {
+  if (!contentDisposition) {
+    return `task-${String(taskId)}-result.json`;
+  }
+  const quotedMatch = /filename="([^"]+)"/i.exec(contentDisposition);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+  const encodedMatch = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
+  if (encodedMatch?.[1]) {
+    return decodeURIComponent(encodedMatch[1]);
+  }
+  return `task-${String(taskId)}-result.json`;
+}
+
+function triggerJsonDownload(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadRawResult(task: DashboardTask) {
+  if (!task.resultAvailable) {
+    ElMessage.warning("结果暂不可下载");
+    return;
+  }
+  downloadingTaskId.value = task.taskId;
+  try {
+    const response = await fetchTaskRawResult(task.taskId);
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const blob = await response.blob();
+    triggerJsonDownload(
+      resolveRawResultFilename(response.headers.get("content-disposition"), task.taskId),
+      blob,
+    );
+    ElMessage.success("原始 JSON 已下载");
+  } catch (error) {
+    ElMessage.error(`原始 JSON 下载失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    downloadingTaskId.value = null;
+  }
+}
+
 async function reloadLog() {
   if (!drawerTask.value) {
     return;
@@ -344,3 +409,13 @@ onBeforeUnmount(() => {
   window.removeEventListener("dashboard:refresh", onRefresh as EventListener);
 });
 </script>
+
+<style scoped>
+.task-action-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+</style>

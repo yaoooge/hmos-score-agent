@@ -46,10 +46,11 @@ export function resolveRemoteTaskType(
 type BuildRunCaseIdInput = {
   now?: Date;
   taskType: TaskType | "case";
+  taskId?: number | string;
   uniqueId?: string;
 };
 
-// 运行目录命名规则：时间 + task_type + 唯一 id。
+// 运行目录命名规则：时间 + task_type + [task_id] + 唯一 id。
 export function buildRunCaseId(input: BuildRunCaseIdInput): string {
   const now = input.now ?? new Date();
   const uniqueId = input.uniqueId ?? randomUUID().replace(/-/g, "").slice(0, 8);
@@ -66,5 +67,7 @@ export function buildRunCaseId(input: BuildRunCaseIdInput): string {
       String(now.getUTCSeconds()).padStart(2, "0"),
     ].join("");
 
-  return `${timestamp}_${input.taskType}_${uniqueId}`;
+  const taskIdSegment = input.taskId === undefined ? "" : `_${String(input.taskId)}`;
+
+  return `${timestamp}_${input.taskType}${taskIdSegment}_${uniqueId}`;
 }

@@ -864,6 +864,64 @@ export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
   };
 }
 
+export function createGetRemoteTaskRawResultHandler(registry: RemoteTaskRegistry) {
+  return async (req: Request, res: Response) => {
+    const taskId = readRouteTaskId(req);
+    if (taskId === undefined) {
+      res.status(404).json({ success: false, message: "Remote task not found" });
+      return;
+    }
+
+    const record = await registry.get(taskId);
+    if (!record) {
+      res.status(404).json({ success: false, taskId, message: "Remote task not found" });
+      return;
+    }
+
+    if (record.status !== "completed") {
+      res.status(409).json({
+        success: false,
+        taskId,
+        status: record.status,
+        message: "Result is not available yet",
+      });
+      return;
+    }
+
+    if (!record.caseDir) {
+      res.status(404).json({
+        success: false,
+        taskId,
+        status: record.status,
+        message: "Result file not found",
+      });
+      return;
+    }
+
+    try {
+      const resultText = await fs.readFile(
+        path.join(record.caseDir, "outputs", "result.json"),
+        "utf-8",
+      );
+      res
+        .type("application/json")
+        .set("Content-Disposition", `attachment; filename="task-${String(taskId)}-result.json"`)
+        .send(resultText);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        res.status(404).json({
+          success: false,
+          taskId,
+          status: record.status,
+          message: "Result file not found",
+        });
+        return;
+      }
+      throw error;
+    }
+  };
+}
+
 export function createGetRemoteTaskStatusesHandler(registry: RemoteTaskRegistry) {
   return async (req: Request, res: Response) => {
     const taskIds = readRemoteTaskStatusIds(req);
@@ -1117,6 +1175,7 @@ export function createApp(
     ),
   );
   app.get(API_PATHS.remoteTaskResult, createGetRemoteTaskResultHandler(registry));
+  app.get(API_PATHS.remoteTaskRawResult, createGetRemoteTaskRawResultHandler(registry));
   app.get(API_PATHS.remoteTaskStatuses, createGetRemoteTaskStatusesHandler(registry));
   app.delete(API_PATHS.remoteTasks, createDeleteRemoteTasksHandler(registry));
   app.get(

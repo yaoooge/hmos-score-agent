@@ -56,6 +56,7 @@ export const API_PATHS = {
   runRemoteTask: "/score/run-remote-task",
   remoteTasks: "/score/remote-tasks",
   remoteTaskResult: "/score/remote-tasks/:taskId/result",
+  remoteTaskRawResult: "/score/remote-tasks/:taskId/result/raw",
   remoteTaskStatuses: "/score/remote-tasks/status",
   consistencyTasks: "/score/consistency-tasks",
   consistencyTask: "/score/consistency-tasks/:id",
@@ -361,6 +362,55 @@ export const API_DEFINITIONS: ApiDefinition[] = [
               description: "Parsed outputs/result.json content for the completed task.",
             },
           },
+        },
+      },
+      {
+        status: 404,
+        description: "Task record or result file was not found.",
+        body: {
+          type: "object",
+          description: "Remote task not found response.",
+          properties: {
+            success: successField,
+            taskId: { ...taskIdField, required: false },
+            status: remoteTaskRecordStatusField,
+            message: messageField,
+          },
+        },
+      },
+      {
+        status: 409,
+        description: "Task exists but has not completed yet.",
+        body: {
+          type: "object",
+          description: "Remote task result unavailable response.",
+          properties: {
+            success: successField,
+            taskId: taskIdField,
+            status: remoteTaskRecordStatusField,
+            message: messageField,
+          },
+        },
+      },
+    ],
+  },
+  {
+    method: "GET",
+    path: API_PATHS.remoteTaskRawResult,
+    description: "Download the exact stored outputs/result.json file for a completed remote task.",
+    request: {
+      pathParams: {
+        taskId: taskIdField,
+      },
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Raw result.json file is available as an attachment.",
+        body: {
+          type: "object",
+          description: "Raw JSON file response body.",
+          properties: {},
         },
       },
       {

@@ -7,18 +7,20 @@
 | 顺序 | 文档 | 适合场景 |
 | --- | --- | --- |
 | 1 | [ARCHITECTURE.md](ARCHITECTURE.md) | 先了解代码仓目录结构、主评分 workflow、人工复核和人工评级差异分析流程。 |
-| 2 | [apis/README.md](apis/README.md) | 对接管理台、远端任务平台、人工复核页面或接口联调。 |
-| 3 | [apis/dashboard-internal.md](apis/dashboard-internal.md) | 给 dashboard 前端维护和 AI 编码查询使用的内部接口索引。 |
-| 4 | [human-review/README.md](human-review/README.md) | 查看人工复核全流程、重算规则、产物和排查方式。 |
-| 5 | [agents/README.md](agents/README.md) | 维护 opencode agent、prompt、skill、权限和输出协议。 |
-| 6 | [superpowers/specs/](superpowers/specs/) | 追溯历史需求设计、方案取舍和行为来源。 |
-| 7 | [superpowers/plans/](superpowers/plans/) | 追溯历史实现计划和落地步骤。 |
+| 2 | [sqlite-database.md](sqlite-database.md) | 查看 SQLite 数据库位置、表结构和常用查询。 |
+| 3 | [apis/README.md](apis/README.md) | 对接管理台、远端任务平台、人工复核页面或接口联调。 |
+| 4 | [apis/dashboard-internal.md](apis/dashboard-internal.md) | 给 dashboard 前端维护和 AI 编码查询使用的内部接口索引。 |
+| 5 | [human-review/README.md](human-review/README.md) | 查看人工复核全流程、重算规则、产物和排查方式。 |
+| 6 | [agents/README.md](agents/README.md) | 维护 opencode agent、prompt、skill、权限和输出协议。 |
+| 7 | [superpowers/specs/](superpowers/specs/) | 追溯历史需求设计、方案取舍和行为来源。 |
+| 8 | [superpowers/plans/](superpowers/plans/) | 追溯历史实现计划和落地步骤。 |
 
 ## 文档分类
 
 | 目录或文件 | 内容边界 |
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 当前代码结构、运行入口、主评分 workflow、人工侧流程和运行产物。 |
+| [sqlite-database.md](sqlite-database.md) | SQLite 数据库文件位置、schema、索引和查询示例。 |
 | [apis/](apis/) | 对外 HTTP API、callback 约定，以及 dashboard 内部查询接口索引。 |
 | [human-review/](human-review/) | 人工复核全流程、重算规则、数据集和排查方式。 |
 | [agents/](agents/) | 项目内 opencode agent 的职责、调用入口、权限、输入输出契约。 |
@@ -29,6 +31,7 @@
 
 - 新增或调整外部接口时，同步更新 [apis/README.md](apis/README.md) 和 [apis/openapi.yaml](apis/openapi.yaml)。
 - 调整 dashboard 内部查询接口时，同步更新 [apis/dashboard-internal.md](apis/dashboard-internal.md)。
+- 调整 SQLite schema、索引、数据库路径或常用查询时，同步更新 [sqlite-database.md](sqlite-database.md)。
 - 调整 workflow 节点、目录职责或运行产物时，同步更新 [ARCHITECTURE.md](ARCHITECTURE.md)。
 - 调整 `.opencode/opencode.template.json`、agent prompt 或 skill 时，同步更新 [agents/](agents/)。
 - 历史设计和实施计划保留在 `docs/superpowers/`，不作为当前运行说明的唯一来源。

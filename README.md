@@ -8,6 +8,7 @@
 | --- | --- |
 | [docs/README.md](docs/README.md) | 文档总索引与建议阅读顺序 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 代码仓目录结构、主评分 workflow 与旁路人工流程 |
+| [docs/sqlite-database.md](docs/sqlite-database.md) | SQLite 数据库位置、表结构和常用查询语句 |
 | [docs/apis/README.md](docs/apis/README.md) | 当前服务对外 HTTP 接口与 callback 契约 |
 | [docs/apis/dashboard-internal.md](docs/apis/dashboard-internal.md) | dashboard 内部查询接口，供前端和 AI 编码查询使用 |
 | [docs/agents/README.md](docs/agents/README.md) | opencode agents 索引与各 agent 说明 |
@@ -38,6 +39,8 @@ curl http://localhost:3000/health
 API 服务默认监听 `PORT`，未设置时为 `3000`。启动后可先访问 `GET /health` 确认进程可用，再调用评分接口。
 
 Dashboard 前端位于 `web/`，生产构建后由 API 服务挂载在 `/dashboard`；开发调试可单独运行 `npm run dev:dashboard`。
+
+SQLite 索引数据库默认写在 `<LOCAL_CASE_ROOT>/score-index.sqlite3`，由 API 启动时自动创建并维护，`npm run db:generate` 可用于离线回填或重建。
 
 ## 可执行脚本
 

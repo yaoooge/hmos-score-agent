@@ -8,6 +8,7 @@ import {
   createApp,
   createCorsMiddleware,
   createGetConsistencyTasksHandler,
+  createGetRemoteTaskRawResultHandler,
   createGetRemoteTaskResultHandler,
   createGetRemoteTaskStatusesHandler,
   createDeleteConsistencyTaskHandler,
@@ -42,6 +43,41 @@ function createResponse() {
       return response;
     },
     json(body: Record<string, unknown>) {
+      responseState.body = body;
+      return response;
+    },
+  };
+  return { response, responseState };
+}
+
+function createDownloadResponse() {
+  const responseState: {
+    statusCode: number;
+    body?: string | Record<string, unknown>;
+    headers: Record<string, string>;
+    type?: string;
+  } = {
+    statusCode: 200,
+    headers: {},
+  };
+  const response = {
+    status(code: number) {
+      responseState.statusCode = code;
+      return response;
+    },
+    json(body: Record<string, unknown>) {
+      responseState.body = body;
+      return response;
+    },
+    set(name: string, value: string) {
+      responseState.headers[name.toLowerCase()] = value;
+      return response;
+    },
+    type(value: string) {
+      responseState.type = value;
+      return response;
+    },
+    send(body: string) {
       responseState.body = body;
       return response;
     },
@@ -181,7 +217,7 @@ test("acceptRemoteEvaluationTask uses a neutral case label before remote prepara
     callback: "https://remote.example.com/callback",
   });
 
-  assert.match(path.basename(accepted.caseDir), /^\d{8}T\d{6}_case_[a-f0-9]{8}$/);
+  assert.match(path.basename(accepted.caseDir), /^\d{8}T\d{6}_case_42_[a-f0-9]{8}$/);
   assert.equal(path.basename(accepted.caseDir).includes("_full_generation_"), false);
 });
 
@@ -480,6 +516,10 @@ function notInvolvedCrossDevice() {
 
 test("API definitions include the remote task result endpoint", () => {
   assert.equal(API_PATHS.remoteTaskResult, "/score/remote-tasks/:taskId/result");
+  assert.equal(
+    API_PATHS.remoteTaskRawResult,
+    "/score/remote-tasks/:taskId/result/raw",
+  );
   assert.equal(API_PATHS.remoteTaskStatuses, "/score/remote-tasks/status");
   assert.equal(API_PATHS.remoteTasks, "/score/remote-tasks");
   assert.equal(API_PATHS.consistencyTasks, "/score/consistency-tasks");
@@ -574,6 +614,18 @@ test("API definitions include unified request and response schemas", () => {
   assert.equal("headers" in (remoteTaskResultRequest ?? {}), false);
   assert.equal(remoteTaskResultPathParams?.taskId?.type, "number");
 
+  const remoteTaskRawResult = API_DEFINITIONS.find(
+    (definition) =>
+      definition.method === "GET" && definition.path === API_PATHS.remoteTaskRawResult,
+  ) as Record<string, unknown> | undefined;
+  const remoteTaskRawResultRequest = remoteTaskRawResult?.request as
+    | Record<string, unknown>
+    | undefined;
+  const remoteTaskRawResultPathParams = remoteTaskRawResultRequest?.pathParams as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  assert.equal(remoteTaskRawResultPathParams?.taskId?.type, "number");
+
   const runRemoteTaskCallbacks = runRemoteTask?.callbacks as
     | Array<Record<string, unknown>>
     | undefined;
@@ -664,6 +716,42 @@ test("createGetRemoteTaskResultHandler omits testExecution from completed result
     "testExecution" in (responseState.body?.resultData as Record<string, unknown>),
     false,
   );
+});
+
+test("createGetRemoteTaskRawResultHandler downloads exact stored result.json", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const caseDir = path.join(localCaseRoot, "remote-case-raw-result");
+  const storedResultJson = {
+    ...createStoredResultJson(93),
+    testExecution: {
+      logs: ["must stay in raw result download"],
+      rawPayload: { large: true },
+    },
+  };
+  const storedResultText = `${JSON.stringify(storedResultJson, null, 2)}\n`;
+  await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
+  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), storedResultText);
+
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 707,
+    status: "completed",
+    caseDir,
+    token: "remote-token",
+    testCaseId: 1707,
+  });
+  const handler = createGetRemoteTaskRawResultHandler(registry);
+  const { response, responseState } = createDownloadResponse();
+
+  await handler(createResultRequest(707) as never, response as never);
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.type, "application/json");
+  assert.equal(
+    responseState.headers["content-disposition"],
+    'attachment; filename="task-707-result.json"',
+  );
+  assert.equal(responseState.body, storedResultText);
 });
 
 test("createGetRemoteTaskResultHandler ignores invalid token", async (t) => {

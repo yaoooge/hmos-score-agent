@@ -149,6 +149,17 @@ test("buildRunCaseId formats timestamp, task type and unique id", () => {
   assert.equal(result, "20260416T112233_bug_fix_abc12345");
 });
 
+test("buildRunCaseId includes task id when provided", () => {
+  const result = buildRunCaseId({
+    now: new Date("2026-04-16T11:22:33.000Z"),
+    taskType: "case",
+    taskId: 1628,
+    uniqueId: "abc12345",
+  });
+
+  assert.equal(result, "20260416T112233_case_1628_abc12345");
+});
+
 test("resolveDefaultCasePath picks the first case directory under cases", async (t) => {
   const originalCwd = process.cwd();
   const tempRoot = await makeTempDir(t);
