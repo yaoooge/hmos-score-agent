@@ -432,8 +432,6 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
           result: "不满足",
           severity: penalty.severity ?? getRuleImpactSeverity(rule),
           score_delta: -roundScore(maxScore * penalty.ratio),
-          reason: rule.conclusion,
-          evidence: rule.conclusion,
           agent_assisted: rule.rule_source === "should_rule",
           needs_human_review: penalty.reviewRequired,
         });
@@ -538,7 +536,12 @@ export function computeScoreBreakdown(input: ComputeScoreInput): ScoreComputatio
     hardGateReason: triggeredGates.map((gate) => `${gate.id}: ${gate.reason}`).join(" "),
     overallConclusion: {
       total_score: totalScore,
+      pre_cap_score: rawTotalScore,
       hard_gate_triggered: triggeredGates.length > 0,
+      hard_gates: triggeredGates.map((gate) => ({
+        id: gate.id,
+        trigger_reason: gate.reason,
+      })),
       summary:
         triggeredGates.length > 0
           ? `触发硬门槛：${triggeredGates.map((gate) => `${gate.id}: ${gate.reason}`).join(" ")}`

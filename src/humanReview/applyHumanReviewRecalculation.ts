@@ -173,7 +173,8 @@ function applyRiskLevelEffect(
   }
   const ruleId = readString(effect.rule_id);
   const originalLevel = readString(effect.original_level);
-  const levelWeights = asRecord(effect.level_weights);
+  const scorePolicy = asRecord(resultJson.score_policy);
+  const levelWeights = asRecord(effect.level_weights) ?? asRecord(scorePolicy?.risk_level_weights);
   const originalWeight = readNumber(levelWeights?.[originalLevel ?? ""]);
   const correctedWeight = readNumber(levelWeights?.[correctedLevel]);
   if (!ruleId || originalWeight === undefined || originalWeight === 0 || correctedWeight === undefined) {

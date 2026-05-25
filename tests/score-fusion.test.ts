@@ -316,12 +316,115 @@ test("fuseRubricScoreWithRules creates hard gate review item for triggered G1", 
     | undefined;
   assert.ok(hardGateReview);
   assert.equal(hardGateReview.current_assessment, "G1");
-  assert.match(hardGateReview.uncertainty_reason, /CASE-P0-001/);
+  assert.match(hardGateReview.suggested_focus, /CASE-P0-001/);
   assert.deepEqual(hardGateReview.score_effect, {
     type: "hard_gate",
     gate_ids: ["G1"],
     gate_caps: { G1: 69 },
+    trigger_reason: "P0 用例约束不满足，触发硬门槛阈值",
+    trigger_policy: {
+      type: "case_p0_violation",
+      threshold: 1,
+      actual: 1,
+    },
+    triggered_rule_ids: ["CASE-P0-001"],
   });
+});
+
+test("fuseRubricScoreWithRules exposes v2 pre-cap score, structured gates, and rule-only risk references", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "基础评分较高。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "high" as const,
+      review_required: false,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础分满分。", overall_confidence: "high" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKTS-MUST-001",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "规则结论只应保存在 rule_audit_results。",
+      },
+      {
+        rule_id: "ARKTS-MUST-003",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "第二条 must_rule 触发 G1。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  assert.equal(result.overallConclusion.pre_cap_score, 90);
+  assert.equal(result.overallConclusion.total_score, 69);
+  assert.deepEqual(result.overallConclusion.hard_gates, [
+    {
+      id: "G1",
+      name: "高密度静态错误",
+      score_cap: 69,
+      description: "大量未定义引用、类型错误、import/export 错位或明显不可运行代码片段密集出现。",
+      trigger_reason: "must_rule 不满足数量达到硬门槛阈值",
+      trigger_policy: {
+        type: "must_violation_count",
+        threshold: 2,
+        actual: 2,
+      },
+      triggered_rule_ids: ["ARKTS-MUST-001", "ARKTS-MUST-003"],
+    },
+  ]);
+
+  const ruleRisk = result.risks.find((risk) => risk.source_rule_id === "ARKTS-MUST-001") as
+    | (typeof result.risks[number] & { score_effect?: Record<string, unknown> })
+    | undefined;
+  assert.ok(ruleRisk);
+  assert.equal("description" in ruleRisk, false);
+  assert.equal("evidence" in ruleRisk, false);
+  assert.equal(ruleRisk.score_effect?.level_weights, undefined);
+
+  const impactedRule = result.scoreFusionDetails
+    .flatMap((detail) => detail.rule_impacts)
+    .find((impact) => impact.rule_id === "ARKTS-MUST-001");
+  assert.ok(impactedRule);
+  assert.equal("reason" in impactedRule, false);
+  assert.equal("evidence" in impactedRule, false);
+
+  const hardGateReview = result.humanReviewItems.find((item) => item.item === "硬门槛复核");
+  assert.ok(hardGateReview);
+  assert.doesNotMatch(hardGateReview.suggested_focus, /规则结论只应保存在/);
+  assert.deepEqual(hardGateReview.score_effect?.triggered_rule_ids, [
+    "ARKTS-MUST-001",
+    "ARKTS-MUST-003",
+  ]);
 });
 
 test("fuseRubricScoreWithRules maps official unsafe crypto linter rules to security boundary penalties", async () => {
@@ -803,12 +906,7 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
   assert.ok(forbiddenRisk?.score_effect);
   assert.equal(forbiddenRisk.score_effect.type, "risk_level_rule_impact");
   assert.equal(forbiddenRisk.score_effect.rule_id, "ARKTS-FORBID-001");
-  assert.deepEqual(forbiddenRisk.score_effect.level_weights, {
-    high: 1,
-    medium: 0.6,
-    low: 0.3,
-    none: 0,
-  });
+  assert.equal(forbiddenRisk.score_effect.level_weights, undefined);
   assert.deepEqual(forbiddenRisk.score_effect.hard_gate_ids, ["G3"]);
   assert.ok(Array.isArray(forbiddenRisk.score_effect.impacts));
 
@@ -878,7 +976,7 @@ test("fuseRubricScoreWithRules writes uncertain hard gate rules into suggested f
   assert.match(hardGateReview.suggested_focus, /严重工程风险/);
   assert.match(hardGateReview.suggested_focus, /空值或异步竞争风险高/);
   assert.match(hardGateReview.suggested_focus, /ARKTS-FORBID-026/);
-  assert.match(hardGateReview.suggested_focus, /无法确认 finally 中 return 是否真实存在/);
+  assert.doesNotMatch(hardGateReview.suggested_focus, /无法确认 finally 中 return 是否真实存在/);
   assert.deepEqual(hardGateReview.score_effect, {
     type: "hard_gate",
     gate_ids: ["G3"],

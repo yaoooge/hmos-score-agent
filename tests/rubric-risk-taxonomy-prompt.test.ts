@@ -83,7 +83,7 @@ test("runOpencodeRubricScoring points risk handling to the skill reference witho
   });
 
   assert.equal(result.outcome, "success");
-  assert.match(prompt, /references\/risk-taxonomy\.md/);
+  assert.match(prompt, /references\/risk-taxonomy\.yaml/);
   assert.doesNotMatch(prompt, /risk_taxonomy/);
   assert.doesNotMatch(prompt, /REQUIREMENT_NOT_IMPLEMENTED/);
 });

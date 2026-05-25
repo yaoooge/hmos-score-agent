@@ -197,13 +197,13 @@ test("official linter results render finding details and score impact", () => {
         runStatus: "success",
         durationMs: 50,
       },
-      official_linter_results: [
+      rule_audit_results: [
         {
-          rule_id: "@security/no-commented-code",
-          rule_result_id: "OFFICIAL-LINTER:@security/no-commented-code",
-          source_rule_set: "plugin:@security/recommended",
-          severity: "warn",
+          rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
+          rule_summary: "官方 Code Linter：@security/no-commented-code",
+          rule_source: "forbidden_pattern",
           result: "不满足",
+          conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
           finding_count: 1,
           findings: [
             {
@@ -212,16 +212,6 @@ test("official linter results render finding details and score impact", () => {
               column: 27,
               severity: "warn",
               message: "Delete the related code completely when it is invalid.",
-            },
-          ],
-          conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
-          score_delta: -1.2,
-          affected_items: [
-            {
-              dimension_name: "代码质量",
-              item_name: "安全与规范",
-              score_delta: -1.2,
-              reason: "存在无效注释代码。",
             },
           ],
         },
@@ -233,13 +223,13 @@ test("official linter results render finding details and score impact", () => {
   assert.equal(viewModel.officialLinter.runStatus, "success");
   assert.equal(viewModel.officialLinter.effectiveFindingCount, 1);
   assert.equal(viewModel.officialLinter.results[0]?.ruleId, "@security/no-commented-code");
-  assert.equal(viewModel.officialLinter.results[0]?.scoreDeltaText, "-1.2 分");
+  assert.equal(viewModel.officialLinter.results[0]?.scoreDeltaText, "0 分");
+  assert.deepEqual(viewModel.officialLinter.results[0]?.affectedItems, []);
   assert.match(html, /官方 Code Linter/);
-  assert.match(html, /plugin:@security\/recommended/);
+  assert.match(html, /rule_audit_results/);
   assert.match(html, /@security\/no-commented-code/);
   assert.match(html, /entry\/src\/main\/ets\/components\/HomeTab\.ets:58:27/);
   assert.match(html, /Delete the related code completely when it is invalid\./);
-  assert.match(html, /扣分影响/);
   assert.doesNotMatch(JSON.stringify(viewModel.officialLinter), /Legacy\.ets|legacy issue|filtered/i);
   assert.doesNotMatch(html, /Legacy\.ets|legacy issue|filtered|unchanged/i);
 });

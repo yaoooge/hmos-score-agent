@@ -11,7 +11,6 @@ import type {
   ConfidenceLevel,
   HvigorBuildCheckSummary,
   OfficialLinterFinding,
-  OfficialLinterResult,
   RuleAuditResult,
   ScoreFusionDetail,
 } from "../types.js";
@@ -155,9 +154,6 @@ function buildDimensionResults(state: ScoreGraphState): Array<Record<string, unk
             final_score: detail?.score ?? 0,
             fusion_logic: "缺少评分融合明细，需人工复核该评分项。",
           },
-          score_recalculation: {
-            scoring_bands: itemSummary.scoring_bands,
-          },
         };
       }),
     };
@@ -206,13 +202,37 @@ function enrichRuleAuditResultsWithSummary(
     ]),
   );
 
-  return ruleAuditResults.map((rule) => ({
-    rule_id: rule.rule_id,
-    rule_summary: rule.rule_summary ?? ruleSummaryById.get(rule.rule_id) ?? "",
-    rule_source: rule.rule_source,
-    result: rule.result,
-    conclusion: rule.conclusion,
-  }));
+  const findingsByRuleResultId = new Map<string, OfficialLinterFinding[]>();
+  for (const finding of state.officialLinterFindings ?? []) {
+    const ruleResultId = `OFFICIAL-LINTER:${finding.rule_id}`;
+    findingsByRuleResultId.set(ruleResultId, [
+      ...(findingsByRuleResultId.get(ruleResultId) ?? []),
+      finding,
+    ]);
+  }
+
+  return ruleAuditResults.map((rule) => {
+    const findings = findingsByRuleResultId.get(rule.rule_id) ?? [];
+    return {
+      rule_id: rule.rule_id,
+      rule_summary: rule.rule_summary ?? ruleSummaryById.get(rule.rule_id) ?? "",
+      rule_source: rule.rule_source,
+      result: rule.result,
+      conclusion: rule.conclusion,
+      ...(findings.length > 0
+        ? {
+            finding_count: findings.length,
+            findings: findings.map((finding) => ({
+              file: finding.file,
+              line: finding.line,
+              column: finding.column,
+              severity: finding.severity,
+              message: finding.message,
+            })),
+          }
+        : {}),
+    };
+  });
 }
 
 const severityRank: Record<OfficialLinterFinding["severity"], number> = {
@@ -234,7 +254,7 @@ function pickHighestSeverity(
   }, "unknown");
 }
 
-function buildOfficialLinterResults(state: ScoreGraphState): OfficialLinterResult[] {
+function buildOfficialLinterResults(state: ScoreGraphState): Array<Record<string, unknown>> {
   const findingsByRule = new Map<string, OfficialLinterFinding[]>();
   for (const finding of state.officialLinterFindings ?? []) {
     findingsByRule.set(finding.rule_id, [...(findingsByRule.get(finding.rule_id) ?? []), finding]);
@@ -245,7 +265,12 @@ function buildOfficialLinterResults(state: ScoreGraphState): OfficialLinterResul
   );
   const scoreImpactsByRuleId = new Map<
     string,
-    OfficialLinterResult["affected_items"]
+    Array<{
+      dimension_name: string;
+      item_name: string;
+      score_delta: number;
+      reason: string;
+    }>
   >();
   for (const detail of state.scoreComputation.scoreFusionDetails ?? []) {
     for (const impact of detail.rule_impacts) {
@@ -258,7 +283,7 @@ function buildOfficialLinterResults(state: ScoreGraphState): OfficialLinterResul
           dimension_name: detail.dimension_name,
           item_name: detail.item_name,
           score_delta: impact.score_delta,
-          reason: impact.reason,
+          reason: impact.rule_id,
         },
       ]);
     }
@@ -340,6 +365,24 @@ function buildHvigorBuildCheckSummary(
   };
 }
 
+function buildOverallConclusion(state: ScoreGraphState): Record<string, unknown> {
+  const overall = state.scoreComputation.overallConclusion as Record<string, unknown>;
+  const totalScore =
+    typeof overall.total_score === "number" ? overall.total_score : state.scoreComputation.totalScore;
+  return {
+    ...overall,
+    total_score: totalScore,
+    pre_cap_score:
+      typeof overall.pre_cap_score === "number" ? overall.pre_cap_score : totalScore,
+    hard_gate_triggered:
+      typeof overall.hard_gate_triggered === "boolean"
+        ? overall.hard_gate_triggered
+        : state.scoreComputation.hardGateTriggered,
+    hard_gates: Array.isArray(overall.hard_gates) ? overall.hard_gates : [],
+    summary: typeof overall.summary === "string" ? overall.summary : "",
+  };
+}
+
 export async function reportGenerationNode(
   state: ScoreGraphState,
   config: { referenceRoot: string },
@@ -374,6 +417,7 @@ export async function reportGenerationNode(
     });
 
     const resultJson: Record<string, unknown> = {
+      schema_version: "result.v2",
       basic_info: {
         rubric_version: "v1",
         task_type: state.taskType,
@@ -384,7 +428,15 @@ export async function reportGenerationNode(
         target_scope: state.caseInput.generatedProjectPath,
         task_type_basis: state.constraintSummary.classificationHints.join("; "),
       },
-      overall_conclusion: state.scoreComputation.overallConclusion,
+      overall_conclusion: buildOverallConclusion(state),
+      score_policy: {
+        risk_level_weights: {
+          high: 1,
+          medium: 0.6,
+          low: 0.3,
+          none: 0,
+        },
+      },
       dimension_results: buildDimensionResults(state),
       rule_violations: state.ruleViolations,
       bound_rule_packs: buildBoundRulePacks(state),
@@ -400,7 +452,6 @@ export async function reportGenerationNode(
         runStatus: "not_installed",
         durationMs: 0,
       },
-      official_linter_results: buildOfficialLinterResults(state),
       case_rule_results: caseRuleResults,
       report_meta: {
         report_file_name: "report.html",

@@ -149,22 +149,45 @@ function readBoundRulePacks(resultJson: Record<string, unknown> | undefined): Cr
 
 function readOfficialLinterResults(resultJson: Record<string, unknown> | undefined) {
   const results = resultJson?.official_linter_results;
-  if (!Array.isArray(results)) {
+  if (Array.isArray(results)) {
+    return results
+      .map((item) => {
+        const record = asRecord(item);
+        const ruleId = readString(record, "rule_id");
+        if (!record || !ruleId) {
+          return undefined;
+        }
+        const findingCount = record.finding_count;
+        return {
+          ruleId,
+          ruleResultId: readString(record, "rule_result_id"),
+          sourceRuleSet: readString(record, "source_rule_set"),
+          severity: readString(record, "severity"),
+          findingCount: typeof findingCount === "number" && Number.isFinite(findingCount) ? findingCount : 1,
+          conclusion: readString(record, "conclusion"),
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }
+
+  const ruleAuditResults = resultJson?.rule_audit_results;
+  if (!Array.isArray(ruleAuditResults)) {
     return [];
   }
-  return results
+  return ruleAuditResults
     .map((item) => {
       const record = asRecord(item);
       const ruleId = readString(record, "rule_id");
-      if (!record || !ruleId) {
+      if (!record || !ruleId?.startsWith("OFFICIAL-LINTER:")) {
         return undefined;
       }
       const findingCount = record.finding_count;
+      const findings = Array.isArray(record.findings) ? record.findings.map((finding) => asRecord(finding)) : [];
       return {
-        ruleId,
-        ruleResultId: readString(record, "rule_result_id"),
-        sourceRuleSet: readString(record, "source_rule_set"),
-        severity: readString(record, "severity"),
+        ruleId: ruleId.replace(/^OFFICIAL-LINTER:/, ""),
+        ruleResultId: ruleId,
+        sourceRuleSet: CROSS_DEVICE_RULE_SET,
+        severity: readString(findings[0], "severity"),
         findingCount: typeof findingCount === "number" && Number.isFinite(findingCount) ? findingCount : 1,
         conclusion: readString(record, "conclusion"),
       };

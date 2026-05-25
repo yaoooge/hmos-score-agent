@@ -132,6 +132,14 @@ export interface RuleAuditResult {
   result: "满足" | "不满足" | "不涉及" | "待人工复核";
   conclusion: string;
   official_linter_severity?: OfficialLinterFinding["severity"];
+  finding_count?: number;
+  findings?: Array<{
+    file: string;
+    line?: number;
+    column?: number;
+    severity: OfficialLinterFinding["severity"];
+    message: string;
+  }>;
 }
 
 export type OfficialLinterRunStatus =
@@ -264,8 +272,8 @@ export interface RiskItem {
   id: number;
   level: string;
   title: string;
-  description: string;
-  evidence: string;
+  description?: string;
+  evidence?: string;
   risk_code?: string;
   risk_category?: "low" | "medium" | "high";
   source_rule_id?: string;
@@ -492,8 +500,6 @@ export interface RuleImpactDetail {
   result: "不满足" | "待人工复核";
   severity: RuleImpactSeverity;
   score_delta: number;
-  reason: string;
-  evidence: string;
   agent_assisted: boolean;
   needs_human_review: boolean;
 }
@@ -533,7 +539,9 @@ export interface ScoreComputation {
   hardGateReason?: string;
   overallConclusion: {
     total_score: number;
+    pre_cap_score: number;
     hard_gate_triggered: boolean;
+    hard_gates: Array<Record<string, unknown>>;
     summary: string;
   };
   dimensionScores: DimensionScore[];

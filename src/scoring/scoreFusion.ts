@@ -508,6 +508,132 @@ function buildGateCaps(
   );
 }
 
+function formatHardGateDescription(input: FuseRubricScoreWithRulesInput, gateId: string): string {
+  const gate = input.rubric.hardGates.find((item) => item.id === gateId);
+  const signals = gate?.triggerSignals ?? [];
+  if (gateId === "G1" && signals.length >= 4) {
+    return `${signals[0]}、${signals[1].replace(/^大量/, "")}、${signals[2].replace(/明显$/, "")}或${signals[3]}。`;
+  }
+  return signals.length > 0 ? `${signals.join("；")}。` : gate?.name ?? gateId;
+}
+
+function buildHardGateTriggerDetail(
+  input: FuseRubricScoreWithRulesInput,
+  gateId: "G1" | "G2" | "G3" | "G4" | "BUILD-CHECK",
+): Record<string, unknown> | undefined {
+  if (gateId === "BUILD-CHECK") {
+    const scoreCap = input.hvigorBuildCheckSummary?.scoreCap ?? 59;
+    return {
+      id: "BUILD-CHECK",
+      name: "工程编译校验未通过",
+      score_cap: scoreCap,
+      description: "工程构建或编译校验失败。",
+      trigger_reason: "构建校验失败触发硬门槛",
+      trigger_policy: {
+        type: "build_check_status",
+        status: input.hvigorBuildCheckSummary?.status ?? "failed",
+      },
+      triggered_rule_ids: [],
+    };
+  }
+
+  const gate = input.rubric.hardGates.find((item) => item.id === gateId);
+  if (!gate) {
+    return undefined;
+  }
+  const violatedRules = input.ruleAuditResults.filter((rule) => rule.result === "不满足");
+  const mustViolations = violatedRules.filter((rule) => rule.rule_source === "must_rule");
+  const forbiddenViolations = violatedRules.filter(
+    (rule) => rule.rule_source === "forbidden_pattern",
+  );
+  const caseMustRuleIds = new Set(
+    (input.caseRuleDefinitions ?? [])
+      .filter((rule) => rule.priority === "P0")
+      .map((rule) => rule.rule_id),
+  );
+  const caseP0Violations = violatedRules.filter((rule) => caseMustRuleIds.has(rule.rule_id));
+
+  let triggerReason = "硬门槛触发条件成立";
+  let triggerPolicy: Record<string, unknown> = { type: "hard_gate_triggered" };
+  let triggeredRuleIds: string[] = [];
+
+  if (gateId === "G1" && caseP0Violations.length > 0) {
+    triggerReason = "P0 用例约束不满足，触发硬门槛阈值";
+    triggerPolicy = {
+      type: "case_p0_violation",
+      threshold: 1,
+      actual: caseP0Violations.length,
+    };
+    triggeredRuleIds = caseP0Violations.map((rule) => rule.rule_id);
+  } else if (gateId === "G1") {
+    triggerReason = "must_rule 不满足数量达到硬门槛阈值";
+    triggerPolicy = {
+      type: "must_violation_count",
+      threshold: 2,
+      actual: mustViolations.length,
+    };
+    triggeredRuleIds = mustViolations.map((rule) => rule.rule_id);
+  } else if (gateId === "G2") {
+    const specificRules = mustViolations.filter((rule) =>
+      ["ARKTS-FORBID-003", "ARKTS-FORBID-004", "ARKTS-FORBID-005"].includes(rule.rule_id),
+    );
+    triggerReason = "关键 ArkTS 规范规则不满足";
+    triggerPolicy = {
+      type: "specific_must_rule_violation",
+      threshold: 1,
+      actual: specificRules.length,
+    };
+    triggeredRuleIds = specificRules.map((rule) => rule.rule_id);
+  } else if (gateId === "G3") {
+    triggerReason = "forbidden_pattern 不满足数量达到硬门槛阈值";
+    triggerPolicy = {
+      type: "forbidden_violation_count",
+      threshold: 1,
+      actual: forbiddenViolations.length,
+    };
+    triggeredRuleIds = forbiddenViolations.map((rule) => rule.rule_id);
+  } else if (gateId === "G4") {
+    const actual = Math.max(
+      input.evidenceSummary.changedFileCount,
+      input.evidenceSummary.changedFiles.length,
+    );
+    triggerReason = "bug_fix 改动文件数量超过硬门槛阈值";
+    triggerPolicy = {
+      type: "changed_file_count",
+      threshold: 8,
+      actual,
+    };
+  }
+
+  return {
+    id: gate.id,
+    name: gate.name ?? gate.id,
+    score_cap: gate.scoreCap,
+    description: formatHardGateDescription(input, gate.id),
+    trigger_reason: triggerReason,
+    trigger_policy: triggerPolicy,
+    triggered_rule_ids: triggeredRuleIds,
+  };
+}
+
+function buildTriggeredHardGateDetails(
+  input: FuseRubricScoreWithRulesInput,
+  gateIds: Array<"G1" | "G2" | "G3" | "G4">,
+  hvigorHardGateTriggered: boolean,
+): Array<Record<string, unknown>> {
+  return [
+    ...gateIds.flatMap((gateId) => {
+      const detail = buildHardGateTriggerDetail(input, gateId);
+      return detail ? [detail] : [];
+    }),
+    ...(hvigorHardGateTriggered
+      ? [buildHardGateTriggerDetail(input, "BUILD-CHECK")].filter(
+          (detail): detail is Record<string, unknown> => Boolean(detail),
+        )
+      : []),
+  ];
+}
+
 function selectUncertainHardGateCandidates(input: FuseRubricScoreWithRulesInput): Array<{
   gateIds: Array<"G1" | "G2" | "G3" | "G4">;
   rule: RuleAuditResult;
@@ -556,15 +682,15 @@ function buildHardGateSuggestedFocus(
     .map((gateId) => formatHardGateRule(input, gateId))
     .join("；");
   const triggeredRules = inputCandidates.triggered
-    .map((candidate) => `${candidate.rule.rule_id}：${candidate.rule.conclusion}`)
+    .map((candidate) => candidate.rule.rule_id)
     .join("；");
   const pendingRules = inputCandidates.uncertain
-    .map((candidate) => `${candidate.rule.rule_id}：${candidate.rule.conclusion}`)
+    .map((candidate) => candidate.rule.rule_id)
     .join("；");
   return [
     `硬门槛规则：${gateRules}。`,
-    triggeredRules ? `已触发规则：${triggeredRules}。` : "",
-    pendingRules ? `待确认规则：${pendingRules}。` : "",
+    triggeredRules ? `已触发规则 ID：${triggeredRules}。` : "",
+    pendingRules ? `待确认规则 ID：${pendingRules}。` : "",
     "请确认这些规则判断是否真实成立，以及是否需要保留或触发对应硬门槛。",
   ].join("");
 }
@@ -592,12 +718,6 @@ function buildRiskScoreEffect(input: {
     type: "risk_level_rule_impact",
     rule_id: input.rule.rule_id,
     original_level: input.level,
-    level_weights: {
-      high: 1,
-      medium: 0.6,
-      low: 0.3,
-      none: 0,
-    },
     hard_gate_ids: input.gateIds,
     hard_gate_active_levels: input.gateIds.length > 0 ? [input.level] : [],
     gate_caps: buildGateCaps(input.scoringInput, input.gateIds),
@@ -764,8 +884,6 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         result: rule.result,
         severity: rule.result === "待人工复核" ? "review_only" : penalty.severity,
         score_delta: delta,
-        reason: rule.conclusion,
-        evidence: rule.conclusion,
         agent_assisted: rule.rule_source === "should_rule",
         needs_human_review: rule.result === "待人工复核",
       });
@@ -778,8 +896,6 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         id: risks.length + 1,
         level,
         title: `规则违规：${rule.rule_id}`,
-        description: rule.conclusion,
-        evidence: rule.conclusion,
         risk_code: `RULE_VIOLATION:${rule.rule_id}`,
         risk_category: level as "low" | "medium" | "high",
         source_rule_id: rule.rule_id,
@@ -844,7 +960,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     rationale: detail.score_fusion.fusion_logic,
     evidence: [
       ...detail.agent_evaluation.evidence_used,
-      ...detail.rule_impacts.map((impact) => impact.evidence),
+      ...detail.rule_impacts.map((impact) => impact.rule_id),
     ].join(" "),
   }));
 
@@ -868,6 +984,11 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
   const hvigorConclusionDetail = hvigorHardGateTriggered
     ? buildHvigorBuildConclusionDetail(input.hvigorBuildCheckSummary)
     : undefined;
+  const hardGates = buildTriggeredHardGateDetails(
+    input,
+    triggeredGateIds,
+    hvigorHardGateTriggered,
+  );
   const triggeredHardGateCandidates = selectTriggeredHardGateCandidates(input);
   const uncertainHardGateCandidates = selectUncertainHardGateCandidates(input);
   const humanReviewItems: HumanReviewItem[] =
@@ -893,15 +1014,25 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     const currentGateIds = Array.from(
       new Set(triggeredHardGateCandidates.flatMap((candidate) => candidate.gateIds)),
     );
+    const firstTriggeredGate = currentGateIds[0];
+    const firstTriggeredGateDetail = firstTriggeredGate
+      ? buildHardGateTriggerDetail(input, firstTriggeredGate as "G1" | "G2" | "G3" | "G4")
+      : undefined;
+    const triggeredRuleIds = Array.from(
+      new Set(triggeredHardGateCandidates.map((candidate) => candidate.rule.rule_id)),
+    );
+    const triggerPolicy = firstTriggeredGateDetail?.trigger_policy as
+      | Record<string, unknown>
+      | undefined;
     humanReviewItems.push({
       id: humanReviewItems.length + 1,
       item: "硬门槛复核",
       current_assessment: currentGateIds.length > 0 ? currentGateIds.join(",") : "none",
       uncertainty_reason:
-        currentGateIds.length > 0
-          ? `以下规则已触发硬门槛：${triggeredHardGateCandidates
-              .map((candidate) => candidate.rule.rule_id)
-              .join(", ")}。`
+        currentGateIds.length > 0 && firstTriggeredGateDetail
+          ? `${firstTriggeredGateDetail.id} ${firstTriggeredGateDetail.name}：${
+              firstTriggeredGateDetail.trigger_reason
+            }。`
           : `以下规则可能触发硬门槛但 agent 无法确认：${uncertainHardGateCandidates
               .map((candidate) => candidate.rule.rule_id)
               .join(", ")}。`,
@@ -913,6 +1044,11 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         type: "hard_gate",
         gate_ids: candidateGateIds,
         gate_caps: buildGateCaps(input, candidateGateIds),
+        ...(firstTriggeredGateDetail?.trigger_reason
+          ? { trigger_reason: firstTriggeredGateDetail.trigger_reason }
+          : {}),
+        ...(triggerPolicy ? { trigger_policy: triggerPolicy } : {}),
+        ...(currentGateIds.length > 0 ? { triggered_rule_ids: triggeredRuleIds } : {}),
       },
     });
   }
@@ -935,7 +1071,9 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     hardGateReason: hardGateReasons.join(", "),
     overallConclusion: {
       total_score: totalScore,
+      pre_cap_score: rawTotalScore,
       hard_gate_triggered: hardGateReasons.length > 0,
+      hard_gates: hardGates,
       summary:
         hardGateReasons.length > 0
           ? `已完成 rubric 基础评分与规则修正融合，并触发硬门槛：${hardGateReasons.join(", ")}。${

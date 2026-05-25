@@ -231,11 +231,10 @@ function formatRuleOpinion(ruleImpacts: unknown[]): string {
       const current = asRecord(item);
       const ruleId = String(current.rule_id ?? "").trim();
       const result = String(current.result ?? "").trim();
-      const reason = String(current.reason ?? "").trim() || "暂无规则意见。";
       const scoreDelta = Number(current.score_delta ?? 0);
       const deltaText =
         scoreDelta === 0 ? "不调整分数" : `调整 ${scoreDelta > 0 ? "+" : ""}${scoreDelta} 分`;
-      return [ruleId, result, deltaText, reason].filter(Boolean).join(" | ");
+      return [ruleId, result, deltaText].filter(Boolean).join(" | ");
     })
     .join("\n");
 }
@@ -245,9 +244,78 @@ function formatRuleEvidence(ruleImpacts: unknown[]): string {
     return "未发现影响该评分项的规则证据。";
   }
   const evidences = ruleImpacts
-    .map((item) => String(asRecord(item).evidence ?? "").trim())
+    .map((item) => String(asRecord(item).rule_id ?? "").trim())
     .filter(Boolean);
-  return evidences.length > 0 ? evidences.join("\n") : "暂无规则证据。";
+  return evidences.length > 0
+    ? `规则结论请查看规则审计结果：\n${evidences.join("\n")}`
+    : "暂无规则证据。";
+}
+
+function readOfficialLinterResultsFromRuleAudit(
+  ruleAuditResults: unknown[],
+): HtmlReportViewModel["officialLinter"]["results"] {
+  return ruleAuditResults
+    .map((item) => asRecord(item))
+    .filter((item) => String(item.rule_id ?? "").startsWith("OFFICIAL-LINTER:"))
+    .map((item) => {
+      const ruleResultId = String(item.rule_id ?? "");
+      const findings = Array.isArray(item.findings)
+        ? item.findings.map((finding) => asRecord(finding))
+        : [];
+      return {
+        ruleId: ruleResultId.replace(/^OFFICIAL-LINTER:/, ""),
+        ruleResultId,
+        sourceRuleSet: "rule_audit_results",
+        severity: String(findings[0]?.severity ?? "unknown"),
+        result: String(item.result ?? ""),
+        findingCount: Number(item.finding_count ?? findings.length),
+        conclusion: String(item.conclusion ?? ""),
+        scoreDeltaText: "0 分",
+        affectedItems: [],
+        findings: findings.map((finding) => ({
+          location: formatLocation(finding),
+          severity: String(finding.severity ?? ""),
+          message: String(finding.message ?? ""),
+        })),
+      };
+    });
+}
+
+function readLegacyOfficialLinterResults(
+  officialLinterResults: unknown[],
+): HtmlReportViewModel["officialLinter"]["results"] {
+  return officialLinterResults.map((item) => {
+    const current = asRecord(item);
+    const affectedItems = Array.isArray(current.affected_items) ? current.affected_items : [];
+    const findings = Array.isArray(current.findings) ? current.findings : [];
+    return {
+      ruleId: String(current.rule_id ?? ""),
+      ruleResultId: String(current.rule_result_id ?? ""),
+      sourceRuleSet: String(current.source_rule_set ?? ""),
+      severity: String(current.severity ?? ""),
+      result: String(current.result ?? ""),
+      findingCount: Number(current.finding_count ?? 0),
+      conclusion: String(current.conclusion ?? ""),
+      scoreDeltaText: formatRuleDelta(current.score_delta),
+      affectedItems: affectedItems.map((affectedItem) => {
+        const affected = asRecord(affectedItem);
+        return {
+          dimensionName: String(affected.dimension_name ?? ""),
+          itemName: String(affected.item_name ?? ""),
+          scoreDeltaText: formatRuleDelta(affected.score_delta),
+          reason: String(affected.reason ?? ""),
+        };
+      }),
+      findings: findings.map((finding) => {
+        const currentFinding = asRecord(finding);
+        return {
+          location: formatLocation(currentFinding),
+          severity: String(currentFinding.severity ?? ""),
+          message: String(currentFinding.message ?? ""),
+        };
+      }),
+    };
+  });
 }
 
 export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): HtmlReportViewModel {
@@ -267,6 +335,10 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
   const officialLinterResults = Array.isArray(resultJson.official_linter_results)
     ? resultJson.official_linter_results
     : [];
+  const normalizedOfficialLinterResults =
+    officialLinterResults.length > 0
+      ? readLegacyOfficialLinterResults(officialLinterResults)
+      : readOfficialLinterResultsFromRuleAudit(ruleAuditResults);
   const boundRulePacks = Array.isArray(resultJson.bound_rule_packs)
     ? resultJson.bound_rule_packs
     : [];
@@ -405,38 +477,7 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
       effectiveFindingCount: Number(officialLinterSummary.effectiveFindingCount ?? 0),
       durationMs: Number(officialLinterSummary.durationMs ?? 0),
       diagnostics: String(officialLinterSummary.diagnostics ?? ""),
-      results: officialLinterResults.map((item) => {
-        const current = asRecord(item);
-        const affectedItems = Array.isArray(current.affected_items) ? current.affected_items : [];
-        const findings = Array.isArray(current.findings) ? current.findings : [];
-        return {
-          ruleId: String(current.rule_id ?? ""),
-          ruleResultId: String(current.rule_result_id ?? ""),
-          sourceRuleSet: String(current.source_rule_set ?? ""),
-          severity: String(current.severity ?? ""),
-          result: String(current.result ?? ""),
-          findingCount: Number(current.finding_count ?? 0),
-          conclusion: String(current.conclusion ?? ""),
-          scoreDeltaText: formatRuleDelta(current.score_delta),
-          affectedItems: affectedItems.map((affectedItem) => {
-            const affected = asRecord(affectedItem);
-            return {
-              dimensionName: String(affected.dimension_name ?? ""),
-              itemName: String(affected.item_name ?? ""),
-              scoreDeltaText: formatRuleDelta(affected.score_delta),
-              reason: String(affected.reason ?? ""),
-            };
-          }),
-          findings: findings.map((finding) => {
-            const currentFinding = asRecord(finding);
-            return {
-              location: formatLocation(currentFinding),
-              severity: String(currentFinding.severity ?? ""),
-              message: String(currentFinding.message ?? ""),
-            };
-          }),
-        };
-      }),
+      results: normalizedOfficialLinterResults,
       emptyState: "当前没有可展示的官方 linter 问题明细。",
     },
     boundRulePacks: {

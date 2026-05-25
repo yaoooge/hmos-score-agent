@@ -1368,7 +1368,7 @@ test("reportGenerationNode includes cross-device pack only as enabled built-in p
   assert.deepEqual(reportResult.resultJson?.case_rule_results, []);
 });
 
-test("reportGenerationNode includes official_linter_results with findings and score impact", async (t) => {
+test("reportGenerationNode stores official linter findings on rule_audit_results", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const reportResult = await reportGenerationNode(
     {
@@ -1450,14 +1450,12 @@ test("reportGenerationNode includes official_linter_results with findings and sc
               {
                 rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
                 rule_source: "forbidden_pattern",
-                result: "不满足",
-                severity: "light",
-                score_delta: -1.2,
-                reason: "存在无效注释代码。",
-                evidence: "entry/src/main/ets/components/HomeTab.ets:58:27",
-                agent_assisted: false,
-                needs_human_review: false,
-              },
+              result: "不满足",
+              severity: "light",
+              score_delta: -1.2,
+              agent_assisted: false,
+              needs_human_review: false,
+            },
             ],
             score_fusion: {
               base_score: 10,
@@ -1484,13 +1482,14 @@ test("reportGenerationNode includes official_linter_results with findings and sc
       ((reportResult.resultJson?.rule_audit_results as Array<Record<string, unknown>>)[0] ?? {}),
     false,
   );
-  assert.deepEqual(reportResult.resultJson?.official_linter_results, [
+  assert.equal("official_linter_results" in (reportResult.resultJson ?? {}), false);
+  assert.deepEqual(reportResult.resultJson?.rule_audit_results, [
     {
-      rule_id: "@security/no-commented-code",
-      rule_result_id: "OFFICIAL-LINTER:@security/no-commented-code",
-      source_rule_set: "plugin:@security/recommended",
-      severity: "warn",
+      rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
+      rule_summary: "官方 Code Linter：@security/no-commented-code",
+      rule_source: "forbidden_pattern",
       result: "不满足",
+      conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
       finding_count: 1,
       findings: [
         {
@@ -1499,16 +1498,6 @@ test("reportGenerationNode includes official_linter_results with findings and sc
           column: 27,
           severity: "warn",
           message: "Delete the related code completely when it is invalid.",
-        },
-      ],
-      conclusion: "官方 Code Linter @security/no-commented-code 命中 1 处。",
-      score_delta: -1.2,
-      affected_items: [
-        {
-          dimension_name: "代码质量",
-          item_name: "安全与规范",
-          score_delta: -1.2,
-          reason: "存在无效注释代码。",
         },
       ],
     },
@@ -1790,8 +1779,6 @@ test("reportGenerationNode emits agent evaluation and rule impact details for ea
                 result: "不满足",
                 severity: "light",
                 score_delta: -2,
-                reason: "状态组织存在轻微风险。",
-                evidence: "状态组织存在轻微风险。",
                 agent_assisted: false,
                 needs_human_review: false,
               },
@@ -1828,6 +1815,10 @@ test("reportGenerationNode emits agent evaluation and rule impact details for ea
   assert.ok(firstItem.score_fusion);
   assert.equal("rationale" in firstItem, false);
   assert.equal("evidence" in firstItem, false);
+  assert.equal(
+    "reason" in ((firstItem.rule_impacts as Array<Record<string, unknown>>)[0] ?? {}),
+    false,
+  );
 });
 
 test("reportGenerationNode writes deduction_trace for deducted rubric items only", async (t) => {
@@ -2140,7 +2131,7 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.equal(resultJson.basic_info.task_type, "bug_fix");
   assert.ok(resultJson.dimension_results.length > 0);
   assert.ok(resultJson.dimension_results[0].item_results.length > 0);
-  assert.ok(resultJson.dimension_results[0].item_results[0].score_recalculation);
+  assert.equal("score_recalculation" in resultJson.dimension_results[0].item_results[0], false);
   assert.ok(
     resultJson.risks
       .filter((risk: { title?: string }) => risk.title?.startsWith("规则违规："))

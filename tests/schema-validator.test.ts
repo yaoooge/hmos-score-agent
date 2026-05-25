@@ -6,6 +6,7 @@ import { validateReportResult } from "../src/report/schemaValidator.js";
 // 保持一个最小但完整的合法结果对象，作为 schema gate 的基线样本。
 function makeValidResultJson(): Record<string, unknown> {
   return {
+    schema_version: "result.v2",
     basic_info: {
       rubric_version: "v1",
       task_type: "bug_fix",
@@ -18,8 +19,18 @@ function makeValidResultJson(): Record<string, unknown> {
     },
     overall_conclusion: {
       total_score: 80,
+      pre_cap_score: 80,
       hard_gate_triggered: false,
+      hard_gates: [],
       summary: "ok",
+    },
+    score_policy: {
+      risk_level_weights: {
+        high: 1,
+        medium: 0.6,
+        low: 0.3,
+        none: 0,
+      },
     },
     dimension_results: [
       {
@@ -67,8 +78,6 @@ function makeValidResultJson(): Record<string, unknown> {
                 result: "不满足",
                 severity: "light",
                 score_delta: -2,
-                reason: "状态组织存在轻微风险。",
-                evidence: "patch 命中目标函数。",
                 agent_assisted: false,
                 needs_human_review: false,
               },
@@ -112,7 +121,6 @@ function makeValidResultJson(): Record<string, unknown> {
       runStatus: "not_installed",
       durationMs: 0,
     },
-    official_linter_results: [],
     report_meta: {
       report_file_name: "report.html",
       result_json_file_name: "result.json",
@@ -170,8 +178,6 @@ test("validateReportResult accepts normalized risk identity fields", () => {
       id: 1,
       level: "high",
       title: "需求未实现",
-      description: "核心需求没有形成可验证实现。",
-      evidence: "workspace/entry/src/main/ets/pages/Index.ets",
       risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
       risk_category: "high",
       source_rule_id: "ARKTS-MUST-001",
@@ -179,6 +185,125 @@ test("validateReportResult accepts normalized risk identity fields", () => {
   ];
 
   assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
+});
+
+test("validateReportResult accepts v2 hard gates and rule risk references without duplicated conclusion text", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.overall_conclusion = {
+    total_score: 69,
+    pre_cap_score: 85,
+    hard_gate_triggered: true,
+    hard_gates: [
+      {
+        id: "G1",
+        name: "高密度静态错误",
+        score_cap: 69,
+        description: "大量未定义引用、类型错误、import/export 错位或明显不可运行代码片段密集出现。",
+        trigger_reason: "must_rule 不满足数量达到硬门槛阈值",
+        trigger_policy: {
+          type: "must_violation_count",
+          threshold: 2,
+          actual: 3,
+        },
+        triggered_rule_ids: ["ARKTS-MUST-001", "ARKTS-MUST-003", "CASE-P0-001"],
+      },
+    ],
+    summary: "已完成 rubric 基础评分与规则修正融合，并触发硬门槛：G1。",
+  };
+  valid.risks = [
+    {
+      id: 1,
+      level: "medium",
+      title: "规则违规：ARKTS-MUST-001",
+      risk_code: "RULE_VIOLATION:ARKTS-MUST-001",
+      risk_category: "medium",
+      source_rule_id: "ARKTS-MUST-001",
+      score_effect: {
+        type: "risk_level_rule_impact",
+        rule_id: "ARKTS-MUST-001",
+        original_level: "medium",
+        hard_gate_ids: ["G1"],
+        hard_gate_active_levels: ["medium"],
+        gate_caps: { G1: 69 },
+        impacts: [
+          {
+            dimension_name: "改动精准度与最小侵入性",
+            item_name: "问题点命中程度",
+            original_score_delta: -2,
+          },
+        ],
+      },
+    },
+  ];
+  valid.human_review_items = [
+    {
+      id: 1,
+      item: "硬门槛复核",
+      current_assessment: "G1",
+      uncertainty_reason: "G1 高密度静态错误：must_rule 不满足数量为 3，达到触发阈值 2。",
+      suggested_focus: "请确认 G1（高密度静态错误，总分上限 69）是否应因 must_rule 不满足数量达到阈值而保留。",
+      score_effect: {
+        type: "hard_gate",
+        gate_ids: ["G1"],
+        gate_caps: { G1: 69 },
+        trigger_reason: "must_rule 不满足数量达到硬门槛阈值",
+        trigger_policy: {
+          type: "must_violation_count",
+          threshold: 2,
+          actual: 3,
+        },
+        triggered_rule_ids: ["ARKTS-MUST-001", "ARKTS-MUST-003", "CASE-P0-001"],
+      },
+    },
+  ];
+  valid.rule_audit_results = [
+    {
+      rule_id: "ARKTS-MUST-001",
+      rule_summary: "必须避免类型错误。",
+      rule_source: "must_rule",
+      result: "不满足",
+      conclusion: "完整规则结论只保存在这里。",
+    },
+  ];
+
+  assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
+});
+
+test("validateReportResult rejects removed v2 duplicate fields", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.official_linter_results = [];
+  const firstDimension = (valid.dimension_results as Array<Record<string, unknown>>)[0];
+  const firstItem = (firstDimension.item_results as Array<Record<string, unknown>>)[0];
+  firstItem.score_recalculation = { scoring_bands: [{ score: 8, criteria: "旧档位复制。" }] };
+  const firstImpact = (firstItem.rule_impacts as Array<Record<string, unknown>>)[0];
+  firstImpact.reason = "旧重复原因";
+  firstImpact.evidence = "旧重复证据";
+  valid.risks = [
+    {
+      id: 1,
+      level: "medium",
+      title: "规则违规：ARKTS-SHOULD-001",
+      description: "旧重复描述",
+      evidence: "旧重复证据",
+      risk_code: "RULE_VIOLATION:ARKTS-SHOULD-001",
+      risk_category: "medium",
+      source_rule_id: "ARKTS-SHOULD-001",
+      score_effect: {
+        type: "risk_level_rule_impact",
+        rule_id: "ARKTS-SHOULD-001",
+        original_level: "medium",
+        level_weights: { high: 1, medium: 0.6, low: 0.3, none: 0 },
+        hard_gate_ids: [],
+        hard_gate_active_levels: [],
+        gate_caps: {},
+        impacts: [],
+      },
+    },
+  ];
+
+  assert.throws(() => validateReportResult(valid, schemaPath), /schema validation failed/i);
 });
 
 test("validateReportResult accepts result with hvigor build_check_summary", () => {
