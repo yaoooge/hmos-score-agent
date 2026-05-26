@@ -135,7 +135,6 @@ function createStoredResultJson(totalScore = 88): Record<string, unknown> {
       summary: "测试结果摘要",
     },
     dimension_results: [],
-    rule_violations: [],
     bound_rule_packs: [],
     risks: [],
     strengths: [],

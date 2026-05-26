@@ -54,29 +54,29 @@
         />
       </div>
 
-      <el-table :data="tasks" v-loading="loading" stripe>
-        <el-table-column prop="taskId" label="taskId" width="100" />
-        <el-table-column label="名称" min-width="220" show-overflow-tooltip>
+      <el-table :data="tasks" v-loading="loading" stripe class="task-dashboard-table">
+        <el-table-column prop="taskId" label="taskId" width="82" />
+        <el-table-column label="名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <el-button link type="primary" class="task-name-link" @click="openCaseReport(row)">
               {{ row.name }}
             </el-button>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="110">
+        <el-table-column label="状态" width="96">
           <template #default="{ row }">
             <TaskStatusTag :status-category="row.statusCategory" />
           </template>
         </el-table-column>
-        <el-table-column prop="taskType" label="类型" width="140" />
-        <el-table-column prop="score" label="分数" width="90" />
-        <el-table-column prop="testCaseId" label="testCaseId" width="120" />
-        <el-table-column label="更新时间" min-width="180">
+        <el-table-column prop="taskType" label="类型" width="112" show-overflow-tooltip />
+        <el-table-column prop="score" label="分数" width="70" />
+        <el-table-column prop="testCaseId" label="testCaseId" width="96" />
+        <el-table-column label="更新时间" min-width="150">
           <template #default="{ row }">
             {{ formatDashboardDateTime(row.updatedAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="136" align="right">
           <template #default="{ row }">
             <div class="toolbar task-action-bar">
               <el-button link type="primary" @click="openLog(row)">查看日志</el-button>
@@ -89,6 +89,16 @@
                 @click="downloadRawResult(row)"
               >
                 下载json
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                :icon="Delete"
+                :loading="deletingTaskId === row.taskId"
+                :disabled="deletingTaskId !== null && deletingTaskId !== row.taskId"
+                @click="deleteTask(row)"
+              >
+                删除
               </el-button>
             </div>
           </template>
@@ -134,8 +144,8 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onBeforeUnmount, reactive, ref, watch, type Ref } from "vue";
-import { Download, Refresh } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { Delete, Download, Refresh } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import CaseReportDrawer from "../components/CaseReportDrawer.vue";
 import MetricCard from "../components/MetricCard.vue";
 import TaskStatusTag from "../components/TaskStatusTag.vue";
@@ -145,6 +155,7 @@ import {
   fetchTaskLog,
   fetchTaskRawResult,
   fetchTaskResult,
+  deleteDashboardTask,
   type DashboardTask,
   type DashboardSummary,
 } from "../api/dashboard";
@@ -170,6 +181,7 @@ const pageSize = ref(20);
 const drawerVisible = ref(false);
 const drawerTask = ref<DashboardTask | null>(null);
 const downloadingTaskId = ref<number | null>(null);
+const deletingTaskId = ref<number | null>(null);
 const logState = reactive({ available: false, content: "", truncated: false });
 const reportDrawerVisible = ref(false);
 const reportTask = ref<DashboardTask | null>(null);
@@ -342,6 +354,46 @@ async function downloadRawResult(task: DashboardTask) {
   }
 }
 
+async function deleteTask(task: DashboardTask) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除任务 #${String(task.taskId)} ${task.name} 吗？删除后任务列表中将不再显示该记录。`,
+      "删除评测任务",
+      {
+        confirmButtonText: "删除",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+  } catch {
+    return;
+  }
+
+  deletingTaskId.value = task.taskId;
+  try {
+    const response = await deleteDashboardTask(task.taskId);
+    if (!response.deletedTaskIds.includes(task.taskId)) {
+      ElMessage.warning("任务记录不存在或已被删除");
+    } else {
+      ElMessage.success("评测任务已删除");
+    }
+    if (drawerTask.value?.taskId === task.taskId) {
+      drawerVisible.value = false;
+      drawerTask.value = null;
+    }
+    if (reportTask.value?.taskId === task.taskId) {
+      reportDrawerVisible.value = false;
+      reportTask.value = null;
+      caseReport.value = null;
+    }
+    await loadData({ includeSummary: true });
+  } catch (error) {
+    ElMessage.error(`评测任务删除失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    deletingTaskId.value = null;
+  }
+}
+
 async function reloadLog() {
   if (!drawerTask.value) {
     return;
@@ -413,9 +465,15 @@ onBeforeUnmount(() => {
 <style scoped>
 .task-action-bar {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  white-space: normal;
+}
+
+.task-action-bar :deep(.el-button) {
+  margin-left: 0;
+  padding: 0;
 }
 </style>

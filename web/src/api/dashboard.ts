@@ -263,6 +263,14 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function deleteJson<T>(path: string): Promise<T> {
+  const response = await fetch(path, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return (await response.json()) as T;
+}
+
 export function fetchSummary(params?: Record<string, string | number | undefined>) {
   return getJson<DashboardSummary>("/dashboard/summary", params);
 }
@@ -281,6 +289,13 @@ export function fetchTaskResult(taskId: number) {
 
 export function fetchTaskRawResult(taskId: number) {
   return fetch(`/score/remote-tasks/${String(taskId)}/result/raw`);
+}
+
+export function deleteDashboardTask(taskId: number) {
+  const params = new URLSearchParams({ taskIds: String(taskId) });
+  return deleteJson<{ success: true; deletedTaskIds: number[] }>(
+    `/score/remote-tasks?${params.toString()}`,
+  );
 }
 
 export function fetchDailyReport(params?: Record<string, string | number | undefined>) {

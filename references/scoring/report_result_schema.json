@@ -432,44 +432,6 @@
         "additionalProperties": false
       }
     },
-    "rule_violations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "rule_source": {
-            "type": "string"
-          },
-          "rule_id": {
-            "type": "string"
-          },
-          "rule_summary": {
-            "type": "string"
-          },
-          "affected_items": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "handling_result": {
-            "type": "string"
-          },
-          "evidence": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "rule_source",
-          "rule_id",
-          "rule_summary",
-          "affected_items",
-          "handling_result",
-          "evidence"
-        ],
-        "additionalProperties": false
-      }
-    },
     "bound_rule_packs": {
       "type": "array",
       "items": {
@@ -1192,7 +1154,6 @@
     "overall_conclusion",
     "score_policy",
     "dimension_results",
-    "rule_violations",
     "bound_rule_packs",
     "case_rule_results",
     "risks",

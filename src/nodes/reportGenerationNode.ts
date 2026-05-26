@@ -438,7 +438,6 @@ export async function reportGenerationNode(
         },
       },
       dimension_results: buildDimensionResults(state),
-      rule_violations: state.ruleViolations,
       bound_rule_packs: buildBoundRulePacks(state),
       risks: state.scoreComputation.risks,
       strengths: state.scoreComputation.strengths,

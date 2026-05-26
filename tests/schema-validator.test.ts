@@ -92,7 +92,6 @@ function makeValidResultJson(): Record<string, unknown> {
         ],
       },
     ],
-    rule_violations: [],
     bound_rule_packs: [
       {
         pack_id: "arkts-language",
@@ -273,6 +272,7 @@ test("validateReportResult accepts v2 hard gates and rule risk references withou
 test("validateReportResult rejects removed v2 duplicate fields", () => {
   const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
   const valid = makeValidResultJson();
+  valid.rule_violations = [];
   valid.official_linter_results = [];
   const firstDimension = (valid.dimension_results as Array<Record<string, unknown>>)[0];
   const firstItem = (firstDimension.item_results as Array<Record<string, unknown>>)[0];
