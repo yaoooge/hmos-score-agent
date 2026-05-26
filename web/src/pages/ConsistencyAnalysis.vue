@@ -208,6 +208,10 @@
           <MetricCard label="失败数" :value="selectedRoundView.analysis.failedRuns" />
           <MetricCard label="平均分" :value="formatNullableNumber(selectedRoundView.analysis.averageScore)" />
           <MetricCard
+            label="平均 pre_score"
+            :value="formatNullableNumber(selectedRoundView.analysis.averagePreScore)"
+          />
+          <MetricCard
             label="标准差"
             :value="formatNullableNumber(selectedRoundView.analysis.scoreStandardDeviation)"
           />
@@ -237,6 +241,9 @@
               </el-table-column>
               <el-table-column label="总分" min-width="80">
                 <template #default="{ row }">{{ formatNullableNumber(row.totalScore) }}</template>
+              </el-table-column>
+              <el-table-column label="pre_score" min-width="92">
+                <template #default="{ row }">{{ formatNullableNumber(row.preScore) }}</template>
               </el-table-column>
               <el-table-column label="分差" min-width="80">
                 <template #default="{ row }">{{ formatScoreDelta(row) }}</template>
@@ -515,6 +522,18 @@ const historyConsistencyOption = computed<EChartsOption>(() => ({
       data: historyChartRows.value.map((item) => item.ruleUnsatisfactionPercentage),
       smooth: true,
     },
+    {
+      type: "line",
+      name: "规则 Jaccard",
+      data: historyChartRows.value.map((item) => item.ruleJaccardPercentage),
+      smooth: true,
+    },
+    {
+      type: "line",
+      name: "风险 Jaccard",
+      data: historyChartRows.value.map((item) => item.riskJaccardPercentage),
+      smooth: true,
+    },
   ],
 }));
 const historyQualityOption = computed<EChartsOption>(() => ({
@@ -535,14 +554,9 @@ const historyQualityOption = computed<EChartsOption>(() => ({
     },
     {
       type: "line",
-      name: "标准差",
-      data: historyChartRows.value.map((item) => item.scoreStandardDeviation),
+      name: "平均 pre_score",
+      data: historyChartRows.value.map((item) => item.averagePreScore),
       smooth: true,
-    },
-    {
-      type: "bar",
-      name: "平均风险数",
-      data: historyChartRows.value.map((item) => item.averageRiskCount),
     },
   ],
 }));

@@ -148,6 +148,7 @@ test("extractConsistencyRunSummary reads score, unsatisfied rules, and risks", (
   const summary = extractConsistencyRunSummary(0, 130600101, {
     overall_conclusion: {
       total_score: 82,
+      pre_cap_score: 88,
       hard_gate_triggered: false,
       summary: "基本满足",
     },
@@ -181,6 +182,7 @@ test("extractConsistencyRunSummary reads score, unsatisfied rules, and risks", (
   });
 
   assert.equal(summary.totalScore, 82);
+  assert.equal(summary.preScore, 88);
   assert.equal(summary.hardGateTriggered, false);
   assert.equal(summary.ruleUnsatisfactionRatio, 0.5);
   assert.deepEqual(summary.unsatisfiedRules, [
@@ -345,6 +347,34 @@ test("analyzeConsistency exposes split score gate and finding stability", () => 
   assert.equal(analysis.scoreStability?.standardDeviation, 0);
   assert.equal(analysis.gateStability?.hardGateConsistencyPercentage, 100);
   assert.equal(analysis.findingStability?.averageRiskJaccard, 1);
+});
+
+test("analyzeConsistency conclusion separates stable scores from finding volatility", () => {
+  const analysis = analyzeConsistency([
+    completedRun(0, {
+      totalScore: 69,
+      hardGateTriggered: true,
+      unsatisfiedRules: [{ ruleId: "RSP-MUST-01", summary: "断点边界不完整" }],
+      risks: [{ key: "risk_code|A", riskCode: "A", title: "A" }],
+    }),
+    completedRun(1, {
+      totalScore: 69,
+      hardGateTriggered: true,
+      unsatisfiedRules: [{ ruleId: "RSP-MUST-02", summary: "硬编码宽度" }],
+      risks: [{ key: "risk_code|B", riskCode: "B", title: "B" }],
+    }),
+    completedRun(2, {
+      totalScore: 69,
+      hardGateTriggered: true,
+      unsatisfiedRules: [{ ruleId: "RSP-MUST-03", summary: "缺少 xl" }],
+      risks: [{ key: "risk_code|C", riskCode: "C", title: "C" }],
+    }),
+  ]);
+
+  assert.equal(analysis.scoreStandardDeviation, 0);
+  assert.doesNotMatch(analysis.conclusion, /评分结果波动明显/);
+  assert.match(analysis.conclusion, /总分稳定/);
+  assert.match(analysis.conclusion, /规则或风险集合存在波动/);
 });
 
 test("analyzeConsistency does not count in-progress runs as failed", () => {
@@ -692,12 +722,17 @@ test("buildConsistencyHistoryChartRows derives percent values for charting", () 
         consistentCompletedRuns: 8,
         consistencyPercentage: 80,
         averageScore: 82,
+        averagePreScore: 88,
         medianScore: 82,
         minScore: 80,
         maxScore: 84,
         scoreStandardDeviation: 1.2,
         averageRuleUnsatisfactionRatio: 0.125,
         averageRiskCount: 2,
+        findingStability: {
+          averageRuleJaccard: 0.8754,
+          averageRiskJaccard: 0.625,
+        },
         conclusion: "一致性为 80%。",
         runConsistencyByTaskId: {},
       },
@@ -715,9 +750,12 @@ test("buildConsistencyHistoryChartRows derives percent values for charting", () 
       failedRuns: 0,
       consistencyPercentage: 80,
       averageScore: 82,
+      averagePreScore: 88,
       scoreStandardDeviation: 1.2,
       ruleUnsatisfactionPercentage: 12.5,
       averageRiskCount: 2,
+      ruleJaccardPercentage: 87.54,
+      riskJaccardPercentage: 62.5,
     },
   ]);
 });

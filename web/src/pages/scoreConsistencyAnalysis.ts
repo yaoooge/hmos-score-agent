@@ -90,6 +90,7 @@ export type ConsistencyRunSummary = {
   taskId: number;
   status: ConsistencyRunStatus;
   totalScore?: number;
+  preScore?: number;
   hardGateTriggered?: boolean;
   summary?: string;
   ruleUnsatisfactionRatio?: number;
@@ -104,6 +105,7 @@ export type ConsistencyAnalysisSummary = {
   consistentCompletedRuns: number;
   consistencyPercentage: number | null;
   averageScore: number | null;
+  averagePreScore: number | null;
   medianScore: number | null;
   minScore: number | null;
   maxScore: number | null;
@@ -220,9 +222,12 @@ export type ConsistencyHistoryChartRow = {
   failedRuns: number;
   consistencyPercentage: number | null;
   averageScore: number | null;
+  averagePreScore: number | null;
   scoreStandardDeviation: number | null;
   ruleUnsatisfactionPercentage: number | null;
   averageRiskCount: number | null;
+  ruleJaccardPercentage: number | null;
+  riskJaccardPercentage: number | null;
 };
 
 type RunSignature = {
@@ -469,6 +474,7 @@ function runSetKey(runs: ConsistencyRunSummary[]): string {
         run.taskId,
         run.status,
         run.totalScore ?? "",
+        run.preScore ?? "",
         run.hardGateTriggered ?? "",
         run.ruleUnsatisfactionRatio ?? "",
         run.unsatisfiedRules.map((rule) => `${rule.ruleId}:${rule.summary}`).join(","),
@@ -821,6 +827,7 @@ export function extractConsistencyRunSummary(
   const result = isRecord(resultData) ? resultData : {};
   const conclusion = isRecord(result.overall_conclusion) ? result.overall_conclusion : {};
   const totalScore = numberValue(conclusion.total_score);
+  const preScore = numberValue(conclusion.pre_cap_score);
   const hardGateTriggered =
     typeof conclusion.hard_gate_triggered === "boolean"
       ? conclusion.hard_gate_triggered
@@ -886,6 +893,7 @@ export function extractConsistencyRunSummary(
     taskId,
     status: "completed",
     ...(totalScore !== undefined ? { totalScore } : {}),
+    ...(preScore !== undefined ? { preScore } : {}),
     ...(hardGateTriggered !== undefined ? { hardGateTriggered } : {}),
     ...(summary ? { summary } : {}),
     ruleUnsatisfactionRatio:
@@ -955,6 +963,7 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
       consistentCompletedRuns: 0,
       consistencyPercentage: null,
       averageScore: null,
+      averagePreScore: null,
       medianScore: null,
       minScore: null,
       maxScore: null,
@@ -987,6 +996,12 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
 
   const averageScore = scores.length
     ? roundNumber(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+    : null;
+  const preScores = completedRuns
+    .map((run) => run.preScore)
+    .filter((value): value is number => typeof value === "number");
+  const averagePreScore = preScores.length
+    ? roundNumber(preScores.reduce((sum, score) => sum + score, 0) / preScores.length)
     : null;
   const medianScore = median(scores);
   const scoreStandardDeviation =
@@ -1049,20 +1064,23 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
   if (occasionalRisks.length > 0) {
     volatilityParts.push(`${occasionalRisks.length} 个偶发风险项`);
   }
+  const scoreIsStable = scoreStandardDeviation !== null && scoreStandardDeviation <= 1;
+  const findingIsUnstable =
+    (averageRuleJaccard !== null && averageRuleJaccard < 0.8) ||
+    (averageRiskJaccard !== null && averageRiskJaccard < 0.8);
   const levelText =
     consistencyPercentage >= 90
       ? "评分结果高度一致"
       : consistencyPercentage >= 70
         ? "评分结果基本一致，存在少量波动"
-        : "评分结果波动明显，建议人工抽查不稳定规则和风险项";
+        : scoreIsStable && findingIsUnstable
+          ? "总分稳定，但规则或风险集合存在波动，建议人工抽查不稳定规则和风险项"
+          : "评分结果波动明显，建议人工抽查不稳定规则和风险项";
   const lowSampleText = signatures.length < 3 ? "已完成运行少于 3 次，样本数不足。" : "";
   const volatilityText =
     volatilityParts.length > 0 ? `主要波动来自 ${volatilityParts.join("和")}。` : "";
   const splitMetricText =
-    scoreStandardDeviation !== null &&
-    scoreStandardDeviation <= 1 &&
-    ((averageRuleJaccard !== null && averageRuleJaccard < 0.8) ||
-      (averageRiskJaccard !== null && averageRiskJaccard < 0.8))
+    scoreIsStable && findingIsUnstable && consistencyPercentage >= 70
       ? "总分稳定，但规则或风险集合存在波动。"
       : "";
 
@@ -1072,6 +1090,7 @@ export function analyzeConsistency(runs: ConsistencyRunSummary[]): ConsistencyAn
     consistentCompletedRuns,
     consistencyPercentage,
     averageScore,
+    averagePreScore,
     medianScore: medianScore === null ? null : roundNumber(medianScore),
     minScore: scores.length ? Math.min(...scores) : null,
     maxScore: scores.length ? Math.max(...scores) : null,
@@ -1318,12 +1337,23 @@ export function buildConsistencyHistoryChartRows(
     failedRuns: item.summary.failedRuns,
     consistencyPercentage: item.summary.consistencyPercentage,
     averageScore: item.summary.averageScore,
+    averagePreScore: item.summary.averagePreScore,
     scoreStandardDeviation: item.summary.scoreStandardDeviation,
     ruleUnsatisfactionPercentage:
       item.summary.averageRuleUnsatisfactionRatio === null
         ? null
         : roundNumber(item.summary.averageRuleUnsatisfactionRatio * 100, 2),
     averageRiskCount: item.summary.averageRiskCount,
+    ruleJaccardPercentage:
+      item.summary.findingStability?.averageRuleJaccard === null ||
+      item.summary.findingStability?.averageRuleJaccard === undefined
+        ? null
+        : roundNumber(item.summary.findingStability.averageRuleJaccard * 100, 2),
+    riskJaccardPercentage:
+      item.summary.findingStability?.averageRiskJaccard === null ||
+      item.summary.findingStability?.averageRiskJaccard === undefined
+        ? null
+        : roundNumber(item.summary.findingStability.averageRiskJaccard * 100, 2),
   }));
 }
 
