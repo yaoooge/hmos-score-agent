@@ -219,6 +219,62 @@ test("extractConsistencyRunSummary prefers risk_code over generated identity tex
   assert.equal(summary.risks[0]?.key, "risk_code|REQUIREMENT_NOT_IMPLEMENTED");
 });
 
+test("extractConsistencyRunSummary deduplicates risks by key within one run", () => {
+  const summary = extractConsistencyRunSummary(0, 130600101, {
+    overall_conclusion: {
+      total_score: 82,
+      hard_gate_triggered: false,
+    },
+    rule_audit_results: [],
+    risks: [
+      {
+        id: 1,
+        level: "medium",
+        title: "需求实现不完整",
+        risk_code: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+        evidence: "TelevisionPage.ets",
+      },
+      {
+        id: 2,
+        level: "medium",
+        title: "需求实现不完整",
+        risk_code: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+        evidence: "MinePage.ets",
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    summary.risks.map((risk) => risk.key),
+    ["risk_code|REQUIREMENT_PARTIALLY_IMPLEMENTED"],
+  );
+});
+
+test("buildRiskReport counts each risk at most once per run", () => {
+  const report = buildRiskReport([
+    completedRun(0, {
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          level: "medium",
+          title: "需求实现不完整",
+          evidence: "TelevisionPage.ets",
+        },
+        {
+          key: "risk_code|REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          level: "medium",
+          title: "需求实现不完整",
+          evidence: "MinePage.ets",
+        },
+      ],
+    }),
+    completedRun(1, { risks: [] }),
+  ]);
+
+  assert.equal(report[0]?.appearanceCount, 1);
+  assert.deepEqual(report[0]?.runIndexes, [1]);
+});
+
 test("jaccardSimilarity treats two empty sets as identical", () => {
   assert.equal(jaccardSimilarity([], []), 1);
   assert.equal(jaccardSimilarity(["a", "b"], ["b", "c"]), 1 / 3);

@@ -802,6 +802,60 @@ test("createGetRemoteTaskResultHandler reports running task as result unavailabl
   assert.equal(responseState.body?.message, "Result is not available yet");
 });
 
+test("createGetRemoteTaskResultHandler reports failed task as execution failed", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 708,
+    status: "failed",
+    caseDir: path.join(localCaseRoot, "remote-case-failed"),
+    token: "remote-token",
+    testCaseId: 1708,
+    error: "rubric scoring crashed",
+  });
+  const handler = createGetRemoteTaskResultHandler(registry);
+  const { response, responseState } = createResponse();
+
+  await handler(createResultRequest(708) as never, response as never);
+
+  assert.equal(responseState.statusCode, 409);
+  assert.equal(responseState.body?.success, false);
+  assert.equal(responseState.body?.taskId, 708);
+  assert.equal(responseState.body?.status, "failed");
+  assert.equal(responseState.body?.message, "Remote task execution failed");
+  assert.equal(responseState.body?.error, "rubric scoring crashed");
+  assert.equal(responseState.body?.resultAvailable, false);
+  assert.equal(responseState.body?.terminal, true);
+});
+
+test("createGetRemoteTaskRawResultHandler reports failed task as execution failed", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const registry = createRemoteTaskRegistry(localCaseRoot);
+  await registry.upsert({
+    taskId: 709,
+    status: "failed",
+    caseDir: path.join(localCaseRoot, "remote-case-failed-raw"),
+    token: "remote-token",
+    testCaseId: 1709,
+    error: "workflow crashed",
+  });
+  const handler = createGetRemoteTaskRawResultHandler(registry);
+  const { response, responseState } = createDownloadResponse();
+
+  await handler(createResultRequest(709) as never, response as never);
+
+  assert.equal(responseState.statusCode, 409);
+  assert.deepEqual(responseState.body, {
+    success: false,
+    taskId: 709,
+    status: "failed",
+    message: "Remote task execution failed",
+    error: "workflow crashed",
+    resultAvailable: false,
+    terminal: true,
+  });
+});
+
 test("createGetRemoteTaskResultHandler reports unknown task", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const registry = createRemoteTaskRegistry(localCaseRoot);

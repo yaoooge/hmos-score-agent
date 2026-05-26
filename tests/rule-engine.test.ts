@@ -691,6 +691,52 @@ test("runRuleEngine routes all runtime case rules to agent candidates and keeps 
   );
 });
 
+test("runRuleEngine derives candidate llm prompt from target checks when summary prompt is omitted", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": "Text('hello')\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "case-requirement_004",
+        rule_id: "HM-REQ-008-01",
+        rule_name: "必须使用 LoginWithHuaweiIDButton",
+        rule_source: "must_rule",
+        summary: "登录页必须使用 LoginWithHuaweiIDButton",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/pages/*.ets"],
+          astSignals: [],
+          targetChecks: [
+            {
+              target: "**/pages/*.ets",
+              astSignals: [],
+              llmPrompt: "检查是否从 @kit.AccountKit 导入并使用 LoginWithHuaweiIDButton",
+            },
+          ],
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  const candidate = result.assistedRuleCandidates.find(
+    (item) => item.rule_id === "HM-REQ-008-01",
+  );
+
+  assert.ok(candidate);
+  assert.equal(
+    candidate.llm_prompt,
+    "检查是否从 @kit.AccountKit 导入并使用 LoginWithHuaweiIDButton",
+  );
+});
+
 test("runRuleEngine uses kit anchors for static precheck on runtime case rules", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": [

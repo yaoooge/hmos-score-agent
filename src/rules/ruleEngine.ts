@@ -158,10 +158,7 @@ export async function runRuleEngine(input: {
         priority: registeredRule?.priority,
         decision_criteria: registeredRule?.decision_criteria,
         kit: readStringArray(registeredRule?.detector_config.kit),
-        llm_prompt:
-          typeof registeredRule?.detector_config.llmPrompt === "string"
-            ? registeredRule.detector_config.llmPrompt
-            : undefined,
+        llm_prompt: readLlmPrompt(registeredRule?.detector_config),
         ast_signals: readAstSignals(registeredRule?.detector_config.astSignals),
         target_checks: readTargetChecks(registeredRule?.detector_config.targetChecks),
         static_precheck: staticPrecheck,
@@ -190,6 +187,27 @@ function readStringArray(value: unknown): string[] | undefined {
   }
   const strings = value.filter((item): item is string => typeof item === "string");
   return strings.length > 0 ? strings : undefined;
+}
+
+function readLlmPrompt(detectorConfig: Record<string, unknown> | undefined): string | undefined {
+  if (typeof detectorConfig?.llmPrompt === "string") {
+    return detectorConfig.llmPrompt;
+  }
+
+  const targetChecks = readTargetChecks(detectorConfig?.targetChecks);
+  if (!targetChecks) {
+    return undefined;
+  }
+
+  const checksWithPrompt = targetChecks.filter((check) => check.llm_prompt.length > 0);
+  if (checksWithPrompt.length === 0) {
+    return undefined;
+  }
+  if (checksWithPrompt.length === 1) {
+    return checksWithPrompt[0]?.llm_prompt;
+  }
+
+  return checksWithPrompt.map((check) => `${check.target}: ${check.llm_prompt}`).join("\n");
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

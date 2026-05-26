@@ -872,6 +872,14 @@ export function extractConsistencyRunSummary(
       };
     })
     .filter((risk) => risk.key !== "|");
+  const deduplicatedRisks = Array.from(
+    risks.reduce((map, risk) => {
+      if (!map.has(risk.key)) {
+        map.set(risk.key, risk);
+      }
+      return map;
+    }, new Map<string, ConsistencyRiskSummary>()),
+  ).map(([, risk]) => risk);
 
   return {
     runIndex,
@@ -883,7 +891,7 @@ export function extractConsistencyRunSummary(
     ruleUnsatisfactionRatio:
       involvedRuleCount > 0 ? unsatisfiedRules.length / involvedRuleCount : 0,
     unsatisfiedRules,
-    risks,
+    risks: deduplicatedRisks,
   };
 }
 
@@ -1382,7 +1390,13 @@ export function buildRiskReport(runs: ConsistencyRunSummary[]): RiskConsistencyR
   >();
 
   for (const run of completedRuns) {
+    const runRisks = new Map<string, ConsistencyRiskSummary>();
     for (const risk of run.risks) {
+      if (!runRisks.has(risk.key)) {
+        runRisks.set(risk.key, risk);
+      }
+    }
+    for (const risk of runRisks.values()) {
       const existing = riskMap.get(risk.key);
       if (existing) {
         existing.runIndexes.push(run.runIndex + 1);

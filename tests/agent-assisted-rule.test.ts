@@ -329,11 +329,7 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
   });
 
   assert.equal(payload.assisted_rule_candidates[0]?.rule_name, "module.json5 需配置 Client ID");
-  assert.equal(payload.assisted_rule_candidates[0]?.priority, "P1");
   assert.deepEqual(payload.assisted_rule_candidates[0]?.kit, ["Account Kit"]);
-  assert.deepEqual(payload.assisted_rule_candidates[0]?.ast_signals, [
-    { type: "json_key", name: "metadata" },
-  ]);
   assert.deepEqual(payload.assisted_rule_candidates[0]?.target_checks, [
     {
       target: "**/module.json5",
@@ -341,6 +337,21 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
       llm_prompt: "检查 module.json5 是否配置 Client ID 相关 metadata",
     },
   ]);
+  assert.equal("llm_prompt" in (payload.assisted_rule_candidates[0] ?? {}), false);
+  assert.equal("rule_summary" in (payload.assisted_rule_candidates[0] ?? {}), false);
+  assert.equal(
+    "summary" in (payload.assisted_rule_candidates[0]?.static_precheck ?? {}),
+    false,
+  );
+  assert.equal("priority" in (payload.assisted_rule_candidates[0] ?? {}), false);
+  assert.equal("rule_source" in (payload.assisted_rule_candidates[0] ?? {}), false);
+  assert.equal("local_preliminary_signal" in (payload.assisted_rule_candidates[0] ?? {}), false);
+  assert.equal("evidence_snippets" in (payload.assisted_rule_candidates[0] ?? {}), false);
+  assert.equal("ast_signals" in (payload.assisted_rule_candidates[0] ?? {}), false);
+  assert.match(
+    payload.assisted_rule_candidates[0]?.why_uncertain ?? "",
+    /静态预判在目标文件中发现了 metadata 信号/,
+  );
   assert.deepEqual(payload.assisted_rule_candidates[0]?.decision_criteria, {
     pass: ["已确认 module.json5 中存在符合要求的 metadata 配置。"],
     fail: ["module.json5 未配置 Client ID 相关 metadata。"],

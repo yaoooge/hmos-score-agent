@@ -3,6 +3,7 @@ import type {
   AgentAssistedRuleResult,
   AgentRunStatus,
   AgentBootstrapPayload,
+  AgentBootstrapRuleCandidate,
   AssistedRuleCandidate,
   ConstraintSummary,
   LoadedRubricSnapshot,
@@ -40,6 +41,8 @@ type BuildAgentPromptPayloadInput = {
   rubricSnapshot: LoadedRubricSnapshot;
   assistedRuleCandidates: AssistedRuleCandidate[];
 };
+
+const MAX_BOOTSTRAP_REPRESENTATIVE_FILES = 5;
 
 type MergeRuleAuditResultsInput = {
   deterministicRuleResults: RuleAuditResult[];
@@ -190,7 +193,9 @@ export function buildAgentBootstrapPayload(
   input: BuildAgentPromptPayloadInput,
 ): AgentBootstrapPayload {
   const assistedRuleCandidates = input.assistedRuleCandidates.map((candidate) =>
-    normalizeAssistedRuleCandidatePaths(candidate, input),
+    compactAssistedRuleCandidateForBootstrap(
+      normalizeAssistedRuleCandidatePaths(candidate, input),
+    ),
   );
 
   return {
@@ -207,6 +212,88 @@ export function buildAgentBootstrapPayload(
     rubric_summary: input.rubricSnapshot,
     assisted_rule_candidates: assistedRuleCandidates,
   };
+}
+
+function compactAssistedRuleCandidateForBootstrap(
+  candidate: AssistedRuleCandidate,
+): AgentBootstrapRuleCandidate {
+  const targetChecks = compactTargetChecks(candidate.target_checks);
+  const evidenceFiles = candidate.static_precheck
+    ? undefined
+    : compactStrings(candidate.evidence_files);
+  const kit = compactStrings(candidate.kit ?? []);
+  const matchedFiles = candidate.static_precheck?.matched_files ?? [];
+  const targetFiles = candidate.static_precheck?.target_files ?? [];
+  const representativeFiles = compactStrings(
+    uniqueStrings([...matchedFiles, ...candidate.evidence_files, ...targetFiles]).slice(
+      0,
+      MAX_BOOTSTRAP_REPRESENTATIVE_FILES,
+    ),
+  );
+  const matchedTokens = compactStrings(candidate.static_precheck?.matched_tokens ?? []);
+  const staticPrecheck = candidate.static_precheck
+    ? {
+        target_matched: candidate.static_precheck.target_matched,
+        signal_status: candidate.static_precheck.signal_status,
+        target_file_count: uniqueStrings([...candidate.evidence_files, ...targetFiles]).length,
+        ...(matchedTokens ? { matched_tokens: matchedTokens } : {}),
+        ...(representativeFiles ? { representative_files: representativeFiles } : {}),
+      }
+    : undefined;
+
+  return {
+    rule_id: candidate.rule_id,
+    ...(candidate.rule_name ? { rule_name: candidate.rule_name } : {}),
+    why_uncertain: mergeCandidateReason(candidate.why_uncertain, candidate.static_precheck?.summary),
+    ...(evidenceFiles ? { evidence_files: evidenceFiles } : {}),
+    ...(kit ? { kit } : {}),
+    ...(!targetChecks && typeof candidate.llm_prompt === "string"
+      ? { llm_prompt: candidate.llm_prompt }
+      : {}),
+    ...(targetChecks ? { target_checks: targetChecks } : {}),
+    ...(candidate.decision_criteria ? { decision_criteria: candidate.decision_criteria } : {}),
+    ...(staticPrecheck ? { static_precheck: staticPrecheck } : {}),
+  };
+}
+
+function mergeCandidateReason(whyUncertain: string, staticSummary?: string): string {
+  const summary = staticSummary?.trim();
+  const reason = whyUncertain.trim();
+
+  if (!summary) {
+    return reason;
+  }
+  if (!reason || reason === summary) {
+    return summary;
+  }
+  if (reason.startsWith(summary)) {
+    return reason;
+  }
+  return `${summary} ${reason}`;
+}
+
+function compactStrings(values: string[]): string[] | undefined {
+  const compacted = values.filter((value) => value.length > 0);
+  return compacted.length > 0 ? compacted : undefined;
+}
+
+function compactTargetChecks(
+  targetChecks: AssistedRuleCandidate["target_checks"],
+): AgentBootstrapRuleCandidate["target_checks"] {
+  if (!targetChecks || targetChecks.length === 0) {
+    return undefined;
+  }
+
+  const compacted = targetChecks.map((check) => ({
+    target: check.target,
+    ...(check.ast_signals.length > 0 ? { ast_signals: check.ast_signals } : {}),
+    llm_prompt: check.llm_prompt,
+  }));
+  return compacted.length > 0 ? compacted : undefined;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function formatAgentSummaryForFallback(

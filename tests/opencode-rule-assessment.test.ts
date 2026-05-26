@@ -37,16 +37,12 @@ function payload(): AgentBootstrapPayload {
     assisted_rule_candidates: [
       {
         rule_id: "R1",
-        rule_source: "should_rule",
         why_uncertain: "需要上下文",
-        local_preliminary_signal: "unknown",
         evidence_files: ["generated/entry/src/main.ets"],
-        evidence_snippets: ["SHOULD_NOT_BE_SENT_TO_RULE_AGENT"],
         kit: ["ArkUI: Tabs / TabContent"],
         target_checks: [
           {
             target: "**/pages/MainPage.ets",
-            ast_signals: [],
             llm_prompt: "检查底部导航栏是否使用 Tabs + TabContent 组件实现",
           },
         ],
@@ -62,11 +58,8 @@ function payloadWithTwoRules(): AgentBootstrapPayload {
       ...payload().assisted_rule_candidates,
       {
         rule_id: "R2",
-        rule_source: "should_rule",
         why_uncertain: "需要上下文",
-        local_preliminary_signal: "unknown",
         evidence_files: ["generated/entry/src/feature.ets"],
-        evidence_snippets: [],
       },
     ],
   };
@@ -74,6 +67,13 @@ function payloadWithTwoRules(): AgentBootstrapPayload {
 
 function extractPromptPayload(prompt: string): Record<string, unknown> {
   const marker = "bootstrap_payload:\n";
+  const start = prompt.indexOf(marker);
+  assert.notEqual(start, -1);
+  return JSON.parse(prompt.slice(start + marker.length)) as Record<string, unknown>;
+}
+
+function extractRetryPayload(prompt: string): Record<string, unknown> {
+  const marker = "retry_payload:\n";
   const start = prompt.indexOf(marker);
   assert.notEqual(start, -1);
   return JSON.parse(prompt.slice(start + marker.length)) as Record<string, unknown>;
@@ -194,33 +194,19 @@ test("runOpencodeRuleAssessment compacts duplicate case rule file hints in promp
       assisted_rule_candidates: [
         {
           ...payload().assisted_rule_candidates[0],
-          is_case_rule: true,
-          evidence_files: [
-            "generated/a.ets",
-            "generated/b.ets",
-            "generated/c.ets",
-            "generated/d.ets",
-            "generated/e.ets",
-            "generated/f.ets",
-            "generated/g.ets",
-            "generated/h.ets",
-          ],
+          evidence_files: undefined,
           static_precheck: {
             target_matched: true,
-            target_files: [
-              "generated/a.ets",
-              "generated/b.ets",
-              "generated/c.ets",
-              "generated/d.ets",
-              "generated/e.ets",
-              "generated/f.ets",
-              "generated/g.ets",
-              "generated/h.ets",
-            ],
-            matched_files: ["generated/f.ets", "generated/b.ets"],
             signal_status: "partial_matched",
             matched_tokens: ["Tabs"],
-            summary: "Kit 静态锚点命中 1/2。",
+            target_file_count: 8,
+            representative_files: [
+              "generated/f.ets",
+              "generated/b.ets",
+              "generated/a.ets",
+              "generated/c.ets",
+              "generated/d.ets",
+            ],
           },
         },
       ],
@@ -264,26 +250,12 @@ test("runOpencodeRuleAssessment compacts static-precheck candidates even when th
         {
           ...payload().assisted_rule_candidates[0],
           rule_id: "RSP-MUST-01",
-          rule_source: "must_rule",
           rule_name: "横向断点划分范围必须符合系统推荐值",
-          priority: "P0",
-          evidence_files: [
-            "generated/commons/lib_common/Index.ets",
-            "generated/commons/lib_common/src/main/ets/constants/BreakpointConstants.ets",
-            "generated/features/home/src/main/ets/components/TelevisionLikeView.ets",
-          ],
+          evidence_files: undefined,
           static_precheck: {
             target_matched: true,
-            target_files: [
-              "generated/commons/lib_common/Index.ets",
-              "generated/commons/lib_common/src/main/ets/constants/BreakpointConstants.ets",
-              "generated/features/home/src/main/ets/components/TelevisionLikeView.ets",
-            ],
-            matched_files: [],
             signal_status: "none_matched",
-            matched_tokens: [],
-            summary:
-              "静态预判在目标文件中命中了 0/0 个 AST 信号。Kit 静态锚点强证据命中 0/1。",
+            target_file_count: 3,
           },
         },
       ],
@@ -316,7 +288,7 @@ test("runOpencodeRuleAssessment compacts static-precheck candidates even when th
   assert.equal("evidence_files" in candidate, false);
   assert.equal("target_files" in staticPrecheck, false);
   assert.equal(staticPrecheck.target_file_count, 3);
-  assert.deepEqual(staticPrecheck.representative_files, []);
+  assert.equal("representative_files" in staticPrecheck, false);
 });
 
 test("runOpencodeRuleAssessment omits expected constraints from original prompt summary", async () => {
@@ -384,20 +356,15 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after p
   assert.equal(calls[0]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(calls[1]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
-  assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试/);
+  assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试，但上一轮没有可复用的有效输出/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rule-assessment skill/);
-  assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
-  assert.match(calls[1]?.prompt ?? "", /reason 与该 rule_id 的候选规则语义不相关/);
-  assert.match(calls[1]?.prompt ?? "", /相关性修正不视为违规重判/);
+  assert.match(calls[1]?.prompt ?? "", /必须重新阅读 bootstrap_payload 和 patch/);
   assert.match(calls[1]?.prompt ?? "", /最终输出不是唯一 JSON object/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
-  assert.match(calls[1]?.prompt ?? "", /candidate_rule_ids/);
+  assert.match(calls[1]?.prompt ?? "", /bootstrap_payload:/);
+  assert.match(calls[1]?.prompt ?? "", /输出前自检 rule_assessments/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /正确输出格式:/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rule_retry_payload/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /task_understanding/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /why_uncertain/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /bootstrap_payload:/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /original_prompt_summary/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_summary/);
 });
 
@@ -568,7 +535,18 @@ test("runOpencodeRuleAssessment retries missing rules by repairing the first out
   assert.equal(calls[1]?.preserveOutputFileOnStart, true);
   assert.match(calls[1]?.prompt ?? "", /missing=R2/);
   assert.match(calls[1]?.prompt ?? "", /读取并修改已有 output_file/);
-  assert.match(calls[1]?.prompt ?? "", /只补齐列出的候选 rule_id/);
+  assert.match(calls[1]?.prompt ?? "", /补齐列出的候选 rule_id/);
+  assert.match(calls[1]?.prompt ?? "", /retry_rule_candidates/);
+  assert.match(calls[1]?.prompt ?? "", /不要漏掉该 rule_id/);
+  const retryPayload = extractRetryPayload(calls[1]?.prompt ?? "");
+  assert.deepEqual(retryPayload.candidate_rule_ids, ["R1", "R2"]);
+  assert.deepEqual(retryPayload.retry_rule_candidates, [
+    {
+      rule_id: "R2",
+      why_uncertain: "需要上下文",
+      evidence_files: ["generated/entry/src/feature.ets"],
+    },
+  ]);
   assert.deepEqual(
     result.final_answer?.rule_assessments.map((assessment) => assessment.rule_id),
     ["R1", "R2"],
@@ -714,7 +692,7 @@ test("runOpencodeRuleAssessment retry prompt targets concrete protocol failures"
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
   assert.match(calls[1]?.prompt ?? "", /schema_error/);
-  assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
+  assert.match(calls[1]?.prompt ?? "", /修复 listed protocol errors/);
   assert.match(calls[1]?.prompt ?? "", /删除未声明字段/);
 });
 

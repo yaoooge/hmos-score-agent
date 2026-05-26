@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { extractFinalJsonObject } from "../opencode/finalJson.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/opencodeCliRunner.js";
-import type { AgentAssistedRuleResult, AgentBootstrapPayload, AssistedRuleCandidate } from "../types.js";
+import type {
+  AgentAssistedRuleResult,
+  AgentBootstrapPayload,
+  AgentBootstrapRuleCandidate,
+} from "../types.js";
 import { booleanLikeSchema } from "./agentOutputNormalization.js";
 import { buildOpencodeRequestTag } from "./opencodeRequestTag.js";
 
@@ -57,26 +61,6 @@ function stringifyForPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-const MAX_RULE_REPRESENTATIVE_FILES = 5;
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function pickRepresentativeFiles(input: {
-  evidenceFiles: string[];
-  targetFiles: string[];
-  matchedFiles: string[];
-}): string[] {
-  if (input.matchedFiles.length === 0) {
-    return [];
-  }
-  return uniqueStrings([...input.matchedFiles, ...input.evidenceFiles, ...input.targetFiles]).slice(
-    0,
-    MAX_RULE_REPRESENTATIVE_FILES,
-  );
-}
-
 function trimExpectedOutputFromPromptSummary(summary: string): string {
   return summary.replace(/\n{0,2}(?:期望输出|Expected\s+Output)\s*[：:][\s\S]*$/iu, "").trim();
 }
@@ -90,45 +74,7 @@ function compactRuleAssessmentPayload(payload: AgentBootstrapPayload): Record<st
       ),
     },
     task_understanding: payload.task_understanding,
-    assisted_rule_candidates: payload.assisted_rule_candidates.map((candidate) => {
-      const { evidence_snippets: _evidenceSnippets, ...candidateWithoutSnippets } = candidate;
-      if (!candidate.static_precheck) {
-        return candidateWithoutSnippets;
-      }
-
-      const {
-        evidence_files: evidenceFiles,
-        static_precheck: staticPrecheck,
-        ...caseCandidate
-      } = candidateWithoutSnippets;
-      const targetFiles = staticPrecheck?.target_files ?? [];
-      const matchedFiles = staticPrecheck?.matched_files ?? [];
-      const compactStaticPrecheck = staticPrecheck
-        ? (() => {
-            const {
-              target_files: _targetFiles,
-              matched_files: _matchedFiles,
-              ...restStaticPrecheck
-            } = staticPrecheck;
-            return restStaticPrecheck;
-          })()
-        : undefined;
-      const allTargetFiles = uniqueStrings([...evidenceFiles, ...targetFiles]);
-      return {
-        ...caseCandidate,
-        static_precheck: compactStaticPrecheck
-          ? {
-              ...compactStaticPrecheck,
-              target_file_count: allTargetFiles.length,
-              representative_files: pickRepresentativeFiles({
-                evidenceFiles,
-                targetFiles,
-                matchedFiles,
-              }),
-            }
-          : undefined,
-      };
-    }),
+    assisted_rule_candidates: payload.assisted_rule_candidates,
   };
 }
 
@@ -146,11 +92,12 @@ function retryFailureGuidance(reason: string): string[] {
   const guidance = [
     "协议错误修复清单:",
     `- listed protocol errors: ${summarizeRetryFailureReason(reason)}`,
-    "- 只修复 listed protocol errors；但若任一已有 rule 判断的 reason 与该 rule_id 的候选规则语义不相关，必须按 hmos-rule-assessment skill 重新判定该 rule_id。",
-    "- 相关性修正不视为违规重判。禁止改变与 listed protocol errors 无关且结论相关的 rule 判断。",
+    "- 默认保留已有且与候选规则语义相关的 rule 判断。",
+    "- 对 missing、schema_error、语义不相关的 rule 判断，必须按 hmos-rule-assessment skill 和 retry_rule_candidates 重新修正。",
+    "- 禁止只根据 rule_id 名称猜测结论；需要直接回答对应 rule_name / target_checks[].llm_prompt。",
   ];
   if (reason.includes("missing=")) {
-    guidance.push("- missing: 只补齐列出的候选 rule_id；无法确认时 decision=\"uncertain\" 且 needs_human_review=true。");
+    guidance.push("- missing: 补齐列出的候选 rule_id；若 retry_rule_candidates 提供了规则内容，必须按其规则语义判定，无法确认时 decision=\"uncertain\" 且 needs_human_review=true。");
   }
   if (reason.includes("duplicate=")) {
     guidance.push("- duplicate: 只保留每个 rule_id 的一个判定，删除重复条目。");
@@ -165,11 +112,52 @@ function retryFailureGuidance(reason: string): string[] {
   return guidance;
 }
 
-function compactRuleRetryPayload(payload: AgentBootstrapPayload): Record<string, unknown> {
+function parseRuleIdsFromFailureReason(reason: string, key: string): string[] {
+  const match = reason.match(new RegExp(`${key}=([^\\s;]+)`));
+  if (!match?.[1]) {
+    return [];
+  }
+  return match[1]
+    .split(",")
+    .map((ruleId) => ruleId.trim())
+    .filter((ruleId) => ruleId.length > 0);
+}
+
+function pickRetryRuleCandidates(payload: AgentBootstrapPayload, failureReason: string) {
+  const referencedRuleIds = new Set([
+    ...parseRuleIdsFromFailureReason(failureReason, "missing"),
+    ...parseRuleIdsFromFailureReason(failureReason, "duplicate"),
+  ]);
+  if (referencedRuleIds.size === 0) {
+    return [];
+  }
+  return payload.assisted_rule_candidates.filter((candidate) =>
+    referencedRuleIds.has(candidate.rule_id),
+  );
+}
+
+function compactRuleRetryPayloadForFailure(
+  payload: AgentBootstrapPayload,
+  failureReason: string,
+): Record<string, unknown> {
+  const retryRuleCandidates = pickRetryRuleCandidates(payload, failureReason);
   return {
     candidate_rule_ids: payload.assisted_rule_candidates.map((candidate) => candidate.rule_id),
+    ...(retryRuleCandidates.length > 0 ? { retry_rule_candidates: retryRuleCandidates } : {}),
     output_file: RULE_ASSESSMENT_OUTPUT_FILE,
   };
+}
+
+function hasReusableRuleAssessmentOutput(rawText: string): boolean {
+  if (rawText.trim().length === 0) {
+    return false;
+  }
+  try {
+    extractFinalJsonObject(rawText);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function renderRuleAssessmentRetryPrompt(input: {
@@ -177,8 +165,8 @@ function renderRuleAssessmentRetryPrompt(input: {
   bootstrapPayload: AgentBootstrapPayload;
   retryContext: { failureReason: string; rawText: string };
 }): string {
-  const hasPreviousOutput = input.retryContext.rawText.trim().length > 0;
-  if (!hasPreviousOutput) {
+  const hasReusableOutput = hasReusableRuleAssessmentOutput(input.retryContext.rawText);
+  if (!hasReusableOutput) {
     return [
       "你是评分流程中的规则判定 agent。本次是重试，但上一轮没有可复用的有效输出。",
       "本次是重试。仍必须使用 hmos-rule-assessment skill；由于没有上一轮有效 rule_assessments，必须重新阅读 bootstrap_payload 和 patch，重新完成所有候选规则判定。",
@@ -196,7 +184,8 @@ function renderRuleAssessmentRetryPrompt(input: {
       "1. 阅读 bootstrap_payload 中的候选规则和任务理解。",
       "2. 优先阅读 patch/effective.patch，只基于 patch 内可见文件完成每条候选规则的判定；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文辅助理解。",
       "3. 按 hmos-rule-assessment skill 的判定契约覆盖 assisted_rule_candidates 中每一个 rule_id。",
-      "4. 不要根据 rule_id 名称或泛化工程质量描述猜测结论；每条 reason 必须直接回答对应 rule_summary / llm_prompt，并引用相关证据路径。",
+      "4. 不要根据 rule_id 名称或泛化工程质量描述猜测结论；每条 reason 必须直接回答对应 rule_name / target_checks[].llm_prompt，并引用相关证据路径。",
+      "5. 输出前自检 rule_assessments 的 rule_id 集合必须与 assisted_rule_candidates 完全一致，不能漏判、重复或新增。",
       "",
       "最终输出要求:",
       "- 将最终 JSON object 写入 output_file。",
@@ -214,26 +203,29 @@ function renderRuleAssessmentRetryPrompt(input: {
     ].join("\n");
   }
   return [
-    "你是评分流程中的规则判定 agent。本次是重试，只修正最终 JSON 输出格式。",
-    "本次是重试。仍必须使用 hmos-rule-assessment skill，但只修复 listed protocol errors，不重新判定。",
+    "你是评分流程中的规则判定 agent。本次是重试，需要修复 listed protocol errors 并补齐缺失规则。",
+    "仍必须使用 hmos-rule-assessment skill。优先复用已有 output_file 中已完成且语义相关的判定；对缺失、格式错误或语义不相关的规则重新修正。",
     "该 skill 中的输出契约和自检清单是本次输出的强制要求。",
     `上一次失败原因: ${summarizeRetryFailureReason(input.retryContext.failureReason)}`,
     "",
     "输入边界（必须遵守）:",
-    "- 不要重新读取原始 prompt、rubric 全量内容或大段上下文。",
+    "- 尽量避免重新读取原始 prompt、rubric 全量内容或大段上下文。",
     "- 不要输出分析过程、Markdown、代码块或自然语言前后缀。",
-    ...(hasPreviousOutput
+    ...(hasReusableOutput
       ? ["- 先读取并修改已有 output_file，保留上一轮已完成且与候选规则相关的 rule_assessments。"]
       : []),
-    "- 只根据 candidate_rule_ids 覆盖所有候选 rule_id。",
+    "- 根据 retry_payload.candidate_rule_ids 覆盖所有候选 rule_id。",
+    "- retry_payload.retry_rule_candidates 是本次缺失或需修正规则的精简规则内容；这些规则必须按 rule_name / target_checks[].llm_prompt 判定。",
+    "- 若 retry_rule_candidates 中的 target 文件不存在或 patch 未涉及，应按 skill 规则判定为 not_applicable 或 uncertain，不要漏掉该 rule_id。",
     ...retryFailureGuidance(input.retryContext.failureReason),
     "- JSON 字符串中的英文双引号必须转义；如果必须引用原文，先改写为不含双引号的中文转述再写入字段。",
     "",
     "任务:",
-    hasPreviousOutput ? "1. 在已有 output_file 内容基础上输出一个合法 JSON object。" : "1. 输出一个合法 JSON object。",
-    "2. rule_assessments 必须覆盖 candidate_rule_ids 中每个 rule_id，不能新增、遗漏或重复。",
+    hasReusableOutput ? "1. 在已有 output_file 内容基础上输出一个合法 JSON object。" : "1. 输出一个合法 JSON object。",
+    "2. rule_assessments 必须覆盖 retry_payload.candidate_rule_ids 中每个 rule_id，不能新增、遗漏或重复。",
     "3. 无法确认时使用 decision=\"uncertain\"，并设置 needs_human_review=true。",
     "4. evidence_used 只能填写 sandbox 相对路径。",
+    "5. 输出前逐项核对 candidate_rule_ids，特别是 missing= 中列出的 rule_id。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",
@@ -246,8 +238,13 @@ function renderRuleAssessmentRetryPrompt(input: {
     "- 最终答案的第一个非空字符必须是 {。",
     "- 最后一个非空字符必须是 }。",
     "",
-    "candidate_rule_ids:",
-    stringifyForPrompt(compactRuleRetryPayload(input.bootstrapPayload)),
+    "retry_payload:",
+    stringifyForPrompt(
+      compactRuleRetryPayloadForFailure(
+        input.bootstrapPayload,
+        input.retryContext.failureReason,
+      ),
+    ),
   ].join("\n");
 }
 
@@ -279,6 +276,7 @@ function renderRuleAssessmentPrompt(input: {
     "1. 阅读 bootstrap_payload 中的候选规则和任务理解。",
     "2. 优先阅读 patch/effective.patch，只基于 patch 内可见文件完成每条候选规则的判定；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文辅助理解。",
     "3. 按 hmos-rule-assessment skill 的判定契约覆盖 assisted_rule_candidates 中每一个 rule_id。",
+    "4. 输出前自检 rule_assessments 的 rule_id 集合必须与 assisted_rule_candidates 完全一致，不能漏判、重复或新增。",
     "",
     "最终输出要求:",
     "- 将最终 JSON object 写入 output_file。",
@@ -300,7 +298,7 @@ function schemaFailureMessage(error: z.ZodError): string {
 
 function validateRuleCoverage(
   finalAnswer: AgentAssistedRuleResult,
-  candidates: AssistedRuleCandidate[],
+  candidates: AgentBootstrapRuleCandidate[],
 ): { ok: boolean; failureReason?: string } {
   const expectedRuleIds = candidates.map((candidate) => candidate.rule_id);
   const seen = new Set<string>();
@@ -315,7 +313,7 @@ function validateRuleCoverage(
 
 function normalizeRuleAssessmentResult(
   finalAnswer: AgentAssistedRuleResult,
-  candidates: AssistedRuleCandidate[],
+  candidates: AgentBootstrapRuleCandidate[],
 ): AgentAssistedRuleResult {
   const assessmentsByRuleId = new Map<string, AgentAssistedRuleResult["rule_assessments"][number]>();
   for (const assessment of finalAnswer.rule_assessments) {
@@ -341,7 +339,7 @@ function normalizeRuleAssessmentResult(
 
 function parseRuleAssessmentRunResult(
   runResult: OpencodeRunResult,
-  candidates: AssistedRuleCandidate[],
+  candidates: AgentBootstrapRuleCandidate[],
 ): OpencodeRuleAssessmentResult {
   let parsedJson: Record<string, unknown>;
   try {
@@ -395,7 +393,7 @@ export async function runOpencodeRuleAssessment(
   });
   async function runOnce(inputRequestTag: string, retryContext?: { failureReason: string; rawText: string }) {
     const preserveOutputFileOnStart =
-      retryContext && retryContext.rawText.trim().length > 0 ? true : undefined;
+      retryContext && hasReusableRuleAssessmentOutput(retryContext.rawText) ? true : undefined;
     return input.runPrompt({
       prompt: renderRuleAssessmentPrompt({
         sandboxRoot: input.sandboxRoot,

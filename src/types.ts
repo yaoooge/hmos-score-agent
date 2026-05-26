@@ -331,6 +331,32 @@ export interface AssistedRuleCandidate {
   is_case_rule?: boolean;
 }
 
+export interface AgentBootstrapStaticPrecheck {
+  target_matched: boolean;
+  signal_status: CaseRuleStaticPrecheck["signal_status"];
+  matched_tokens?: string[];
+  target_file_count?: number;
+  representative_files?: string[];
+}
+
+export interface AgentBootstrapTargetCheck {
+  target: string;
+  ast_signals?: Array<Record<string, string>>;
+  llm_prompt: string;
+}
+
+export interface AgentBootstrapRuleCandidate {
+  rule_id: string;
+  rule_name?: string;
+  why_uncertain: string;
+  evidence_files?: string[];
+  kit?: string[];
+  llm_prompt?: string;
+  target_checks?: AgentBootstrapTargetCheck[];
+  decision_criteria?: RuleDecisionCriteria;
+  static_precheck?: AgentBootstrapStaticPrecheck;
+}
+
 export interface CaseRuleResult {
   rule_id: string;
   rule_name: string;
@@ -390,7 +416,7 @@ export interface AgentBootstrapPayload {
   };
   task_understanding: ConstraintSummary;
   rubric_summary: LoadedRubricSnapshot;
-  assisted_rule_candidates: AssistedRuleCandidate[];
+  assisted_rule_candidates: AgentBootstrapRuleCandidate[];
 }
 
 export interface RubricScoringPayload {

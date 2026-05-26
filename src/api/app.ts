@@ -803,6 +803,39 @@ export function createGetSqliteRuleViolationStatsHandler(
   };
 }
 
+function buildUnavailableRemoteTaskResultBody(taskId: number, record: StoredRemoteTaskRecord) {
+  if (record.status === "failed") {
+    return {
+      success: false,
+      taskId,
+      status: record.status,
+      message: "Remote task execution failed",
+      ...(record.error ? { error: record.error } : {}),
+      resultAvailable: false,
+      terminal: true,
+    };
+  }
+  if (record.status === "timed_out") {
+    return {
+      success: false,
+      taskId,
+      status: record.status,
+      message: "Remote task execution timed out",
+      ...(record.error ? { error: record.error } : {}),
+      resultAvailable: false,
+      terminal: true,
+    };
+  }
+  return {
+    success: false,
+    taskId,
+    status: record.status,
+    message: "Result is not available yet",
+    resultAvailable: false,
+    terminal: false,
+  };
+}
+
 export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
   return async (req: Request, res: Response) => {
     const taskId = readRouteTaskId(req);
@@ -818,12 +851,7 @@ export function createGetRemoteTaskResultHandler(registry: RemoteTaskRegistry) {
     }
 
     if (record.status !== "completed") {
-      res.status(409).json({
-        success: false,
-        taskId,
-        status: record.status,
-        message: "Result is not available yet",
-      });
+      res.status(409).json(buildUnavailableRemoteTaskResultBody(taskId, record));
       return;
     }
 
@@ -879,12 +907,7 @@ export function createGetRemoteTaskRawResultHandler(registry: RemoteTaskRegistry
     }
 
     if (record.status !== "completed") {
-      res.status(409).json({
-        success: false,
-        taskId,
-        status: record.status,
-        message: "Result is not available yet",
-      });
+      res.status(409).json(buildUnavailableRemoteTaskResultBody(taskId, record));
       return;
     }
 
