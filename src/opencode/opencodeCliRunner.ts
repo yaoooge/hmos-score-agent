@@ -10,6 +10,7 @@ export interface OpencodeRunRequest {
   requestTag: string;
   title?: string;
   agent?: string;
+  continueSessionId?: string;
   outputFile?: string;
   preserveOutputFileOnStart?: boolean;
   logger?: {
@@ -22,6 +23,7 @@ export interface OpencodeRunResult {
   rawText: string;
   rawEvents: string;
   elapsedMs: number;
+  sessionId?: string;
   tokenUsage?: OpencodeTokenUsage;
   assistantText?: string;
   outputFile?: string;
@@ -192,6 +194,62 @@ function extractTokenUsage(rawEvents: string): OpencodeTokenUsage | undefined {
   return latestTokenUsage;
 }
 
+function readSessionIdFromRecord(record: Record<string, unknown>): string | undefined {
+  for (const key of ["sessionId", "sessionID", "session_id", "id"]) {
+    const value = record[key];
+    if (typeof value === "string" && /^ses_[A-Za-z0-9]+$/.test(value)) {
+      return value;
+    }
+  }
+
+  const session = record.session;
+  if (session && typeof session === "object") {
+    const sessionId = readSessionIdFromRecord(session as Record<string, unknown>);
+    if (sessionId) {
+      return sessionId;
+    }
+  }
+
+  const info = record.info;
+  if (info && typeof info === "object") {
+    const sessionId = readSessionIdFromRecord(info as Record<string, unknown>);
+    if (sessionId) {
+      return sessionId;
+    }
+  }
+
+  const properties = record.properties;
+  if (properties && typeof properties === "object") {
+    const sessionId = readSessionIdFromRecord(properties as Record<string, unknown>);
+    if (sessionId) {
+      return sessionId;
+    }
+  }
+
+  return undefined;
+}
+
+function extractSessionId(rawEvents: string): string | undefined {
+  for (const line of rawEvents.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+    try {
+      const event = JSON.parse(line) as unknown;
+      if (!event || typeof event !== "object") {
+        continue;
+      }
+      const sessionId = readSessionIdFromRecord(event as Record<string, unknown>);
+      if (sessionId) {
+        return sessionId;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 function extractAssistantText(rawEvents: string): string {
   const streamedTextParts: string[] = [];
   for (const line of rawEvents.split(/\r?\n/)) {
@@ -294,6 +352,9 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
   if (input.request.agent) {
     args.push("--agent", input.request.agent);
   }
+  if (input.request.continueSessionId) {
+    args.push("--session", input.request.continueSessionId);
+  }
   const runMessage = input.request.outputFile
     ? `Read and follow the prompt file at ${promptRelativePath}. Write the final JSON object to ${input.request.outputFile}. After writing the file, reply only with {"output_file":"${input.request.outputFile}"}.`
     : `Read and follow the prompt file at ${promptRelativePath}. Return only the requested final JSON object.`;
@@ -303,6 +364,7 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
     [
       `opencode 调用开始 request=${input.request.requestTag}`,
       `agent=${input.request.agent ?? "default"}`,
+      input.request.continueSessionId ? `continueSession=${input.request.continueSessionId}` : undefined,
       `prompt=${promptRelativePath}`,
       input.request.outputFile ? `outputFile=${input.request.outputFile}` : undefined,
     ]
@@ -376,6 +438,7 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
         }
 
         const rawEvents = Buffer.concat(stdout).toString("utf-8");
+        const sessionId = extractSessionId(rawEvents) ?? input.request.continueSessionId;
         const tokenUsage = extractTokenUsage(rawEvents);
         let assistantText: string | undefined;
         let assistantTextError: OpencodeRunError | undefined;
@@ -411,6 +474,7 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
           [
             `opencode 调用完成 request=${input.request.requestTag}`,
             `elapsedMs=${String(elapsedMs)}`,
+            sessionId ? `session=${sessionId}` : undefined,
             tokenUsage ? formatTokenUsageLog(tokenUsage) : undefined,
             input.request.outputFile ? `outputFile=${input.request.outputFile}` : undefined,
           ]
@@ -422,6 +486,7 @@ export async function runOpencodePrompt(input: RunInput): Promise<OpencodeRunRes
           rawText,
           rawEvents,
           elapsedMs,
+          sessionId,
           tokenUsage,
           assistantText,
           outputFile: input.request.outputFile,

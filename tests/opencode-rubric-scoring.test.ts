@@ -279,18 +279,24 @@ test("runOpencodeRubricScoring omits expected constraints with prompt label vari
   assert.doesNotMatch(prompt, /RSP-MUST-01/);
 });
 
-test("runOpencodeRubricScoring retries once with strict format guidance after protocol error", async () => {
-  const calls: Array<{ requestTag: string; title?: string; prompt: string }> = [];
+test("runOpencodeRubricScoring retries once in the first session while preserving retry attempt logs", async () => {
+  const calls: Array<{ requestTag: string; title?: string; prompt: string; continueSessionId?: string }> = [];
   const result = await runOpencodeRubricScoring({
     sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
     scoringPayload: payload(),
     runPrompt: async (request) => {
-      calls.push({ requestTag: request.requestTag, title: request.title, prompt: request.prompt });
+      calls.push({
+        requestTag: request.requestTag,
+        title: request.title,
+        prompt: request.prompt,
+        continueSessionId: request.continueSessionId,
+      });
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
         rawText: calls.length === 1 ? "我已经完成评分，但这里不是 JSON。" : JSON.stringify(finalAnswer()),
         elapsedMs: 1,
+        sessionId: "ses_rubric_first",
       };
     },
   });
@@ -300,6 +306,8 @@ test("runOpencodeRubricScoring retries once with strict format guidance after pr
   assert.equal(calls[0]?.requestTag, "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(calls[1]?.requestTag, "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
+  assert.equal(calls[0]?.continueSessionId, undefined);
+  assert.equal(calls[1]?.continueSessionId, "ses_rubric_first");
   assert.match(calls[1]?.prompt ?? "", /rubric 评分 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rubric-scoring skill/);
   assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);

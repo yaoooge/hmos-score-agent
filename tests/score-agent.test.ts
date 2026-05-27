@@ -734,6 +734,10 @@ test("ruleAuditNode excludes cross-device rules when task is not cross-device re
       pack_id: "arkts-performance",
       display_name: "ArkTS 高性能编程实践",
     },
+    {
+      pack_id: "arkui-extra",
+      display_name: "ArkUI 补充工程规则",
+    },
   ]);
 });
 
@@ -1202,6 +1206,10 @@ test("reportGenerationNode includes case_rule_results in resultJson", async (t) 
     {
       pack_id: "arkts-performance",
       display_name: "ArkTS 高性能编程实践",
+    },
+    {
+      pack_id: "arkui-extra",
+      display_name: "ArkUI 补充工程规则",
     },
     {
       pack_id: "case-requirement_004",
@@ -2293,6 +2301,10 @@ test("runScoreWorkflow includes case_rule_results and generated patch output", a
     {
       pack_id: "arkts-performance",
       display_name: "ArkTS 高性能编程实践",
+    },
+    {
+      pack_id: "arkui-extra",
+      display_name: "ArkUI 补充工程规则",
     },
     {
       pack_id: "case-case-1",

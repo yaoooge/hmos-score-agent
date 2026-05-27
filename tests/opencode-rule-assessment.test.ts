@@ -335,18 +335,24 @@ test("runOpencodeRuleAssessment omits expected constraints from original prompt 
   assert.doesNotMatch(prompt, /GridRow \/ WidthBreakpoint/);
 });
 
-test("runOpencodeRuleAssessment retries once with strict format guidance after protocol error", async () => {
-  const calls: Array<{ requestTag: string; title?: string; prompt: string }> = [];
+test("runOpencodeRuleAssessment retries once in the first session while preserving retry attempt logs", async () => {
+  const calls: Array<{ requestTag: string; title?: string; prompt: string; continueSessionId?: string }> = [];
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
     bootstrapPayload: payload(),
     runPrompt: async (request) => {
-      calls.push({ requestTag: request.requestTag, title: request.title, prompt: request.prompt });
+      calls.push({
+        requestTag: request.requestTag,
+        title: request.title,
+        prompt: request.prompt,
+        continueSessionId: request.continueSessionId,
+      });
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
         rawText: calls.length === 1 ? "规则判定完成，但这里不是 JSON。" : JSON.stringify(finalAnswer()),
         elapsedMs: 1,
+        sessionId: "ses_rule_first",
       };
     },
   });
@@ -356,6 +362,8 @@ test("runOpencodeRuleAssessment retries once with strict format guidance after p
   assert.equal(calls[0]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a");
   assert.equal(calls[1]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
+  assert.equal(calls[0]?.continueSessionId, undefined);
+  assert.equal(calls[1]?.continueSessionId, "ses_rule_first");
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试，但上一轮没有可复用的有效输出/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rule-assessment skill/);
   assert.match(calls[1]?.prompt ?? "", /必须重新阅读 bootstrap_payload 和 patch/);

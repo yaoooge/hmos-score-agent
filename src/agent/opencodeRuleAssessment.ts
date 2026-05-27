@@ -391,7 +391,11 @@ export async function runOpencodeRuleAssessment(
     caseId: input.bootstrapPayload.case_context.case_id,
     sandboxRoot: input.sandboxRoot,
   });
-  async function runOnce(inputRequestTag: string, retryContext?: { failureReason: string; rawText: string }) {
+  async function runOnce(
+    inputRequestTag: string,
+    retryContext?: { failureReason: string; rawText: string },
+    continueSessionId?: string,
+  ) {
     const preserveOutputFileOnStart =
       retryContext && hasReusableRuleAssessmentOutput(retryContext.rawText) ? true : undefined;
     return input.runPrompt({
@@ -404,6 +408,7 @@ export async function runOpencodeRuleAssessment(
       requestTag: inputRequestTag,
       title: inputRequestTag,
       agent: "hmos-rule-assessment",
+      continueSessionId,
       outputFile: RULE_ASSESSMENT_OUTPUT_FILE,
       preserveOutputFileOnStart,
       logger: input.logger?.info
@@ -413,12 +418,13 @@ export async function runOpencodeRuleAssessment(
   }
 
   let retryContext: { failureReason: string; rawText: string } | undefined;
+  let retrySessionId: string | undefined;
 
   for (let attempt = 0; attempt <= MAX_RULE_ASSESSMENT_RETRIES; attempt += 1) {
     const inputRequestTag = attempt === 0 ? requestTag : `${requestTag}-retry-${attempt}`;
     let runResult: OpencodeRunResult;
     try {
-      runResult = await runOnce(inputRequestTag, retryContext);
+      runResult = await runOnce(inputRequestTag, retryContext, attempt > 0 ? retrySessionId : undefined);
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
       const phase = attempt === 0 ? "request" : "retry request";
@@ -435,6 +441,7 @@ export async function runOpencodeRuleAssessment(
       };
       continue;
     }
+    retrySessionId ??= runResult.sessionId;
 
     const parseResult = parseRuleAssessmentRunResult(
       runResult,

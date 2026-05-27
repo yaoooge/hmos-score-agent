@@ -90,6 +90,50 @@ test("runOpencodePrompt invokes attached opencode run with the requested custom 
   assert.match(spawned[0]?.args.at(-1) ?? "", /metadata\/opencode-prompts\/rule-assessment\.md/);
 });
 
+test("runOpencodePrompt continues an explicit session while preserving the retry request tag", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-session-"));
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-session-"));
+  const child = createFakeChild();
+  const spawned: Array<{ args: string[] }> = [];
+
+  const result = await runOpencodePrompt({
+    runtime: runtimeConfig(runtimeDir),
+    request: {
+      prompt: "修复上一轮输出",
+      sandboxRoot,
+      requestTag: "rubric-scoring-retry-1",
+      title: "rubric-scoring-retry-1",
+      continueSessionId: "ses_existing123",
+    },
+    deps: {
+      spawnProcess: (_command, args) => {
+        spawned.push({ args });
+        queueMicrotask(() => {
+          child.stdout.emit(
+            "data",
+            Buffer.from(
+              [
+                '{"type":"session.updated","properties":{"info":{"id":"ses_existing123"}}}',
+                '{"type":"text","part":{"type":"text","text":"{\\"ok\\":true}"}}',
+              ].join("\n") + "\n",
+            ),
+          );
+          child.emit("exit", 0);
+        });
+        return child;
+      },
+    },
+  });
+
+  const args = spawned[0]?.args ?? [];
+  assert.equal(result.requestTag, "rubric-scoring-retry-1");
+  assert.equal(result.sessionId, "ses_existing123");
+  assert.equal(args.includes("--session"), true);
+  assert.equal(args[args.indexOf("--session") + 1], "ses_existing123");
+  assert.equal(args.includes("--title"), true);
+  assert.equal(args[args.indexOf("--title") + 1], "rubric-scoring-retry-1");
+});
+
 test("runOpencodePrompt logs actual opencode invocation lifecycle", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-runner-log-"));
   const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-sandbox-log-"));

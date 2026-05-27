@@ -435,7 +435,11 @@ export async function runOpencodeRubricScoring(
     sandboxRoot: input.sandboxRoot,
   });
 
-  async function runOnce(inputRequestTag: string, retryContext?: { failureReason: string; rawText: string }) {
+  async function runOnce(
+    inputRequestTag: string,
+    retryContext?: { failureReason: string; rawText: string },
+    continueSessionId?: string,
+  ) {
     return input.runPrompt({
       prompt: renderRubricScoringPrompt({
         sandboxRoot: input.sandboxRoot,
@@ -446,6 +450,7 @@ export async function runOpencodeRubricScoring(
       requestTag: inputRequestTag,
       title: inputRequestTag,
       agent: "hmos-rubric-scoring",
+      continueSessionId,
       outputFile: RUBRIC_SCORING_OUTPUT_FILE,
       logger: input.logger?.info
         ? { info: (message) => input.logger?.info?.(message) }
@@ -454,12 +459,13 @@ export async function runOpencodeRubricScoring(
   }
 
   let retryContext: { failureReason: string; rawText: string } | undefined;
+  let retrySessionId: string | undefined;
 
   for (let attempt = 0; attempt <= MAX_RUBRIC_SCORING_RETRIES; attempt += 1) {
     const inputRequestTag = attempt === 0 ? requestTag : `${requestTag}-retry-${attempt}`;
     let runResult: OpencodeRunResult;
     try {
-      runResult = await runOnce(inputRequestTag, retryContext);
+      runResult = await runOnce(inputRequestTag, retryContext, attempt > 0 ? retrySessionId : undefined);
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
       const phase = attempt === 0 ? "request" : "retry request";
@@ -476,6 +482,7 @@ export async function runOpencodeRubricScoring(
       };
       continue;
     }
+    retrySessionId ??= runResult.sessionId;
 
     const parseResult = parseRubricRunResult(runResult, input.scoringPayload.rubric_summary);
     if (parseResult.outcome !== "protocol_error") {

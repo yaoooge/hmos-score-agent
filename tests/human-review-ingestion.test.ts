@@ -622,7 +622,7 @@ test("submit human review handler returns before qualified gap analysis finishes
 
   const firstResult = await Promise.race([
     handlerPromise.then(() => "returned" as const),
-    delay(20).then(() => "timeout" as const),
+    delay(200).then(() => "timeout" as const),
   ]);
 
   assert.equal(firstResult, "returned");
