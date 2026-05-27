@@ -3,7 +3,11 @@ import path from "node:path";
 
 const CASE_DIR_KEEP_ENTRIES = new Set(["inputs", "outputs", "logs", "opencode-sandbox"]);
 const OPENCODE_SANDBOX_KEEP_ENTRIES = new Set(["metadata", "patch"]);
-const INTERMEDIATE_CODE_LINTER_KEEP_ENTRIES = new Set(["workspace", "hvigor-summary.json"]);
+const INTERMEDIATE_CODE_LINTER_KEEP_ENTRIES = new Set([
+  "summary.json",
+  "findings.effective.json",
+  "hvigor-summary.json",
+]);
 
 type PruneCompletedCaseArtifactsOptions = {
   keepCodeLinterDiagnostics?: boolean;

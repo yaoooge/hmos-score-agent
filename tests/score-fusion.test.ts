@@ -677,6 +677,83 @@ test("fuseRubricScoreWithRules maps official cross-device linter rules to platfo
     ["ArkUI组织方式合理性", "HarmonyOS工程实践符合度"].sort(),
   );
   assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "medium");
+  assert.equal(result.hardGateTriggered, false);
+});
+
+test("fuseRubricScoreWithRules maps arkui route rules to HarmonyOS engineering practice", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKUI-MUST-001",
+        rule_source: "must_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/resources/base/profile/route_map.json 缺失。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/module.json5"],
+      hasPatch: true,
+    },
+  });
+
+  const impactedDetails = result.scoreFusionDetails.filter((detail) =>
+    detail.rule_impacts.some((impact) => impact.rule_id === "ARKUI-MUST-001"),
+  );
+
+  assert.deepEqual(
+    impactedDetails.map((detail) => detail.item_name),
+    ["HarmonyOS工程实践符合度"],
+  );
+  assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "medium");
+});
+
+test("fuseRubricScoreWithRules maps arkui bindSheet rules to ArkUI and engineering practice items", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: undefined,
+    rubricAgentRunStatus: "invalid_output",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKUI-FORBID-001",
+        rule_source: "forbidden_pattern",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:9 同一组件多次 bindSheet。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const impactedDetails = result.scoreFusionDetails.filter((detail) =>
+    detail.rule_impacts.some((impact) => impact.rule_id === "ARKUI-FORBID-001"),
+  );
+
+  assert.deepEqual(
+    impactedDetails.map((detail) => detail.item_name).sort(),
+    ["ArkUI组织方式合理性", "HarmonyOS工程实践符合度"].sort(),
+  );
+  assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "medium");
 });
 
 test("fuseRubricScoreWithRules does not apply prefix fallback for unmapped official linter rules", async () => {
@@ -1129,6 +1206,120 @@ test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fa
   assert.match(result.overallConclusion.summary, /原代码问题，非新增修改引入/);
   assert.ok(result.risks.some((risk) => /编译/.test(`${risk.title}${risk.description}`)));
   assert.ok(result.risks.some((risk) => /原代码问题，非新增修改引入/.test(risk.evidence)));
+});
+
+test("fuseRubricScoreWithRules aggregates hvigor deprecated API warnings into one medium risk", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
+    dimension.item_summaries.map((item) => ({
+      dimension_name: dimension.name,
+      item_name: item.name,
+      score: item.scoring_bands[0].score,
+      max_score: item.weight,
+      matched_band_score: item.scoring_bands[0].score,
+      rationale: "基础评分较高。",
+      evidence_used: ["workspace/entry/src/main/ets/pages/Index.ets"],
+      confidence: "high" as const,
+      review_required: false,
+    })),
+  );
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础分满分。", overall_confidence: "high" },
+      item_scores: itemScores,
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+    hvigorBuildCheckSummary: {
+      enabled: true,
+      status: "success",
+      buildCheckSource: "hvigor",
+      checkedModules: ["entry"],
+      hardGateTriggered: false,
+      durationMs: 1000,
+      moduleResults: [],
+      deprecatedApiWarnings: [
+        {
+          file: "entry/src/main/ets/pages/Index.ets",
+          line: 9,
+          column: 18,
+          apiName: "showToast",
+          modulePath: "entry",
+          moduleName: "entry",
+          command: "assembleHap",
+          message:
+            "ArkTS:WARN File: entry/src/main/ets/pages/Index.ets:9:18 'showToast' has been deprecated.",
+        },
+        {
+          file: "entry/src/main/ets/pages/Index.ets",
+          line: 12,
+          column: 8,
+          apiName: "oldApi",
+          modulePath: "entry",
+          moduleName: "entry",
+          command: "assembleHap",
+          message:
+            "ArkTS:WARN File: entry/src/main/ets/pages/Index.ets:12:8 'oldApi' has been deprecated.",
+        },
+        {
+          file: "entry/src/main/ets/pages/Index.ets",
+          line: 15,
+          column: 10,
+          apiName: "legacyApi",
+          modulePath: "entry",
+          moduleName: "entry",
+          command: "assembleHap",
+          message:
+            "ArkTS:WARN File: entry/src/main/ets/pages/Index.ets:15:10 'legacyApi' has been deprecated.",
+        },
+        {
+          file: "entry/src/main/ets/pages/Index.ets",
+          line: 18,
+          column: 11,
+          apiName: "fourthApi",
+          modulePath: "entry",
+          moduleName: "entry",
+          command: "assembleHap",
+          message:
+            "ArkTS:WARN File: entry/src/main/ets/pages/Index.ets:18:11 'fourthApi' has been deprecated.",
+        },
+      ],
+      cleanup: {
+        attempted: true,
+        removedPaths: [],
+        failedPaths: [],
+      },
+    },
+    riskTaxonomy: taxonomy,
+  });
+
+  const deprecatedRisks = result.risks.filter((risk) => risk.risk_code === "DEPRECATED_API_USAGE");
+  assert.equal(deprecatedRisks.length, 1);
+  assert.equal(deprecatedRisks[0]?.level, "medium");
+  assert.equal(deprecatedRisks[0]?.title, "新增代码使用废弃 API");
+  assert.match(deprecatedRisks[0]?.description ?? "", /4 处废弃 API/);
+  assert.match(deprecatedRisks[0]?.evidence ?? "", /showToast/);
+  assert.match(deprecatedRisks[0]?.evidence ?? "", /legacyApi/);
+  assert.doesNotMatch(deprecatedRisks[0]?.evidence ?? "", /fourthApi/);
+  assert.equal(result.hardGateTriggered, false);
 });
 
 test("fuseRubricScoreWithRules caps total score at 59 when remote build check fails", async () => {

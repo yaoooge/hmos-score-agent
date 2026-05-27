@@ -76,6 +76,8 @@ const stateFlowMetrics = ["状态与数据流组织", "状态接入合理性"];
 const stabilityRiskMetrics = ["稳定性风险", "回归风险控制"];
 const securityBoundaryMetrics = ["安全与边界意识", "安全/边界意识"];
 const performanceRiskMetrics = ["性能风险"];
+const arkuiOrganizationMetrics = ["ArkUI组织方式合理性"];
+const harmonyEngineeringMetrics = ["HarmonyOS工程实践符合度"];
 
 function normalizeEvidenceAnchor(value: string | undefined): string {
   const source = value ?? "";
@@ -210,6 +212,22 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
       metricNames: officialProfile.metricNames,
       ratio: officialProfile.ratio,
       severity,
+    });
+  }
+
+  if (rule.rule_id === "ARKUI-MUST-001") {
+    return makePenaltyRule({
+      metricNames: harmonyEngineeringMetrics,
+      ratio: 0.35,
+      severity: "medium",
+    });
+  }
+
+  if (rule.rule_id === "ARKUI-FORBID-001") {
+    return makePenaltyRule({
+      metricNames: [...arkuiOrganizationMetrics, ...harmonyEngineeringMetrics],
+      ratio: 0.35,
+      severity: "medium",
     });
   }
 
@@ -780,6 +798,29 @@ function buildHvigorBuildRisk(summary: HvigorBuildCheckSummary): RiskItem {
   };
 }
 
+function buildDeprecatedApiRisk(summary: HvigorBuildCheckSummary, id: number): RiskItem | undefined {
+  const warnings = summary.deprecatedApiWarnings ?? [];
+  if (warnings.length === 0) {
+    return undefined;
+  }
+  const examples = warnings.slice(0, 3);
+  const exampleText = examples
+    .map((warning) => `${warning.file}:${String(warning.line)}:${String(warning.column)} '${warning.apiName}'`)
+    .join("；");
+  const first = warnings[0];
+  return {
+    id,
+    level: "medium",
+    title: "新增代码使用废弃 API",
+    description: `新增代码使用了 ${String(warnings.length)} 处废弃 API${
+      first ? `，例如 ${first.file}:${String(first.line)} 的 ${first.apiName}` : ""
+    }，后续版本可能移除或行为变化。`,
+    evidence: `hvigor warning: ${exampleText}`,
+    risk_code: "DEPRECATED_API_USAGE",
+    risk_category: "medium",
+  };
+}
+
 function buildHvigorBuildConclusionDetail(summary?: HvigorBuildCheckSummary): string | undefined {
   const appFailure = summary?.moduleResults.find(
     (result) =>
@@ -858,6 +899,12 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
       ...buildHvigorBuildRisk(input.hvigorBuildCheckSummary),
       id: risks.length + 1,
     });
+  }
+  if (input.hvigorBuildCheckSummary) {
+    const deprecatedApiRisk = buildDeprecatedApiRisk(input.hvigorBuildCheckSummary, risks.length + 1);
+    if (deprecatedApiRisk) {
+      risks.push(deprecatedApiRisk);
+    }
   }
 
   for (const rule of input.ruleAuditResults) {

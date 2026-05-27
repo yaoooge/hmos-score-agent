@@ -78,6 +78,17 @@ score_taxonomy:
       - MapComponent
       - FunctionalButton
       - openLink
+  - code: DEPRECATED_API_USAGE
+    level: medium
+    title: 新增代码使用废弃 API
+    description: 新增或修改代码使用了编译器标记为 deprecated 的 ArkTS/ArkUI API，后续版本可能移除或行为变化。
+    primaryItem:
+      dimension: 平台规范符合度
+      item: HarmonyOS工程实践符合度
+    matchHints:
+      - deprecated
+      - has been deprecated
+      - 废弃 API
   - code: LANGUAGE_CONSTRAINT_VIOLATION
     level: medium
     title: 语言约束违规

@@ -189,6 +189,17 @@ export interface HvigorBuildCheckModuleResult {
   diagnostics?: string;
 }
 
+export interface HvigorDeprecatedApiWarning {
+  file: string;
+  line: number;
+  column: number;
+  apiName: string;
+  modulePath: string;
+  moduleName: string;
+  command: HvigorBuildCheckModuleResult["command"];
+  message: string;
+}
+
 export interface HvigorBuildCheckSummary {
   enabled: boolean;
   status: HvigorBuildCheckStatus;
@@ -196,6 +207,7 @@ export interface HvigorBuildCheckSummary {
   hvigorRunDir?: string;
   checkedModules: string[];
   moduleResults: HvigorBuildCheckModuleResult[];
+  deprecatedApiWarnings?: HvigorDeprecatedApiWarning[];
   hardGateTriggered: boolean;
   scoreCap?: number;
   diagnostics?: string;

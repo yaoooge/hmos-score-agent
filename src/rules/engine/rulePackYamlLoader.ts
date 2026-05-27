@@ -12,6 +12,7 @@ import type {
 const RULE_PACK_FILE_ORDER = [
   "arkts-language.yaml",
   "arkts-performance.yaml",
+  "arkui-extra.yaml",
   "cross-device-adaptation.yaml",
 ];
 
@@ -22,6 +23,7 @@ const DECISION_CRITERIA_KEYS = ["pass", "fail", "not_applicable", "review"];
 const ALLOWED_DETECTOR_KINDS: DetectorKind[] = [
   "text_pattern",
   "project_structure",
+  "arkui_extra",
   "case_constraint",
   "not_implemented",
 ];

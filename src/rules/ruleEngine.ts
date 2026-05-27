@@ -1,6 +1,11 @@
 import { collectEvidence } from "./evidenceCollector.js";
-import { getEnabledRulePacks, listRegisteredRules } from "./engine/rulePackRegistry.js";
+import {
+  defaultEnabledRulePackIds,
+  getEnabledRulePacks,
+  listRegisteredRules,
+} from "./engine/rulePackRegistry.js";
 import type { RegisteredRule } from "./engine/ruleTypes.js";
+import { runArkuiExtraRule } from "./evaluators/arkuiExtraEvaluator.js";
 import { runCaseConstraintRule } from "./evaluators/caseConstraintEvaluator.js";
 import { runProjectStructureRule } from "./evaluators/projectStructureEvaluator.js";
 import type { EvaluatedRule } from "./evaluators/shared.js";
@@ -62,7 +67,7 @@ export async function runRuleEngine(input: {
   const evidence = await collectEvidence(input.caseInput, { taskType: input.taskType });
   const enabledRulePacks = input.enabledRulePackIds
     ? getEnabledRulePacks(input.enabledRulePackIds)
-    : getEnabledRulePacks(["arkts-language", "arkts-performance"]);
+    : getEnabledRulePacks([...defaultEnabledRulePackIds]);
   const registeredRules = listRegisteredRules({
     enabledPackIds: enabledRulePacks.map((pack) => pack.packId),
     runtimeRules: input.runtimeRules ?? [],
@@ -263,6 +268,10 @@ function evaluateRegisteredRule(
 
   if (rule.detector_kind === "project_structure") {
     return runProjectStructureRule(rule, evidence);
+  }
+
+  if (rule.detector_kind === "arkui_extra") {
+    return runArkuiExtraRule(rule, evidence);
   }
 
   if (rule.detector_kind === "case_constraint") {

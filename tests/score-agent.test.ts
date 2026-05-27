@@ -2072,7 +2072,7 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
   );
 });
 
-test("pruneCompletedCaseArtifacts preserves code-linter diagnostics when requested", async (t) => {
+test("pruneCompletedCaseArtifacts preserves only code-linter and hvigor result files when requested", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
   const caseDir = await artifactStore.ensureCaseDir("case-keep-code-linter");
@@ -2087,13 +2087,54 @@ test("pruneCompletedCaseArtifacts preserves code-linter diagnostics when request
     path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"),
     "{\"status\":\"failed\"}\n",
   );
+  await fs.writeFile(
+    path.join(caseDir, "intermediate", "code-linter", "summary.json"),
+    "{\"runStatus\":\"success\"}\n",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "intermediate", "code-linter", "findings.effective.json"),
+    "[]\n",
+  );
+  await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "code-linter.json5"), "{}\n");
+  await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "stdout.sanitized.txt"), "out\n");
+  await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "stderr.sanitized.txt"), "err\n");
+  await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "exit-code.txt"), "0\n");
   await fs.writeFile(path.join(caseDir, "intermediate", "temporary.json"), "{}\n");
 
   await pruneCompletedCaseArtifacts(caseDir, { keepCodeLinterDiagnostics: true });
 
-  await fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace", "entry", "Index.ets"));
+  await fs.access(path.join(caseDir, "intermediate", "code-linter", "summary.json"));
+  await fs.access(path.join(caseDir, "intermediate", "code-linter", "findings.effective.json"));
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"));
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "code-linter.json5")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "stdout.sanitized.txt")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "stderr.sanitized.txt")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "exit-code.txt")), /ENOENT/);
   await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "temporary.json")), /ENOENT/);
+});
+
+test("workflow cleanup keeps code-linter result files when linter or hvigor produced results", async () => {
+  const scoreWorkflowModule = (await import("../src/workflow/scoreWorkflow.js")) as {
+    shouldKeepCodeLinterResults?: (result: Record<string, unknown>) => boolean;
+  };
+
+  assert.equal(typeof scoreWorkflowModule.shouldKeepCodeLinterResults, "function");
+  assert.equal(
+    scoreWorkflowModule.shouldKeepCodeLinterResults?.({
+      officialLinterRunStatus: "success",
+      hvigorBuildCheckStatus: "success",
+    }),
+    true,
+  );
+  assert.equal(
+    scoreWorkflowModule.shouldKeepCodeLinterResults?.({
+      officialLinterRunStatus: "not_enabled",
+      hvigorBuildCheckStatus: "success",
+    }),
+    true,
+  );
+  assert.equal(scoreWorkflowModule.shouldKeepCodeLinterResults?.({}), false);
 });
 
 test("runScoreWorkflow writes artifacts and produces schema-valid result json", async (t) => {
@@ -2146,13 +2187,18 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.match(reportHtml, /维度得分概览/);
   assert.match(reportHtml, /规则审计结果/);
   assert.doesNotMatch(reportHtml, /<pre>\s*\{/);
-  assert.deepEqual(topLevelEntries, ["inputs", "logs", "opencode-sandbox", "outputs"]);
+  assert.deepEqual(topLevelEntries, ["inputs", "intermediate", "logs", "opencode-sandbox", "outputs"]);
   assert.deepEqual(sandboxEntries, ["metadata", "patch"]);
   await fs.access(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"));
+  await fs.access(path.join(caseDir, "intermediate", "code-linter", "summary.json"));
+  await fs.access(path.join(caseDir, "intermediate", "code-linter", "findings.effective.json"));
+  await fs.access(path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"));
   await fs.access(path.join(caseDir, "logs", "run.log"));
   await fs.access(path.join(caseDir, "opencode-sandbox", "metadata", "metadata.json"));
   await fs.access(path.join(caseDir, "opencode-sandbox", "patch", "effective.patch"));
-  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "stdout.sanitized.txt")), /ENOENT/);
+  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "stderr.sanitized.txt")), /ENOENT/);
   await assert.rejects(() => fs.access(path.join(caseDir, "opencode-sandbox", "generated")), /ENOENT/);
   await assert.rejects(() => fs.access(path.join(caseDir, "opencode-sandbox", "original")), /ENOENT/);
 });

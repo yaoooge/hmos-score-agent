@@ -149,6 +149,7 @@ async function resolveBuildCheckSummary(input: {
   hvigorRunDir?: string;
   workspaceDir?: string;
   changedFiles: string[];
+  changedLineNumbersByFile?: Record<string, number[]>;
   timeoutMs: number;
   remoteBuildSuccess?: boolean;
 }): Promise<HvigorBuildCheckSummary> {
@@ -161,6 +162,7 @@ async function resolveBuildCheckSummary(input: {
     hvigorRunDir: input.hvigorRunDir,
     workspaceDir: input.workspaceDir,
     changedFiles: input.changedFiles,
+    changedLineNumbersByFile: input.changedLineNumbersByFile,
     timeoutMs: input.timeoutMs,
   });
   return { ...summary, buildCheckSource: "hvigor" };
@@ -284,6 +286,7 @@ export async function officialCodeLinterNode(
       hvigorRunDir,
       workspaceDir: workspace.workspaceDir,
       changedFiles: state.evidenceSummary?.changedFiles ?? [],
+      changedLineNumbersByFile: state.evidenceSummary?.changedLineNumbersByFile,
       timeoutMs: hvigorTimeoutMs,
       remoteBuildSuccess: state.remoteBuildSuccess,
     });

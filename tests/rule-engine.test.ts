@@ -90,7 +90,11 @@ test("runRuleEngine keeps source order and flags supported violations", async (t
 });
 
 test("resolveEnabledRulePackIds only enables cross-device pack for involved tasks", () => {
-  assert.deepEqual(resolveEnabledRulePackIds({}), ["arkts-language", "arkts-performance"]);
+  assert.deepEqual(resolveEnabledRulePackIds({}), [
+    "arkts-language",
+    "arkts-performance",
+    "arkui-extra",
+  ]);
   assert.deepEqual(
     resolveEnabledRulePackIds({
       crossDeviceAdaptation: {
@@ -99,7 +103,7 @@ test("resolveEnabledRulePackIds only enables cross-device pack for involved task
         reasons: ["需求未涉及一多适配"],
       },
     }),
-    ["arkts-language", "arkts-performance"],
+    ["arkts-language", "arkts-performance", "arkui-extra"],
   );
   assert.deepEqual(
     resolveEnabledRulePackIds({
@@ -109,7 +113,7 @@ test("resolveEnabledRulePackIds only enables cross-device pack for involved task
         reasons: ["信息不足"],
       },
     }),
-    ["arkts-language", "arkts-performance"],
+    ["arkts-language", "arkts-performance", "arkui-extra"],
   );
   assert.deepEqual(
     resolveEnabledRulePackIds({
@@ -119,7 +123,7 @@ test("resolveEnabledRulePackIds only enables cross-device pack for involved task
         reasons: ["需求明确要求一多适配"],
       },
     }),
-    ["arkts-language", "arkts-performance", "cross-device-adaptation"],
+    ["arkts-language", "arkts-performance", "arkui-extra", "cross-device-adaptation"],
   );
 });
 
@@ -134,6 +138,212 @@ test("rule pack registry filters built-in packs by enabled pack ids", () => {
     ),
     false,
   );
+});
+
+test("runRuleEngine flags configured routerMap with missing profile as not satisfied", async (t) => {
+  const moduleJsonPath = "entry/src/main/module.json5";
+  const caseDir = await createRuleFixture(t, {
+    [moduleJsonPath]: "{ module: { name: 'entry', routerMap: '$profile:route_map' } }\n",
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${moduleJsonPath} b/${moduleJsonPath}`,
+      `--- a/${moduleJsonPath}`,
+      `+++ b/${moduleJsonPath}`,
+      "@@ -1,1 +1,1 @@",
+      `-{ module: { name: 'entry' } }`,
+      `+{ module: { name: 'entry', routerMap: '$profile:route_map' } }`,
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const routeRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKUI-MUST-001",
+  );
+
+  assert.ok(routeRule);
+  assert.equal(routeRule.result, "不满足");
+  assert.match(routeRule.conclusion, /route_map\.json/);
+});
+
+test("runRuleEngine treats modules without routerMap as not involved", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/module.json5": "{ module: { name: 'entry' } }\n",
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const routeRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKUI-MUST-001",
+  );
+
+  assert.ok(routeRule);
+  assert.equal(routeRule.result, "不涉及");
+});
+
+test("runRuleEngine flags routerMap pages missing NavDestination", async (t) => {
+  const moduleJsonPath = "entry/src/main/module.json5";
+  const routeMapPath = "entry/src/main/resources/base/profile/route_map.json";
+  const pagePath = "entry/src/main/ets/pages/Index.ets";
+  const caseDir = await createRuleFixture(t, {
+    [moduleJsonPath]: "{ module: { name: 'entry', routerMap: '$profile:route_map' } }\n",
+    [routeMapPath]: JSON.stringify({
+      routerMap: [{ name: "Index", pageSourceFile: "src/main/ets/pages/Index" }],
+    }),
+    [pagePath]: [
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  build() {",
+      "    Column() { Text('home') }",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${routeMapPath} b/${routeMapPath}`,
+      `--- a/${routeMapPath}`,
+      `+++ b/${routeMapPath}`,
+      "@@ -1,1 +1,1 @@",
+      `-{"routerMap":[]}`,
+      `+{"routerMap":[{"name":"Index","pageSourceFile":"src/main/ets/pages/Index"}]}`,
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const routeRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKUI-MUST-001",
+  );
+
+  assert.ok(routeRule);
+  assert.equal(routeRule.result, "不满足");
+  assert.match(routeRule.conclusion, /NavDestination/);
+});
+
+test("runRuleEngine flags multiple bindSheet calls chained on the same component", async (t) => {
+  const pagePath = "entry/src/main/ets/pages/Index.ets";
+  const caseDir = await createRuleFixture(t, {
+    [pagePath]: [
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  @State first: boolean = false;",
+      "  @State second: boolean = false;",
+      "  build() {",
+      "    Button('open')",
+      "      .bindSheet(this.first, this.firstBuilder())",
+      "      .bindSheet(this.second, this.secondBuilder())",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${pagePath} b/${pagePath}`,
+      `--- a/${pagePath}`,
+      `+++ b/${pagePath}`,
+      "@@ -6,4 +6,5 @@ struct Index {",
+      "   build() {",
+      "     Button('open')",
+      "+      .bindSheet(this.first, this.firstBuilder())",
+      "+      .bindSheet(this.second, this.secondBuilder())",
+      "   }",
+      " }",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const bindSheetRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKUI-FORBID-001",
+  );
+
+  assert.ok(bindSheetRule);
+  assert.equal(bindSheetRule.result, "不满足");
+  assert.match(bindSheetRule.conclusion, /bindSheet/);
+  assert.ok(result.ruleViolations.some((item) => item.rule_id === "ARKUI-FORBID-001"));
+});
+
+test("runRuleEngine allows separate components to use one bindSheet each", async (t) => {
+  const pagePath = "entry/src/main/ets/pages/Index.ets";
+  const caseDir = await createRuleFixture(t, {
+    [pagePath]: [
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  @State first: boolean = false;",
+      "  @State second: boolean = false;",
+      "  build() {",
+      "    Column() {",
+      "      Button('first')",
+      "        .bindSheet(this.first, this.firstBuilder())",
+      "      Button('second')",
+      "        .bindSheet(this.second, this.secondBuilder())",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${pagePath} b/${pagePath}`,
+      `--- a/${pagePath}`,
+      `+++ b/${pagePath}`,
+      "@@ -7,4 +7,6 @@ struct Index {",
+      "       Button('first')",
+      "+        .bindSheet(this.first, this.firstBuilder())",
+      "       Button('second')",
+      "+        .bindSheet(this.second, this.secondBuilder())",
+      "     }",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const bindSheetRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKUI-FORBID-001",
+  );
+
+  assert.ok(bindSheetRule);
+  assert.equal(bindSheetRule.result, "满足");
 });
 
 test("cross-device component precheck uses full changed file content for kit anchors", async (t) => {

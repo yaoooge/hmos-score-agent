@@ -7,7 +7,7 @@ const registeredRulePacks: RegisteredRulePack[] = loadRegisteredRulePacksFromYam
   path.resolve(process.cwd(), "references/rules"),
 );
 
-export const defaultEnabledRulePackIds = ["arkts-language", "arkts-performance"] as const;
+export const defaultEnabledRulePackIds = ["arkts-language", "arkts-performance", "arkui-extra"] as const;
 export const crossDeviceAdaptationRulePackId = "cross-device-adaptation";
 
 export function resolveEnabledRulePackIds(input: {

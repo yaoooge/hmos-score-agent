@@ -21,6 +21,7 @@ export interface StaticRuleAuditResult {
 export type DetectorKind =
   | "text_pattern"
   | "project_structure"
+  | "arkui_extra"
   | "case_constraint"
   | "not_implemented";
 

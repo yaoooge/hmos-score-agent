@@ -38,7 +38,20 @@ test("arkts-performance pack registers PDF-derived performance rules", () => {
   );
 
   const rules = listRegisteredRules({ enabledPackIds: [...defaultEnabledRulePackIds] });
-  assert.equal(rules.length, 58);
+  assert.equal(rules.length, 60);
+});
+
+test("arkui-extra pack is registered and default enabled", () => {
+  const packs = getRegisteredRulePacks();
+  const arkuiPack = packs.find((item) => item.packId === "arkui-extra");
+
+  assert.ok(arkuiPack);
+  assert.equal(arkuiPack.displayName, "ArkUI 补充工程规则");
+  assert.deepEqual(
+    arkuiPack.rules.map((item) => item.rule_id),
+    ["ARKUI-MUST-001", "ARKUI-FORBID-001"],
+  );
+  assert.equal(defaultEnabledRulePackIds.includes("arkui-extra"), true);
 });
 
 test("arkts-language should rules are renumbered contiguously after official-linter duplicate removals", () => {
@@ -149,7 +162,12 @@ test("registered rule packs are sourced only from references/rules yaml", () => 
       .readdirSync(ruleReferenceDirectory)
       .filter((fileName) => fileName.endsWith(".yaml"))
       .sort(),
-    ["arkts-language.yaml", "arkts-performance.yaml", "cross-device-adaptation.yaml"],
+    [
+      "arkts-language.yaml",
+      "arkts-performance.yaml",
+      "arkui-extra.yaml",
+      "cross-device-adaptation.yaml",
+    ],
   );
   assert.equal(fs.existsSync(legacyRulePackDirectory), false);
 });

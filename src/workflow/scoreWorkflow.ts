@@ -244,8 +244,13 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
   };
 }
 
-function shouldKeepCodeLinterDiagnostics(result: Record<string, unknown>): boolean {
-  return result.hvigorBuildCheckStatus === "failed" || result.hvigorBuildCheckStatus === "timeout";
+export function shouldKeepCodeLinterResults(result: Record<string, unknown>): boolean {
+  const officialLinterRunStatus = result.officialLinterRunStatus;
+  const hvigorBuildCheckStatus = result.hvigorBuildCheckStatus;
+  return (
+    (typeof officialLinterRunStatus === "string" && officialLinterRunStatus !== "not_enabled") ||
+    (typeof hvigorBuildCheckStatus === "string" && hvigorBuildCheckStatus !== "not_enabled")
+  );
 }
 
 async function createOpencodeWorkflowRuntime(): Promise<OpencodeWorkflowRuntime> {
@@ -370,7 +375,7 @@ export async function runScoreWorkflow(
     await logger.info(`本次用例评分耗时=${formatElapsedDuration(Date.now() - startedAt)}`);
   }
   await pruneCompletedCaseArtifacts(input.caseDir, {
-    keepCodeLinterDiagnostics: shouldKeepCodeLinterDiagnostics(result),
+    keepCodeLinterDiagnostics: shouldKeepCodeLinterResults(result),
   });
 
   return result;
@@ -387,7 +392,7 @@ export async function runPreparedScoreWorkflow(
     });
   });
   await pruneCompletedCaseArtifacts(input.caseDir, {
-    keepCodeLinterDiagnostics: shouldKeepCodeLinterDiagnostics(result),
+    keepCodeLinterDiagnostics: shouldKeepCodeLinterResults(result),
   });
   return result;
 }

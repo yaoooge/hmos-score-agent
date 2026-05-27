@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import type {
+  HvigorDeprecatedApiWarning,
   HvigorBuildCheckModuleResult,
   HvigorBuildCheckStatus,
   HvigorBuildCheckSummary,
@@ -15,6 +16,7 @@ export interface HvigorBuildCheckInput {
   hvigorRunDir?: string;
   workspaceDir?: string;
   changedFiles: string[];
+  changedLineNumbersByFile?: Record<string, number[]>;
   timeoutMs: number;
 }
 
@@ -31,6 +33,10 @@ const stderrExcerptBytes = 16 * 1024;
 
 function toPosixPath(value: string): string {
   return value.split(path.sep).join("/").replace(/\\/g, "/");
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
 function excerptOutput(value: string, maxBytes: number): string | undefined {
@@ -233,6 +239,67 @@ function runCommand(input: {
 function isInsideWorkspace(workspaceDir: string, candidatePath: string): boolean {
   const relative = path.relative(path.resolve(workspaceDir), path.resolve(candidatePath));
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function normalizeHvigorWarningFile(workspaceDir: string, warningFile: string): string | undefined {
+  const normalizedWorkspaceDir = toPosixPath(path.resolve(workspaceDir));
+  const normalizedWarningFile = toPosixPath(path.resolve(warningFile));
+  if (normalizedWarningFile === normalizedWorkspaceDir) {
+    return ".";
+  }
+  if (!normalizedWarningFile.startsWith(`${normalizedWorkspaceDir}/`)) {
+    return undefined;
+  }
+  return normalizedWarningFile.slice(normalizedWorkspaceDir.length + 1);
+}
+
+function collectDeprecatedApiWarnings(input: {
+  workspaceDir: string;
+  moduleResults: HvigorBuildCheckModuleResult[];
+  changedLineNumbersByFile?: Record<string, number[]>;
+}): HvigorDeprecatedApiWarning[] | undefined {
+  const changedLineNumbersByFile = input.changedLineNumbersByFile ?? {};
+  const warnings: HvigorDeprecatedApiWarning[] = [];
+  const seen = new Set<string>();
+  const pattern =
+    /ArkTS:WARN\s+File:\s*(?<file>.+?):(?<line>\d+):(?<column>\d+)\s*\r?\n\s*'(?<apiName>[^']+)'\s+has been deprecated\./g;
+
+  for (const result of input.moduleResults) {
+    const output = stripAnsi(`${result.stdoutExcerpt ?? ""}\n${result.stderrExcerpt ?? ""}`);
+    for (const match of output.matchAll(pattern)) {
+      const groups = match.groups;
+      if (!groups) {
+        continue;
+      }
+      const relativeFile = normalizeHvigorWarningFile(input.workspaceDir, groups.file);
+      if (!relativeFile) {
+        continue;
+      }
+      const line = Number(groups.line);
+      const changedLines = changedLineNumbersByFile[relativeFile] ?? [];
+      if (!changedLines.includes(line)) {
+        continue;
+      }
+      const apiName = groups.apiName;
+      const dedupeKey = `${relativeFile}:${line}:${groups.column}:${apiName}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
+      warnings.push({
+        file: relativeFile,
+        line,
+        column: Number(groups.column),
+        apiName,
+        modulePath: result.modulePath,
+        moduleName: result.moduleName,
+        command: result.command,
+        message: `ArkTS:WARN File: ${relativeFile}:${line}:${groups.column} '${apiName}' has been deprecated.`,
+      });
+    }
+  }
+
+  return warnings.length > 0 ? warnings : undefined;
 }
 
 async function cleanupBuildArtifacts(
@@ -576,6 +643,11 @@ export async function runHvigorBuildCheck(
     moduleResults,
     startedAt,
     diagnostics,
+  });
+  summary.deprecatedApiWarnings = collectDeprecatedApiWarnings({
+    workspaceDir: input.workspaceDir,
+    moduleResults,
+    changedLineNumbersByFile: input.changedLineNumbersByFile,
   });
   summary.durationMs = Date.now() - startedAt;
   return applyCleanupPolicy(summary, input.workspaceDir, modules);

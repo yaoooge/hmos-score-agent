@@ -16,6 +16,7 @@ export interface WorkspaceFile {
 
 export interface CollectedEvidence {
   workspaceFiles: WorkspaceFile[];
+  allWorkspaceFiles?: WorkspaceFile[];
   originalFiles: string[];
   patchText?: string;
   changedFiles: string[];
@@ -144,6 +145,7 @@ export async function collectEvidence(
 
   return {
     workspaceFiles: scopedWorkspaceFiles,
+    allWorkspaceFiles: workspaceFiles,
     originalFiles,
     patchText,
     changedFiles,

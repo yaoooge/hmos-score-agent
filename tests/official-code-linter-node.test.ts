@@ -573,6 +573,108 @@ test("officialCodeLinterNode runs hvigor build check for changed modules and cle
   await assert.rejects(fs.access(path.join(artifactDir, "workspace", "entry", "build")));
 });
 
+test("officialCodeLinterNode records patch-attributed deprecated API warnings from hvigor output", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-hvigor-deprecated-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const caseDir = path.join(root, "case-1");
+  const generated = path.join(root, "generated");
+  const runDir = path.join(root, "tools", "codelinter");
+  const hvigorRunDir = path.join(root, "tools", "hvigor");
+  const workspaceIndexPath = path.join(
+    caseDir,
+    "intermediate",
+    "code-linter",
+    "workspace",
+    "entry",
+    "src",
+    "main",
+    "ets",
+    "pages",
+    "Index.ets",
+  );
+  await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
+  await fs.mkdir(hvigorRunDir, { recursive: true });
+  await fs.mkdir(path.join(root, "tools", "ohpm", "bin"), { recursive: true });
+  await fs.writeFile(path.join(generated, "entry", "hvigorfile.ts"), "export const hapTasks = [];\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    ["@Entry", "@Component", "struct Index {", "  build() {", "    Column() {", "      Text('x')", "    }", "    this.keep()", "    this.showToast()", "    this.legacy()"].join("\n"),
+  );
+  const fakeLinterBin = path.join(runDir, "bin", "codelinter");
+  await fs.writeFile(fakeLinterBin, "#!/usr/bin/env node\nconsole.log('[]');\n");
+  await fs.chmod(fakeLinterBin, 0o755);
+  const fakeOhpm = path.join(root, "tools", "ohpm", "bin", "ohpm");
+  await fs.writeFile(
+    fakeOhpm,
+    "#!/usr/bin/env node\nif (process.argv[2] === 'install') { process.exit(0); }\nprocess.exit(1);\n",
+  );
+  await fs.chmod(fakeOhpm, 0o755);
+  const fakeHvigorw = path.join(hvigorRunDir, "hvigorw");
+  await fs.writeFile(
+    fakeHvigorw,
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === '--version') { console.log('hvigor 1.0.0'); process.exit(0); }",
+      "const file = process.env.TEST_INDEX_ABSOLUTE_PATH;",
+      "console.log(`\\u001b[33mWARN: \\u001b[33mWARN: \\u001b[33mArkTS:WARN File: ${file}:9:18\\n 'showToast' has been deprecated.\\u001b[39m`);",
+      "console.log(`WARN: WARN: ArkTS:WARN File: ${file}:10:18\\n 'legacy' has been deprecated.`);",
+      "process.exit(0);",
+    ].join("\n"),
+  );
+  await fs.chmod(fakeHvigorw, 0o755);
+
+  const previousPath = process.env.TEST_INDEX_ABSOLUTE_PATH;
+  process.env.TEST_INDEX_ABSOLUTE_PATH = workspaceIndexPath;
+  t.after(() => {
+    if (previousPath === undefined) {
+      delete process.env.TEST_INDEX_ABSOLUTE_PATH;
+    } else {
+      process.env.TEST_INDEX_ABSOLUTE_PATH = previousPath;
+    }
+  });
+
+  const result = await officialCodeLinterNode(
+    {
+      caseDir,
+      caseInput: {
+        caseId: "case-1",
+        promptText: "",
+        originalProjectPath: generated,
+        generatedProjectPath: generated,
+      },
+      hasPatch: true,
+      evidenceSummary: {
+        workspaceFileCount: 1,
+        originalFileCount: 0,
+        changedFileCount: 1,
+        changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+        changedLineNumbersByFile: {
+          "entry/src/main/ets/pages/Index.ets": [9],
+        },
+        hasPatch: true,
+      },
+    } as ScoreGraphState,
+    { enabled: true, runDir, hvigorRunDir, timeoutMs: 120000, hvigorTimeoutMs: 120000 },
+  );
+
+  assert.equal(result.hvigorBuildCheckStatus, "success");
+  assert.deepEqual(result.hvigorBuildCheckSummary?.deprecatedApiWarnings, [
+    {
+      file: "entry/src/main/ets/pages/Index.ets",
+      line: 9,
+      column: 18,
+      apiName: "showToast",
+      modulePath: "entry",
+      moduleName: "entry",
+      command: "assembleHap",
+      message: "ArkTS:WARN File: entry/src/main/ets/pages/Index.ets:9:18 'showToast' has been deprecated.",
+    },
+  ]);
+});
+
 test("officialCodeLinterNode runs assembleApp after changed modules compile and marks baseline app failure", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-hvigor-app-fail-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
