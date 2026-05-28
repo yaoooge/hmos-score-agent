@@ -78,8 +78,10 @@ test("parseOpencodeSessionEvents binds OpenCode events to retry attempts", () =>
             status: "error",
             title: "Read generated/src/main.ets",
             created: 1_200,
+            updated: 1_240,
             input: { filePath: "generated/src/main.ets" },
             output: "file not found",
+            state: { time: { start: 1_205, end: 1_238 } },
           },
           {
             id: "part-3",
@@ -130,11 +132,36 @@ test("parseOpencodeSessionEvents binds OpenCode events to retry attempts", () =>
   assert.equal(readEvent?.retryIndex, 0);
   assert.equal(readEvent?.status, "error");
   assert.equal(readEvent?.toolName, "read");
+  assert.equal(readEvent?.elapsedMs, 33);
   assert.equal(readEvent?.hasRawPayload, true);
   const writeEvent = events.find((event) => event.partId === "part-4");
   assert.equal(writeEvent?.attemptId, "attempt-1");
   assert.equal(writeEvent?.retryIndex, 1);
   assert.equal(writeEvent?.status, "completed");
+});
+
+test("parseOpencodeSessionEvents assigns step duration to step-finish events", () => {
+  const snapshot: OpencodeSessionSnapshot = {
+    id: "ses_trace",
+    source: "api",
+    messages: [
+      {
+        parts: [
+          { id: "step-1-start", type: "step-start", created: 1_110 },
+          { id: "tool-1", type: "tool", tool: "read", created: 1_200 },
+          { id: "step-1-finish", type: "step-finish", reason: "tool-calls", created: 1_750 },
+          { id: "step-2-start", type: "step-start", created: 2_100 },
+          { id: "step-2-finish", type: "step-finish", reason: "stop", created: 2_500 },
+        ],
+      },
+    ],
+  };
+
+  const result = parseOpencodeSessionEvents(snapshot, []);
+  const stepFinishEvents = result.events.filter((event) => event.type === "step-finish");
+
+  assert.equal(stepFinishEvents[0]?.elapsedMs, 640);
+  assert.equal(stepFinishEvents[1]?.elapsedMs, 400);
 });
 
 test("AgentTraceRecorder records successful and failed runPrompt attempts", async (t) => {
@@ -246,7 +273,7 @@ test("AgentTraceRecorder parses streamed OpenCode raw events into trace events",
       rawEvents: [
         '{"type":"session.updated","properties":{"info":{"id":"ses_raw_events"}}}',
         '{"type":"message.updated","properties":{"info":{"id":"msg-1","role":"assistant","agent":"hmos-rule-assessment","model":"test-model"}}}',
-        '{"type":"tool","part":{"id":"tool-1","type":"tool","tool":"read","status":"completed","title":"Read patch","input":{"filePath":"patch/effective.patch"},"output":"diff"}}',
+        '{"type":"tool","part":{"id":"tool-1","type":"tool","tool":"read","status":"completed","title":"Read patch","input":{"filePath":"patch/effective.patch"},"output":"diff","state":{"time":{"start":1200,"end":1237}}}}',
         '{"type":"text","part":{"id":"text-1","type":"text","text":"{\\"output_file\\":\\"metadata/agent-output/rule-assessment.json\\"}"}}',
         '{"type":"step_finish","part":{"id":"finish-1","type":"step-finish","tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":3,"write":0},"total":16}}}',
       ].join("\n"),
@@ -267,6 +294,7 @@ test("AgentTraceRecorder parses streamed OpenCode raw events into trace events",
   assert.equal(toolEvent?.attemptId, run?.attempts[0]?.id);
   assert.equal(toolEvent?.retryIndex, 0);
   assert.equal(toolEvent?.toolName, "read");
+  assert.equal(toolEvent?.elapsedMs, 37);
   assert.equal(toolEvent?.summary, "patch/effective.patch");
   assert.equal(toolEvent?.hasRawPayload, true);
   assert.equal(run?.events.some((event) => event.type === "text"), true);

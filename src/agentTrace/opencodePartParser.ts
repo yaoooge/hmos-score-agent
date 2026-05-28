@@ -32,6 +32,23 @@ function readTimestampMs(record: Record<string, unknown> | undefined): number | 
   );
 }
 
+function readDurationMs(record: Record<string, unknown>): number | undefined {
+  const explicitDuration = readFiniteNumber(record.elapsedMs) ?? readFiniteNumber(record.elapsed);
+  if (explicitDuration !== undefined) {
+    return explicitDuration;
+  }
+  const state = asRecord(record.state);
+  const time = asRecord(state?.time) ?? asRecord(record.time);
+  const start = readFiniteNumber(time?.start);
+  const end = readFiniteNumber(time?.end);
+  if (start !== undefined && end !== undefined) {
+    return Math.max(0, end - start);
+  }
+  const created = readTimestampMs(record);
+  const updated = readFiniteNumber(record.updated) ?? readFiniteNumber(record.updatedAtMs);
+  return created !== undefined && updated !== undefined ? Math.max(0, updated - created) : undefined;
+}
+
 function normalizeEventType(value: unknown): OpenCodeTraceEventType {
   switch (value) {
     case "message":
@@ -140,6 +157,25 @@ function makeRawEventId(attempt: AgentTraceAttempt, sequence: number, partId?: s
   return partId ? `${attempt.id}:${partId}` : `${attempt.id}:raw-event-${String(sequence)}`;
 }
 
+function assignStepDurations(events: AgentTraceEvent[]): void {
+  let stepStartTimestampMs: number | undefined;
+  for (const event of events) {
+    if (event.type === "step-start") {
+      stepStartTimestampMs = event.timestampMs;
+      continue;
+    }
+    if (
+      event.type === "step-finish" &&
+      event.elapsedMs === undefined &&
+      stepStartTimestampMs !== undefined &&
+      event.timestampMs !== undefined
+    ) {
+      event.elapsedMs = Math.max(0, event.timestampMs - stepStartTimestampMs);
+      stepStartTimestampMs = undefined;
+    }
+  }
+}
+
 function rawEventRecordToTraceEvent(input: {
   record: Record<string, unknown>;
   attempt: AgentTraceAttempt;
@@ -183,7 +219,7 @@ function rawEventRecordToTraceEvent(input: {
     title: partTitle(part, type),
     status: readEventStatus(part),
     timestampMs: readTimestampMs(part) ?? readTimestampMs(input.record),
-    elapsedMs: readFiniteNumber(part.elapsedMs) ?? readFiniteNumber(part.elapsed),
+    elapsedMs: readDurationMs(part),
     toolName: readString(part.tool) ?? readString(part.toolName) ?? readString(part.name),
     messageId: readString(part.messageId) ?? readString(input.record.messageId),
     partId,
@@ -229,6 +265,7 @@ export function parseOpencodeRawEventStream(
   if (rawEvents.trim().length > 0 && events.length === 0) {
     warnings.add("opencode_raw_events_empty_after_parse");
   }
+  assignStepDurations(events);
   return { events, warnings: Array.from(warnings) };
 }
 
@@ -282,7 +319,7 @@ export function parseOpencodeSessionEvents(
         title: partTitle(part, type),
         status: readEventStatus(part),
         timestampMs: readTimestampMs(part),
-        elapsedMs: readFiniteNumber(part.elapsedMs) ?? readFiniteNumber(part.elapsed),
+        elapsedMs: readDurationMs(part),
         toolName: readString(part.tool) ?? readString(part.toolName),
         messageId: info ? readString(info.id) : undefined,
         partId: readString(part.id),
@@ -292,5 +329,6 @@ export function parseOpencodeSessionEvents(
     }
   }
 
+  assignStepDurations(events);
   return { events, warnings: Array.from(warnings) };
 }

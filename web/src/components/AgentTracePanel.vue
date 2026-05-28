@@ -81,7 +81,7 @@
               >
                 <el-tag size="small" effect="plain">{{ event.type }}</el-tag>
                 <span class="trace-event-title">{{ event.title }}</span>
-                <span class="trace-event-meta">{{ event.toolName ?? event.status ?? "-" }}</span>
+                <span class="trace-event-meta">{{ formatEventMeta(event) }}</span>
               </button>
             </div>
           </article>
@@ -96,6 +96,8 @@
                 <strong>{{ selectedEvent.type }}</strong>
                 <span>Status</span>
                 <strong>{{ selectedEvent.status ?? "-" }}</strong>
+                <span>Duration</span>
+                <strong>{{ formatDuration(selectedEvent.elapsedMs) }}</strong>
                 <span>Tool</span>
                 <strong>{{ selectedEvent.toolName ?? "-" }}</strong>
                 <span>Attempt</span>
@@ -190,6 +192,12 @@ function uniqueToolNames(events: AgentTraceEvent[]): string[] {
 }
 
 function stepDuration(events: AgentTraceEvent[]): number | undefined {
+  const stepFinishElapsedMs = [...events]
+    .reverse()
+    .find((event) => event.type === "step-finish" && event.elapsedMs !== undefined)?.elapsedMs;
+  if (stepFinishElapsedMs !== undefined) {
+    return stepFinishElapsedMs;
+  }
   const timestamps = events
     .map((event) => event.timestampMs)
     .filter((value): value is number => value !== undefined);
@@ -264,6 +272,13 @@ function formatDuration(value: number | undefined): string {
     return `${value}ms`;
   }
   return `${(value / 1000).toFixed(1)}s`;
+}
+
+function formatEventMeta(event: AgentTraceEvent): string {
+  const parts = [event.toolName ?? event.status, formatDuration(event.elapsedMs)].filter(
+    (value) => value && value !== "-",
+  );
+  return parts.length > 0 ? parts.join(" · ") : "-";
 }
 
 function selectRun(runId: string | number) {
