@@ -36,6 +36,8 @@ import {
 } from "../service.js";
 import type { RemoteEvaluationTask } from "../types.js";
 import { createDashboardRouter } from "../dashboard/dashboardHandlers.js";
+import { createAgentTraceSqliteStore } from "../agentTrace/agentTraceSqliteStore.js";
+import type { AgentTraceReport } from "../agentTrace/types.js";
 import { createScoreDatabase } from "../storage/sqliteDatabase.js";
 import { backfillSqliteIndexes } from "../storage/sqliteBackfill.js";
 import {
@@ -69,6 +71,7 @@ type RemoteTaskSummaryStore = {
     resultError?: string;
     risks?: Array<{ level?: string; title?: string }>;
   }): void;
+  updateAgentTrace?(input: { taskId: number; caseDir: string }): Promise<void> | void;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -448,6 +451,10 @@ export function createRemoteTaskExecutionQueue(
                 hardGateTriggered: readHardGate(resultJson),
                 resultAvailable: true,
                 risks: readRisks(resultJson),
+              });
+              await remoteTaskSummaryStore?.updateAgentTrace?.({
+                taskId: completedTask.taskId,
+                caseDir: completedTask.caseDir,
               });
               await ruleViolationStatsStore.upsertRun(
                 extractRuleViolationRunSnapshot({
@@ -981,7 +988,23 @@ export function createGetRemoteTaskStatusesHandler(registry: RemoteTaskRegistry)
   };
 }
 
-export function createDeleteRemoteTasksHandler(registry: Pick<RemoteTaskRegistry, "delete">) {
+async function deleteRemoteTaskWithArtifacts(
+  registry: Pick<RemoteTaskRegistry, "delete" | "get">,
+  taskId: number,
+): Promise<boolean> {
+  const record = await registry.get(taskId);
+  if (!record) {
+    return false;
+  }
+  if (record.caseDir) {
+    await fs.rm(record.caseDir, { recursive: true, force: true });
+  }
+  return await registry.delete(taskId);
+}
+
+export function createDeleteRemoteTasksHandler(
+  registry: Pick<RemoteTaskRegistry, "delete" | "get">,
+) {
   return async (req: Request, res: Response) => {
     const taskIds = readRemoteTaskStatusIds(req);
     if (typeof taskIds === "string") {
@@ -991,7 +1014,7 @@ export function createDeleteRemoteTasksHandler(registry: Pick<RemoteTaskRegistry
 
     const deletedTaskIds: number[] = [];
     for (const taskId of taskIds) {
-      if (await registry.delete(taskId)) {
+      if (await deleteRemoteTaskWithArtifacts(registry, taskId)) {
         deletedTaskIds.push(taskId);
       }
     }
@@ -1082,7 +1105,7 @@ export function createUpsertConsistencyTaskHandler(store: ConsistencyTaskStore) 
 
 export function createDeleteConsistencyTaskHandler(
   store: ConsistencyTaskStore,
-  options: { remoteTaskRegistry?: Pick<RemoteTaskRegistry, "delete"> } = {},
+  options: { remoteTaskRegistry?: Pick<RemoteTaskRegistry, "delete" | "get"> } = {},
 ) {
   return async (req: Request, res: Response) => {
     const { id } = req.params as { id?: string };
@@ -1099,7 +1122,7 @@ export function createDeleteConsistencyTaskHandler(
       }
       if (options.remoteTaskRegistry) {
         for (const taskId of readConsistencyRunTaskIds(record)) {
-          await options.remoteTaskRegistry.delete(taskId);
+          await deleteRemoteTaskWithArtifacts(options.remoteTaskRegistry, taskId);
         }
       }
       const deleted = await store.delete(id);
@@ -1153,10 +1176,34 @@ export function createApp(
   const registry = createSqliteRemoteTaskRegistry(scoreDb);
   const consistencyTaskStore = createSqliteConsistencyTaskStore(scoreDb);
   const ruleViolationStatsStore = createSqliteRuleViolationStatsStore(scoreDb);
+  const agentTraceStore = createAgentTraceSqliteStore(scoreDb);
   const humanReviewEvidenceStore = createHumanReviewEvidenceStore(config.humanReviewEvidenceRoot);
   const remoteTaskSummaryStore: RemoteTaskSummaryStore = {
     updateTaskSummary(input) {
       updateSqliteRemoteTaskSummary(scoreDb, input);
+    },
+    async updateAgentTrace(input) {
+      try {
+        const text = await fs.readFile(
+          path.join(input.caseDir, "outputs", "agent-trace.json"),
+          "utf-8",
+        );
+        const report = JSON.parse(text) as AgentTraceReport;
+        await Promise.all(
+          report.runs.map((run) =>
+            agentTraceStore.upsertRun(
+              { ...run, taskId: input.taskId },
+              path.posix.join("metadata", "agent-trace", `${run.baseRequestTag}.json`),
+            ),
+          ),
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.error(
+            `agent_trace_sqlite_update_failed taskId=${String(input.taskId)} error=${formatError(error)}`,
+          );
+        }
+      }
     },
   };
   const remoteTaskQueue = createRemoteTaskExecutionQueue(
@@ -1212,10 +1259,11 @@ export function createApp(
     createDeleteConsistencyTaskHandler(consistencyTaskStore, { remoteTaskRegistry: registry }),
   );
   app.use(
-    createDashboardRouter({
-      registry,
-      ruleViolationStatsStore,
-      humanReviewEvidenceRoot: config.humanReviewEvidenceRoot,
+	    createDashboardRouter({
+	      registry,
+	      ruleViolationStatsStore,
+	      agentTraceStore,
+	      humanReviewEvidenceRoot: config.humanReviewEvidenceRoot,
       taskSummaryProvider: async (query) =>
         listSqliteRemoteTaskSummariesForRange(scoreDb, query ?? {}),
       taskPageProvider: async (query) => listSqliteRemoteTaskPage(scoreDb, query),

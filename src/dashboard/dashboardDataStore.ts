@@ -284,6 +284,158 @@ export async function readTaskLog(input: {
   }
 }
 
+async function readAgentTraceArtifact(caseDir: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const text = await fs.readFile(path.join(caseDir, "outputs", "agent-trace.json"), "utf-8");
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function asMutableRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : undefined;
+}
+
+function summarizeAgentTraceReport(report: Record<string, unknown>): Record<string, unknown> {
+  const runs = Array.isArray(report.runs) ? report.runs : [];
+  return {
+    ...report,
+    runs: runs
+      .map((run) => {
+        const runRecord = asMutableRecord(run);
+        if (!runRecord) {
+          return undefined;
+        }
+        delete runRecord.prompt;
+        delete runRecord.assistantText;
+        delete runRecord.outputFileText;
+        delete runRecord.opencodeMessages;
+        runRecord.rawAvailable = true;
+        const attempts = Array.isArray(runRecord.attempts) ? runRecord.attempts : [];
+        runRecord.attempts = attempts
+          .map((attempt) => {
+            const attemptRecord = asMutableRecord(attempt);
+            if (!attemptRecord) {
+              return undefined;
+            }
+            delete attemptRecord.prompt;
+            delete attemptRecord.assistantText;
+            delete attemptRecord.outputFileText;
+            return attemptRecord;
+          })
+          .filter(Boolean);
+        const events = Array.isArray(runRecord.events) ? runRecord.events : [];
+        runRecord.events = events
+          .map((event) => {
+            const eventRecord = asMutableRecord(event);
+            if (!eventRecord) {
+              return undefined;
+            }
+            const hasRawPayload =
+              eventRecord.hasRawPayload === true || eventRecord.rawPayload !== undefined;
+            delete eventRecord.rawPayload;
+            eventRecord.hasRawPayload = hasRawPayload;
+            return eventRecord;
+          })
+          .filter(Boolean);
+        return runRecord;
+      })
+      .filter(Boolean),
+  };
+}
+
+export async function readTaskAgentTrace(input: {
+  registry: RemoteTaskRegistry;
+  taskId: number;
+}): Promise<
+  | { found: false }
+  | {
+      found: true;
+      traceAvailable: boolean;
+      source: "artifact";
+      report?: Record<string, unknown>;
+      rawAvailable: boolean;
+      message?: string;
+    }
+> {
+  const record = await input.registry.get(input.taskId);
+  if (!record) {
+    return { found: false };
+  }
+  if (!record.caseDir) {
+    return { found: true, traceAvailable: false, source: "artifact", rawAvailable: false };
+  }
+  const report = await readAgentTraceArtifact(record.caseDir);
+  if (!report) {
+    return { found: true, traceAvailable: false, source: "artifact", rawAvailable: false };
+  }
+  return {
+    found: true,
+    traceAvailable: true,
+    source: "artifact",
+    report: summarizeAgentTraceReport(report),
+    rawAvailable: true,
+  };
+}
+
+export async function readTaskAgentTraceRunRaw(input: {
+  registry: RemoteTaskRegistry;
+  taskId: number;
+  traceRunId: string;
+}): Promise<{ found: false } | { found: true; raw?: Record<string, unknown> }> {
+  const record = await input.registry.get(input.taskId);
+  if (!record?.caseDir) {
+    return { found: false };
+  }
+  const report = await readAgentTraceArtifact(record.caseDir);
+  const runs = Array.isArray(report?.runs) ? report.runs : [];
+  const run = runs
+    .map((item) => asMutableRecord(item))
+    .find((item) => item?.id === input.traceRunId);
+  if (!run) {
+    return { found: false };
+  }
+  return {
+    found: true,
+    raw: {
+      prompt: run.prompt,
+      assistantText: run.assistantText,
+      outputFileText: run.outputFileText,
+      opencodeMessages: run.opencodeMessages,
+    },
+  };
+}
+
+export async function readTaskAgentTraceEventRaw(input: {
+  registry: RemoteTaskRegistry;
+  taskId: number;
+  traceEventId: string;
+}): Promise<{ found: false } | { found: true; rawPayload?: unknown }> {
+  const record = await input.registry.get(input.taskId);
+  if (!record?.caseDir) {
+    return { found: false };
+  }
+  const report = await readAgentTraceArtifact(record.caseDir);
+  const runs = Array.isArray(report?.runs) ? report.runs : [];
+  for (const run of runs) {
+    const runRecord = asMutableRecord(run);
+    const events = Array.isArray(runRecord?.events) ? runRecord.events : [];
+    for (const event of events) {
+      const eventRecord = asMutableRecord(event);
+      if (eventRecord?.id === input.traceEventId) {
+        return { found: true, rawPayload: eventRecord.rawPayload };
+      }
+    }
+  }
+  return { found: false };
+}
+
 export async function readHumanRatingGapDataset(
   root: string,
   taskNames: Map<number, string> = new Map(),

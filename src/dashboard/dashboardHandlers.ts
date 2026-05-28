@@ -1,4 +1,5 @@
 import express, { Request, Response } from "express";
+import type { AgentTraceSqliteStore } from "../agentTrace/agentTraceSqliteStore.js";
 import type { RemoteTaskRegistry } from "../api/remoteTaskRegistry.js";
 import type { RuleViolationStatsStore } from "../api/ruleViolationStatsStore.js";
 import {
@@ -27,12 +28,15 @@ import {
 } from "./crossDeviceDataStore.js";
 import {
   listDashboardTasks,
-  readHumanRatingGapDataset,
-  readRiskReviewCalibrationDataset,
-  readTaskLog,
-  updateHumanRatingGapManualAnalysisStatus,
-  updateRiskReviewManualAnalysisStatus,
-} from "./dashboardDataStore.js";
+	  readHumanRatingGapDataset,
+	  readRiskReviewCalibrationDataset,
+	  readTaskAgentTrace,
+	  readTaskAgentTraceEventRaw,
+	  readTaskAgentTraceRunRaw,
+	  readTaskLog,
+	  updateHumanRatingGapManualAnalysisStatus,
+	  updateRiskReviewManualAnalysisStatus,
+	} from "./dashboardDataStore.js";
 import type {
   DashboardStatusCategory,
   DashboardTaskSummary,
@@ -49,6 +53,7 @@ type DashboardScoreSummary = {
 export type DashboardRouterDeps = {
   registry: RemoteTaskRegistry;
   ruleViolationStatsStore: RuleViolationStatsStore;
+  agentTraceStore?: AgentTraceSqliteStore;
   humanReviewEvidenceRoot: string;
   taskSummaryProvider?: (query?: {
     taskType?: string;
@@ -76,6 +81,59 @@ export type DashboardRouterDeps = {
     to?: string;
   }) => Promise<ReturnType<typeof buildScoreDistribution>>;
 };
+
+async function buildSqliteAgentTraceResponse(input: {
+  taskId: number;
+  store: AgentTraceSqliteStore;
+}) {
+  const runs = await input.store.listRunsByTaskId(input.taskId);
+  if (runs.length === 0) {
+    return undefined;
+  }
+  const reportRuns = await Promise.all(
+    runs.map(async (run) => ({
+      id: run.id,
+      taskId: run.taskId,
+      caseId: run.caseId,
+      baseRequestTag: run.baseRequestTag,
+      agentName: run.agentName,
+      nodeId: run.nodeId,
+      status: run.status,
+      startedAtMs: run.startedAtMs,
+      endedAtMs: run.endedAtMs,
+      elapsedMs: run.elapsedMs,
+      tokenUsage:
+        run.totalTokens === undefined
+          ? undefined
+          : {
+              total: run.totalTokens,
+              input: run.inputTokens,
+              output: run.outputTokens,
+              reasoning: run.reasoningTokens,
+              cacheRead: run.cacheReadTokens,
+              cacheWrite: run.cacheWriteTokens,
+            },
+      attempts: await input.store.listAttemptsByRunId(run.id),
+      events: await input.store.listEventsByRunId(run.id),
+      opencodeSession: run.opencodeSessionId ? { id: run.opencodeSessionId } : undefined,
+      rawAvailable: false,
+      warnings: [],
+    })),
+  );
+  return {
+    summary: {
+      runCount: runs.length,
+      attemptCount: runs.reduce((sum, run) => sum + run.attemptCount, 0),
+      eventCount: runs.reduce((sum, run) => sum + run.eventCount, 0),
+      toolEventCount: runs.reduce((sum, run) => sum + run.toolEventCount, 0),
+      errorCount: runs.reduce((sum, run) => sum + run.errorCount, 0),
+      totalElapsedMs: runs.reduce((sum, run) => sum + run.elapsedMs, 0),
+      totalTokens: runs.reduce((sum, run) => sum + (run.totalTokens ?? 0), 0) || undefined,
+    },
+    runs: reportRuns,
+    warnings: ["完整 trace artifact 不存在，仅展示 SQLite 摘要"],
+  };
+}
 
 const STATUS_CATEGORIES = new Set(["received", "queued", "running", "completed", "failed"]);
 const SORT_FIELDS = new Set(["createdAt", "updatedAt", "score", "taskId"]);
@@ -381,7 +439,7 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
     }
   });
 
-  router.get("/dashboard/tasks/:taskId/logs", async (req, res) => {
+	  router.get("/dashboard/tasks/:taskId/logs", async (req, res) => {
     const taskId = Number(req.params.taskId);
     if (!Number.isFinite(taskId)) {
       sendError(res, 404, "Task not found");
@@ -411,9 +469,109 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : "Dashboard log unavailable");
     }
-  });
+	  });
 
-  router.get("/dashboard/reports/daily", async (req, res) => {
+	  router.get("/dashboard/tasks/:taskId/agent-trace", async (req, res) => {
+	    const taskId = Number(req.params.taskId);
+	    if (!Number.isFinite(taskId)) {
+	      sendError(res, 404, "Task not found");
+	      return;
+	    }
+	    try {
+	      const trace = await readTaskAgentTrace({ registry: deps.registry, taskId });
+	      if (!trace.found) {
+	        sendError(res, 404, "Task not found");
+	        return;
+	      }
+	      if (!trace.traceAvailable && deps.agentTraceStore) {
+	        const report = await buildSqliteAgentTraceResponse({
+	          taskId,
+	          store: deps.agentTraceStore,
+	        });
+	        if (report) {
+	          res.json({
+	            success: true,
+	            taskId,
+	            traceAvailable: true,
+	            source: "sqlite",
+	            report,
+	            rawAvailable: false,
+	            message: "完整 trace artifact 不存在，仅展示 SQLite 摘要",
+	          });
+	          return;
+	        }
+	      }
+	      res.json({
+	        success: true,
+	        taskId,
+	        traceAvailable: trace.traceAvailable,
+	        source: trace.source,
+	        report: trace.report,
+	        rawAvailable: trace.rawAvailable,
+	        message: trace.message,
+	      });
+	    } catch (error) {
+	      sendError(res, 500, error instanceof Error ? error.message : "Agent trace unavailable");
+	    }
+	  });
+
+	  router.get("/dashboard/tasks/:taskId/agent-trace/runs/:traceRunId/raw", async (req, res) => {
+	    const taskId = Number(req.params.taskId);
+	    const traceRunId = readString(req.params.traceRunId);
+	    if (!Number.isFinite(taskId) || !traceRunId) {
+	      sendError(res, 404, "Agent trace run not found");
+	      return;
+	    }
+	    try {
+	      const raw = await readTaskAgentTraceRunRaw({
+	        registry: deps.registry,
+	        taskId,
+	        traceRunId,
+	      });
+	      if (!raw.found) {
+	        sendError(res, 404, "Agent trace run not found");
+	        return;
+	      }
+	      res.json({
+	        success: true,
+	        taskId,
+	        traceRunId,
+	        ...raw.raw,
+	      });
+	    } catch (error) {
+	      sendError(res, 500, error instanceof Error ? error.message : "Agent trace raw unavailable");
+	    }
+	  });
+
+	  router.get("/dashboard/tasks/:taskId/agent-trace/events/:traceEventId/raw", async (req, res) => {
+	    const taskId = Number(req.params.taskId);
+	    const traceEventId = readString(req.params.traceEventId);
+	    if (!Number.isFinite(taskId) || !traceEventId) {
+	      sendError(res, 404, "Agent trace event not found");
+	      return;
+	    }
+	    try {
+	      const raw = await readTaskAgentTraceEventRaw({
+	        registry: deps.registry,
+	        taskId,
+	        traceEventId,
+	      });
+	      if (!raw.found) {
+	        sendError(res, 404, "Agent trace event not found");
+	        return;
+	      }
+	      res.json({
+	        success: true,
+	        taskId,
+	        traceEventId,
+	        rawPayload: raw.rawPayload,
+	      });
+	    } catch (error) {
+	      sendError(res, 500, error instanceof Error ? error.message : "Agent trace raw unavailable");
+	    }
+	  });
+
+	  router.get("/dashboard/reports/daily", async (req, res) => {
     try {
       const taskType = readString(req.query.taskType);
       const from = readString(req.query.from);

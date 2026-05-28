@@ -65,6 +65,86 @@ export type TaskResultResponse = {
   resultData: unknown;
 };
 
+export type AgentTraceEvent = {
+  id: string;
+  sequence: number;
+  attemptId?: string;
+  retryIndex?: number;
+  type: string;
+  title: string;
+  status?: string;
+  timestampMs?: number;
+  elapsedMs?: number;
+  toolName?: string;
+  summary?: string;
+  hasRawPayload?: boolean;
+};
+
+export type AgentTraceAttempt = {
+  id: string;
+  sequence: number;
+  retryIndex: number;
+  requestTag: string;
+  status: string;
+  elapsedMs: number;
+  totalTokens?: number;
+  warningCount?: number;
+  warnings?: string[];
+};
+
+export type AgentTraceRun = {
+  id: string;
+  baseRequestTag: string;
+  agentName: string;
+  status: string;
+  elapsedMs: number;
+  tokenUsage?: { total?: number };
+  attempts: AgentTraceAttempt[];
+  events: AgentTraceEvent[];
+  opencodeSession?: { id?: string };
+  rawAvailable?: boolean;
+  warnings?: string[];
+};
+
+export type AgentTraceResponse = {
+  success: true;
+  taskId: number;
+  traceAvailable: boolean;
+  source: "artifact" | "sqlite" | "mixed";
+  rawAvailable?: boolean;
+  report?: {
+    summary: {
+      runCount: number;
+      attemptCount: number;
+      eventCount: number;
+      toolEventCount: number;
+      errorCount: number;
+      totalElapsedMs: number;
+      totalTokens?: number;
+    };
+    runs: AgentTraceRun[];
+    warnings?: string[];
+  };
+  message?: string;
+};
+
+export type AgentTraceRunRawResponse = {
+  success: true;
+  taskId: number;
+  traceRunId: string;
+  prompt?: string;
+  assistantText?: string;
+  outputFileText?: string;
+  opencodeMessages?: unknown[];
+};
+
+export type AgentTraceEventRawResponse = {
+  success: true;
+  taskId: number;
+  traceEventId: string;
+  rawPayload?: unknown;
+};
+
 export type DailyReportItem = {
   date: string;
   received: number;
@@ -285,6 +365,22 @@ export function fetchTaskLog(taskId: number, tailBytes = 65536) {
 
 export function fetchTaskResult(taskId: number) {
   return getJson<TaskResultResponse>(`/score/remote-tasks/${String(taskId)}/result`);
+}
+
+export function fetchTaskAgentTrace(taskId: number) {
+  return getJson<AgentTraceResponse>(`/dashboard/tasks/${String(taskId)}/agent-trace`);
+}
+
+export function fetchTaskAgentTraceRunRaw(taskId: number, traceRunId: string) {
+  return getJson<AgentTraceRunRawResponse>(
+    `/dashboard/tasks/${String(taskId)}/agent-trace/runs/${encodeURIComponent(traceRunId)}/raw`,
+  );
+}
+
+export function fetchTaskAgentTraceEventRaw(taskId: number, traceEventId: string) {
+  return getJson<AgentTraceEventRawResponse>(
+    `/dashboard/tasks/${String(taskId)}/agent-trace/events/${encodeURIComponent(traceEventId)}/raw`,
+  );
 }
 
 export function fetchTaskRawResult(taskId: number) {

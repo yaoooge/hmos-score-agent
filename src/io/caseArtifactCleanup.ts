@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const CASE_DIR_KEEP_ENTRIES = new Set(["inputs", "outputs", "logs", "opencode-sandbox"]);
+const CASE_DIR_KEEP_ENTRIES = new Set(["inputs", "outputs", "logs", "metadata", "opencode-sandbox"]);
 const OPENCODE_SANDBOX_KEEP_ENTRIES = new Set(["metadata", "patch"]);
 const INTERMEDIATE_CODE_LINTER_KEEP_ENTRIES = new Set([
   "summary.json",

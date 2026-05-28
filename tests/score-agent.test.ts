@@ -2200,13 +2200,22 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   assert.match(reportHtml, /维度得分概览/);
   assert.match(reportHtml, /规则审计结果/);
   assert.doesNotMatch(reportHtml, /<pre>\s*\{/);
-  assert.deepEqual(topLevelEntries, ["inputs", "intermediate", "logs", "opencode-sandbox", "outputs"]);
+  assert.deepEqual(topLevelEntries, [
+    "inputs",
+    "intermediate",
+    "logs",
+    "metadata",
+    "opencode-sandbox",
+    "outputs",
+  ]);
   assert.deepEqual(sandboxEntries, ["metadata", "patch"]);
   await fs.access(path.join(caseDir, "inputs", "rule-agent-bootstrap-payload.json"));
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "summary.json"));
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "findings.effective.json"));
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"));
   await fs.access(path.join(caseDir, "logs", "run.log"));
+  await fs.access(path.join(caseDir, "outputs", "agent-trace.json"));
+  await fs.access(path.join(caseDir, "metadata", "agent-trace"));
   await fs.access(path.join(caseDir, "opencode-sandbox", "metadata", "metadata.json"));
   await fs.access(path.join(caseDir, "opencode-sandbox", "patch", "effective.patch"));
   await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace")), /ENOENT/);

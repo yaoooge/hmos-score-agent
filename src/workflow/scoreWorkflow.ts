@@ -1,5 +1,10 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { ArtifactStore } from "../io/artifactStore.js";
+import { buildAgentTraceReport, writeAgentTraceArtifacts } from "../agentTrace/agentTraceArtifactStore.js";
+import { createAgentTraceRecorder, type AgentTraceRecorder } from "../agentTrace/agentTraceRecorder.js";
+import { fetchOpencodeSessionSnapshot } from "../agentTrace/opencodeSessionClient.js";
+import { parseOpencodeSessionEvents } from "../agentTrace/opencodePartParser.js";
+import type { AgentTraceRun } from "../agentTrace/types.js";
 import { pruneCompletedCaseArtifacts } from "../io/caseArtifactCleanup.js";
 import { CaseLogger } from "../io/caseLogger.js";
 import { formatElapsedDuration } from "../io/duration.js";
@@ -116,10 +121,25 @@ type CompiledScoreGraph = {
   ): Promise<AsyncIterable<[string, unknown]>>;
 };
 
+function readTaskIdFromInput(input: WorkflowCommonInput): number | undefined {
+  const remoteTask = "remoteTask" in input ? (input as RemoteWorkflowInput).remoteTask : undefined;
+  return typeof remoteTask?.taskId === "number" ? remoteTask.taskId : undefined;
+}
+
 function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPreparedState: boolean) {
   const logger = new CaseLogger(input.artifactStore, input.caseDir);
   const runtime = input.opencodeRuntime;
-  const opencode =
+  const traceRecorder = createAgentTraceRecorder({
+    taskId: readTaskIdFromInput(input),
+    caseDir: input.caseDir,
+    runtime: runtime
+      ? {
+          serverUrl: runtime.serverUrl,
+          runtimeDir: runtime.runtimeDir,
+        }
+      : undefined,
+  });
+  const baseOpencode =
     input.opencodeRunner ??
     (runtime && input.opencodeServeManager
       ? createManagedOpencodeRunner({ runtime, serveManager: input.opencodeServeManager })
@@ -128,6 +148,12 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
             runPrompt: (request: OpencodeRunRequest) => runOpencodePrompt({ runtime, request }),
           }
         : undefined);
+  const opencode = baseOpencode
+    ? {
+        runPrompt: (request: OpencodeRunRequest) =>
+          traceRecorder.runPrompt(request, baseOpencode.runPrompt),
+      }
+    : undefined;
   const opencodeForState = (state: ScoreGraphState) =>
     opencode && state.opencodeSandboxRoot
       ? { sandboxRoot: state.opencodeSandboxRoot, runPrompt: opencode.runPrompt }
@@ -136,6 +162,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
   if (resumeFromPreparedState) {
     return {
       logger,
+      traceRecorder,
       graph: new StateGraph(ScoreState)
         .addNode("opencodeSandboxPreparationNode", (s) => opencodeSandboxPreparationNode(s))
         .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
@@ -184,6 +211,7 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
 
   return {
     logger,
+    traceRecorder,
     graph: new StateGraph(ScoreState)
       .addNode("remoteTaskPreparationNode", (s) => remoteTaskPreparationNode(s, { logger }))
       .addNode("taskUnderstandingNode", (s, nodeConfig) =>
@@ -242,6 +270,106 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       .addEdge("persistAndUploadNode", END)
       .compile(),
   };
+}
+
+async function writeWorkflowAgentTrace(input: {
+  artifactStore: ArtifactStore;
+  caseDir: string;
+  traceRecorder?: AgentTraceRecorder;
+  runtime?: OpencodeRuntimeConfig;
+  logger: CaseLogger;
+}): Promise<void> {
+  const runs = input.traceRecorder?.drainRuns() ?? [];
+  if (runs.length === 0) {
+    return;
+  }
+  try {
+    const enrichedRuns = await enrichAgentTraceRuns({
+      runs,
+      runtime: input.runtime,
+      logger: input.logger,
+    });
+    await writeAgentTraceArtifacts({
+      artifactStore: input.artifactStore,
+      caseDir: input.caseDir,
+      report: buildAgentTraceReport({ runs: enrichedRuns }),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await input.logger.warn(`agent trace 写入失败 warning=${message}`);
+  }
+}
+
+export async function enrichAgentTraceRuns(input: {
+  runs: AgentTraceRun[];
+  runtime?: OpencodeRuntimeConfig;
+  logger: CaseLogger;
+}): Promise<AgentTraceRun[]> {
+  if (!input.runtime) {
+    return input.runs;
+  }
+  const enriched: AgentTraceRun[] = [];
+  for (const run of input.runs) {
+    const sessionId = run.opencodeSession?.id ?? run.attempts.find((attempt) => attempt.sessionId)?.sessionId;
+    if (!sessionId) {
+      enriched.push(run);
+      continue;
+    }
+    try {
+      const snapshot = await fetchOpencodeSessionSnapshot({
+        serverUrl: input.runtime.serverUrl,
+        runtimeDir: input.runtime.runtimeDir,
+        sessionId,
+      });
+      if (!snapshot) {
+        enriched.push({
+          ...run,
+          status: run.status === "success" ? "session_missing" : run.status,
+          warnings: [...run.warnings, "opencode_session_not_found"],
+        });
+        continue;
+      }
+      const parsed = parseOpencodeSessionEvents(snapshot, run.attempts);
+      if (parsed.events.length === 0 && run.events.length > 0) {
+        enriched.push({
+          ...run,
+          opencodeSession: {
+            id: snapshot.id,
+            title: snapshot.title ?? run.baseRequestTag,
+            directory: snapshot.directory ?? "",
+            createdAtMs: snapshot.createdAtMs,
+            updatedAtMs: snapshot.updatedAtMs,
+            source: snapshot.source,
+          },
+          opencodeMessages: snapshot.messages,
+          warnings: [...run.warnings, ...parsed.warnings, "opencode_session_messages_empty"],
+        });
+        continue;
+      }
+      enriched.push({
+        ...run,
+        opencodeSession: {
+          id: snapshot.id,
+          title: snapshot.title ?? run.baseRequestTag,
+          directory: snapshot.directory ?? "",
+          createdAtMs: snapshot.createdAtMs,
+          updatedAtMs: snapshot.updatedAtMs,
+          source: snapshot.source,
+        },
+        opencodeMessages: snapshot.messages,
+        events: parsed.events.length > 0 ? parsed.events : run.events,
+        warnings: [...run.warnings, ...parsed.warnings],
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await input.logger.warn(`agent trace session 读取失败 session=${sessionId} warning=${message}`);
+      enriched.push({
+        ...run,
+        warnings: [...run.warnings, "opencode_session_read_failed"],
+      });
+    }
+  }
+  return enriched;
 }
 
 export function shouldKeepCodeLinterResults(result: Record<string, unknown>): boolean {
@@ -352,7 +480,7 @@ export async function runScoreWorkflow(
   const startedAt = Date.now();
   const logger = new CaseLogger(input.artifactStore, input.caseDir);
   const result = await runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
-    const { logger, graph } = createCompiledScoreGraph(preparedInput, false);
+    const { logger, graph, traceRecorder } = createCompiledScoreGraph(preparedInput, false);
     const initialState = (() => {
       if ("remoteTask" in input) {
         return {
@@ -368,7 +496,15 @@ export async function runScoreWorkflow(
       };
     })();
 
-    return runCompiledScoreGraph(logger, graph as never, initialState);
+    const workflowResult = await runCompiledScoreGraph(logger, graph as never, initialState);
+    await writeWorkflowAgentTrace({
+      artifactStore: preparedInput.artifactStore,
+      caseDir: preparedInput.caseDir,
+      traceRecorder,
+      runtime: preparedInput.opencodeRuntime,
+      logger,
+    });
+    return workflowResult;
   });
 
   if ("caseInput" in input) {
@@ -385,11 +521,19 @@ export async function runPreparedScoreWorkflow(
   input: PreparedWorkflowInput,
 ): Promise<Record<string, unknown>> {
   const result = await runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
-    const { logger, graph } = createCompiledScoreGraph(preparedInput, true);
-    return runCompiledScoreGraph(logger, graph as never, {
+    const { logger, graph, traceRecorder } = createCompiledScoreGraph(preparedInput, true);
+    const workflowResult = await runCompiledScoreGraph(logger, graph as never, {
       ...input.preparedState,
       caseDir: input.caseDir,
     });
+    await writeWorkflowAgentTrace({
+      artifactStore: preparedInput.artifactStore,
+      caseDir: preparedInput.caseDir,
+      traceRecorder,
+      runtime: preparedInput.opencodeRuntime,
+      logger,
+    });
+    return workflowResult;
   });
   await pruneCompletedCaseArtifacts(input.caseDir, {
     keepCodeLinterDiagnostics: shouldKeepCodeLinterResults(result),

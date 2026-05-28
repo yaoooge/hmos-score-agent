@@ -1,5 +1,10 @@
 <template>
-  <el-drawer v-model="visible" size="72%" class="case-report-drawer" :title="title">
+  <el-drawer
+    v-model="visible"
+    size="72%"
+    :class="['case-report-drawer', { 'case-report-drawer-trace': activeTab === 'trace' }]"
+    :title="title"
+  >
     <template #header>
       <div class="toolbar" style="justify-content: space-between; width: 100%">
         <strong>{{ title }}</strong>
@@ -9,12 +14,14 @@
       </div>
     </template>
 
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
-    <div v-else-if="loading" class="report-loading">
-      <el-skeleton :rows="10" animated />
-    </div>
-    <el-empty v-else-if="!report" description="暂无用例报告" />
-    <div v-else class="case-report-stack report-document">
+    <el-tabs v-model="activeTab" class="case-report-tabs">
+      <el-tab-pane label="报告" name="report">
+        <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
+        <div v-else-if="loading" class="report-loading">
+          <el-skeleton :rows="10" animated />
+        </div>
+        <el-empty v-else-if="!report" description="暂无用例报告" />
+        <div v-else class="case-report-stack report-document">
       <section class="report-cover">
         <div class="report-cover-main">
           <div class="report-kicker">测试报告</div>
@@ -186,16 +193,24 @@
         </ul>
         <span v-else class="empty-inline">暂无建议动作</span>
       </section>
-    </div>
+        </div>
+      </el-tab-pane>
+      <el-tab-pane label="Agent Trace" name="trace">
+        <AgentTracePanel :task-id="taskId" />
+      </el-tab-pane>
+    </el-tabs>
   </el-drawer>
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { Refresh } from "@element-plus/icons-vue";
+import AgentTracePanel from "./AgentTracePanel.vue";
 import { formatDashboardDateTime } from "../dateTime";
 import type { CaseReportViewModel } from "../pages/caseReportViewModel";
 
 const visible = defineModel<boolean>({ default: false });
+const activeTab = ref("report");
 
 defineProps<{
   title: string;

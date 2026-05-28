@@ -1141,8 +1141,12 @@ test("consistency task delete handler removes derived remote tasks", async (t) =
 test("remote task batch delete handler removes requested records", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const registry = createRemoteTaskRegistry(localCaseRoot);
-  await registry.upsert({ taskId: 901, status: "completed" });
-  await registry.upsert({ taskId: 902, status: "failed" });
+  const firstCaseDir = path.join(localCaseRoot, "remote-case-901");
+  const secondCaseDir = path.join(localCaseRoot, "remote-case-902");
+  await fs.mkdir(firstCaseDir, { recursive: true });
+  await fs.mkdir(secondCaseDir, { recursive: true });
+  await registry.upsert({ taskId: 901, status: "completed", caseDir: firstCaseDir });
+  await registry.upsert({ taskId: 902, status: "failed", caseDir: secondCaseDir });
   const handler = createDeleteRemoteTasksHandler(registry);
   const { response, responseState } = createResponse();
 
@@ -1151,6 +1155,8 @@ test("remote task batch delete handler removes requested records", async (t) => 
   assert.equal(responseState.statusCode, 200);
   assert.deepEqual(responseState.body?.deletedTaskIds, [901, 902]);
   assert.deepEqual(await registry.list(), []);
+  await assert.rejects(fs.stat(firstCaseDir), /ENOENT/);
+  await assert.rejects(fs.stat(secondCaseDir), /ENOENT/);
 });
 
 test("consistency task replacement rejects empty collection over existing records", async (t) => {

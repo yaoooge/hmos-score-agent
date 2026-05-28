@@ -379,6 +379,17 @@ body {
   min-width: 0;
 }
 
+.case-report-drawer-trace .el-drawer__body {
+  overflow: hidden;
+}
+
+.case-report-drawer-trace .case-report-tabs,
+.case-report-drawer-trace .el-tabs__content,
+.case-report-drawer-trace .el-tab-pane {
+  height: 100%;
+  min-height: 0;
+}
+
 .report-loading {
   padding: 8px 0;
 }
