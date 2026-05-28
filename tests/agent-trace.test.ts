@@ -527,14 +527,14 @@ test("AgentTraceSqliteStore upserts run, attempt, and event summaries", async (t
     warnings: [],
   };
 
-  await store.upsertRun(run, "metadata/agent-trace/rubric-case.json");
+  await store.upsertRun(run, "outputs/agent-trace.json");
 
   const runs = await store.listRunsByTaskId(1747);
   assert.equal(runs.length, 1);
   assert.equal(runs[0]?.attemptCount, 2);
   assert.equal(runs[0]?.eventCount, 2);
   assert.equal(runs[0]?.errorCount, 1);
-  assert.equal(runs[0]?.artifactPath, "metadata/agent-trace/rubric-case.json");
+  assert.equal(runs[0]?.artifactPath, "outputs/agent-trace.json");
   const attempts = await store.listAttemptsByRunId("run-1");
   assert.deepEqual(
     attempts.map((attempt) => [attempt.requestTag, attempt.retryIndex, attempt.status]),

@@ -2204,7 +2204,6 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
     "inputs",
     "intermediate",
     "logs",
-    "metadata",
     "opencode-sandbox",
     "outputs",
   ]);
@@ -2215,7 +2214,7 @@ test("runScoreWorkflow writes artifacts and produces schema-valid result json", 
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"));
   await fs.access(path.join(caseDir, "logs", "run.log"));
   await fs.access(path.join(caseDir, "outputs", "agent-trace.json"));
-  await fs.access(path.join(caseDir, "metadata", "agent-trace"));
+  await assert.rejects(() => fs.access(path.join(caseDir, "metadata")), /ENOENT/);
   await fs.access(path.join(caseDir, "opencode-sandbox", "metadata", "metadata.json"));
   await fs.access(path.join(caseDir, "opencode-sandbox", "patch", "effective.patch"));
   await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace")), /ENOENT/);

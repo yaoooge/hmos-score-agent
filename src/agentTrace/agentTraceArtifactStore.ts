@@ -1,4 +1,3 @@
-import path from "node:path";
 import type { ArtifactStore } from "../io/artifactStore.js";
 import type { AgentTraceReport, AgentTraceRun } from "./types.js";
 
@@ -44,12 +43,5 @@ export async function writeAgentTraceArtifacts(input: {
   caseDir: string;
   report: AgentTraceReport;
 }): Promise<void> {
-  for (const run of input.report.runs) {
-    await input.artifactStore.writeJson(
-      input.caseDir,
-      path.posix.join("metadata", "agent-trace", `${run.baseRequestTag}.json`),
-      run,
-    );
-  }
   await input.artifactStore.writeJson(input.caseDir, "outputs/agent-trace.json", input.report);
 }

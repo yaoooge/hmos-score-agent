@@ -1304,7 +1304,7 @@ export function createApp(
           report.runs.map((run) =>
             agentTraceStore.upsertRun(
               { ...run, taskId: input.taskId },
-              path.posix.join("metadata", "agent-trace", `${run.baseRequestTag}.json`),
+              "outputs/agent-trace.json",
             ),
           ),
         );
