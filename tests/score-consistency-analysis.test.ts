@@ -4,6 +4,7 @@ import {
   analyzeConsistency,
   appendAnalysisHistorySnapshot,
   buildConsistencyTaskPersistRecord,
+  buildConsistencyTaskPersistDelta,
   collectExclusiveRoundTaskIds,
   buildConsistencyTaskRoundOptions,
   buildConsistencyExportFiles,
@@ -817,6 +818,66 @@ test("buildConsistencyTaskPersistRecord keeps valid sourceTask for refresh saves
   assert.equal("analysis" in refreshPayload, false);
   assert.equal("sourceTask" in refreshPayload, true);
   assert.equal("sourceTask" in createPayload, true);
+});
+
+test("buildConsistencyTaskPersistDelta includes only changed runs and appended history", () => {
+  const previous = {
+    id: "C-001",
+    sequence: 1,
+    serviceBaseUrl: "http://localhost:3000",
+    originalTaskId: 1263,
+    caseId: 229,
+    caseName: "电视台元服务完成一多适配",
+    createdAt: "2026-05-19T11:30:45.183Z",
+    status: "running",
+    sourceTask: JSON.parse(remoteTaskJson),
+    runs: [
+      { runIndex: 0, taskId: 126300101, status: "running", unsatisfiedRules: [], risks: [] },
+      { runIndex: 1, taskId: 126300102, status: "queued", unsatisfiedRules: [], risks: [] },
+    ],
+    analysisHistory: [
+      {
+        round: 1,
+        capturedAt: "2026-05-19T11:30:45.183Z",
+        summary: analyzeConsistency([completedRun(0)]),
+        ruleReport: buildRuleReport([completedRun(0)]),
+        riskReport: buildRiskReport([completedRun(0)]),
+        runs: [completedRun(0)],
+      },
+    ],
+  };
+  const nextHistory = {
+    round: 2,
+    capturedAt: "2026-05-19T11:40:45.183Z",
+    summary: analyzeConsistency([completedRun(0), completedRun(1)]),
+    ruleReport: buildRuleReport([completedRun(0), completedRun(1)]),
+    riskReport: buildRiskReport([completedRun(0), completedRun(1)]),
+    runs: [completedRun(0), completedRun(1)],
+  };
+  const next = {
+    ...previous,
+    status: "completed",
+    runs: [
+      {
+        runIndex: 0,
+        taskId: 126300101,
+        status: "completed",
+        totalScore: 86,
+        unsatisfiedRules: [{ ruleId: "REQ-MUST-01", summary: "已完成" }],
+        risks: [],
+      },
+      previous.runs[1],
+    ],
+    analysisHistory: [...previous.analysisHistory, nextHistory],
+  };
+
+  const delta = buildConsistencyTaskPersistDelta(previous, next);
+
+  assert.deepEqual(Object.keys(delta).sort(), ["analysisHistory", "runs", "status"]);
+  assert.equal(delta.runs?.length, 1);
+  assert.equal(delta.runs?.[0]?.taskId, 126300101);
+  assert.deepEqual(delta.analysisHistory, [nextHistory]);
+  assert.equal("sourceTask" in delta, false);
 });
 
 test("validateRemoteEvaluationTaskInput rejects fallback sourceTask without original payload", () => {

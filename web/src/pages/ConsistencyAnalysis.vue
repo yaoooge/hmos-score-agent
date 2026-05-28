@@ -338,6 +338,7 @@ import {
   fetchRemoteScoreResult,
   fetchRemoteTaskStatuses,
   normalizeServiceBaseUrl,
+  patchConsistencyTask,
   saveConsistencyTask,
   submitRemoteScoreTask,
   type RemoteTaskRegistryStatus,
@@ -352,6 +353,7 @@ import {
   buildConsistencyExportFiles,
   buildConsistencyExportPayload,
   buildConsistencyHistoryChartRows,
+  buildConsistencyTaskPersistDelta,
   buildConsistencyTaskRoundOptions,
   buildConsistencyTaskPersistRecord,
   buildRiskReport,
@@ -604,6 +606,26 @@ function persistTaskNow(task: ConsistencyTask, includeSourceTask = false): Promi
   return run;
 }
 
+function cloneTaskForDelta(task: ConsistencyTask): ConsistencyTask {
+  return JSON.parse(JSON.stringify(task)) as ConsistencyTask;
+}
+
+function persistTaskDelta(previous: ConsistencyTask, next: ConsistencyTask): Promise<void> {
+  pendingPersistTaskIds.delete(next.id);
+  const payload = buildConsistencyTaskPersistDelta(previous, next);
+  if (Object.keys(payload).length === 0) {
+    return Promise.resolve();
+  }
+  const run = persistChain.then(async () => {
+    await patchConsistencyTask(next.id, payload);
+  });
+  persistChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 function flushPendingPersistTasks() {
   const taskIds = [...pendingPersistTaskIds];
   pendingPersistTaskIds.clear();
@@ -666,7 +688,6 @@ function refreshTaskAggregates(task: ConsistencyTask) {
     task.status = "running";
   }
   refreshTaskHistorySnapshot(task);
-  queuePersistTask(task);
 }
 
 function buildSubmittedPayload(task: ConsistencyTask, taskId: number): RemoteEvaluationTaskInput {
@@ -686,13 +707,23 @@ function toRunStatus(status: RemoteTaskRegistryStatus): ConsistencyRunStatus {
 }
 
 async function submitRun(task: ConsistencyTask, run: ConsistencyRunSummary, attempt = 0) {
+  let previousTask = cloneTaskForDelta(task);
   run.status = "submitted";
   run.error = undefined;
   refreshTaskAggregates(task);
+  void persistTaskDelta(previousTask, task).catch((error) => {
+    console.error(`consistency_tasks_persist_failed ${String(error)}`);
+    ElMessage.error(`一致性任务保存失败：${error instanceof Error ? error.message : String(error)}`);
+  });
   try {
     await submitRemoteScoreTask(task.serviceBaseUrl, buildSubmittedPayload(task, run.taskId));
+    previousTask = cloneTaskForDelta(task);
     run.status = "queued";
     refreshTaskAggregates(task);
+    void persistTaskDelta(previousTask, task).catch((error) => {
+      console.error(`consistency_tasks_persist_failed ${String(error)}`);
+      ElMessage.error(`一致性任务保存失败：${error instanceof Error ? error.message : String(error)}`);
+    });
   } catch (error) {
     if (attempt < MAX_RESUBMIT_ATTEMPTS) {
       window.setTimeout(() => {
@@ -700,9 +731,16 @@ async function submitRun(task: ConsistencyTask, run: ConsistencyRunSummary, atte
       }, 1000);
       return;
     }
+    previousTask = cloneTaskForDelta(task);
     run.status = "failed";
     run.error = error instanceof Error ? error.message : String(error);
     refreshTaskAggregates(task);
+    void persistTaskDelta(previousTask, task).catch((persistError) => {
+      console.error(`consistency_tasks_persist_failed ${String(persistError)}`);
+      ElMessage.error(
+        `一致性任务保存失败：${persistError instanceof Error ? persistError.message : String(persistError)}`,
+      );
+    });
   }
 }
 
@@ -740,6 +778,7 @@ async function ensureRunResult(task: ConsistencyTask, run: ConsistencyRunSummary
 async function refreshTaskStatus(task: ConsistencyTask, options: { silent?: boolean } = {}) {
   refreshingTaskId.value = task.id;
   try {
+    const previousTask = cloneTaskForDelta(task);
     const response = await fetchRemoteTaskStatuses(
       task.serviceBaseUrl,
       task.runs.map((run) => run.taskId),
@@ -761,7 +800,7 @@ async function refreshTaskStatus(task: ConsistencyTask, options: { silent?: bool
       }
     }
     refreshTaskAggregates(task);
-    await persistTaskNow(task);
+    await persistTaskDelta(previousTask, task);
     if (!options.silent) {
       ElMessage.success("任务状态已刷新");
     }
@@ -956,6 +995,7 @@ function rerunTask(taskId: string) {
     ElMessage.error(`无法重新运行：原始远端任务信息不完整。${validation.errors.join("；")}`);
     return;
   }
+  const previousTask = cloneTaskForDelta(task);
   refreshTaskHistorySnapshot(task);
   const nextTaskIds = generateNextSubmittedTaskIds(task, RUN_COUNT);
   for (const run of task.runs) {
@@ -970,6 +1010,10 @@ function rerunTask(taskId: string) {
     run.error = undefined;
   }
   refreshTaskAggregates(task);
+  void persistTaskDelta(previousTask, task).catch((error) => {
+    console.error(`consistency_tasks_persist_failed ${String(error)}`);
+    ElMessage.error(`一致性任务保存失败：${error instanceof Error ? error.message : String(error)}`);
+  });
   rawResults.clear();
   reportRun.value = null;
   reportCase.value = null;

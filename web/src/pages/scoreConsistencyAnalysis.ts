@@ -258,6 +258,12 @@ export type ConsistencyTaskSnapshot = ConsistencyTaskCollectionRecord & {
   riskReport?: RiskConsistencyReportItem[];
 };
 
+export type ConsistencyTaskPersistDelta = {
+  status?: string;
+  runs?: ConsistencyRunSummary[];
+  analysisHistory?: ConsistencyAnalysisHistoryItem[];
+};
+
 export type ConsistencyTaskRoundSelection = string | "current";
 
 export type ConsistencyTaskRoundOption = {
@@ -639,6 +645,37 @@ export function buildConsistencyTaskPersistRecord(
   }
   const { sourceTask: _sourceTask, ...record } = compacted;
   return record;
+}
+
+export function buildConsistencyTaskPersistDelta(
+  previous: ConsistencyTaskSnapshot,
+  next: ConsistencyTaskSnapshot,
+): ConsistencyTaskPersistDelta {
+  const delta: ConsistencyTaskPersistDelta = {};
+  if (previous.status !== next.status) {
+    delta.status = next.status;
+  }
+
+  const previousRuns = new Map(previous.runs.map((run) => [run.taskId, run]));
+  const changedRuns = next.runs.filter((run) => {
+    const previousRun = previousRuns.get(run.taskId);
+    return JSON.stringify(previousRun) !== JSON.stringify(run);
+  });
+  if (changedRuns.length > 0) {
+    delta.runs = changedRuns.map(cloneRunSummary);
+  }
+
+  const previousHistoryKeys = new Set(
+    (previous.analysisHistory ?? []).map((item) => `${item.round}:${item.capturedAt}`),
+  );
+  const appendedHistory = (next.analysisHistory ?? []).filter(
+    (item) => !previousHistoryKeys.has(`${item.round}:${item.capturedAt}`),
+  );
+  if (appendedHistory.length > 0) {
+    delta.analysisHistory = appendedHistory.map(cloneConsistencyAnalysisHistoryItem);
+  }
+
+  return delta;
 }
 
 export function hydrateConsistencyTaskSnapshot(

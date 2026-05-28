@@ -195,6 +195,38 @@ const consistencyTaskItemField = {
   properties: {},
 } as const satisfies ApiFieldSchema;
 
+const consistencyTaskPatchField = {
+  type: "object",
+  required: true,
+  description:
+    "Small consistency task patch. Runs are merged by taskId and analysisHistory entries are appended by round/capturedAt.",
+  properties: {
+    status: {
+      type: "string",
+      required: false,
+      description: "Updated consistency task status.",
+    },
+    runs: {
+      type: "array",
+      required: false,
+      description: "Changed run summaries only.",
+      items: {
+        type: "object",
+        description: "One changed consistency run summary.",
+      },
+    },
+    analysisHistory: {
+      type: "array",
+      required: false,
+      description: "Newly appended history snapshots only.",
+      items: {
+        type: "object",
+        description: "One appended consistency analysis history snapshot.",
+      },
+    },
+  },
+} as const satisfies ApiFieldSchema;
+
 const remoteCallbackDefinition = {
   name: "remoteTaskCallback",
   method: "POST",
@@ -620,6 +652,38 @@ export const API_DEFINITIONS: ApiDefinition[] = [
         },
       },
       { status: 400, description: "Invalid consistency task record.", body: errorResponseBody },
+      { status: 500, description: "Consistency task table could not be written.", body: errorResponseBody },
+    ],
+  },
+  {
+    method: "POST",
+    path: API_PATHS.consistencyTask,
+    description: "Merge a small consistency task patch into one persisted record.",
+    request: {
+      pathParams: {
+        id: {
+          type: "string",
+          required: true,
+          description: "Consistency task identifier.",
+        },
+      },
+      body: consistencyTaskPatchField,
+    },
+    responses: [
+      {
+        status: 200,
+        description: "Consistency task patch was merged.",
+        body: {
+          type: "object",
+          description: "Consistency task patch response.",
+          properties: {
+            success: successField,
+            item: consistencyTaskItemField,
+          },
+        },
+      },
+      { status: 400, description: "Invalid consistency task patch.", body: errorResponseBody },
+      { status: 404, description: "Consistency task was not found.", body: errorResponseBody },
       { status: 500, description: "Consistency task table could not be written.", body: errorResponseBody },
     ],
   },

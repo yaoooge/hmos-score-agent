@@ -13,6 +13,7 @@ import {
   createGetRemoteTaskStatusesHandler,
   createDeleteConsistencyTaskHandler,
   createDeleteRemoteTasksHandler,
+  createPatchConsistencyTaskHandler,
   createReplaceConsistencyTasksHandler,
   createUpsertConsistencyTaskHandler,
   createRemoteTaskExecutionQueue,
@@ -123,6 +124,13 @@ function createDeleteRemoteTasksRequest(taskIds: string) {
 function createConsistencyTasksRequest(items: unknown[]) {
   return {
     body: { items },
+  };
+}
+
+function createConsistencyTaskPatchRequest(id: string, body: unknown) {
+  return {
+    params: { id },
+    body,
   };
 }
 
@@ -1091,6 +1099,79 @@ test("consistency task upsert handler writes a single record", async (t) => {
   assert.equal(responseState.statusCode, 200);
   assert.equal(responseState.body?.success, true);
   assert.equal((responseState.body?.item as Record<string, unknown>).id, "C-010");
+});
+
+test("consistency task patch handler merges changed runs and appended history", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  await store.upsert({
+    id: "C-014",
+    sequence: 14,
+    serviceBaseUrl: "http://score.example.com",
+    status: "running",
+    sourceTask: { large: "retained" },
+    runs: [
+      { runIndex: 0, taskId: 1401, status: "running" },
+      { runIndex: 1, taskId: 1402, status: "queued" },
+    ],
+    analysisHistory: [
+      {
+        round: 1,
+        capturedAt: "2026-05-13T08:00:00.000Z",
+        summary: { completedRuns: 1 },
+        ruleReport: [{ ruleId: "REQ-1", summary: "old", unsatisfiedCount: 1 }],
+        riskReport: [],
+        runs: [{ runIndex: 0, taskId: 1400, status: "completed" }],
+      },
+    ],
+  });
+  const handler = createPatchConsistencyTaskHandler(store);
+  const { response, responseState } = createResponse();
+
+  await handler(
+    createConsistencyTaskPatchRequest("C-014", {
+      status: "completed",
+      runs: [
+        {
+          runIndex: 0,
+          taskId: 1401,
+          status: "completed",
+          totalScore: 92,
+          unsatisfiedRules: [{ ruleId: "REQ-2", summary: "new" }],
+          risks: [],
+        },
+      ],
+      analysisHistory: [
+        {
+          round: 2,
+          capturedAt: "2026-05-13T09:00:00.000Z",
+          summary: { completedRuns: 2 },
+          ruleReport: [{ ruleId: "REQ-2", summary: "new", unsatisfiedCount: 1 }],
+          riskReport: [],
+          runs: [{ runIndex: 0, taskId: 1401, status: "completed", totalScore: 92 }],
+        },
+      ],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(responseState.statusCode, 200);
+  assert.equal(responseState.body?.success, true);
+  const stored = (await store.list())[0] as Record<string, unknown>;
+  assert.equal(stored.status, "completed");
+  assert.deepEqual(stored.sourceTask, { large: "retained" });
+  assert.deepEqual(stored.runs, [
+    {
+      runIndex: 0,
+      taskId: 1401,
+      status: "completed",
+      totalScore: 92,
+      unsatisfiedRules: [{ ruleId: "REQ-2", summary: "new" }],
+      risks: [],
+    },
+    { runIndex: 1, taskId: 1402, status: "queued" },
+  ]);
+  assert.equal((stored.analysisHistory as unknown[]).length, 2);
 });
 
 test("consistency task delete handler removes a single persisted record", async (t) => {

@@ -153,6 +153,21 @@ export async function saveConsistencyTask(
   return (await response.json()) as ConsistencyTaskUpsertResponse;
 }
 
+export async function patchConsistencyTask(
+  taskId: string,
+  patch: unknown,
+): Promise<ConsistencyTaskUpsertResponse> {
+  const response = await fetch(`/score/consistency-tasks/${encodeURIComponent(taskId)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return (await response.json()) as ConsistencyTaskUpsertResponse;
+}
+
 export async function deleteConsistencyTask(taskId: string): Promise<{ success: true }> {
   const response = await fetch(`/score/consistency-tasks/${encodeURIComponent(taskId)}`, {
     method: "DELETE",

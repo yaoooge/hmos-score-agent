@@ -741,6 +741,93 @@ function readConsistencyTaskRecord(req: Request): ConsistencyTaskRecord | string
   return body;
 }
 
+type ConsistencyTaskPatch = {
+  status?: string;
+  runs?: Array<Record<string, unknown>>;
+  analysisHistory?: Array<Record<string, unknown>>;
+};
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isConsistencyTaskPatch(value: unknown): value is ConsistencyTaskPatch {
+  if (!isObjectRecord(value)) {
+    return false;
+  }
+  const patch = value as ConsistencyTaskPatch;
+  return (
+    (patch.status === undefined || typeof patch.status === "string") &&
+    (patch.runs === undefined || (Array.isArray(patch.runs) && patch.runs.every(isObjectRecord))) &&
+    (patch.analysisHistory === undefined ||
+      (Array.isArray(patch.analysisHistory) && patch.analysisHistory.every(isObjectRecord)))
+  );
+}
+
+function readConsistencyTaskPatch(req: Request): ConsistencyTaskPatch | string {
+  const { id } = req.params as { id?: unknown };
+  if (typeof id !== "string" || id.trim().length === 0) {
+    return "Invalid path parameter: id is required";
+  }
+  const body = req.body as unknown;
+  if (!isConsistencyTaskPatch(body)) {
+    return "Invalid request body: consistency task patch is required";
+  }
+  return body;
+}
+
+function mergeConsistencyTaskPatch(
+  existing: ConsistencyTaskRecord,
+  patch: ConsistencyTaskPatch,
+): ConsistencyTaskRecord {
+  const merged: ConsistencyTaskRecord = { ...existing };
+  if (patch.status !== undefined) {
+    merged.status = patch.status;
+  }
+
+  if (patch.runs !== undefined) {
+    const runs = Array.isArray(existing.runs) ? [...existing.runs] : [];
+    const runIndexes = new Map<number, number>();
+    runs.forEach((run, index) => {
+      if (isObjectRecord(run) && Number.isSafeInteger(run.taskId)) {
+        runIndexes.set(Number(run.taskId), index);
+      }
+    });
+    for (const run of patch.runs) {
+      if (!Number.isSafeInteger(run.taskId)) {
+        continue;
+      }
+      const index = runIndexes.get(Number(run.taskId));
+      if (index === undefined) {
+        runIndexes.set(Number(run.taskId), runs.length);
+        runs.push(run);
+      } else {
+        runs[index] = run;
+      }
+    }
+    merged.runs = runs;
+  }
+
+  if (patch.analysisHistory !== undefined) {
+    const history = Array.isArray(existing.analysisHistory) ? [...existing.analysisHistory] : [];
+    const historyKeys = new Set(
+      history
+        .filter(isObjectRecord)
+        .map((item) => `${String(item.round)}:${String(item.capturedAt)}`),
+    );
+    for (const item of patch.analysisHistory) {
+      const key = `${String(item.round)}:${String(item.capturedAt)}`;
+      if (!historyKeys.has(key)) {
+        historyKeys.add(key);
+        history.push(item);
+      }
+    }
+    merged.analysisHistory = history;
+  }
+
+  return merged;
+}
+
 function readRuleViolationStatsQuery(req: Request): RuleViolationStatsQuery | string {
   const testCaseIdText = readOptionalQueryString(req.query.testCaseId);
   const testCaseId = testCaseIdText === undefined ? undefined : Number(testCaseIdText);
@@ -1103,6 +1190,30 @@ export function createUpsertConsistencyTaskHandler(store: ConsistencyTaskStore) 
   };
 }
 
+export function createPatchConsistencyTaskHandler(store: ConsistencyTaskStore) {
+  return async (req: Request, res: Response) => {
+    const patch = readConsistencyTaskPatch(req);
+    if (typeof patch === "string") {
+      res.status(400).json({ success: false, message: patch });
+      return;
+    }
+
+    const { id } = req.params as { id: string };
+    try {
+      const existing = (await store.list()).find((item) => item.id === id);
+      if (!existing) {
+        res.status(404).json({ success: false, message: "Consistency task not found" });
+        return;
+      }
+      const item = await store.upsert(mergeConsistencyTaskPatch(existing, patch));
+      res.json({ success: true, item });
+    } catch (error) {
+      console.error(`consistency_task_record_patch_failed error=${formatError(error)}`);
+      res.status(500).json({ success: false, message: "Consistency task table is unavailable" });
+    }
+  };
+}
+
 export function createDeleteConsistencyTaskHandler(
   store: ConsistencyTaskStore,
   options: { remoteTaskRegistry?: Pick<RemoteTaskRegistry, "delete" | "get"> } = {},
@@ -1254,6 +1365,7 @@ export function createApp(
   );
   app.put(API_PATHS.consistencyTasks, createReplaceConsistencyTasksHandler(consistencyTaskStore));
   app.put(API_PATHS.consistencyTask, createUpsertConsistencyTaskHandler(consistencyTaskStore));
+  app.post(API_PATHS.consistencyTask, createPatchConsistencyTaskHandler(consistencyTaskStore));
   app.delete(
     API_PATHS.consistencyTask,
     createDeleteConsistencyTaskHandler(consistencyTaskStore, { remoteTaskRegistry: registry }),
