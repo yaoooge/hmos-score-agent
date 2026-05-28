@@ -58,11 +58,6 @@
             @selection-change="onGapSelectionChange"
           >
             <el-table-column type="selection" width="48" />
-            <el-table-column prop="taskId" label="taskId" width="100" />
-            <el-table-column prop="caseName" label="名称" min-width="220" />
-            <el-table-column prop="manualRating" label="人工" width="90" />
-            <el-table-column prop="autoRating" label="自动" width="90" />
-            <el-table-column prop="autoScore" label="自动分" width="90" />
             <el-table-column label="分析状态" width="110">
               <template #default="{ row }">
                 <el-tag
@@ -74,6 +69,11 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column prop="taskId" label="taskId" width="100" />
+            <el-table-column prop="caseName" label="名称" min-width="220" />
+            <el-table-column prop="manualRating" label="人工" width="90" />
+            <el-table-column prop="autoRating" label="自动" width="90" />
+            <el-table-column prop="autoScore" label="自动分" width="90" />
             <el-table-column prop="primaryConclusion" label="结论" min-width="200" />
             <el-table-column prop="reasonSummary" label="摘要" min-width="260" />
           </el-table>
@@ -86,102 +86,6 @@
               layout="total, sizes, prev, pager, next"
               background
             />
-          </div>
-        </div>
-      </el-tab-pane>
-      <el-tab-pane label="负向结果分析" name="negative">
-        <div class="page-stack" v-loading="negativeLoading">
-          <div class="negative-overview">
-            <div class="negative-task-selector">
-              <div class="section-title">任务列表</div>
-              <div class="negative-task-card-grid">
-                <MetricCard
-                  label="失败任务"
-                  :value="negative?.summary.failedTaskCount ?? 0"
-                  clickable
-                  :active="selectedNegativeTaskList === 'failed'"
-                  @select="selectedNegativeTaskList = 'failed'"
-                />
-                <MetricCard
-                  label="低分任务"
-                  :value="negative?.summary.lowScoreTaskCount ?? 0"
-                  clickable
-                  :active="selectedNegativeTaskList === 'lowScore'"
-                  @select="selectedNegativeTaskList = 'lowScore'"
-                />
-              </div>
-            </div>
-            <div class="negative-summary-panel">
-              <div class="section-title">其他负向指标</div>
-              <div class="negative-summary-list">
-                <div class="negative-summary-item">
-                  <span>硬门槛</span>
-                  <strong>{{ negative?.summary.hardGateTaskCount ?? 0 }}</strong>
-                </div>
-                <div class="negative-summary-item">
-                  <span>高风险</span>
-                  <strong>{{ negative?.summary.highRiskTaskCount ?? 0 }}</strong>
-                </div>
-                <div class="negative-summary-item">
-                  <span>规则违反</span>
-                  <strong>{{ negative?.summary.violatedRuleCount ?? 0 }}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="table-card">
-            <div class="section-title">{{ selectedNegativeTaskListView.title }}</div>
-            <el-table
-              :data="selectedNegativeTaskListView.rows"
-              :empty-text="selectedNegativeTaskListView.emptyText"
-              stripe
-              height="300"
-            >
-              <el-table-column prop="taskId" label="taskId" width="100" />
-              <el-table-column label="名称" min-width="220" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <el-link
-                    type="primary"
-                    :href="buildScoringResultUrl(row.taskId)"
-                    target="_blank"
-                  >
-                    {{ row.name }}
-                  </el-link>
-                </template>
-              </el-table-column>
-              <el-table-column prop="taskType" label="类型" width="140" />
-              <el-table-column prop="status" label="状态" width="120" />
-              <el-table-column
-                v-if="selectedNegativeTaskList === 'lowScore'"
-                prop="score"
-                label="分数"
-                width="90"
-              />
-              <el-table-column
-                v-if="selectedNegativeTaskList === 'failed'"
-                prop="error"
-                label="错误"
-                min-width="260"
-                show-overflow-tooltip
-              />
-            </el-table>
-            <div class="table-pagination">
-              <el-pagination
-                v-model:current-page="negativeTaskPage"
-                v-model:page-size="negativeTaskPageSize"
-                :total="selectedNegativeTaskListView.total"
-                :page-sizes="[10, 20, 50, 100]"
-                layout="total, sizes, prev, pager, next"
-                background
-              />
-            </div>
-          </div>
-          <div class="table-card">
-            <el-table :data="negative?.topRuleViolations ?? []" stripe>
-              <el-table-column prop="rule_id" label="规则" width="180" />
-              <el-table-column prop="rule_summary" label="摘要" />
-              <el-table-column prop="violationCount" label="次数" width="100" />
-            </el-table>
           </div>
         </div>
       </el-tab-pane>
@@ -229,6 +133,17 @@
             @selection-change="onRiskSelectionChange"
           >
             <el-table-column type="selection" width="48" />
+            <el-table-column label="分析状态" width="110">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="manualAnalysisStatusTagType(row.manualAnalysisStatus)"
+                  effect="plain"
+                >
+                  {{ formatManualAnalysisStatus(row.manualAnalysisStatus) }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="taskId" label="taskId" width="100" />
             <el-table-column prop="testCaseId" label="testCaseId" width="120" />
             <el-table-column prop="caseName" label="名称" min-width="220" show-overflow-tooltip />
@@ -252,17 +167,6 @@
                 {{ row.humanReview?.correctedLevel ?? "-" }}
               </template>
             </el-table-column>
-            <el-table-column label="分析状态" width="110">
-              <template #default="{ row }">
-                <el-tag
-                  size="small"
-                  :type="manualAnalysisStatusTagType(row.manualAnalysisStatus)"
-                  effect="plain"
-                >
-                  {{ formatManualAnalysisStatus(row.manualAnalysisStatus) }}
-                </el-tag>
-              </template>
-            </el-table-column>
             <el-table-column label="原因" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">
                 {{ row.humanReview?.reason ?? row.humanReview?.comment ?? "-" }}
@@ -281,13 +185,21 @@
           </div>
         </div>
       </el-tab-pane>
+      <el-tab-pane label="违反规则列表" name="negative">
+        <div class="table-card" v-loading="negativeLoading">
+          <el-table :data="negative?.topRuleViolations ?? []" stripe height="620">
+            <el-table-column prop="rule_id" label="规则" width="220" />
+            <el-table-column prop="rule_summary" label="摘要" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="violationCount" label="次数" width="100" />
+          </el-table>
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import MetricCard from "../components/MetricCard.vue";
 import {
   fetchHumanRatingGaps,
   fetchNegativeResults,
@@ -298,11 +210,6 @@ import {
   type ManualAnalysisStatus,
   type RiskReviewCalibration,
 } from "../api/dashboard";
-import {
-  buildScoringResultUrl,
-  selectNegativeTaskList,
-  type NegativeTaskSelectionKey,
-} from "./resultAnalysisNegativeTaskSelection";
 
 const tab = ref("gap");
 const gapLoading = ref(false);
@@ -321,19 +228,16 @@ const gapTotal = ref(0);
 const riskPage = ref(1);
 const riskPageSize = ref(20);
 const riskTotal = ref(0);
-const selectedNegativeTaskList = ref<NegativeTaskSelectionKey>("failed");
-const negativeTaskPage = ref(1);
-const negativeTaskPageSize = ref(20);
 
 const gapFilters = reactive({
   keyword: "",
   primaryConclusion: "",
-  manualAnalysisStatus: "" as "" | ManualAnalysisStatus,
+  manualAnalysisStatus: "pending" as "" | ManualAnalysisStatus,
 });
 
 const riskFilters = reactive({
   keyword: "",
-  manualAnalysisStatus: "" as "" | ManualAnalysisStatus,
+  manualAnalysisStatus: "pending" as "" | ManualAnalysisStatus,
 });
 const baseGapConclusionOptions = [
   "aligned",
@@ -342,13 +246,6 @@ const baseGapConclusionOptions = [
   "both_need_review",
   "insufficient_evidence",
 ];
-
-const selectedNegativeTaskListView = computed(() =>
-  selectNegativeTaskList(negative.value, selectedNegativeTaskList.value, {
-    page: negativeTaskPage.value,
-    pageSize: negativeTaskPageSize.value,
-  }),
-);
 
 const gapConclusionOptions = computed(() => {
   const conclusions = new Set([
@@ -489,18 +386,6 @@ function reloadRiskReviewsFromFirstPage() {
 
 watch([gapPage, gapPageSize], loadGaps);
 watch([riskPage, riskPageSize], loadRiskReviews);
-watch([selectedNegativeTaskList, negativeTaskPageSize], () => {
-  negativeTaskPage.value = 1;
-});
-watch(
-  () => selectedNegativeTaskListView.value.total,
-  (total) => {
-    const maxPage = Math.max(1, Math.ceil(total / negativeTaskPageSize.value));
-    if (negativeTaskPage.value > maxPage) {
-      negativeTaskPage.value = maxPage;
-    }
-  },
-);
 watch(
   () => [gapFilters.keyword, gapFilters.primaryConclusion, gapFilters.manualAnalysisStatus],
   reloadGapsFromFirstPage,
@@ -531,59 +416,5 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
-}
-
-.negative-overview {
-  display: grid;
-  grid-template-columns: minmax(320px, 1.3fr) minmax(260px, 0.7fr);
-  gap: 12px;
-  align-items: stretch;
-}
-
-.negative-task-selector,
-.negative-summary-panel {
-  padding: 14px;
-  border: 1px solid #e5e9ef;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.negative-task-card-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.negative-summary-list {
-  display: grid;
-  gap: 10px;
-}
-
-.negative-summary-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 42px;
-  padding: 8px 10px;
-  border: 1px solid #edf0f4;
-  border-radius: 6px;
-  background: #f8fafc;
-}
-
-.negative-summary-item span {
-  color: #667085;
-  font-size: 13px;
-}
-
-.negative-summary-item strong {
-  color: #1f2937;
-  font-size: 18px;
-}
-
-@media (max-width: 900px) {
-  .negative-overview,
-  .negative-task-card-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

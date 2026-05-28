@@ -4,14 +4,12 @@ import {
   buildAgentBootstrapPayload,
   buildRubricSnapshot,
   mergeRuleAuditResults,
-  selectAssistedRuleCandidates,
 } from "../src/agent/ruleAssistance.js";
 import type {
   AgentAssistedRuleResult,
   AssistedRuleCandidate,
   ConstraintSummary,
   LoadedRubricSnapshot,
-  RuleAuditResult,
 } from "../src/types.js";
 
 const constraintSummary: ConstraintSummary = {
@@ -64,76 +62,6 @@ function makeFinalAnswer(
   };
 }
 
-test("selectAssistedRuleCandidates keeps deterministic results and extracts should-rule candidates", () => {
-  const ruleAuditResults: RuleAuditResult[] = [
-    {
-      rule_id: "ARKTS-FORBID-001",
-      rule_source: "must_rule",
-      result: "满足",
-      conclusion: "未发现违规证据。",
-    },
-    {
-      rule_id: "ARKTS-SHOULD-001",
-      rule_source: "should_rule",
-      result: "不涉及",
-      conclusion: "当前版本未接入对应判定器。",
-    },
-    {
-      rule_id: "ARKTS-SHOULD-002",
-      rule_source: "should_rule",
-      result: "不满足",
-      conclusion: "检测到规则命中，文件：entry/src/main/ets/pages/Index.ets",
-    },
-  ];
-
-  const result = selectAssistedRuleCandidates(ruleAuditResults, {
-    evidenceByRuleId: {
-      "ARKTS-SHOULD-001": {
-        evidenceFiles: ["entry/src/main/ets/pages/Index.ets"],
-        evidenceSnippets: ["Text(this.message)"],
-      },
-      "ARKTS-SHOULD-002": {
-        evidenceFiles: ["entry/src/main/ets/pages/Index.ets"],
-        evidenceSnippets: ["List()"],
-      },
-    },
-  });
-
-  assert.equal(result.deterministicRuleResults.length, 1);
-  assert.equal(result.assistedRuleCandidates.length, 2);
-  assert.equal(result.assistedRuleCandidates[0]?.rule_id, "ARKTS-SHOULD-001");
-  assert.equal(
-    result.assistedRuleCandidates[0]?.why_uncertain,
-    "当前规则需要 Agent 结合上下文做辅助判定。",
-  );
-});
-
-test("selectAssistedRuleCandidates falls back to shared evidence when rule-level evidence is empty", () => {
-  const ruleAuditResults: RuleAuditResult[] = [
-    {
-      rule_id: "ARKTS-SHOULD-001",
-      rule_source: "should_rule",
-      result: "不涉及",
-      conclusion: "当前版本未接入对应判定器。",
-    },
-  ];
-
-  const result = selectAssistedRuleCandidates(ruleAuditResults, {
-    evidenceByRuleId: {},
-    fallbackEvidence: {
-      evidenceFiles: ["entry/src/main/ets/pages/Index.ets"],
-      evidenceSnippets: ["@Entry\n@Component\nstruct Index {"],
-    },
-  });
-
-  assert.deepEqual(result.assistedRuleCandidates[0]?.evidence_files, [
-    "entry/src/main/ets/pages/Index.ets",
-  ]);
-  assert.deepEqual(result.assistedRuleCandidates[0]?.evidence_snippets, [
-    "@Entry\n@Component\nstruct Index {",
-  ]);
-});
-
 test("mergeRuleAuditResults maps not_applicable assessments to 不涉及", () => {
   const merged = mergeRuleAuditResults({
     deterministicRuleResults: [],
@@ -177,7 +105,8 @@ test("mergeRuleAuditResults treats non-case must rules absent from patch as sati
       {
         rule_id: "ARKTS-MUST-001",
         rule_source: "must_rule",
-        why_uncertain: "类型、枚举、接口和命名空间名称必须唯一，当前版本未接入对应判定器。",
+        why_uncertain:
+          "类型、枚举、接口和命名空间名称必须唯一，当前版本未接入静态判定器，需要 Agent 辅助判定。",
         local_preliminary_signal: "未接入判定器",
         evidence_files: [],
         evidence_snippets: [],

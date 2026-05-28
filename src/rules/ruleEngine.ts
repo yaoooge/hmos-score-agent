@@ -282,7 +282,7 @@ function evaluateRegisteredRule(
     rule_id: rule.rule_id,
     rule_source: rule.rule_source,
     result: "未接入判定器",
-    conclusion: `${rule.summary} 当前版本未接入对应判定器。`,
+    conclusion: `${rule.summary} 当前版本未接入静态判定器，需要 Agent 辅助判定。`,
     matchedFiles: [],
   };
 }

@@ -2392,7 +2392,7 @@ test("runScoreWorkflow emits Chinese descriptive text in result.json and report.
   assert.match(resultJson.overall_conclusion.summary, /触发|未触发|评分/);
   assert.equal(
     resultJson.rule_audit_results.some((item: { conclusion: string }) =>
-      /当前版本未接入对应判定器。|未发现该规则的命中证据。|检测到规则命中，文件：/.test(
+      /当前版本未接入静态判定器，需要 Agent 辅助判定。|未发现该规则的命中证据。|检测到规则命中，文件：/.test(
         item.conclusion,
       ),
     ),

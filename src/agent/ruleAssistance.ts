@@ -12,20 +12,6 @@ import type {
 } from "../types.js";
 import type { LoadedRubric } from "../scoring/rubricLoader.js";
 
-type SelectAssistedRuleCandidatesInput = {
-  evidenceByRuleId?: Record<
-    string,
-    {
-      evidenceFiles: string[];
-      evidenceSnippets: string[];
-    }
-  >;
-  fallbackEvidence?: {
-    evidenceFiles: string[];
-    evidenceSnippets: string[];
-  };
-};
-
 type BuildAgentPromptPayloadInput = {
   caseInput: {
     caseId: string;
@@ -109,50 +95,6 @@ function normalizeAssistedRuleCandidatePaths(
           ),
         }
       : undefined,
-  };
-}
-
-// selectAssistedRuleCandidates 根据当前快速版策略，优先把 should_rule 交给 Agent 辅助判定。
-export function selectAssistedRuleCandidates(
-  ruleAuditResults: RuleAuditResult[],
-  input: SelectAssistedRuleCandidatesInput = {},
-): {
-  deterministicRuleResults: RuleAuditResult[];
-  assistedRuleCandidates: AssistedRuleCandidate[];
-} {
-  const deterministicRuleResults: RuleAuditResult[] = [];
-  const assistedRuleCandidates: AssistedRuleCandidate[] = [];
-
-  for (const rule of ruleAuditResults) {
-    if (rule.rule_source !== "should_rule") {
-      deterministicRuleResults.push(rule);
-      continue;
-    }
-
-    const evidence = input.evidenceByRuleId?.[rule.rule_id];
-    const fallbackEvidence = input.fallbackEvidence;
-    assistedRuleCandidates.push({
-      rule_id: rule.rule_id,
-      rule_source: rule.rule_source,
-      why_uncertain: "当前规则需要 Agent 结合上下文做辅助判定。",
-      local_preliminary_signal:
-        rule.result === "不满足"
-          ? "possible_violation"
-          : rule.result === "满足"
-            ? "possible_pass"
-            : "unknown",
-      evidence_files: evidence?.evidenceFiles?.length
-        ? evidence.evidenceFiles
-        : (fallbackEvidence?.evidenceFiles ?? []),
-      evidence_snippets: evidence?.evidenceSnippets?.length
-        ? evidence.evidenceSnippets
-        : (fallbackEvidence?.evidenceSnippets ?? []),
-    });
-  }
-
-  return {
-    deterministicRuleResults,
-    assistedRuleCandidates,
   };
 }
 

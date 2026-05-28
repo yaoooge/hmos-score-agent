@@ -331,5 +331,9 @@ export function runArkuiExtraRule(rule: RegisteredRule, evidence: CollectedEvide
     return runMultiBindSheetRule(rule, evidence);
   }
 
-  return baseResult(rule, "未接入判定器", `${rule.summary} 当前版本未接入对应判定器。`);
+  return baseResult(
+    rule,
+    "未接入判定器",
+    `${rule.summary} 当前版本未接入静态判定器，需要 Agent 辅助判定。`,
+  );
 }

@@ -68,7 +68,6 @@
             <el-table-column prop="ruleId" label="规则" min-width="260" show-overflow-tooltip />
             <el-table-column prop="ruleSummary" label="摘要" min-width="260" show-overflow-tooltip />
             <el-table-column prop="sourceRuleSet" label="来源" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="violationCount" label="次数" width="90" />
             <el-table-column prop="affectedTaskCount" label="影响用例" width="100" />
             <el-table-column label="最近命中" min-width="170">
               <template #default="{ row }">

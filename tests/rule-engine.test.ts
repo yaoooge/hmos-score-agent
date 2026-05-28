@@ -1780,7 +1780,8 @@ test("runRuleEngine keeps unsupported rules without direct evidence as 未接入
   assert.equal(
     result.staticRuleAuditResults.some(
       (item) =>
-        item.rule_id === "ARKTS-MUST-001" && item.conclusion.includes("当前版本未接入对应判定器。"),
+        item.rule_id === "ARKTS-MUST-001" &&
+        item.conclusion.includes("当前版本未接入静态判定器，需要 Agent 辅助判定。"),
     ),
     true,
   );
@@ -1808,6 +1809,17 @@ test("runRuleEngine keeps unsupported no-evidence rules in agent candidates", as
   assert.ok(
     result.assistedRuleCandidates.find((item) => item.rule_id === "ARKTS-MUST-001")
       ?.decision_criteria,
+  );
+  const unsupportedRuleCandidate = result.assistedRuleCandidates.find(
+    (item) => item.rule_id === "ARKTS-MUST-001",
+  );
+  assert.match(
+    unsupportedRuleCandidate?.why_uncertain ?? "",
+    /未接入静态判定器，需要 Agent 辅助判定/,
+  );
+  assert.doesNotMatch(
+    unsupportedRuleCandidate?.why_uncertain ?? "",
+    /当前版本未接入对应判定器/,
   );
   const unsupportedCandidates = result.assistedRuleCandidates.filter((item) => !item.is_case_rule);
   assert.equal(unsupportedCandidates.length > 1, true);
