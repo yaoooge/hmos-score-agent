@@ -36,7 +36,7 @@ function toPosixPath(value: string): string {
 }
 
 function stripAnsi(value: string): string {
-  return value.replace(/\u001b\[[0-9;]*m/g, "");
+  return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
 }
 
 function excerptOutput(value: string, maxBytes: number): string | undefined {

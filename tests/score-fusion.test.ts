@@ -331,7 +331,7 @@ test("fuseRubricScoreWithRules creates hard gate review item for triggered G1", 
   });
 });
 
-test("fuseRubricScoreWithRules exposes v2 pre-cap score, structured gates, and rule-only risk references", async () => {
+test("fuseRubricScoreWithRules exposes v2 pre-cap score, structured gates, and rule risks with evidence", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
   const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
@@ -408,7 +408,7 @@ test("fuseRubricScoreWithRules exposes v2 pre-cap score, structured gates, and r
     | undefined;
   assert.ok(ruleRisk);
   assert.equal("description" in ruleRisk, false);
-  assert.equal("evidence" in ruleRisk, false);
+  assert.equal(ruleRisk.evidence, "规则结论只应保存在 rule_audit_results。");
   assert.equal(ruleRisk.score_effect?.level_weights, undefined);
 
   const impactedRule = result.scoreFusionDetails

@@ -946,6 +946,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
         risk_code: `RULE_VIOLATION:${rule.rule_id}`,
         risk_category: level as "low" | "medium" | "high",
         source_rule_id: rule.rule_id,
+        evidence: rule.conclusion,
         score_effect: buildRiskScoreEffect({
           scoringInput: input,
           rule,

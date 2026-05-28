@@ -621,16 +621,14 @@
               ]
             },
             "then": {
+              "required": [
+                "evidence"
+              ],
               "not": {
                 "anyOf": [
                   {
                     "required": [
                       "description"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "evidence"
                     ]
                   }
                 ]

@@ -288,9 +288,8 @@ test("serve manager start waits for an in-flight restart instead of racing it", 
   let spawnCount = 0;
   let watchdogCallback: (() => Promise<void>) | undefined;
   let releaseRestartStop: (() => void) | undefined;
-  let restartStopStarted!: Promise<void>;
   let markRestartStopStarted!: () => void;
-  restartStopStarted = new Promise<void>((resolve) => {
+  const restartStopStarted = new Promise<void>((resolve) => {
     markRestartStopStarted = resolve;
   });
   let shouldBlockRestartStop = false;

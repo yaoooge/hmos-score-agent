@@ -180,13 +180,14 @@ test("validateReportResult accepts normalized risk identity fields", () => {
       risk_code: "REQUIREMENT_NOT_IMPLEMENTED",
       risk_category: "high",
       source_rule_id: "ARKTS-MUST-001",
+      evidence: "触发 ARKTS-MUST-001。",
     },
   ];
 
   assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
 });
 
-test("validateReportResult accepts v2 hard gates and rule risk references without duplicated conclusion text", () => {
+test("validateReportResult accepts v2 hard gates and rule risks with evidence", () => {
   const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
   const valid = makeValidResultJson();
   valid.overall_conclusion = {
@@ -218,6 +219,7 @@ test("validateReportResult accepts v2 hard gates and rule risk references withou
       risk_code: "RULE_VIOLATION:ARKTS-MUST-001",
       risk_category: "medium",
       source_rule_id: "ARKTS-MUST-001",
+      evidence: "完整规则结论只保存在这里。",
       score_effect: {
         type: "risk_level_rule_impact",
         rule_id: "ARKTS-MUST-001",
@@ -267,6 +269,32 @@ test("validateReportResult accepts v2 hard gates and rule risk references withou
   ];
 
   assert.doesNotThrow(() => validateReportResult(valid, schemaPath));
+});
+
+test("validateReportResult rejects rule violation risks without evidence", () => {
+  const schemaPath = path.resolve(process.cwd(), "references/scoring/report_result_schema.json");
+  const valid = makeValidResultJson();
+  valid.risks = [
+    {
+      id: 1,
+      level: "medium",
+      title: "规则违规：ARKTS-MUST-001",
+      risk_code: "RULE_VIOLATION:ARKTS-MUST-001",
+      risk_category: "medium",
+      source_rule_id: "ARKTS-MUST-001",
+      score_effect: {
+        type: "risk_level_rule_impact",
+        rule_id: "ARKTS-MUST-001",
+        original_level: "medium",
+        hard_gate_ids: [],
+        hard_gate_active_levels: [],
+        gate_caps: {},
+        impacts: [],
+      },
+    },
+  ];
+
+  assert.throws(() => validateReportResult(valid, schemaPath), /Schema validation failed/);
 });
 
 test("validateReportResult rejects removed v2 duplicate fields", () => {

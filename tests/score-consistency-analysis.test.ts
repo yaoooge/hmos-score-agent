@@ -694,7 +694,7 @@ test("createStoredZip writes a zip archive containing provided files", () => {
   assert.equal(signature, 0x04034b50);
   assert.match(text, /overview\.json/);
   assert.match(text, /rounds\/round-001\/run-01\.json/);
-  assert.match(text, /PK\u0005\u0006/);
+  assert.equal(text.includes("PK\u0005\u0006"), true);
 });
 
 test("createStoredZip writes large result files without exceeding the call stack", () => {
@@ -708,7 +708,7 @@ test("createStoredZip writes large result files without exceeding the call stack
 
   assert.match(text, /rounds\/round-001\/run-01\.json/);
   assert.match(text, /overall_conclusion/);
-  assert.match(text, /PK\u0005\u0006/);
+  assert.equal(text.includes("PK\u0005\u0006"), true);
 });
 
 test("buildConsistencyHistoryChartRows derives percent values for charting", () => {

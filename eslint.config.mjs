@@ -7,7 +7,11 @@ export default tseslint.config(
     ignores: [
       "dist/**",
       "node_modules/**",
+      ".local-analysis/**",
       ".local-cases/**",
+      ".opencode/**",
+      ".superpowers/**",
+      ".swift-cache/**",
       ".worktrees/**",
       "init-input/**",
       "docs/**",
