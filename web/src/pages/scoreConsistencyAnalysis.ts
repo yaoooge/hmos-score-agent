@@ -579,7 +579,8 @@ export function removeConsistencyAnalysisHistoryRound(
   round: number,
 ): ConsistencyTaskSnapshot {
   const history = task.analysisHistory ?? [];
-  if (!history.some((item) => item.round === round)) {
+  const removedHistory = history.find((item) => item.round === round);
+  if (!removedHistory) {
     return cloneConsistencyTaskSnapshot(task);
   }
 
@@ -594,6 +595,18 @@ export function removeConsistencyAnalysisHistoryRound(
     return {
       ...cloneConsistencyTaskSnapshot(task),
       analysisHistory: [],
+    };
+  }
+
+  if (runSetKey(removedHistory.runs) === runSetKey(task.runs)) {
+    const rollbackRuns = latestHistory.runs.map(cloneRunSummary);
+    return {
+      ...cloneConsistencyTaskSnapshot(task),
+      runs: rollbackRuns,
+      analysis: analyzeConsistency(rollbackRuns),
+      ruleReport: buildRuleReport(rollbackRuns),
+      riskReport: buildRiskReport(rollbackRuns),
+      analysisHistory: remainingHistory,
     };
   }
 

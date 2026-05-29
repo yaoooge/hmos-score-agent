@@ -493,7 +493,7 @@ test("selectConsistencyTaskRoundSnapshot returns a historical round view", () =>
   assert.deepEqual(selected.runs.map((run) => run.taskId), [130600101, 130600102]);
 });
 
-test("removeConsistencyAnalysisHistoryRound removes the latest history round without changing current data", () => {
+test("removeConsistencyAnalysisHistoryRound removes the latest current round and rolls back current data", () => {
   const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
   const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
   const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
@@ -520,8 +520,8 @@ test("removeConsistencyAnalysisHistoryRound removes the latest history round wit
 
   assert.equal(removed.analysisHistory?.length, 1);
   assert.equal(removed.analysisHistory?.[0]?.round, 1);
-  assert.equal(removed.analysis?.averageScore, 72);
-  assert.deepEqual(removed.runs.map((run) => run.totalScore), [70, 74]);
+  assert.equal(removed.analysis?.averageScore, 84);
+  assert.deepEqual(removed.runs.map((run) => run.totalScore), [82, 86]);
 });
 
 test("collectExclusiveRoundTaskIds skips ids still referenced by current data or other rounds", () => {
