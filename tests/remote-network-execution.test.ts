@@ -1174,6 +1174,90 @@ test("consistency task patch handler merges changed runs and appended history", 
   assert.equal((stored.analysisHistory as unknown[]).length, 2);
 });
 
+test("consistency task patch handler replaces current runs for reruns", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  await store.upsert({
+    id: "C-015",
+    sequence: 15,
+    serviceBaseUrl: "http://score.example.com",
+    status: "completed",
+    runs: [
+      { runIndex: 0, taskId: 1501, status: "completed", totalScore: 90 },
+      { runIndex: 1, taskId: 1502, status: "completed", totalScore: 91 },
+    ],
+    analysisHistory: [
+      {
+        round: 1,
+        capturedAt: "2026-05-13T08:00:00.000Z",
+        summary: { completedRuns: 2 },
+        ruleReport: [],
+        riskReport: [],
+        runs: [
+          { runIndex: 0, taskId: 1501, status: "completed", totalScore: 90 },
+          { runIndex: 1, taskId: 1502, status: "completed", totalScore: 91 },
+        ],
+      },
+    ],
+  });
+  const handler = createPatchConsistencyTaskHandler(store);
+  const { response, responseState } = createResponse();
+
+  await handler(
+    createConsistencyTaskPatchRequest("C-015", {
+      status: "running",
+      replaceRuns: true,
+      runs: [
+        { runIndex: 0, taskId: 1503, status: "pending_submit", unsatisfiedRules: [], risks: [] },
+        { runIndex: 1, taskId: 1504, status: "pending_submit", unsatisfiedRules: [], risks: [] },
+      ],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(responseState.statusCode, 200);
+  const stored = (await store.list())[0] as Record<string, unknown>;
+  assert.equal(stored.status, "running");
+  assert.deepEqual(
+    (stored.runs as Array<{ taskId: number }>).map((run) => run.taskId),
+    [1503, 1504],
+  );
+  assert.equal((stored.analysisHistory as unknown[]).length, 1);
+});
+
+test("consistency task patch handler compacts duplicated current runs from old rerun patches", async (t) => {
+  const localCaseRoot = await makeTempDir(t);
+  const store = createConsistencyTaskStore(localCaseRoot);
+  await store.upsert({
+    id: "C-016",
+    sequence: 16,
+    serviceBaseUrl: "http://score.example.com",
+    status: "running",
+    runs: [
+      { runIndex: 0, taskId: 1601, status: "completed", totalScore: 90 },
+      { runIndex: 1, taskId: 1602, status: "completed", totalScore: 91 },
+      { runIndex: 0, taskId: 1603, status: "running" },
+      { runIndex: 1, taskId: 1604, status: "running" },
+    ],
+  });
+  const handler = createPatchConsistencyTaskHandler(store);
+  const { response, responseState } = createResponse();
+
+  await handler(
+    createConsistencyTaskPatchRequest("C-016", {
+      runs: [{ runIndex: 0, taskId: 1603, status: "completed", totalScore: 95 }],
+    }) as never,
+    response as never,
+  );
+
+  assert.equal(responseState.statusCode, 200);
+  const stored = (await store.list())[0] as Record<string, unknown>;
+  assert.deepEqual(
+    (stored.runs as Array<{ taskId: number }>).map((run) => run.taskId),
+    [1603, 1604],
+  );
+});
+
 test("consistency task delete handler removes a single persisted record", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const store = createConsistencyTaskStore(localCaseRoot);

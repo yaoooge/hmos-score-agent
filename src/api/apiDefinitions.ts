@@ -206,6 +206,11 @@ const consistencyTaskPatchField = {
       required: false,
       description: "Updated consistency task status.",
     },
+    replaceRuns: {
+      type: "boolean",
+      required: false,
+      description: "When true, replace the current run list instead of merging by taskId.",
+    },
     runs: {
       type: "array",
       required: false,

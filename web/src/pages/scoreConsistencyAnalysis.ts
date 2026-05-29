@@ -260,6 +260,7 @@ export type ConsistencyTaskSnapshot = ConsistencyTaskCollectionRecord & {
 
 export type ConsistencyTaskPersistDelta = {
   status?: string;
+  replaceRuns?: boolean;
   runs?: ConsistencyRunSummary[];
   analysisHistory?: ConsistencyAnalysisHistoryItem[];
 };
@@ -403,6 +404,22 @@ function normalizeRunSnapshot(run: ConsistencyRunSummary): ConsistencyRunSummary
     ...run,
     status: normalizeConsistencyRunStatus(run.status),
   };
+}
+
+function compactRunsByRunIndex(runs: ConsistencyRunSummary[]): ConsistencyRunSummary[] {
+  const indexedRuns = new Map<number, ConsistencyRunSummary>();
+  const unindexedRuns: ConsistencyRunSummary[] = [];
+  for (const run of runs) {
+    if (Number.isSafeInteger(run.runIndex)) {
+      indexedRuns.set(run.runIndex, run);
+    } else {
+      unindexedRuns.push(run);
+    }
+  }
+  return [
+    ...[...indexedRuns.values()].sort((left, right) => left.runIndex - right.runIndex),
+    ...unindexedRuns,
+  ];
 }
 
 function isTerminalRunStatus(status: ConsistencyRunStatus): boolean {
@@ -656,13 +673,21 @@ export function buildConsistencyTaskPersistDelta(
     delta.status = next.status;
   }
 
-  const previousRuns = new Map(previous.runs.map((run) => [run.taskId, run]));
-  const changedRuns = next.runs.filter((run) => {
-    const previousRun = previousRuns.get(run.taskId);
-    return JSON.stringify(previousRun) !== JSON.stringify(run);
-  });
+  const previousRunsByIndex = new Map(previous.runs.map((run) => [run.runIndex, run]));
+  const runIdentityChanged =
+    previous.runs.length !== next.runs.length ||
+    next.runs.some((run) => previousRunsByIndex.get(run.runIndex)?.taskId !== run.taskId);
+  const changedRuns = runIdentityChanged
+    ? next.runs
+    : next.runs.filter((run) => {
+        const previousRun = previousRunsByIndex.get(run.runIndex);
+        return JSON.stringify(previousRun) !== JSON.stringify(run);
+      });
   if (changedRuns.length > 0) {
     delta.runs = changedRuns.map(cloneRunSummary);
+    if (runIdentityChanged) {
+      delta.replaceRuns = true;
+    }
   }
 
   const previousHistoryKeys = new Set(
@@ -681,7 +706,7 @@ export function buildConsistencyTaskPersistDelta(
 export function hydrateConsistencyTaskSnapshot(
   record: ConsistencyTaskCollectionRecord,
 ): ConsistencyTaskSnapshot {
-  const runs = record.runs.map(normalizeRunSnapshot);
+  const runs = compactRunsByRunIndex(record.runs.map(normalizeRunSnapshot));
   return {
     ...record,
     runs,

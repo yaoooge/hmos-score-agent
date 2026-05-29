@@ -743,6 +743,7 @@ function readConsistencyTaskRecord(req: Request): ConsistencyTaskRecord | string
 
 type ConsistencyTaskPatch = {
   status?: string;
+  replaceRuns?: boolean;
   runs?: Array<Record<string, unknown>>;
   analysisHistory?: Array<Record<string, unknown>>;
 };
@@ -758,6 +759,7 @@ function isConsistencyTaskPatch(value: unknown): value is ConsistencyTaskPatch {
   const patch = value as ConsistencyTaskPatch;
   return (
     (patch.status === undefined || typeof patch.status === "string") &&
+    (patch.replaceRuns === undefined || typeof patch.replaceRuns === "boolean") &&
     (patch.runs === undefined || (Array.isArray(patch.runs) && patch.runs.every(isObjectRecord))) &&
     (patch.analysisHistory === undefined ||
       (Array.isArray(patch.analysisHistory) && patch.analysisHistory.every(isObjectRecord)))
@@ -786,7 +788,7 @@ function mergeConsistencyTaskPatch(
   }
 
   if (patch.runs !== undefined) {
-    const runs = Array.isArray(existing.runs) ? [...existing.runs] : [];
+    const runs = patch.replaceRuns ? [] : Array.isArray(existing.runs) ? [...existing.runs] : [];
     const runIndexes = new Map<number, number>();
     runs.forEach((run, index) => {
       if (isObjectRecord(run) && Number.isSafeInteger(run.taskId)) {
@@ -805,7 +807,7 @@ function mergeConsistencyTaskPatch(
         runs[index] = run;
       }
     }
-    merged.runs = runs;
+    merged.runs = compactRunRecordsByRunIndex(runs);
   }
 
   if (patch.analysisHistory !== undefined) {
@@ -826,6 +828,24 @@ function mergeConsistencyTaskPatch(
   }
 
   return merged;
+}
+
+function compactRunRecordsByRunIndex(runs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const indexedRuns = new Map<number, Record<string, unknown>>();
+  const unindexedRuns: Array<Record<string, unknown>> = [];
+  for (const run of runs) {
+    if (Number.isSafeInteger(run.runIndex)) {
+      indexedRuns.set(Number(run.runIndex), run);
+    } else {
+      unindexedRuns.push(run);
+    }
+  }
+  return [
+    ...[...indexedRuns.values()].sort(
+      (left, right) => Number(left.runIndex) - Number(right.runIndex),
+    ),
+    ...unindexedRuns,
+  ];
 }
 
 function readRuleViolationStatsQuery(req: Request): RuleViolationStatsQuery | string {

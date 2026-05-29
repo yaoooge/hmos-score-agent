@@ -880,6 +880,86 @@ test("buildConsistencyTaskPersistDelta includes only changed runs and appended h
   assert.equal("sourceTask" in delta, false);
 });
 
+test("buildConsistencyTaskPersistDelta replaces current runs when rerun changes task ids", () => {
+  const previousRuns = [
+    completedRun(0, { taskId: 126300101 }),
+    completedRun(1, { taskId: 126300102, totalScore: 84 }),
+  ];
+  const previous = {
+    id: "C-001",
+    sequence: 1,
+    serviceBaseUrl: "http://localhost:3000",
+    originalTaskId: 1263,
+    caseId: 229,
+    caseName: "电视台元服务完成一多适配",
+    createdAt: "2026-05-19T11:30:45.183Z",
+    status: "completed",
+    sourceTask: JSON.parse(remoteTaskJson),
+    runs: previousRuns,
+    analysisHistory: appendAnalysisHistorySnapshot(
+      [],
+      previousRuns,
+      "2026-05-19T11:30:45.183Z",
+    ),
+  };
+  const next = {
+    ...previous,
+    status: "running",
+    runs: [
+      { runIndex: 0, taskId: 126300103, status: "pending_submit", unsatisfiedRules: [], risks: [] },
+      { runIndex: 1, taskId: 126300104, status: "pending_submit", unsatisfiedRules: [], risks: [] },
+    ],
+  };
+
+  const delta = buildConsistencyTaskPersistDelta(previous, next);
+
+  assert.equal(delta.replaceRuns, true);
+  assert.deepEqual(
+    delta.runs?.map((run) => run.taskId),
+    [126300103, 126300104],
+  );
+});
+
+test("hydrateConsistencyTaskSnapshot compacts duplicated current runs from old rerun patches", () => {
+  const firstRoundRuns = [
+    completedRun(0, { taskId: 126300101, totalScore: 80 }),
+    completedRun(1, { taskId: 126300102, totalScore: 82 }),
+  ];
+  const secondRoundRuns = [
+    completedRun(0, { taskId: 126300103, totalScore: 90 }),
+    completedRun(1, { taskId: 126300104, totalScore: 92 }),
+  ];
+  const hydrated = hydrateConsistencyTaskSnapshot({
+    id: "C-001",
+    sequence: 1,
+    serviceBaseUrl: "http://localhost:3000",
+    originalTaskId: 1263,
+    caseId: 229,
+    caseName: "电视台元服务完成一多适配",
+    createdAt: "2026-05-19T11:30:45.183Z",
+    status: "completed",
+    sourceTask: JSON.parse(remoteTaskJson),
+    runs: [...firstRoundRuns, ...secondRoundRuns],
+    analysisHistory: [
+      {
+        round: 1,
+        capturedAt: "2026-05-19T11:30:45.183Z",
+        summary: analyzeConsistency(firstRoundRuns),
+        ruleReport: buildRuleReport(firstRoundRuns),
+        riskReport: buildRiskReport(firstRoundRuns),
+        runs: firstRoundRuns,
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    hydrated.runs.map((run) => run.taskId),
+    [126300103, 126300104],
+  );
+  assert.equal(hydrated.analysis?.completedRuns, 2);
+  assert.equal(hydrated.analysis?.averageScore, 91);
+});
+
 test("validateRemoteEvaluationTaskInput rejects fallback sourceTask without original payload", () => {
   const hydrated = hydrateConsistencyTaskSnapshot({
     id: "C-001",
