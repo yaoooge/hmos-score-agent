@@ -242,6 +242,143 @@ test("runRuleEngine flags routerMap pages missing NavDestination", async (t) => 
   assert.match(routeRule.conclusion, /NavDestination/);
 });
 
+test("runRuleEngine resolves .ets routerMap page paths relative to the module root", async (t) => {
+  const moduleJsonPath = "features/order/src/main/module.json5";
+  const routeMapPath = "features/order/src/main/resources/base/profile/router_map.json";
+  const pagePath = "features/order/src/main/ets/pages/ExplainPage.ets";
+  const caseDir = await createRuleFixture(t, {
+    [moduleJsonPath]: "{ module: { name: 'order', routerMap: '$profile:router_map' } }\n",
+    [routeMapPath]: JSON.stringify({
+      routerMap: [{ name: "ExplainPage", pageSourceFile: "src/main/ets/pages/ExplainPage.ets" }],
+    }),
+    [pagePath]: [
+      "@Builder",
+      "export function ExplainPageBuilder() { ExplainPage(); }",
+      "@ComponentV2",
+      "struct ExplainPage {",
+      "  build() {",
+      "    NavDestination() { Text('explain') }",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${routeMapPath} b/${routeMapPath}`,
+      `--- a/${routeMapPath}`,
+      `+++ b/${routeMapPath}`,
+      "@@ -1,1 +1,1 @@",
+      `-{"routerMap":[]}`,
+      `+{"routerMap":[{"name":"ExplainPage","pageSourceFile":"src/main/ets/pages/ExplainPage.ets"}]}`,
+      `diff --git a/${pagePath} b/${pagePath}`,
+      "--- /dev/null",
+      `+++ b/${pagePath}`,
+      "@@ -0,0 +1,8 @@",
+      "+@Builder",
+      "+export function ExplainPageBuilder() { ExplainPage(); }",
+      "+@ComponentV2",
+      "+struct ExplainPage {",
+      "+  build() {",
+      "+    NavDestination() { Text('explain') }",
+      "+  }",
+      "+}",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const routeRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKUI-MUST-001",
+  );
+
+  assert.ok(routeRule);
+  assert.equal(routeRule.result, "满足");
+  assert.deepEqual(result.ruleEvidenceIndex["ARKUI-MUST-001"]?.evidenceFiles, [pagePath]);
+});
+
+test("runRuleEngine only reports patch-scoped routerMap targets as NavDestination evidence", async (t) => {
+  const moduleJsonPath = "features/order/src/main/module.json5";
+  const routeMapPath = "features/order/src/main/resources/base/profile/router_map.json";
+  const legacyPagePath = "features/order/src/main/ets/pages/LegacyPage.ets";
+  const addedPagePath = "features/order/src/main/ets/pages/AddedPage.ets";
+  const caseDir = await createRuleFixture(t, {
+    [moduleJsonPath]: "{ module: { name: 'order', routerMap: '$profile:router_map' } }\n",
+    [routeMapPath]: JSON.stringify({
+      routerMap: [
+        { name: "LegacyPage", pageSourceFile: "src/main/ets/pages/LegacyPage.ets" },
+        { name: "AddedPage", pageSourceFile: "src/main/ets/pages/AddedPage.ets" },
+      ],
+    }),
+    [legacyPagePath]: [
+      "@Component",
+      "struct LegacyPage {",
+      "  build() {",
+      "    Column() { Text('legacy') }",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+    [addedPagePath]: [
+      "@Component",
+      "struct AddedPage {",
+      "  build() {",
+      "    Column() { Text('added') }",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${routeMapPath} b/${routeMapPath}`,
+      `--- a/${routeMapPath}`,
+      `+++ b/${routeMapPath}`,
+      "@@ -1,1 +1,1 @@",
+      `-{"routerMap":[{"name":"LegacyPage","pageSourceFile":"src/main/ets/pages/LegacyPage.ets"}]}`,
+      `+{"routerMap":[{"name":"LegacyPage","pageSourceFile":"src/main/ets/pages/LegacyPage.ets"},{"name":"AddedPage","pageSourceFile":"src/main/ets/pages/AddedPage.ets"}]}`,
+      `diff --git a/${addedPagePath} b/${addedPagePath}`,
+      "--- /dev/null",
+      `+++ b/${addedPagePath}`,
+      "@@ -0,0 +1,6 @@",
+      "+@Component",
+      "+struct AddedPage {",
+      "+  build() {",
+      "+    Column() { Text('added') }",
+      "+  }",
+      "+}",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+  });
+
+  const routeRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "ARKUI-MUST-001",
+  );
+
+  assert.ok(routeRule);
+  assert.equal(routeRule.result, "不满足");
+  assert.deepEqual(result.ruleViolations.find((item) => item.rule_id === "ARKUI-MUST-001")?.affected_items, [
+    addedPagePath,
+  ]);
+  assert.match(routeRule.conclusion, /AddedPage\.ets/);
+  assert.doesNotMatch(routeRule.conclusion, /LegacyPage\.ets/);
+});
+
 test("runRuleEngine flags multiple bindSheet calls chained on the same component", async (t) => {
   const pagePath = "entry/src/main/ets/pages/Index.ets";
   const caseDir = await createRuleFixture(t, {

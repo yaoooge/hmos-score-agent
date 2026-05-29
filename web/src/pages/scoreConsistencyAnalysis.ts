@@ -99,6 +99,19 @@ export type ConsistencyRunSummary = {
   error?: string;
 };
 
+export function resetConsistencyRunForRerun(run: ConsistencyRunSummary, taskId: number): void {
+  run.taskId = taskId;
+  run.status = "pending_submit";
+  delete run.totalScore;
+  delete run.preScore;
+  delete run.hardGateTriggered;
+  delete run.summary;
+  delete run.ruleUnsatisfactionRatio;
+  run.unsatisfiedRules = [];
+  run.risks = [];
+  delete run.error;
+}
+
 export type ConsistencyAnalysisSummary = {
   completedRuns: number;
   failedRuns: number;
@@ -626,14 +639,12 @@ export function collectExclusiveRoundTaskIds(
     return [];
   }
 
+  const nextTask = removeConsistencyAnalysisHistoryRound(task, round);
   const retainedTaskIds = new Set<number>();
-  for (const run of task.runs) {
+  for (const run of nextTask.runs) {
     retainedTaskIds.add(run.taskId);
   }
-  for (const item of history) {
-    if (item.round === round) {
-      continue;
-    }
+  for (const item of nextTask.analysisHistory ?? []) {
     for (const run of item.runs) {
       retainedTaskIds.add(run.taskId);
     }

@@ -366,6 +366,7 @@ import {
   hydrateConsistencyTaskSnapshot,
   isConsistencyTaskTerminal,
   removeConsistencyAnalysisHistoryRound,
+  resetConsistencyRunForRerun,
   createStoredZip,
   selectConsistencyTaskRoundSnapshot,
   validateRemoteEvaluationTaskInput,
@@ -999,15 +1000,7 @@ function rerunTask(taskId: string) {
   refreshTaskHistorySnapshot(task);
   const nextTaskIds = generateNextSubmittedTaskIds(task, RUN_COUNT);
   for (const run of task.runs) {
-    run.taskId = nextTaskIds[run.runIndex] ?? run.taskId;
-    run.status = "pending_submit";
-    run.totalScore = undefined;
-    run.hardGateTriggered = undefined;
-    run.summary = undefined;
-    run.ruleUnsatisfactionRatio = undefined;
-    run.unsatisfiedRules = [];
-    run.risks = [];
-    run.error = undefined;
+    resetConsistencyRunForRerun(run, nextTaskIds[run.runIndex] ?? run.taskId);
   }
   refreshTaskAggregates(task);
   void persistTaskDelta(previousTask, task).catch((error) => {

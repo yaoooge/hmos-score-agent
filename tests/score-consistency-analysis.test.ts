@@ -22,6 +22,7 @@ import {
   jaccardSimilarity,
   normalizeConsistencyRunStatus,
   removeConsistencyAnalysisHistoryRound,
+  resetConsistencyRunForRerun,
   selectConsistencyTaskRoundSnapshot,
   validateRemoteEvaluationTaskInput,
   validateRemoteTaskJson,
@@ -524,7 +525,7 @@ test("removeConsistencyAnalysisHistoryRound removes the latest current round and
   assert.deepEqual(removed.runs.map((run) => run.totalScore), [82, 86]);
 });
 
-test("collectExclusiveRoundTaskIds skips ids still referenced by current data or other rounds", () => {
+test("collectExclusiveRoundTaskIds includes ids orphaned after current round rollback", () => {
   const firstRuns = [completedRun(0, { taskId: 130600101 }), completedRun(1, { taskId: 130600102 })];
   const sharedRuns = [completedRun(0, { taskId: 130600201 }), completedRun(1, { taskId: 130600202 })];
   const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
@@ -547,6 +548,45 @@ test("collectExclusiveRoundTaskIds skips ids still referenced by current data or
       analysisHistory: history,
     },
     2,
+  );
+
+  assert.deepEqual(exclusiveIds, [130600201, 130600202]);
+});
+
+test("collectExclusiveRoundTaskIds skips ids still referenced after round deletion", () => {
+  const sharedIdsFirstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
+  const sharedIdsSecondRuns = [
+    completedRun(0, { totalScore: 70 }),
+    completedRun(1, { totalScore: 74 }),
+  ];
+  const firstHistory = appendAnalysisHistorySnapshot(
+    [],
+    sharedIdsFirstRuns,
+    "2026-05-20T01:00:00.000Z",
+  );
+  const history = appendAnalysisHistorySnapshot(
+    firstHistory,
+    sharedIdsSecondRuns,
+    "2026-05-20T02:00:00.000Z",
+  );
+
+  const exclusiveIds = collectExclusiveRoundTaskIds(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs: sharedIdsSecondRuns,
+      analysis: analyzeConsistency(sharedIdsSecondRuns),
+      ruleReport: buildRuleReport(sharedIdsSecondRuns),
+      riskReport: buildRiskReport(sharedIdsSecondRuns),
+      analysisHistory: history,
+    },
+    1,
   );
 
   assert.deepEqual(exclusiveIds, []);
@@ -918,6 +958,27 @@ test("buildConsistencyTaskPersistDelta replaces current runs when rerun changes 
     delta.runs?.map((run) => run.taskId),
     [126300103, 126300104],
   );
+});
+
+test("resetConsistencyRunForRerun clears completed-only score fields", () => {
+  const run = completedRun(0, {
+    taskId: 126300101,
+    totalScore: 69,
+    preScore: 85,
+    hardGateTriggered: true,
+    ruleUnsatisfactionRatio: 0.13,
+    error: "previous error",
+  });
+
+  resetConsistencyRunForRerun(run, 126300121);
+
+  assert.deepEqual(run, {
+    runIndex: 0,
+    taskId: 126300121,
+    status: "pending_submit",
+    unsatisfiedRules: [],
+    risks: [],
+  });
 });
 
 test("hydrateConsistencyTaskSnapshot compacts duplicated current runs from old rerun patches", () => {

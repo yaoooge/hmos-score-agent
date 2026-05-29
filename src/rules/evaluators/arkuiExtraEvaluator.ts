@@ -66,21 +66,71 @@ function parseRouteMap(content: string): RouteMapEntry[] | undefined {
 
 function normalizePageSourceFile(moduleJsonPath: string, pageSourceFile: string): string {
   const normalizedPage = normalizeRelativePath(pageSourceFile).replace(/^\/+/, "");
-  if (normalizedPage.endsWith(".ets")) {
-    return normalizedPage;
-  }
   const moduleRoot = moduleRootFromModuleJsonPath(moduleJsonPath);
+  const pageWithExtension = normalizedPage.endsWith(".ets") ? normalizedPage : `${normalizedPage}.ets`;
   if (normalizedPage.startsWith("src/main/")) {
-    return `${moduleRoot ? `${moduleRoot}/` : ""}${normalizedPage}.ets`;
+    return `${moduleRoot ? `${moduleRoot}/` : ""}${pageWithExtension}`;
   }
   if (moduleRoot && !normalizedPage.startsWith(`${moduleRoot}/`)) {
-    return `${moduleRoot}/${normalizedPage}.ets`;
+    return `${moduleRoot}/${pageWithExtension}`;
   }
-  return `${normalizedPage}.ets`;
+  return pageWithExtension;
 }
 
 function hasNavDestination(content: string): boolean {
   return /\bNavDestination\s*\(/.test(content);
+}
+
+function routeTargetsMentionedByPatch(
+  evidence: CollectedEvidence,
+  moduleJsonPath: string,
+  profilePath: string,
+): Set<string> {
+  const addedTargets = new Set<string>();
+  const removedTargets = new Set<string>();
+  const patchText = evidence.patchText;
+  if (!patchText) {
+    return addedTargets;
+  }
+
+  let currentFile: string | undefined;
+  for (const line of patchText.split(/\r?\n/)) {
+    const diffMatch = /^diff --git a\/.+? b\/(.+)$/.exec(line);
+    if (diffMatch?.[1]) {
+      currentFile = normalizeRelativePath(diffMatch[1]);
+      continue;
+    }
+
+    const newFileMatch = /^\+\+\+ b\/(.+)$/.exec(line);
+    if (newFileMatch?.[1]) {
+      currentFile = normalizeRelativePath(newFileMatch[1]);
+      continue;
+    }
+
+    if (currentFile !== normalizeRelativePath(profilePath)) {
+      continue;
+    }
+
+    const isAddedLine = line.startsWith("+") && !line.startsWith("+++");
+    const isRemovedLine = line.startsWith("-") && !line.startsWith("---");
+    if (!isAddedLine && !isRemovedLine) {
+      continue;
+    }
+
+    for (const match of line.matchAll(/["']pageSourceFile["']\s*:\s*["']([^"']+)["']/g)) {
+      const normalizedTarget = normalizePageSourceFile(moduleJsonPath, match[1] ?? "");
+      if (isAddedLine) {
+        addedTargets.add(normalizedTarget);
+      } else {
+        removedTargets.add(normalizedTarget);
+      }
+    }
+  }
+
+  for (const removedTarget of removedTargets) {
+    addedTargets.delete(removedTarget);
+  }
+  return addedTargets;
 }
 
 function shouldInspectRouteTarget(
@@ -88,15 +138,21 @@ function shouldInspectRouteTarget(
   moduleJsonPath: string,
   profilePath: string,
   pagePath: string,
+  patchAddedRouteTargets: Set<string>,
 ): boolean {
   const changedFiles = new Set(evidence.changedFiles.map(normalizeRelativePath));
   if (changedFiles.size === 0) {
     return true;
   }
+
+  const normalizedPagePath = normalizeRelativePath(pagePath);
+  if (changedFiles.has(normalizedPagePath)) {
+    return true;
+  }
+
   return (
     changedFiles.has(normalizeRelativePath(moduleJsonPath)) ||
-    changedFiles.has(normalizeRelativePath(profilePath)) ||
-    changedFiles.has(normalizeRelativePath(pagePath))
+    patchAddedRouteTargets.has(normalizedPagePath)
   );
 }
 
@@ -132,12 +188,13 @@ function runRouteNavDestinationRule(rule: RegisteredRule, evidence: CollectedEvi
       continue;
     }
 
+    const patchAddedRouteTargets = routeTargetsMentionedByPatch(evidence, item.file.relativePath, profilePath);
     for (const routeEntry of routeEntries) {
       if (typeof routeEntry.pageSourceFile !== "string") {
         continue;
       }
       const pagePath = normalizePageSourceFile(item.file.relativePath, routeEntry.pageSourceFile);
-      if (!shouldInspectRouteTarget(evidence, item.file.relativePath, profilePath, pagePath)) {
+      if (!shouldInspectRouteTarget(evidence, item.file.relativePath, profilePath, pagePath, patchAddedRouteTargets)) {
         continue;
       }
       inspectedPages.push(pagePath);
