@@ -2395,6 +2395,83 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
   releases.get(4)?.();
 });
 
+test("createRunRemoteTaskHandler honors HMOS_REMOTE_TASK_CONCURRENCY", async (t) => {
+  const originalConcurrency = process.env.HMOS_REMOTE_TASK_CONCURRENCY;
+  process.env.HMOS_REMOTE_TASK_CONCURRENCY = "2";
+  t.after(() => {
+    if (originalConcurrency === undefined) {
+      delete process.env.HMOS_REMOTE_TASK_CONCURRENCY;
+    } else {
+      process.env.HMOS_REMOTE_TASK_CONCURRENCY = originalConcurrency;
+    }
+  });
+
+  const releases = new Map<number, () => void>();
+  const activeTaskIds = new Set<number>();
+  const startedTaskIds = new Set<number>();
+  let maxActiveExecutions = 0;
+  const deps = {
+    acceptRemoteEvaluationTask: async (remoteTask: Record<string, unknown>) => {
+      const taskId = Number(remoteTask.taskId);
+      return {
+        taskId,
+        caseDir: `/tmp/remote-case-${String(taskId)}`,
+        message: "任务接收成功，结果将通过 callback 返回",
+        remoteTask: {
+          ...remoteTask,
+          testCase: { id: taskId + 100 },
+        } as never,
+        workflowState: {} as never,
+      };
+    },
+    prepareRemoteEvaluationTask: async () => {
+      throw new Error("prepareRemoteEvaluationTask should not be used by the HTTP handler");
+    },
+    executeAcceptedRemoteEvaluationTask: async (acceptedTask: { taskId: number }) => {
+      activeTaskIds.add(acceptedTask.taskId);
+      startedTaskIds.add(acceptedTask.taskId);
+      maxActiveExecutions = Math.max(maxActiveExecutions, activeTaskIds.size);
+      await new Promise<void>((resolve) => {
+        releases.set(acceptedTask.taskId, resolve);
+      });
+      activeTaskIds.delete(acceptedTask.taskId);
+    },
+  };
+  const handler = createRunRemoteTaskHandler(deps as never);
+  const responses = [1, 2, 3].map(() => createResponse());
+
+  await Promise.all(
+    [1, 2, 3].map((taskId, index) =>
+      handler(
+        { body: { taskId, testCase: { id: taskId + 100 } } } as never,
+        responses[index]?.response as never,
+      ),
+    ),
+  );
+  await new Promise<void>((resolve) => setTimeout(resolve, 20));
+
+  assert.deepEqual(
+    responses.map(({ responseState }) => responseState.statusCode),
+    [200, 200, 200],
+  );
+  assert.deepEqual(
+    [...startedTaskIds].sort((left, right) => left - right),
+    [1, 2],
+  );
+  assert.equal(activeTaskIds.size, 2);
+  assert.equal(maxActiveExecutions, 2);
+
+  releases.get(1)?.();
+  await waitForAssertion(async () => {
+    assert.deepEqual(
+      [...startedTaskIds].sort((left, right) => left - right),
+      [1, 2, 3],
+    );
+  });
+  releases.get(2)?.();
+  releases.get(3)?.();
+});
+
 test("executeAcceptedRemoteEvaluationTask leases distinct opencode runners for three concurrent remote tasks", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const originalLocalCaseRoot = process.env.LOCAL_CASE_ROOT;

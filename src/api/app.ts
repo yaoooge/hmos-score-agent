@@ -184,6 +184,15 @@ type RemoteTaskLogContext = {
 
 const MAX_REMOTE_TASK_CONCURRENCY = 3;
 
+function resolveRemoteTaskConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const rawValue = env.HMOS_REMOTE_TASK_CONCURRENCY;
+  if (rawValue === undefined || rawValue.trim() === "") {
+    return MAX_REMOTE_TASK_CONCURRENCY;
+  }
+  const parsed = Number(rawValue);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : MAX_REMOTE_TASK_CONCURRENCY;
+}
+
 function readTaskId(body: unknown): number | undefined {
   if (typeof body !== "object" || body === null) {
     return undefined;
@@ -362,6 +371,7 @@ export function createRemoteTaskExecutionQueue(
   _humanReviewEvidenceStore?: HumanReviewEvidenceStore,
   remoteTaskSummaryStore?: RemoteTaskSummaryStore,
 ) {
+  const maxRemoteTaskConcurrency = resolveRemoteTaskConcurrency();
   const runningTaskIds = new Set<number>();
   const queuedTaskIds = new Set<number>();
   const remoteTaskRecords = new Map<number, RemoteTaskRecord>();
@@ -507,7 +517,7 @@ export function createRemoteTaskExecutionQueue(
 
   function scheduleRemoteTaskExecutions(): void {
     while (
-      runningTaskIds.size < MAX_REMOTE_TASK_CONCURRENCY &&
+      runningTaskIds.size < maxRemoteTaskConcurrency &&
       pendingRemoteTaskExecutions.length > 0
     ) {
       const pending = pendingRemoteTaskExecutions.shift();
