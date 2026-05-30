@@ -11,7 +11,7 @@
               style="width: 260px"
             />
           </div>
-          <el-table :data="cases" v-loading="caseLoading" stripe height="560">
+          <el-table :data="cases" v-loading="caseLoading" stripe>
             <el-table-column prop="taskId" label="taskId" width="100" />
             <el-table-column prop="testCaseId" label="testCaseId" width="120" />
             <el-table-column label="名称" min-width="240" show-overflow-tooltip>
@@ -67,7 +67,7 @@
               <el-tag effect="plain">{{ ruleSummaryText }}</el-tag>
             </div>
           </div>
-          <el-table :data="rules" v-loading="ruleLoading" stripe height="560">
+          <el-table :data="rules" v-loading="ruleLoading" stripe>
             <el-table-column prop="ruleId" label="规则" min-width="260" show-overflow-tooltip />
             <el-table-column prop="ruleSummary" label="摘要" min-width="260" show-overflow-tooltip />
             <el-table-column prop="sourceRuleSet" label="来源" min-width="220" show-overflow-tooltip />
@@ -116,7 +116,7 @@
               <el-option label="low" value="low" />
             </el-select>
           </div>
-          <el-table :data="riskReviews" v-loading="riskLoading" stripe height="560">
+          <el-table :data="riskReviews" v-loading="riskLoading" stripe>
             <el-table-column prop="taskId" label="taskId" width="100" />
             <el-table-column prop="testCaseId" label="testCaseId" width="120" />
             <el-table-column prop="caseName" label="名称" min-width="220" show-overflow-tooltip />
@@ -402,13 +402,13 @@ const caseLoading = ref(false);
 const ruleLoading = ref(false);
 const riskLoading = ref(false);
 const casePage = ref(1);
-const casePageSize = ref(20);
+const casePageSize = ref(10);
 const caseTotal = ref(0);
 const rulePage = ref(1);
-const rulePageSize = ref(20);
+const rulePageSize = ref(10);
 const ruleTotal = ref(0);
 const riskPage = ref(1);
-const riskPageSize = ref(20);
+const riskPageSize = ref(10);
 const riskTotal = ref(0);
 const caseDrawerVisible = ref(false);
 const selectedCase = ref<CrossDeviceCase | null>(null);

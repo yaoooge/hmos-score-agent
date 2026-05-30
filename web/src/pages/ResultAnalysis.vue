@@ -54,7 +54,6 @@
             :data="gaps"
             v-loading="gapLoading"
             stripe
-            height="560"
             @selection-change="onGapSelectionChange"
           >
             <el-table-column type="selection" width="48" />
@@ -129,7 +128,6 @@
             :data="riskReviews"
             v-loading="riskLoading"
             stripe
-            height="620"
             @selection-change="onRiskSelectionChange"
           >
             <el-table-column type="selection" width="48" />
@@ -193,7 +191,7 @@
               命中 {{ negativeRuleViolationEventCount }}
             </el-tag>
           </div>
-          <el-table :data="negative?.topRuleViolations ?? []" stripe height="620">
+          <el-table :data="negative?.topRuleViolations ?? []" stripe>
             <el-table-column prop="rule_id" label="规则" width="220" />
             <el-table-column prop="rule_summary" label="摘要" min-width="260" show-overflow-tooltip />
             <el-table-column prop="violationCount" label="次数" width="100" />
@@ -244,10 +242,10 @@ const gapSelection = ref<HumanRatingGap[]>([]);
 const riskSelection = ref<RiskReviewCalibration[]>([]);
 const negative = ref<Awaited<ReturnType<typeof fetchNegativeResults>> | null>(null);
 const gapPage = ref(1);
-const gapPageSize = ref(20);
+const gapPageSize = ref(10);
 const gapTotal = ref(0);
 const riskPage = ref(1);
-const riskPageSize = ref(20);
+const riskPageSize = ref(10);
 const riskTotal = ref(0);
 const range = ref<[Date, Date] | null>(null);
 
