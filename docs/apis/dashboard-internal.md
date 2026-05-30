@@ -10,6 +10,9 @@
 | `GET` | `/dashboard/tasks` | 分页查询任务列表。 |
 | `GET` | `/dashboard/tasks/status-counts` | 查询任务状态计数。 |
 | `GET` | `/dashboard/tasks/:taskId/logs` | 查询任务运行日志尾部内容。 |
+| `GET` | `/dashboard/tasks/:taskId/agent-trace` | 查询任务 Agent Trace 摘要。 |
+| `GET` | `/dashboard/tasks/:taskId/agent-trace/runs/:traceRunId/raw` | 查询单个 Agent Trace run 的原始内容。 |
+| `GET` | `/dashboard/tasks/:taskId/agent-trace/events/:traceEventId/raw` | 查询单个 Agent Trace event 的原始内容。 |
 | `GET` | `/dashboard/reports/daily` | 查询按天聚合的任务报告。 |
 | `GET` | `/dashboard/reports/score-distribution` | 查询分数分布桶。 |
 | `GET` | `/dashboard/analysis/human-rating-gaps` | 查询人工评级差异分析数据集。 |
@@ -76,6 +79,60 @@
 
 响应包含 `status`、`logPath`、`available`、`truncated`、`tailBytes` 和 `content`，不会暴露真实 case 目录。
 
+### `GET /dashboard/tasks/:taskId/agent-trace`
+
+无查询参数。响应用于任务详情页 `Agent Trace` tab，返回 `outputs/agent-trace.json` 或 SQLite trace 摘要。
+
+响应核心字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `taskId` | 任务 ID。 |
+| `traceAvailable` | 是否找到了可展示的 trace。 |
+| `source` | `artifact`、`sqlite` 或 `mixed`。 |
+| `rawAvailable` | 是否可通过 raw 子接口读取完整原始内容。 |
+| `report.summary` | run、attempt、event、tool event、error 数量，总耗时和总 token。 |
+| `report.runs` | Agent run 摘要列表。 |
+| `message` / `report.warnings` | trace 展示提示。 |
+
+`report.runs[].events[]` 为事件摘要，常用字段如下：
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` / `sequence` | 事件 ID 和 run 内顺序。 |
+| `type` | `message`、`step-start`、`reasoning`、`tool`、`step-finish`、`text` 或 `unknown`。 |
+| `title` / `summary` | 事件标题和简短摘要。 |
+| `status` | `completed`、`error`、`running` 或 `unknown`。 |
+| `timestampMs` | OpenCode event 的毫秒级时间戳。 |
+| `elapsedMs` | 单个 event/part 的局部耗时；`step-finish` 可能保存本 step 的局部耗时。 |
+| `tokenUsage` | 可选 token 信息，包含 `total`、`input`、`output`、`reasoning`、`cacheRead`、`cacheWrite`。 |
+| `toolName` | tool event 对应的工具名。 |
+| `hasRawPayload` | 是否有原始内容可通过 event raw 子接口读取。 |
+
+Dashboard 前端按 run 和 step 分组展示事件、耗时和 token usage。
+
+### `GET /dashboard/tasks/:taskId/agent-trace/runs/:traceRunId/raw`
+
+路径参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `taskId` | 任务 ID。 |
+| `traceRunId` | `report.runs[].id`。 |
+
+响应返回单个 run 的完整原始内容，供任务详情页按需加载。
+
+### `GET /dashboard/tasks/:taskId/agent-trace/events/:traceEventId/raw`
+
+路径参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `taskId` | 任务 ID。 |
+| `traceEventId` | `report.runs[].events[].id`。 |
+
+响应返回单个 event 的原始内容，供任务详情页按需加载。
+
 ### `GET /dashboard/reports/daily`
 
 可选查询参数：
@@ -127,7 +184,7 @@
 
 | 参数 | 说明 |
 | --- | --- |
-| `keyword` | 按任务、用例或风险文本搜索。 |
+| `keyword` | 按任务 ID、测试用例 ID、用例名称或风险标题搜索。 |
 | `agreement` | `agreed` 或 `disagreed`。 |
 | `manualAnalysisStatus` | `pending` 或 `analyzed`。 |
 | `page` / `pageSize` | 分页，默认 `1` / `100`，`pageSize` 最大 `500`。 |

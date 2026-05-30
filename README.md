@@ -38,9 +38,11 @@ curl http://localhost:3000/health
 
 API 服务默认监听 `PORT`，未设置时为 `3000`。启动后可先访问 `GET /health` 确认进程可用，再调用评分接口。
 
-Dashboard 前端位于 `web/`，生产构建后由 API 服务挂载在 `/dashboard`；开发调试可单独运行 `npm run dev:dashboard`。
+Dashboard 前端位于 `web/`，生产构建后由 API 服务挂载在 `/dashboard`；开发调试可单独运行 `npm run dev:dashboard`。任务详情页展示评分结果、运行日志和 Agent Trace。
 
 SQLite 索引数据库默认写在 `<LOCAL_CASE_ROOT>/score-index.sqlite3`，由 API 启动时自动创建并维护，`npm run db:generate` 可用于离线回填或重建。
+
+常用运行参数在 `.env.example` 中维护。
 
 ## 可执行脚本
 

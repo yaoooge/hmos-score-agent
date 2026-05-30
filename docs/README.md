@@ -9,7 +9,7 @@
 | 1 | [ARCHITECTURE.md](ARCHITECTURE.md) | 先了解代码仓目录结构、主评分 workflow、人工复核和人工评级差异分析流程。 |
 | 2 | [sqlite-database.md](sqlite-database.md) | 查看 SQLite 数据库位置、表结构和常用查询。 |
 | 3 | [apis/README.md](apis/README.md) | 对接管理台、远端任务平台、人工复核页面或接口联调。 |
-| 4 | [apis/dashboard-internal.md](apis/dashboard-internal.md) | 给 dashboard 前端维护和 AI 编码查询使用的内部接口索引。 |
+| 4 | [apis/dashboard-internal.md](apis/dashboard-internal.md) | 给 dashboard 前端维护和 AI 编码查询使用的内部接口索引，包括任务列表、分析数据集和 Agent Trace 查询。 |
 | 5 | [human-review/README.md](human-review/README.md) | 查看人工复核全流程、重算规则、产物和排查方式。 |
 | 6 | [agents/README.md](agents/README.md) | 维护 opencode agent、prompt、skill、权限和输出协议。 |
 | 7 | [superpowers/specs/](superpowers/specs/) | 追溯历史需求设计、方案取舍和行为来源。 |
@@ -21,7 +21,7 @@
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 当前代码结构、运行入口、主评分 workflow、人工侧流程和运行产物。 |
 | [sqlite-database.md](sqlite-database.md) | SQLite 数据库文件位置、schema、索引和查询示例。 |
-| [apis/](apis/) | 对外 HTTP API、callback 约定，以及 dashboard 内部查询接口索引。 |
+| [apis/](apis/) | 对外 HTTP API、callback 约定，以及 dashboard 内部查询接口索引。Agent Trace、结果分析过滤等 dashboard-only 行为记录在 `apis/dashboard-internal.md`。 |
 | [human-review/](human-review/) | 人工复核全流程、重算规则、数据集和排查方式。 |
 | [agents/](agents/) | 项目内 opencode agent 的职责、调用入口、权限、输入输出契约。 |
 | [superpowers/specs/](superpowers/specs/) | 历史设计文档，按日期和主题命名。 |

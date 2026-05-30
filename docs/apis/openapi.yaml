@@ -34,7 +34,7 @@ paths:
       tags:
         - Score
       summary: 接收远端评分任务
-      description: 接收远端任务并异步执行评分。HTTP 响应只表示任务已接收，后续进度和最终结果通过请求体中的 callback 地址回调。
+      description: 接收远端任务并异步执行评分。HTTP 响应表示任务已接收，后续进度和最终结果通过请求体中的 callback 地址回调。
       operationId: runRemoteTask
       requestBody:
         required: true
@@ -122,6 +122,62 @@ paths:
                 "200":
                   description: 回调接收方成功接收。
 
+  /score/remote-tasks/status:
+    get:
+      tags:
+        - Score
+      summary: 批量查询远端任务状态
+      description: 按 taskIds 查询本地 registry 中的远端任务状态，常用于管理台刷新一组一致性分析运行。
+      operationId: getRemoteTaskStatuses
+      parameters:
+        - name: taskIds
+          in: query
+          required: true
+          description: 逗号分隔的远端任务 ID 列表。
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 状态按请求中的 taskIds 顺序返回。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteTaskStatusBatchResponse"
+        "400":
+          description: taskIds 查询参数非法。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /score/remote-tasks:
+    delete:
+      tags:
+        - Score
+      summary: 批量删除远端任务 registry 记录
+      description: 删除本地 registry 中存在的任务记录，不删除 case 目录产物。
+      operationId: deleteRemoteTasks
+      parameters:
+        - name: taskIds
+          in: query
+          required: true
+          description: 逗号分隔的远端任务 ID 列表。
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 删除完成，返回实际存在且被删除的任务 ID。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteTaskDeleteResponse"
+        "400":
+          description: taskIds 查询参数非法。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /score/remote-tasks/{taskId}/result:
     get:
       tags:
@@ -181,6 +237,36 @@ paths:
                 taskId: 4
                 status: running
                 message: "Result is not available yet"
+
+  /score/remote-tasks/{taskId}/result/raw:
+    get:
+      tags:
+        - Score
+      summary: 下载原始评分结果
+      description: 下载已完成远端任务磁盘上的 outputs/result.json 原始文件。
+      operationId: getRemoteTaskRawResult
+      parameters:
+        - $ref: "#/components/parameters/TaskIdPath"
+      responses:
+        "200":
+          description: 原始 result.json 文件。
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: 任务记录或结果文件不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteTaskNotFoundResponse"
+        "409":
+          description: 任务存在但尚未完成。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteTaskUnavailableResponse"
 
   /score/rule-violation-stats:
     get:
@@ -272,6 +358,165 @@ paths:
               example:
                 success: false
                 message: "Rule violation stats are unavailable"
+
+  /score/consistency-tasks:
+    get:
+      tags:
+        - Score
+      summary: 查询评分一致性任务集合
+      description: 读取管理台保存的评分一致性任务记录。
+      operationId: getConsistencyTasks
+      responses:
+        "200":
+          description: 一致性任务集合。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsistencyTaskCollectionResponse"
+        "500":
+          description: 一致性任务表不可读取。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Score
+      summary: 替换评分一致性任务集合
+      description: 用请求中的 items 整体替换持久化的一致性任务表。
+      operationId: replaceConsistencyTasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsistencyTaskCollectionRequest"
+      responses:
+        "200":
+          description: 一致性任务集合已替换。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsistencyTaskCollectionResponse"
+        "400":
+          description: 请求体非法。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 一致性任务表不可写入。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /score/consistency-tasks/{id}:
+    put:
+      tags:
+        - Score
+      summary: 保存单个评分一致性任务
+      description: 新增或覆盖一个完整的一致性任务记录。
+      operationId: upsertConsistencyTask
+      parameters:
+        - $ref: "#/components/parameters/ConsistencyTaskIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsistencyTaskRecord"
+      responses:
+        "200":
+          description: 一致性任务已保存。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsistencyTaskItemResponse"
+        "400":
+          description: 请求体非法。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 一致性任务表不可写入。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Score
+      summary: 合并评分一致性任务增量
+      description: 合并一个小 patch 到现有一致性任务。runs 默认按 taskId 合并，analysisHistory 按 round 和 capturedAt 去重追加。
+      operationId: patchConsistencyTask
+      parameters:
+        - $ref: "#/components/parameters/ConsistencyTaskIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsistencyTaskPatch"
+      responses:
+        "200":
+          description: 一致性任务 patch 已合并。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsistencyTaskItemResponse"
+        "400":
+          description: 请求体非法。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 一致性任务不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 一致性任务表不可写入。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Score
+      summary: 删除评分一致性任务
+      description: 按 id 删除一个持久化的一致性任务记录。
+      operationId: deleteConsistencyTask
+      parameters:
+        - $ref: "#/components/parameters/ConsistencyTaskIdPath"
+      responses:
+        "200":
+          description: 一致性任务已删除。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: id 非法。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 一致性任务不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 一致性任务表不可写入。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /score/remote-tasks/{taskId}/human-review:
     post:
@@ -384,6 +629,13 @@ components:
       description: 远端评分任务 ID。
       schema:
         type: number
+    ConsistencyTaskIdPath:
+      name: id
+      in: path
+      required: true
+      description: 评分一致性任务 ID。
+      schema:
+        type: string
 
   schemas:
     HealthResponse:
@@ -527,7 +779,138 @@ components:
         - completed
         - failed
         - timed_out
+        - missing
       description: 服务记录的远端任务状态。
+
+    RemoteTaskStatusBatchResponse:
+      type: object
+      required:
+        - success
+        - items
+      properties:
+        success:
+          type: boolean
+          description: 固定为 true。
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RemoteTaskStatusItem"
+
+    RemoteTaskStatusItem:
+      type: object
+      required:
+        - taskId
+        - status
+        - resultAvailable
+      additionalProperties: true
+      properties:
+        taskId:
+          type: number
+        status:
+          $ref: "#/components/schemas/RemoteTaskRecordStatus"
+        createdAt:
+          type: number
+          description: registry 创建时间，毫秒时间戳。
+        updatedAt:
+          type: number
+          description: registry 更新时间，毫秒时间戳。
+        testCaseId:
+          type: number
+        testCaseName:
+          type: string
+        resultAvailable:
+          type: boolean
+        error:
+          type: string
+        message:
+          type: string
+
+    RemoteTaskDeleteResponse:
+      type: object
+      required:
+        - success
+        - deletedTaskIds
+      properties:
+        success:
+          type: boolean
+          description: 固定为 true。
+        deletedTaskIds:
+          type: array
+          items:
+            type: number
+
+    SuccessResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: 固定为 true。
+
+    ConsistencyTaskRecord:
+      type: object
+      description: 管理台评分一致性任务记录。服务按原样保存页面侧任务 payload。
+      additionalProperties: true
+
+    ConsistencyTaskCollectionRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConsistencyTaskRecord"
+
+    ConsistencyTaskCollectionResponse:
+      type: object
+      required:
+        - success
+        - items
+      properties:
+        success:
+          type: boolean
+          description: 固定为 true。
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConsistencyTaskRecord"
+
+    ConsistencyTaskItemResponse:
+      type: object
+      required:
+        - success
+        - item
+      properties:
+        success:
+          type: boolean
+          description: 固定为 true。
+        item:
+          $ref: "#/components/schemas/ConsistencyTaskRecord"
+
+    ConsistencyTaskPatch:
+      type: object
+      description: 一致性任务增量 patch。runs 默认按 taskId 合并，analysisHistory 按 round 和 capturedAt 去重追加。
+      properties:
+        status:
+          type: string
+          description: 更新后的一致性任务状态。
+        replaceRuns:
+          type: boolean
+          description: 为 true 时用 patch.runs 替换当前 run 列表。
+        runs:
+          type: array
+          description: 变化的 run 摘要。
+          items:
+            type: object
+            additionalProperties: true
+        analysisHistory:
+          type: array
+          description: 新追加的分析快照。
+          items:
+            type: object
+            additionalProperties: true
 
     RemoteTaskCallbackResultData:
       type: object

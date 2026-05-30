@@ -67,6 +67,7 @@ hmos-score-agent/
     config.ts                       # 环境变量读取与默认值归一化
     types.ts                        # 远端任务、评分结果、报告等共享类型
     api/                            # HTTP 路由、远端任务 registry、人工接口和规则统计
+    agentTrace/                     # opencode run/attempt/event trace 采集、artifact 和 SQLite 摘要
     agent/                          # opencode agent 调用、prompt 构建、输出解析
     dashboard/                      # dashboard 数据聚合、数据读取和内部路由 handler
     humanReview/                    # 逐条人工复核、复核样本写入、复算逻辑
@@ -90,7 +91,9 @@ hmos-score-agent/
   .local-cases/                     # 本地运行产物目录，运行时生成
 ```
 
-Dashboard API 路由由 `src/dashboard/dashboardHandlers.ts` 注册，供 `web/` 前端和后续 AI 编码查询使用，不作为远端平台对外接口契约的一部分。
+Dashboard API 路由由 `src/dashboard/dashboardHandlers.ts` 注册，供 `web/` 前端和后续 AI 编码查询使用。
+
+Agent Trace 由 `src/agentTrace/` 在 opencode agent 调用时采集 run、attempt 和 event。完整 trace artifact 写入 `outputs/agent-trace.json`，dashboard 摘要接口展示 trace 基础信息，raw 子接口按需读取单个 run 或 event 的原始内容。
 
 ## 主评分 Workflow
 
@@ -101,7 +104,7 @@ Dashboard API 路由由 `src/dashboard/dashboardHandlers.ts` 注册，供 `web/`
 | 1 | `remoteTaskPreparationNode` | 远端任务预处理、下载资源、物化标准 case；本地 case 会直接归一化到后续状态。 |
 | 2 | `taskUnderstandingNode` | 构建 opencode sandbox，调用 `hmos-understanding` 提取显式、上下文和隐式约束。 |
 | 3 | `inputClassificationNode` | 判定任务类型：`full_generation`、`continuation` 或 `bug_fix`。 |
-| 4 | `ruleAuditNode` | 运行静态规则审计，输出确定性结果、辅助判定候选、证据索引和违规项。 |
+| 4 | `ruleAuditNode` | 运行静态规则审计，输出确定性结果、Agent 辅助判定候选、证据索引和违规项。 |
 | 5a | `officialCodeLinterNode` | 与 rubric 准备并行执行，按配置运行官方 Code Linter，并对变更模块执行 hvigor 编译校验。 |
 | 5b | `rubricPreparationNode` | 与官方工具并行执行，加载任务类型对应 rubric，生成评分快照。 |
 | 6a | `rubricScoringPromptBuilderNode` | 构建 rubric 评分 payload 和落盘 prompt。 |
@@ -140,6 +143,9 @@ Dashboard API 路由由 `src/dashboard/dashboardHandlers.ts` 注册，供 `web/`
   outputs/
     result.json
     report.html
+    agent-trace.json                # opencode agent 运行摘要和事件 trace
   human-rating/                     # 人工评级和差异分析产物，仅相关接口触发后存在
   logs/
 ```
+
+Agent Trace 摘要包含 run、attempt、event、耗时和 token usage，用于 dashboard 任务详情页展示 agent 执行过程。
