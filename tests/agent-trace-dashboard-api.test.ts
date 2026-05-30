@@ -140,7 +140,17 @@ test("dashboard agent trace returns summary first and raw payloads on demand", a
             status: "completed",
             toolName: "write",
             summary: "metadata/agent-output/rubric-scoring.json",
-            rawPayload: { input: { filePath: "metadata/agent-output/rubric-scoring.json" } },
+            rawPayload: {
+              timestamp: 1_780_044_437_015,
+              tokens: {
+                total: 120,
+                input: 100,
+                output: 10,
+                reasoning: 5,
+                cache: { read: 5, write: 0 },
+              },
+              input: { filePath: "metadata/agent-output/rubric-scoring.json" },
+            },
           },
         ],
         warnings: [],
@@ -173,12 +183,29 @@ test("dashboard agent trace returns summary first and raw payloads on demand", a
   const events = runs[0]?.events as Array<Record<string, unknown>>;
   assert.equal(events[0]?.rawPayload, undefined);
   assert.equal(events[0]?.hasRawPayload, true);
+  assert.equal(events[0]?.timestampMs, 1_780_044_437_015);
+  assert.deepEqual(events[0]?.tokenUsage, {
+    total: 120,
+    input: 100,
+    output: 10,
+    reasoning: 5,
+    cacheRead: 5,
+    cacheWrite: 0,
+  });
 
   const runRaw = await getJson(app, "/dashboard/tasks/88/agent-trace/runs/run-1/raw");
   assert.equal(runRaw.prompt, "full prompt should not be in summary");
   assert.deepEqual(runRaw.opencodeMessages, [{ info: { id: "msg-1" }, parts: [] }]);
   const eventRaw = await getJson(app, "/dashboard/tasks/88/agent-trace/events/event-1/raw");
   assert.deepEqual(eventRaw.rawPayload, {
+    timestamp: 1_780_044_437_015,
+    tokens: {
+      total: 120,
+      input: 100,
+      output: 10,
+      reasoning: 5,
+      cache: { read: 5, write: 0 },
+    },
     input: { filePath: "metadata/agent-output/rubric-scoring.json" },
   });
 });

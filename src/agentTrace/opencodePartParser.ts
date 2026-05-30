@@ -25,8 +25,10 @@ function readTimestampMs(record: Record<string, unknown> | undefined): number | 
     return undefined;
   }
   return (
+    readFiniteNumber(record.timestampMs) ??
     readFiniteNumber(record.createdAtMs) ??
     readFiniteNumber(record.created_at_ms) ??
+    readFiniteNumber(record.timestamp) ??
     readFiniteNumber(record.created) ??
     readFiniteNumber(record.time)
   );
@@ -47,6 +49,23 @@ function readDurationMs(record: Record<string, unknown>): number | undefined {
   const created = readTimestampMs(record);
   const updated = readFiniteNumber(record.updated) ?? readFiniteNumber(record.updatedAtMs);
   return created !== undefined && updated !== undefined ? Math.max(0, updated - created) : undefined;
+}
+
+function readTokenUsage(value: unknown): AgentTraceEvent["tokenUsage"] | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const cache = asRecord(record.cache);
+  const tokenUsage = {
+    total: readFiniteNumber(record.total),
+    input: readFiniteNumber(record.input),
+    output: readFiniteNumber(record.output),
+    reasoning: readFiniteNumber(record.reasoning),
+    cacheRead: readFiniteNumber(cache?.read),
+    cacheWrite: readFiniteNumber(cache?.write),
+  };
+  return Object.values(tokenUsage).some((item) => item !== undefined) ? tokenUsage : undefined;
 }
 
 function normalizeEventType(value: unknown): OpenCodeTraceEventType {
@@ -195,6 +214,7 @@ function rawEventRecordToTraceEvent(input: {
       title: messageTitle(info),
       messageId,
       timestampMs: readTimestampMs(info) ?? readTimestampMs(input.record),
+      tokenUsage: readTokenUsage(info.tokens),
       summary: readString(info.role),
       rawPayload: input.record,
       hasRawPayload: true,
@@ -220,6 +240,7 @@ function rawEventRecordToTraceEvent(input: {
     status: readEventStatus(part),
     timestampMs: readTimestampMs(part) ?? readTimestampMs(input.record),
     elapsedMs: readDurationMs(part),
+    tokenUsage: readTokenUsage(part.tokens),
     toolName: readString(part.tool) ?? readString(part.toolName) ?? readString(part.name),
     messageId: readString(part.messageId) ?? readString(input.record.messageId),
     partId,
@@ -300,6 +321,7 @@ export function parseOpencodeSessionEvents(
         title: messageTitle(info),
         messageId: readString(info.id),
         timestampMs: readTimestampMs(info),
+        tokenUsage: readTokenUsage(info.tokens),
         rawPayload: info,
         summary: readString(info.role),
       });
@@ -320,6 +342,7 @@ export function parseOpencodeSessionEvents(
         status: readEventStatus(part),
         timestampMs: readTimestampMs(part),
         elapsedMs: readDurationMs(part),
+        tokenUsage: readTokenUsage(part.tokens),
         toolName: readString(part.tool) ?? readString(part.toolName),
         messageId: info ? readString(info.id) : undefined,
         partId: readString(part.id),

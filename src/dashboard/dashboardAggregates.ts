@@ -239,13 +239,18 @@ export function filterHumanRatingGaps(
 }
 
 function matchesDashboardAnalysisKeyword(
-  item: { taskId: number; testCaseId?: number; caseName?: string },
+  item: { taskId: number; testCaseId?: number; caseName?: string; riskTitle?: string },
   keyword?: string,
 ): boolean {
   if (!keyword) {
     return true;
   }
-  return [String(item.taskId), String(item.testCaseId ?? ""), item.caseName ?? ""]
+  return [
+    String(item.taskId),
+    String(item.testCaseId ?? ""),
+    item.caseName ?? "",
+    item.riskTitle ?? "",
+  ]
     .join(" ")
     .toLowerCase()
     .includes(keyword);
@@ -314,7 +319,16 @@ export function filterRiskReviewCalibrations(
 ) {
   const keyword = query.keyword?.trim().toLowerCase();
   return items
-    .filter((item) => matchesDashboardAnalysisKeyword(item, keyword))
+    .filter((item) =>
+      matchesDashboardAnalysisKeyword(
+        {
+          ...item,
+          riskTitle:
+            typeof item.resultRisk?.title === "string" ? item.resultRisk.title : undefined,
+        },
+        keyword,
+      ),
+    )
     .filter((item) => {
       if (!query.agreement) {
         return true;

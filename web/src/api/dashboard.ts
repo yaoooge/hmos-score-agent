@@ -75,6 +75,14 @@ export type AgentTraceEvent = {
   status?: string;
   timestampMs?: number;
   elapsedMs?: number;
+  tokenUsage?: {
+    total?: number;
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+  };
   toolName?: string;
   summary?: string;
   hasRawPayload?: boolean;

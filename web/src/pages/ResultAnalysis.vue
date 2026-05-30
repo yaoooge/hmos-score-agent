@@ -95,7 +95,7 @@
             <el-input
               v-model="riskFilters.keyword"
               clearable
-              placeholder="名称 / taskId"
+              placeholder="名称 / taskId / 风险标题"
               style="width: 220px"
             />
             <el-select

@@ -21,6 +21,34 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readTokenUsage(value: unknown): Record<string, number | undefined> | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const cache = asRecord(record.cache);
+  const tokenUsage = {
+    total: readFiniteNumber(record.total),
+    input: readFiniteNumber(record.input),
+    output: readFiniteNumber(record.output),
+    reasoning: readFiniteNumber(record.reasoning),
+    cacheRead: readFiniteNumber(cache?.read),
+    cacheWrite: readFiniteNumber(cache?.write),
+  };
+  return Object.values(tokenUsage).some((item) => item !== undefined) ? tokenUsage : undefined;
+}
+
+function readRawTokenUsage(rawPayload: Record<string, unknown> | undefined): Record<string, number | undefined> | undefined {
+  const part = asRecord(rawPayload?.part);
+  const properties = asRecord(rawPayload?.properties);
+  const info = asRecord(rawPayload?.info) ?? asRecord(properties?.info);
+  return readTokenUsage(rawPayload?.tokens) ?? readTokenUsage(part?.tokens) ?? readTokenUsage(info?.tokens);
+}
+
 function toIso(value: number): string {
   return new Date(value).toISOString();
 }
@@ -339,6 +367,20 @@ function summarizeAgentTraceReport(report: Record<string, unknown>): Record<stri
             }
             const hasRawPayload =
               eventRecord.hasRawPayload === true || eventRecord.rawPayload !== undefined;
+            if (eventRecord.timestampMs === undefined) {
+              const rawPayload = asMutableRecord(eventRecord.rawPayload);
+              const rawTimestampMs = readFiniteNumber(rawPayload?.timestamp);
+              if (rawTimestampMs !== undefined) {
+                eventRecord.timestampMs = rawTimestampMs;
+              }
+            }
+            if (eventRecord.tokenUsage === undefined) {
+              const rawPayload = asMutableRecord(eventRecord.rawPayload);
+              const rawTokenUsage = readRawTokenUsage(rawPayload);
+              if (rawTokenUsage) {
+                eventRecord.tokenUsage = rawTokenUsage;
+              }
+            }
             delete eventRecord.rawPayload;
             eventRecord.hasRawPayload = hasRawPayload;
             return eventRecord;

@@ -42,49 +42,68 @@
           </div>
 
           <el-empty v-if="stepGroups.length === 0" description="暂无步骤" />
-          <article
-            v-for="step in stepGroups"
-            v-else
-            :key="step.id"
-            class="trace-step-block"
-            :class="{ active: selectedStepId === step.id }"
-          >
-            <button class="trace-step-card" type="button" @click="selectStep(step.id)">
-              <span class="trace-step-title">
-                <strong>Step {{ step.index }}</strong>
-                <span>{{ formatDuration(step.elapsedMs) }}</span>
-              </span>
-              <span class="trace-step-meta">
-                {{ step.events.length }} events
-                <template v-if="step.toolNames.length > 0"> · {{ step.toolNames.length }} tools</template>
-              </span>
-              <span v-if="step.toolNames.length > 0" class="trace-tool-tags">
-                <el-tag
-                  v-for="tool in step.toolNames.slice(0, 4)"
-                  :key="`${step.id}-${tool}`"
-                  size="small"
-                  effect="plain"
-                >
-                  {{ tool }}
-                </el-tag>
-              </span>
-            </button>
-
-            <div v-if="selectedStepId === step.id" class="trace-step-inline-events">
-              <button
-                v-for="event in step.events"
-                :key="event.id"
-                class="trace-event-row"
-                :class="{ active: selectedEventId === event.id }"
-                type="button"
-                @click="selectEvent(event.id)"
-              >
-                <el-tag size="small" effect="plain">{{ event.type }}</el-tag>
-                <span class="trace-event-title">{{ event.title }}</span>
-                <span class="trace-event-meta">{{ formatEventMeta(event) }}</span>
-              </button>
+          <template v-else>
+            <div class="trace-duration-summary">
+              Run 总耗时 {{ formatDuration(selectedRun?.elapsedMs) }}，Step 合计
+              {{ formatDuration(selectedRunStepElapsedMs) }}，Step 间模型处理
+              {{ formatDuration(selectedRunStepGapElapsedMs) }}，未归入
+              {{ formatDuration(selectedRunUnattributedElapsedMs) }}
             </div>
-          </article>
+            <p class="trace-timing-note">
+              Step 耗时为可观测 step-start 到 step-finish 区间；Step 间模型处理为相邻 step-finish 到下一
+              step-start 的时间，通常包含模型生成下一条 assistant message 和决定下一次工具调用；Run 总耗时还包含启动和收尾。
+            </p>
+            <template v-for="row in stepTimelineRows" :key="row.id">
+              <article
+                v-if="row.type === 'step'"
+                class="trace-step-block"
+                :class="{ active: selectedStepId === row.step.id }"
+              >
+                <button class="trace-step-card" type="button" @click="selectStep(row.step.id)">
+                  <span class="trace-step-title">
+                    <strong>Step {{ row.step.index }}</strong>
+                    <span>{{ formatStepDuration(row.step) }}</span>
+                  </span>
+                  <span class="trace-step-meta">
+                    {{ row.step.events.length }} events
+                    <template v-if="row.step.toolNames.length > 0">
+                      · {{ row.step.toolNames.length }} tools
+                    </template>
+                    <template v-if="row.tokenUsage"> · {{ formatTokenUsage(row.tokenUsage) }}</template>
+                  </span>
+                  <span v-if="row.step.toolNames.length > 0" class="trace-tool-tags">
+                    <el-tag
+                      v-for="tool in row.step.toolNames.slice(0, 4)"
+                      :key="`${row.step.id}-${tool}`"
+                      size="small"
+                      effect="plain"
+                    >
+                      {{ tool }}
+                    </el-tag>
+                  </span>
+                </button>
+
+                <div v-if="selectedStepId === row.step.id" class="trace-step-inline-events">
+                  <button
+                    v-for="event in row.step.events"
+                    :key="event.id"
+                    class="trace-event-row"
+                    :class="{ active: selectedEventId === event.id }"
+                    type="button"
+                    @click="selectEvent(event.id)"
+                  >
+                    <el-tag size="small" effect="plain">{{ event.type }}</el-tag>
+                    <span class="trace-event-title">{{ event.title }}</span>
+                    <span class="trace-event-meta">{{ formatEventMeta(event) }}</span>
+                  </button>
+                </div>
+              </article>
+              <div v-else class="trace-step-gap">
+                ↓ Step 间模型处理 {{ formatDuration(row.gap.elapsedMs) }}
+                <template v-if="row.tokenUsage"> · {{ formatTokenUsage(row.tokenUsage) }}</template>
+              </div>
+            </template>
+          </template>
         </main>
 
         <aside class="trace-detail">
@@ -98,6 +117,8 @@
                 <strong>{{ selectedEvent.status ?? "-" }}</strong>
                 <span>Duration</span>
                 <strong>{{ formatDuration(selectedEvent.elapsedMs) }}</strong>
+                <span>Tokens</span>
+                <strong>{{ formatTokenUsageDetail(selectedEvent.tokenUsage) }}</strong>
                 <span>Tool</span>
                 <strong>{{ selectedEvent.toolName ?? "-" }}</strong>
                 <span>Attempt</span>
@@ -139,6 +160,15 @@ import {
   type AgentTraceEvent,
   type AgentTraceResponse,
 } from "../api/dashboard";
+import {
+  buildStepGaps,
+  gapTokenUsage,
+  hasCompleteStepTimestamp,
+  stepDuration,
+  stepTokenUsage,
+  type TraceStepGap,
+  type TraceTokenUsage,
+} from "./agentTraceTiming";
 
 const props = defineProps<{
   taskId?: number;
@@ -185,27 +215,14 @@ type TraceStepGroup = {
   toolNames: string[];
 };
 
+type TraceTimelineRow =
+  | { id: string; type: "step"; step: TraceStepGroup; tokenUsage?: TraceTokenUsage }
+  | { id: string; type: "gap"; gap: TraceStepGap; tokenUsage?: TraceTokenUsage };
+
 function uniqueToolNames(events: AgentTraceEvent[]): string[] {
   return Array.from(
     new Set(events.map((event) => event.toolName).filter((tool): tool is string => Boolean(tool))),
   );
-}
-
-function stepDuration(events: AgentTraceEvent[]): number | undefined {
-  const stepFinishElapsedMs = [...events]
-    .reverse()
-    .find((event) => event.type === "step-finish" && event.elapsedMs !== undefined)?.elapsedMs;
-  if (stepFinishElapsedMs !== undefined) {
-    return stepFinishElapsedMs;
-  }
-  const timestamps = events
-    .map((event) => event.timestampMs)
-    .filter((value): value is number => value !== undefined);
-  if (timestamps.length >= 2) {
-    return Math.max(0, Math.max(...timestamps) - Math.min(...timestamps));
-  }
-  const elapsedTotal = events.reduce((sum, event) => sum + (event.elapsedMs ?? 0), 0);
-  return elapsedTotal > 0 ? elapsedTotal : undefined;
 }
 
 function hasExecutableEvent(events: AgentTraceEvent[]): boolean {
@@ -248,6 +265,44 @@ const selectedStep = computed(() => {
   return stepGroups.value.find((step) => step.id === selectedStepId.value);
 });
 
+const stepGaps = computed(() => buildStepGaps(stepGroups.value));
+
+const stepTimelineRows = computed<TraceTimelineRow[]>(() => {
+  const gapByPreviousStepId = new Map(stepGaps.value.map((gap) => [gap.afterStepId, gap]));
+  return stepGroups.value.flatMap((step, index) => {
+    const rows: TraceTimelineRow[] = [
+      { id: step.id, type: "step", step, tokenUsage: stepTokenUsage(step) },
+    ];
+    const gap = gapByPreviousStepId.get(step.id);
+    if (gap && index < stepGroups.value.length - 1) {
+      const nextStep = stepGroups.value[index + 1];
+      rows.push({
+        id: gap.id,
+        type: "gap",
+        gap,
+        tokenUsage: nextStep ? gapTokenUsage(step, nextStep) : undefined,
+      });
+    }
+    return rows;
+  });
+});
+
+const selectedRunStepElapsedMs = computed(() =>
+  stepGroups.value.reduce((sum, step) => sum + (step.elapsedMs ?? 0), 0),
+);
+
+const selectedRunStepGapElapsedMs = computed(() =>
+  stepGaps.value.reduce((sum, gap) => sum + gap.elapsedMs, 0),
+);
+
+const selectedRunUnattributedElapsedMs = computed(() => {
+  const runElapsedMs = selectedRun.value?.elapsedMs;
+  if (runElapsedMs === undefined) {
+    return undefined;
+  }
+  return Math.max(0, runElapsedMs - selectedRunStepElapsedMs.value - selectedRunStepGapElapsedMs.value);
+});
+
 const selectedEvent = computed<AgentTraceEvent | undefined>(() => {
   return selectedStep.value?.events.find((event) => event.id === selectedEventId.value);
 });
@@ -275,10 +330,44 @@ function formatDuration(value: number | undefined): string {
 }
 
 function formatEventMeta(event: AgentTraceEvent): string {
-  const parts = [event.toolName ?? event.status, formatDuration(event.elapsedMs)].filter(
-    (value) => value && value !== "-",
-  );
+  const parts = [
+    event.toolName ?? event.status,
+    formatDuration(event.elapsedMs),
+    formatTokenUsage(event.tokenUsage),
+  ].filter((value) => value && value !== "-");
   return parts.length > 0 ? parts.join(" · ") : "-";
+}
+
+function formatTokenUsage(tokenUsage: TraceTokenUsage | undefined): string {
+  if (!tokenUsage) {
+    return "";
+  }
+  const parts = [
+    tokenUsage.total === undefined ? undefined : `tokens ${String(tokenUsage.total)}`,
+    tokenUsage.output === undefined ? undefined : `out ${String(tokenUsage.output)}`,
+    tokenUsage.reasoning === undefined ? undefined : `reasoning ${String(tokenUsage.reasoning)}`,
+  ].filter((part): part is string => part !== undefined);
+  return parts.join(" / ");
+}
+
+function formatTokenUsageDetail(tokenUsage: TraceTokenUsage | undefined): string {
+  if (!tokenUsage) {
+    return "-";
+  }
+  const parts = [
+    tokenUsage.total === undefined ? undefined : `total ${String(tokenUsage.total)}`,
+    tokenUsage.input === undefined ? undefined : `input ${String(tokenUsage.input)}`,
+    tokenUsage.output === undefined ? undefined : `output ${String(tokenUsage.output)}`,
+    tokenUsage.reasoning === undefined ? undefined : `reasoning ${String(tokenUsage.reasoning)}`,
+    tokenUsage.cacheRead === undefined ? undefined : `cache read ${String(tokenUsage.cacheRead)}`,
+    tokenUsage.cacheWrite === undefined ? undefined : `cache write ${String(tokenUsage.cacheWrite)}`,
+  ].filter((part): part is string => part !== undefined);
+  return parts.length > 0 ? parts.join(" / ") : "-";
+}
+
+function formatStepDuration(step: TraceStepGroup): string {
+  const prefix = hasCompleteStepTimestamp(step.events) ? "区间 " : "估算 ";
+  return `${prefix}${formatDuration(step.elapsedMs)}`;
 }
 
 function selectRun(runId: string | number) {
@@ -531,6 +620,23 @@ watch(
   flex: 0 0 auto;
 }
 
+.trace-duration-summary {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 8px 10px;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.trace-timing-note {
+  margin: 8px 0 10px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .trace-step-title {
   display: flex;
   align-items: center;
@@ -562,6 +668,15 @@ watch(
 .trace-event-row:hover,
 .trace-step-card:hover {
   background: #f8fafc;
+}
+
+.trace-step-gap {
+  margin: 2px 10px;
+  border-left: 2px solid #cbd5e1;
+  padding: 4px 0 4px 10px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .trace-event-title {
@@ -601,11 +716,10 @@ watch(
 }
 
 .trace-pre {
-  max-height: 320px;
-  overflow: auto;
   border-radius: 6px;
   background: #0f172a;
   color: #e5e7eb;
+  margin: 0;
   padding: 12px;
   white-space: pre-wrap;
   word-break: break-word;

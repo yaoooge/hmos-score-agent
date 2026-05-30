@@ -8,7 +8,10 @@ import test from "node:test";
 import { createAgentTraceRecorder } from "../src/agentTrace/agentTraceRecorder.js";
 import { createAgentTraceSqliteStore } from "../src/agentTrace/agentTraceSqliteStore.js";
 import { fetchOpencodeSessionSnapshot } from "../src/agentTrace/opencodeSessionClient.js";
-import { parseOpencodeSessionEvents } from "../src/agentTrace/opencodePartParser.js";
+import {
+  parseOpencodeRawEventStream,
+  parseOpencodeSessionEvents,
+} from "../src/agentTrace/opencodePartParser.js";
 import type {
   AgentTraceAttempt,
   AgentTraceRun,
@@ -162,6 +165,43 @@ test("parseOpencodeSessionEvents assigns step duration to step-finish events", (
 
   assert.equal(stepFinishEvents[0]?.elapsedMs, 640);
   assert.equal(stepFinishEvents[1]?.elapsedMs, 400);
+});
+
+test("parseOpencodeRawEventStream reads top-level OpenCode timestamp", () => {
+  const attempt: AgentTraceAttempt = {
+    id: "attempt-0",
+    sequence: 0,
+    retryIndex: 0,
+    requestTag: "rubric-case",
+    startedAtMs: 1_000,
+    endedAtMs: 5_000,
+    elapsedMs: 4_000,
+    status: "success",
+    warnings: [],
+  };
+
+  const result = parseOpencodeRawEventStream(
+    [
+      '{"type":"step_start","timestamp":1780044437015,"part":{"id":"step-1-start","type":"step-start"}}',
+      '{"type":"step_finish","timestamp":1780044439115,"part":{"id":"step-1-finish","type":"step-finish","reason":"tool-calls","tokens":{"total":120,"input":100,"output":10,"reasoning":5,"cache":{"read":5,"write":0}}}}',
+    ].join("\n"),
+    attempt,
+  );
+
+  assert.equal(result.warnings.length, 0);
+  assert.equal(result.events[0]?.type, "step-start");
+  assert.equal(result.events[0]?.timestampMs, 1_780_044_437_015);
+  assert.equal(result.events[1]?.type, "step-finish");
+  assert.equal(result.events[1]?.timestampMs, 1_780_044_439_115);
+  assert.equal(result.events[1]?.elapsedMs, 2_100);
+  assert.deepEqual(result.events[1]?.tokenUsage, {
+    total: 120,
+    input: 100,
+    output: 10,
+    reasoning: 5,
+    cacheRead: 5,
+    cacheWrite: 0,
+  });
 });
 
 test("AgentTraceRecorder records successful and failed runPrompt attempts", async (t) => {

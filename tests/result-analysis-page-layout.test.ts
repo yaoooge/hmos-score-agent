@@ -45,3 +45,19 @@ test("manual analysis status defaults to pending and appears after selection col
     assert.ok(statusIndex < taskIdIndex, `${tableName} status column should be first after selection`);
   }
 });
+
+test("risk analysis keyword input advertises risk title filtering", () => {
+  const riskTabIndex = firstIndexAfter(
+    resultAnalysisVue,
+    '<el-tab-pane label="风险项分析"',
+    0,
+  );
+  const placeholderIndex = firstIndexAfter(
+    resultAnalysisVue,
+    'placeholder="名称 / taskId / 风险标题"',
+    riskTabIndex,
+  );
+  const tableIndex = firstIndexAfter(resultAnalysisVue, "<el-table", riskTabIndex);
+
+  assert.ok(placeholderIndex < tableIndex, "risk title filter should be in the risk toolbar");
+});

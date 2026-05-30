@@ -910,6 +910,13 @@ test("dashboard risk review calibrations support keyword and agreement filters",
   assert.equal(byName.total, 1);
   assert.equal((byName.items as Array<Record<string, unknown>>)[0]?.taskId, 88);
 
+  const byRiskTitle = await getJson(
+    app,
+    "/dashboard/analysis/risk-review-calibrations?keyword=%E6%9E%84%E5%BB%BA%E9%A3%8E%E9%99%A9",
+  );
+  assert.equal(byRiskTitle.total, 1);
+  assert.equal((byRiskTitle.items as Array<Record<string, unknown>>)[0]?.taskId, 88);
+
   const disagreed = await getJson(
     app,
     "/dashboard/analysis/risk-review-calibrations?agreement=disagreed",

@@ -23,6 +23,7 @@ export type AgentTraceEvent = {
   status?: AgentTraceEventStatus;
   timestampMs?: number;
   elapsedMs?: number;
+  tokenUsage?: Partial<OpencodeTokenUsage>;
   toolName?: string;
   messageId?: string;
   partId?: string;
