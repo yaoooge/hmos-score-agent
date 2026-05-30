@@ -63,6 +63,9 @@
               placeholder="规则关键词"
               style="width: 240px"
             />
+            <div class="rule-summary">
+              <el-tag effect="plain">{{ ruleSummaryText }}</el-tag>
+            </div>
           </div>
           <el-table :data="rules" v-loading="ruleLoading" stripe height="560">
             <el-table-column prop="ruleId" label="规则" min-width="260" show-overflow-tooltip />
@@ -72,6 +75,11 @@
             <el-table-column label="最近命中" min-width="170">
               <template #default="{ row }">
                 {{ formatDashboardDateTime(row.lastViolatedAt) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="命中比例" width="150">
+              <template #default="{ row }">
+                {{ formatHitRatio(row.affectedTaskCount, ruleSummary.relatedCaseCount) }}
               </template>
             </el-table-column>
           </el-table>
@@ -371,6 +379,7 @@ import {
 } from "../api/dashboard";
 import OverflowTextTooltip from "../components/OverflowTextTooltip.vue";
 import TaskStatusTag from "../components/TaskStatusTag.vue";
+import { createRecentDashboardRange, refreshDashboardRangeEnd } from "../dashboardDateRange";
 import { formatDashboardDateTime } from "../dateTime";
 import { buildCrossDeviceRiskQueryParams } from "./crossDeviceRiskQuery";
 
@@ -388,6 +397,7 @@ const range = ref<[Date, Date] | null>(null);
 const cases = ref<CrossDeviceCase[]>([]);
 const rules = ref<CrossDeviceRuleViolation[]>([]);
 const riskReviews = ref<RiskReviewCalibration[]>([]);
+const ruleSummary = ref({ relatedCaseCount: 0, violatedRuleCount: 0, totalViolationEvents: 0 });
 const caseLoading = ref(false);
 const ruleLoading = ref(false);
 const riskLoading = ref(false);
@@ -421,6 +431,10 @@ const caseDrawerTitle = computed(() => {
     return "用例详情";
   }
   return `#${String(selectedCase.value.taskId)} ${selectedCase.value.name}`;
+});
+
+const ruleSummaryText = computed(() => {
+  return `用例 ${ruleSummary.value.relatedCaseCount} / 规则 ${ruleSummary.value.violatedRuleCount} / 命中 ${ruleSummary.value.totalViolationEvents}`;
 });
 
 function buildScoringResultUrl(taskId: number): string {
@@ -463,6 +477,7 @@ async function loadRules() {
     });
     rules.value = response.items;
     ruleTotal.value = response.total;
+    ruleSummary.value = response.summary;
   } finally {
     ruleLoading.value = false;
   }
@@ -518,6 +533,14 @@ function formatAgreement(review: RiskReviewCalibration["humanReview"]): string {
 
 function formatScore(score: number | null): string {
   return score === null ? "--" : String(score);
+}
+
+function formatHitRatio(hitCount: number, totalCount: number): string {
+  if (totalCount <= 0) {
+    return "0/0 (0%)";
+  }
+  const percent = (hitCount / totalCount) * 100;
+  return `${String(hitCount)}/${String(totalCount)} (${percent.toFixed(1)}%)`;
 }
 
 function isCrossDevicePack(packId: string): boolean {
@@ -608,6 +631,11 @@ function reloadRiskReviewsFromFirstPage() {
 }
 
 function onRefresh() {
+  const refreshedRange = refreshDashboardRangeEnd(range.value);
+  if (refreshedRange) {
+    range.value = refreshedRange;
+    return;
+  }
   void loadActiveTab();
 }
 
@@ -624,10 +652,7 @@ watch(
 );
 
 onMounted(() => {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - 7);
-  range.value = [start, end];
+  range.value = createRecentDashboardRange(7);
   setTitleControls?.({ dateRange: { model: range } });
   void loadCases();
   window.addEventListener("dashboard:refresh", onRefresh as EventListener);
@@ -641,7 +666,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .cross-device-toolbar {
+  align-items: center;
   margin-bottom: 12px;
+}
+
+.rule-summary {
+  display: flex;
+  flex: 1;
+  justify-content: flex-end;
 }
 
 .table-pagination {

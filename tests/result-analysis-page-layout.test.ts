@@ -22,6 +22,18 @@ test("result analysis third tab only presents violated rule list", () => {
   assert.doesNotMatch(resultAnalysisVue, /高风险/);
 });
 
+test("result analysis rule violation list uses dashboard date range and only adds hit ratio", () => {
+  assert.match(resultAnalysisVue, /const range = ref<\[Date, Date\] \| null>\(null\)/);
+  assert.match(resultAnalysisVue, /setTitleControls\?\.\(\{ dateRange: \{ model: range \} \}\)/);
+  assert.match(resultAnalysisVue, /fetchNegativeResults\(dateParams\(\)\)/);
+  assert.match(resultAnalysisVue, /label="命中比例"/);
+  assert.match(resultAnalysisVue, /formatHitRatio\(row\.affectedTaskIds\.length, negative\?\.summary\.totalCaseCount/);
+  assert.doesNotMatch(resultAnalysisVue, /label="规则包"/);
+  assert.doesNotMatch(resultAnalysisVue, /label="影响用例"/);
+  assert.doesNotMatch(resultAnalysisVue, /label="影响 taskId"/);
+  assert.doesNotMatch(resultAnalysisVue, /label="最近命中"/);
+});
+
 test("manual analysis status defaults to pending and appears after selection column", () => {
   assert.match(resultAnalysisVue, /manualAnalysisStatus: "pending" as "" \| ManualAnalysisStatus/);
 

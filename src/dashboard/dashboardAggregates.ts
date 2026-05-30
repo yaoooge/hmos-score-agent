@@ -349,6 +349,7 @@ export function buildNegativeResults(
   ruleRuns: RuleViolationRunSnapshot[],
   scoreThreshold: number,
 ) {
+  const taskIds = new Set(tasks.map((task) => task.taskId));
   const failedTasks = sortTasksByCreatedAtDesc(
     tasks.filter((task) => task.statusCategory === "failed"),
   );
@@ -376,9 +377,13 @@ export function buildNegativeResults(
       rule_summary: string;
       violationCount: number;
       affectedTaskIds: Set<number>;
+      lastViolatedAt: string;
     }
   >();
   for (const run of ruleRuns) {
+    if (!taskIds.has(run.taskId)) {
+      continue;
+    }
     for (const rule of run.rules) {
       if (rule.result !== "不满足") {
         continue;
@@ -390,9 +395,13 @@ export function buildNegativeResults(
         rule_summary: rule.rule_summary,
         violationCount: 0,
         affectedTaskIds: new Set<number>(),
+        lastViolatedAt: run.completedAt,
       };
       existing.violationCount += 1;
       existing.affectedTaskIds.add(run.taskId);
+      if (Date.parse(run.completedAt) > Date.parse(existing.lastViolatedAt)) {
+        existing.lastViolatedAt = run.completedAt;
+      }
       ruleStats.set(key, existing);
     }
   }
@@ -404,11 +413,18 @@ export function buildNegativeResults(
       rule_summary: rule.rule_summary,
       violationCount: rule.violationCount,
       affectedTaskIds: Array.from(rule.affectedTaskIds).sort((left, right) => left - right),
+      lastViolatedAt: rule.lastViolatedAt,
     }))
-    .sort((left, right) => right.violationCount - left.violationCount);
+    .sort(
+      (left, right) =>
+        right.violationCount - left.violationCount ||
+        Date.parse(right.lastViolatedAt) - Date.parse(left.lastViolatedAt) ||
+        left.rule_id.localeCompare(right.rule_id),
+    );
 
   return {
     summary: {
+      totalCaseCount: tasks.length,
       failedTaskCount: failedTasks.length,
       lowScoreTaskCount: lowScoreTasks.length,
       hardGateTaskCount: hardGateTasks.length,

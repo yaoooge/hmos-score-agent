@@ -303,6 +303,7 @@ export type CrossDeviceRuleViolationsResponse = {
 export type NegativeResults = {
   success: true;
   summary: {
+    totalCaseCount: number;
     failedTaskCount: number;
     lowScoreTaskCount: number;
     hardGateTaskCount: number;
@@ -319,6 +320,7 @@ export type NegativeResults = {
     rule_summary: string;
     violationCount: number;
     affectedTaskIds: number[];
+    lastViolatedAt: string;
   }>;
 };
 

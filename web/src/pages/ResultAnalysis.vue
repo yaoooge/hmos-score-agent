@@ -187,10 +187,21 @@
       </el-tab-pane>
       <el-tab-pane label="违反规则列表" name="negative">
         <div class="table-card" v-loading="negativeLoading">
+          <div class="toolbar negative-toolbar">
+            <el-tag effect="plain">规则 {{ negative?.summary.violatedRuleCount ?? 0 }}</el-tag>
+            <el-tag effect="plain">
+              命中 {{ negativeRuleViolationEventCount }}
+            </el-tag>
+          </div>
           <el-table :data="negative?.topRuleViolations ?? []" stripe height="620">
             <el-table-column prop="rule_id" label="规则" width="220" />
             <el-table-column prop="rule_summary" label="摘要" min-width="260" show-overflow-tooltip />
             <el-table-column prop="violationCount" label="次数" width="100" />
+            <el-table-column label="命中比例" width="150">
+              <template #default="{ row }">
+                {{ formatHitRatio(row.affectedTaskIds.length, negative?.summary.totalCaseCount ?? 0) }}
+              </template>
+            </el-table-column>
           </el-table>
         </div>
       </el-tab-pane>
@@ -199,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from "vue";
 import {
   fetchHumanRatingGaps,
   fetchNegativeResults,
@@ -210,6 +221,16 @@ import {
   type ManualAnalysisStatus,
   type RiskReviewCalibration,
 } from "../api/dashboard";
+import { createRecentDashboardRange, refreshDashboardRangeEnd } from "../dashboardDateRange";
+
+type DashboardTitleControls = {
+  dateRange?: {
+    model: Ref<[Date, Date] | null>;
+  };
+};
+
+const setTitleControls =
+  inject<(controls: DashboardTitleControls | null) => void>("setDashboardTitleControls");
 
 const tab = ref("gap");
 const gapLoading = ref(false);
@@ -228,6 +249,7 @@ const gapTotal = ref(0);
 const riskPage = ref(1);
 const riskPageSize = ref(20);
 const riskTotal = ref(0);
+const range = ref<[Date, Date] | null>(null);
 
 const gapFilters = reactive({
   keyword: "",
@@ -259,6 +281,17 @@ const gapConclusionOptions = computed(() => {
   }
   return Array.from(conclusions).sort();
 });
+
+const negativeRuleViolationEventCount = computed(() => {
+  return negative.value?.topRuleViolations.reduce((sum, item) => sum + item.violationCount, 0) ?? 0;
+});
+
+function dateParams() {
+  return {
+    from: range.value?.[0]?.toISOString(),
+    to: range.value?.[1]?.toISOString(),
+  };
+}
 
 async function loadGaps() {
   gapLoading.value = true;
@@ -299,7 +332,7 @@ async function loadRiskReviews() {
 async function loadNegativeResults() {
   negativeLoading.value = true;
   try {
-    negative.value = await fetchNegativeResults();
+    negative.value = await fetchNegativeResults(dateParams());
   } finally {
     negativeLoading.value = false;
   }
@@ -326,6 +359,14 @@ function formatManualAnalysisStatus(status: ManualAnalysisStatus | undefined): s
 
 function manualAnalysisStatusTagType(status: ManualAnalysisStatus | undefined): "success" | "info" {
   return status === "analyzed" ? "success" : "info";
+}
+
+function formatHitRatio(hitCount: number, totalCount: number): string {
+  if (totalCount <= 0) {
+    return "0/0 (0%)";
+  }
+  const percent = (hitCount / totalCount) * 100;
+  return `${String(hitCount)}/${String(totalCount)} (${percent.toFixed(1)}%)`;
 }
 
 function onGapSelectionChange(selection: HumanRatingGap[]) {
@@ -394,15 +435,29 @@ watch(
   () => [riskFilters.keyword, riskFilters.manualAnalysisStatus],
   reloadRiskReviewsFromFirstPage,
 );
+watch(range, loadNegativeResults);
 
 onMounted(() => {
+  range.value = createRecentDashboardRange(7);
+  setTitleControls?.({ dateRange: { model: range } });
   loadData();
-  window.addEventListener("dashboard:refresh", loadData as EventListener);
+  window.addEventListener("dashboard:refresh", onRefresh as EventListener);
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("dashboard:refresh", loadData as EventListener);
+  setTitleControls?.(null);
+  window.removeEventListener("dashboard:refresh", onRefresh as EventListener);
 });
+
+function onRefresh() {
+  const refreshedRange = refreshDashboardRangeEnd(range.value);
+  if (refreshedRange) {
+    range.value = refreshedRange;
+    void Promise.all([loadGaps(), loadRiskReviews()]);
+    return;
+  }
+  void loadData();
+}
 </script>
 
 <style scoped>
@@ -417,4 +472,10 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   margin-top: 12px;
 }
+
+.negative-toolbar {
+  margin-bottom: 12px;
+  justify-content: flex-end;
+}
+
 </style>

@@ -764,6 +764,7 @@ test("dashboard analysis exposes human rating gaps and negative results", async 
 
   const negative = await getJson(app, "/dashboard/analysis/negative-results");
   const negativeSummary = negative.summary as Record<string, unknown>;
+  assert.equal(negativeSummary.totalCaseCount, 4);
   assert.equal(negativeSummary.failedTaskCount, 2);
   assert.equal(negativeSummary.lowScoreTaskCount, 2);
   assert.equal(negativeSummary.hardGateTaskCount, 2);
@@ -785,6 +786,16 @@ test("dashboard analysis exposes human rating gaps and negative results", async 
     (negative.topRuleViolations as Array<Record<string, unknown>>)[0]?.rule_id,
     "ARKTS-MUST-001",
   );
+
+  const outOfRangeNegative = await getJson(
+    app,
+    "/dashboard/analysis/negative-results?from=2026-05-14T00:00:00.000Z&to=2026-05-14T23:59:59.999Z",
+  );
+  const outOfRangeSummary = outOfRangeNegative.summary as Record<string, unknown>;
+  assert.equal(outOfRangeSummary.totalCaseCount, 0);
+  assert.equal(outOfRangeSummary.failedTaskCount, 0);
+  assert.equal(outOfRangeSummary.violatedRuleCount, 0);
+  assert.deepEqual(outOfRangeNegative.topRuleViolations, []);
 });
 
 test("dashboard human rating gaps support keyword and conclusion filters", async (t) => {
