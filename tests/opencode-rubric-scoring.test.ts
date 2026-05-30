@@ -170,6 +170,9 @@ test("runOpencodeRubricScoring returns existing rubric result shape without repl
   assert.match(prompt, /references\/risk-taxonomy\.yaml/);
   assert.match(prompt, /优先阅读 patch\/effective\.patch/);
   assert.match(prompt, /根据 patch 中出现的文件路径继续阅读相关 generated\/ 或 original\/ 上下文/);
+  assert.match(prompt, /risks\[\]\.evidence/);
+  assert.match(prompt, /真实行号/);
+  assert.match(prompt, /禁止使用 patch hunk 行号/);
   assert.doesNotMatch(prompt, /initial_target_files/);
   assert.doesNotMatch(prompt, /最终答案的第一个非空字符必须是 \{/);
   assert.doesNotMatch(prompt, /最后一个非空字符必须是 \}/);
@@ -317,6 +320,9 @@ test("runOpencodeRubricScoring retries once in the first session while preservin
   assert.match(calls[1]?.prompt ?? "", /最终答案的第一个非空字符必须是 \{/);
   assert.match(calls[1]?.prompt ?? "", /输出前必须自检 JSON 语法/);
   assert.match(calls[1]?.prompt ?? "", /每个 item_scores 条目必须先闭合自身对象/);
+  assert.match(calls[1]?.prompt ?? "", /risks\[\]\.evidence/);
+  assert.match(calls[1]?.prompt ?? "", /真实行号/);
+  assert.match(calls[1]?.prompt ?? "", /禁止使用 patch hunk 行号/);
   assert.match(calls[1]?.prompt ?? "", /沿用上一轮对话中的 scoring_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /scoring_payload:/);
@@ -377,6 +383,9 @@ test("runOpencodeRubricScoring retries once with strict format guidance after re
   assert.match(calls[1]?.prompt ?? "", /缺少 assistant 最终文本/);
   assert.match(calls[1]?.prompt ?? "", /严格遵守 system prompt 中的正确输出格式/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /正确输出格式:/);
+  assert.match(calls[1]?.prompt ?? "", /risks\[\]\.evidence/);
+  assert.match(calls[1]?.prompt ?? "", /真实行号/);
+  assert.match(calls[1]?.prompt ?? "", /禁止使用 patch hunk 行号/);
   assert.match(calls[1]?.prompt ?? "", /沿用上一轮对话中的 scoring_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
   assert.doesNotMatch(calls[1]?.prompt ?? "", /scoring_payload:/);

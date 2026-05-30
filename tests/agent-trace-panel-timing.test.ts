@@ -143,3 +143,29 @@ test("gapTokenUsage reads assistant message tokens between adjacent steps", () =
 
   assert.deepEqual(gapTokenUsage(previous, next), { total: 8_262, output: 8_189, reasoning: 0 });
 });
+
+test("gapTokenUsage does not reuse next step tokens when no gap message has token usage", () => {
+  const previous: TraceStepGroupLike = {
+    id: "step-7",
+    events: [
+      { id: "start-7", type: "step-start", title: "step-start", sequence: 0, timestampMs: 1_000 },
+      { id: "finish-7", type: "step-finish", title: "tool-calls", sequence: 1, timestampMs: 2_000 },
+    ],
+  };
+  const next: TraceStepGroupLike = {
+    id: "step-8",
+    events: [
+      { id: "start-8", type: "step-start", title: "step-start", sequence: 2, timestampMs: 126_748 },
+      {
+        id: "finish-8",
+        type: "step-finish",
+        title: "tool-calls",
+        sequence: 3,
+        timestampMs: 126_900,
+        tokenUsage: { total: 8_262, output: 8_189, reasoning: 0 },
+      },
+    ],
+  };
+
+  assert.equal(gapTokenUsage(previous, next), undefined);
+});

@@ -90,7 +90,7 @@ export function gapTokenUsage(
 ): TraceTokenUsage | undefined {
   const previousFinish = stepFinishTimestamp(previousStep);
   const nextStart = stepStartTimestamp(nextStep);
-  const messageTokenUsage = nextStep.events.find(
+  return nextStep.events.find(
     (event) =>
       event.type === "message" &&
       event.tokenUsage &&
@@ -100,5 +100,4 @@ export function gapTokenUsage(
       event.timestampMs >= previousFinish &&
       event.timestampMs <= nextStart,
   )?.tokenUsage;
-  return messageTokenUsage ?? stepTokenUsage(nextStep);
 }
