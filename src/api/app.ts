@@ -44,9 +44,7 @@ import {
   createSqliteConsistencyTaskStore,
   createSqliteRemoteTaskRegistry,
   createSqliteRuleViolationStatsStore,
-  buildSqliteDailyReport,
   buildSqliteRuleViolationStatsResponse,
-  buildSqliteScoreDistribution,
   countSqliteRemoteTaskStatuses,
   listSqliteRemoteTaskPage,
   listSqliteRemoteTaskSummariesForRange,
@@ -752,6 +750,7 @@ function readConsistencyTaskRecord(req: Request): ConsistencyTaskRecord | string
 }
 
 type ConsistencyTaskPatch = {
+  updatedAt?: string;
   status?: string;
   replaceRuns?: boolean;
   runs?: Array<Record<string, unknown>>;
@@ -768,6 +767,7 @@ function isConsistencyTaskPatch(value: unknown): value is ConsistencyTaskPatch {
   }
   const patch = value as ConsistencyTaskPatch;
   return (
+    (patch.updatedAt === undefined || typeof patch.updatedAt === "string") &&
     (patch.status === undefined || typeof patch.status === "string") &&
     (patch.replaceRuns === undefined || typeof patch.replaceRuns === "boolean") &&
     (patch.runs === undefined || (Array.isArray(patch.runs) && patch.runs.every(isObjectRecord))) &&
@@ -793,6 +793,9 @@ function mergeConsistencyTaskPatch(
   patch: ConsistencyTaskPatch,
 ): ConsistencyTaskRecord {
   const merged: ConsistencyTaskRecord = { ...existing };
+  if (patch.updatedAt !== undefined) {
+    merged.updatedAt = patch.updatedAt;
+  }
   if (patch.status !== undefined) {
     merged.status = patch.status;
   }
@@ -1411,8 +1414,6 @@ export function createApp(
       taskPageProvider: async (query) => listSqliteRemoteTaskPage(scoreDb, query),
       dashboardSummaryProvider: async (query) => summarizeSqliteRemoteTasks(scoreDb, query),
       statusCountsProvider: async () => countSqliteRemoteTaskStatuses(scoreDb),
-      dailyReportProvider: async (query) => buildSqliteDailyReport(scoreDb, query),
-      scoreDistributionProvider: async (query) => buildSqliteScoreDistribution(scoreDb, query),
     }),
   );
   app.post(

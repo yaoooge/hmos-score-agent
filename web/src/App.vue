@@ -8,10 +8,6 @@
           <el-icon><List /></el-icon>
           <span>评测任务</span>
         </el-menu-item>
-        <el-menu-item index="/reports">
-          <el-icon><TrendCharts /></el-icon>
-          <span>用例报表</span>
-        </el-menu-item>
         <el-menu-item index="/analysis">
           <el-icon><DataAnalysis /></el-icon>
           <span>结果分析</span>
@@ -62,7 +58,6 @@ import {
   List,
   Refresh,
   SwitchButton,
-  TrendCharts,
 } from "@element-plus/icons-vue";
 import { clearAuthSession } from "./authSession.js";
 
@@ -87,9 +82,6 @@ const titleDateRange = computed({
 const activePath = computed(() => route.path);
 const isLoginRoute = computed(() => route.path === "/login");
 const title = computed(() => {
-  if (route.path.startsWith("/reports")) {
-    return "用例报表";
-  }
   if (route.path.startsWith("/analysis")) {
     return "结果分析";
   }
@@ -102,9 +94,6 @@ const title = computed(() => {
   return "评测任务";
 });
 const subtitle = computed(() => {
-  if (route.path.startsWith("/reports")) {
-    return "任务趋势、完成情况和分数分布";
-  }
   if (route.path.startsWith("/analysis")) {
     return "人工评分差异和负向结果归因";
   }

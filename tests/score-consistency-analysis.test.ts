@@ -4,6 +4,7 @@ import {
   analyzeConsistency,
   appendAnalysisHistorySnapshot,
   buildConsistencyTaskPersistRecord,
+  buildConsistencyTaskInputInfo,
   buildConsistencyTaskPersistDelta,
   collectExclusiveRoundTaskIds,
   buildConsistencyTaskRoundOptions,
@@ -858,6 +859,32 @@ test("buildConsistencyTaskPersistRecord keeps valid sourceTask for refresh saves
   assert.equal("analysis" in refreshPayload, false);
   assert.equal("sourceTask" in refreshPayload, true);
   assert.equal("sourceTask" in createPayload, true);
+});
+
+test("buildConsistencyTaskInputInfo exposes the original creation inputs", () => {
+  const validation = validateRemoteTaskJson(remoteTaskJson);
+  assert.equal(validation.valid, true);
+  const info = buildConsistencyTaskInputInfo(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-19T11:30:45.183Z",
+      status: "running",
+      sourceTask: validation.task,
+      runs: [],
+    },
+    10,
+  );
+
+  assert.equal(info.serviceBaseUrl, "http://localhost:3000");
+  assert.equal(info.runCount, 10);
+  assert.equal(info.sourceTaskAvailable, true);
+  assert.equal(JSON.parse(info.sourceTaskJson).taskId, 1306);
+  assert.equal(JSON.parse(info.sourceTaskJson).callback, "");
 });
 
 test("buildConsistencyTaskPersistDelta includes only changed runs and appended history", () => {

@@ -13,8 +13,6 @@
 | `GET` | `/dashboard/tasks/:taskId/agent-trace` | 查询任务 Agent Trace 摘要。 |
 | `GET` | `/dashboard/tasks/:taskId/agent-trace/runs/:traceRunId/raw` | 查询单个 Agent Trace run 的原始内容。 |
 | `GET` | `/dashboard/tasks/:taskId/agent-trace/events/:traceEventId/raw` | 查询单个 Agent Trace event 的原始内容。 |
-| `GET` | `/dashboard/reports/daily` | 查询按天聚合的任务报告。 |
-| `GET` | `/dashboard/reports/score-distribution` | 查询分数分布桶。 |
 | `GET` | `/dashboard/analysis/human-rating-gaps` | 查询人工评级差异分析数据集。 |
 | `POST` | `/dashboard/analysis/human-rating-gaps/manual-analysis-status` | 批量更新人工评级差异分析的人工处理状态。 |
 | `GET` | `/dashboard/analysis/risk-review-calibrations` | 查询风险复核校准数据集。 |
@@ -132,21 +130,6 @@ Dashboard 前端按 run 和 step 分组展示事件、耗时和 token usage。
 | `traceEventId` | `report.runs[].events[].id`。 |
 
 响应返回单个 event 的原始内容，供任务详情页按需加载。
-
-### `GET /dashboard/reports/daily`
-
-可选查询参数：
-
-| 参数 | 说明 |
-| --- | --- |
-| `taskType` | 按任务类型过滤。 |
-| `from` / `to` | 按任务创建时间过滤。 |
-
-响应 `items` 为按日期聚合的任务数和平均分。
-
-### `GET /dashboard/reports/score-distribution`
-
-可选查询参数同 `/dashboard/reports/daily`。响应 `buckets` 为分数区间分布。
 
 ## 分析数据集
 

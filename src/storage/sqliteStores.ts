@@ -554,66 +554,6 @@ export function summarizeSqliteRemoteTasks(
   };
 }
 
-export function buildSqliteDailyReport(
-  db: ScoreDatabase,
-  query: { taskType?: string; from?: string; to?: string },
-) {
-  const params: Array<string | number> = [];
-  const where = appendDashboardTaskFilters(query, params);
-  return db.all<{
-    date: string;
-    received: number;
-    completed: number;
-    failed: number;
-    queued: number;
-    running: number;
-    averageScore: number | null;
-  }>(
-    `SELECT date(created_at_ms / 1000, 'unixepoch') AS date,
-            COUNT(*) AS received,
-            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-            SUM(CASE WHEN status IN ('failed', 'timed_out') THEN 1 ELSE 0 END) AS failed,
-            SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
-            SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
-            ROUND(AVG(CASE WHEN status = 'completed' THEN score END), 2) AS averageScore
-       FROM remote_task
-      ${where}
-      GROUP BY date
-      ORDER BY date`,
-    params,
-  );
-}
-
-export function buildSqliteScoreDistribution(
-  db: ScoreDatabase,
-  query: { taskType?: string; from?: string; to?: string },
-) {
-  const params: Array<string | number> = [];
-  const where = appendDashboardTaskFilters(query, params);
-  const rows = db.all<{ label: string; count: number }>(
-    `SELECT CASE
-              WHEN score BETWEEN 0 AND 59 THEN '0-59'
-              WHEN score BETWEEN 60 AND 69 THEN '60-69'
-              WHEN score BETWEEN 70 AND 79 THEN '70-79'
-              WHEN score BETWEEN 80 AND 89 THEN '80-89'
-              WHEN score BETWEEN 90 AND 100 THEN '90-100'
-            END AS label,
-            COUNT(*) AS count
-       FROM remote_task
-      ${where}${where ? " AND" : " WHERE"} score IS NOT NULL
-      GROUP BY label`,
-    params,
-  );
-  const counts = new Map(rows.map((row) => [row.label, row.count]));
-  return [
-    { label: "0-59", min: 0, max: 59, count: counts.get("0-59") ?? 0 },
-    { label: "60-69", min: 60, max: 69, count: counts.get("60-69") ?? 0 },
-    { label: "70-79", min: 70, max: 79, count: counts.get("70-79") ?? 0 },
-    { label: "80-89", min: 80, max: 89, count: counts.get("80-89") ?? 0 },
-    { label: "90-100", min: 90, max: 100, count: counts.get("90-100") ?? 0 },
-  ];
-}
-
 type RuleStatsRow = {
   pack_id: string;
   rule_id: string;

@@ -71,6 +71,7 @@ function parseRulePackDocument(value: unknown, location: string): RegisteredRule
   return {
     packId,
     displayName: name,
+    ...(root.version === undefined ? {} : { version: expectString(root.version, `${location}.version`) }),
     rules: [
       ...parseRuleGroup(root.must_rules, "must_rule", packId, `${location}.must_rules`),
       ...parseRuleGroup(root.should_rules, "should_rule", packId, `${location}.should_rules`),

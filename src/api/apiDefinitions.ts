@@ -69,8 +69,6 @@ export const API_PATHS = {
   dashboardTaskAgentTraceRunRaw: "/dashboard/tasks/:taskId/agent-trace/runs/:traceRunId/raw",
   dashboardTaskAgentTraceEventRaw: "/dashboard/tasks/:taskId/agent-trace/events/:traceEventId/raw",
   dashboardTaskStatusCounts: "/dashboard/tasks/status-counts",
-  dashboardReportsDaily: "/dashboard/reports/daily",
-  dashboardReportsScoreDistribution: "/dashboard/reports/score-distribution",
   dashboardAnalysisHumanRatingGaps: "/dashboard/analysis/human-rating-gaps",
   dashboardAnalysisHumanRatingGapManualStatus:
     "/dashboard/analysis/human-rating-gaps/manual-analysis-status",

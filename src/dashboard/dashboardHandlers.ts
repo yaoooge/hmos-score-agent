@@ -3,9 +3,7 @@ import type { AgentTraceSqliteStore } from "../agentTrace/agentTraceSqliteStore.
 import type { RemoteTaskRegistry } from "../api/remoteTaskRegistry.js";
 import type { RuleViolationStatsStore } from "../api/ruleViolationStatsStore.js";
 import {
-  buildDailyReport,
   buildNegativeResults,
-  buildScoreDistribution,
   buildScoreSummary,
   buildStatusCounts,
   buildTaskTypeCounts,
@@ -70,16 +68,6 @@ export type DashboardRouterDeps = {
     scoreSummary: DashboardScoreSummary;
   }>;
   statusCountsProvider?: () => Promise<ReturnType<typeof buildStatusCounts>>;
-  dailyReportProvider?: (query: {
-    taskType?: string;
-    from?: string;
-    to?: string;
-  }) => Promise<ReturnType<typeof buildDailyReport>>;
-  scoreDistributionProvider?: (query: {
-    taskType?: string;
-    from?: string;
-    to?: string;
-  }) => Promise<ReturnType<typeof buildScoreDistribution>>;
 };
 
 async function buildSqliteAgentTraceResponse(input: {
@@ -570,41 +558,6 @@ export function createDashboardRouter(deps: DashboardRouterDeps) {
 	      sendError(res, 500, error instanceof Error ? error.message : "Agent trace raw unavailable");
 	    }
 	  });
-
-	  router.get("/dashboard/reports/daily", async (req, res) => {
-    try {
-      const taskType = readString(req.query.taskType);
-      const from = readString(req.query.from);
-      const to = readString(req.query.to);
-      if (deps.dailyReportProvider) {
-        res.json({ success: true, items: await deps.dailyReportProvider({ taskType, from, to }) });
-        return;
-      }
-      const tasks = await getTaskSummaries(deps, { taskType, from, to });
-      res.json({ success: true, items: buildDailyReport(tasks) });
-    } catch (error) {
-      sendError(res, 500, error instanceof Error ? error.message : "Dashboard report unavailable");
-    }
-  });
-
-  router.get("/dashboard/reports/score-distribution", async (req, res) => {
-    try {
-      const taskType = readString(req.query.taskType);
-      const from = readString(req.query.from);
-      const to = readString(req.query.to);
-      if (deps.scoreDistributionProvider) {
-        res.json({
-          success: true,
-          buckets: await deps.scoreDistributionProvider({ taskType, from, to }),
-        });
-        return;
-      }
-      const tasks = await getTaskSummaries(deps, { taskType, from, to });
-      res.json({ success: true, buckets: buildScoreDistribution(tasks) });
-    } catch (error) {
-      sendError(res, 500, error instanceof Error ? error.message : "Dashboard report unavailable");
-    }
-  });
 
   router.get("/dashboard/analysis/human-rating-gaps", async (req, res) => {
     const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);

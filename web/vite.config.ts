@@ -17,7 +17,6 @@ export default defineConfig({
     proxy: {
       "/dashboard/summary": dashboardApiProxy,
       "/dashboard/tasks": dashboardApiProxy,
-      "/dashboard/reports": dashboardApiProxy,
       "/dashboard/analysis": dashboardApiProxy,
       "/dashboard/cross-device": dashboardApiProxy,
       "/score/run-remote-task": dashboardApiProxy,

@@ -442,6 +442,12 @@
           },
           "display_name": {
             "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "rule_set": {
+            "type": "string"
           }
         },
         "required": [

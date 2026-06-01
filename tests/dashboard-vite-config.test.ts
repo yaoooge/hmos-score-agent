@@ -28,7 +28,6 @@ test("dashboard dev proxy still forwards dashboard API routes", () => {
   for (const apiPath of [
     "/dashboard/summary",
     "/dashboard/tasks",
-    "/dashboard/reports",
     "/dashboard/analysis",
     "/dashboard/cross-device",
   ]) {
@@ -38,6 +37,12 @@ test("dashboard dev proxy still forwards dashboard API routes", () => {
       `${apiPath} should be proxied to the API server in dev`,
     );
   }
+
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(proxy, "/dashboard/reports"),
+    false,
+    "/dashboard/reports belongs to the removed case reports feature",
+  );
 });
 
 test("dashboard dev proxy forwards remote task result API routes", () => {

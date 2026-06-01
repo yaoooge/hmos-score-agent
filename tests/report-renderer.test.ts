@@ -114,6 +114,8 @@ function makeResultJson(overrides: Record<string, unknown> = {}): Record<string,
       {
         pack_id: "arkts-language",
         display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+        version: "1.0.0",
+        rule_set: "arkts-language@1.0.0",
       },
       {
         pack_id: "case-requirement_004",
@@ -244,7 +246,7 @@ test("renderHtmlReport renders bound rule packs inside overall card", () => {
   assert.doesNotMatch(html, /href="#bound-rule-packs"/);
   assert.doesNotMatch(html, /<section id="bound-rule-packs"/);
   assert.match(summarySection, /绑定规则集/);
-  assert.match(summarySection, /arkts-language/);
+  assert.match(summarySection, /arkts-language@1\.0\.0/);
   assert.match(summarySection, /从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范/);
   assert.match(summarySection, /case-requirement_004/);
   assert.match(summarySection, /用例 requirement_004 约束规则/);

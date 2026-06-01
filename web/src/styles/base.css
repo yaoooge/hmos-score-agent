@@ -311,6 +311,23 @@ body {
   gap: 8px;
 }
 
+.consistency-task-info {
+  margin-bottom: 12px;
+}
+
+.consistency-source-json-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 8px;
+}
+
+.consistency-source-json-header h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
 .consistency-report-table .el-scrollbar,
 .consistency-report-table .el-scrollbar__wrap,
 .consistency-report-table .el-table__body-wrapper,

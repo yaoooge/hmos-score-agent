@@ -729,14 +729,17 @@ test("ruleAuditNode excludes cross-device rules when task is not cross-device re
     {
       pack_id: "arkts-language",
       display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+      version: "v1.0.0",
     },
     {
       pack_id: "arkts-performance",
       display_name: "ArkTS 高性能编程实践",
+      version: "v1.0.0",
     },
     {
       pack_id: "arkui-extra",
       display_name: "ArkUI 补充工程规则",
+      version: "v1.0.0",
     },
   ]);
 });
@@ -1202,14 +1205,20 @@ test("reportGenerationNode includes case_rule_results in resultJson", async (t) 
     {
       pack_id: "arkts-language",
       display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+      version: "1.0.0",
+      rule_set: "arkts-language@1.0.0",
     },
     {
       pack_id: "arkts-performance",
       display_name: "ArkTS 高性能编程实践",
+      version: "1.0.0",
+      rule_set: "arkts-performance@1.0.0",
     },
     {
       pack_id: "arkui-extra",
       display_name: "ArkUI 补充工程规则",
+      version: "1.0.0",
+      rule_set: "arkui-extra@1.0.0",
     },
     {
       pack_id: "case-requirement_004",
@@ -2310,14 +2319,20 @@ test("runScoreWorkflow includes case_rule_results and generated patch output", a
     {
       pack_id: "arkts-language",
       display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+      version: "1.0.0",
+      rule_set: "arkts-language@1.0.0",
     },
     {
       pack_id: "arkts-performance",
       display_name: "ArkTS 高性能编程实践",
+      version: "1.0.0",
+      rule_set: "arkts-performance@1.0.0",
     },
     {
       pack_id: "arkui-extra",
       display_name: "ArkUI 补充工程规则",
+      version: "1.0.0",
+      rule_set: "arkui-extra@1.0.0",
     },
     {
       pack_id: "case-case-1",

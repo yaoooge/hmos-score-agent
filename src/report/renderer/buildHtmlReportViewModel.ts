@@ -100,6 +100,7 @@ export interface HtmlReportViewModel {
     items: Array<{
       packId: string;
       displayName: string;
+      ruleSet: string;
     }>;
     emptyState: string;
   };
@@ -486,6 +487,7 @@ export function buildHtmlReportViewModel(resultJson: Record<string, unknown>): H
         return {
           packId: String(current.pack_id ?? ""),
           displayName: String(current.display_name ?? ""),
+          ruleSet: String(current.rule_set ?? current.pack_id ?? ""),
         };
       }),
       emptyState: "当前没有可展示的绑定规则集。",

@@ -17,6 +17,22 @@ test("loads built-in rule packs directly from references/rules yaml", () => {
   assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "RSP-MUST-01"));
 });
 
+test("loads built-in rule pack versions from yaml", () => {
+  const packs = loadRegisteredRulePacksFromYamlDirectory(
+    path.resolve(process.cwd(), "references/rules"),
+  );
+
+  assert.deepEqual(
+    packs.map((pack) => [pack.packId, pack.version]).sort(),
+    [
+      ["arkts-language", "v1.0.0"],
+      ["arkts-performance", "v1.0.0"],
+      ["arkui-extra", "v1.0.0"],
+      ["cross-device-adaptation", "v1.0.0"],
+    ],
+  );
+});
+
 test("loads arkui-extra rules with arkui extra detector metadata", () => {
   const packs = loadRegisteredRulePacksFromYamlDirectory(
     path.resolve(process.cwd(), "references/rules"),

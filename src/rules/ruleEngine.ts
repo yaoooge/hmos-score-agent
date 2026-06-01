@@ -28,7 +28,7 @@ export interface RuleEngineOutput {
   caseRuleResults: RuleAuditResult[];
   assistedRuleCandidates: AssistedRuleCandidate[];
   ruleViolations: RuleViolation[];
-  enabledRulePacks: Array<{ pack_id: string; display_name: string }>;
+  enabledRulePacks: Array<{ pack_id: string; display_name: string; version?: string }>;
   ruleEvidenceIndex: RuleEvidenceIndex;
   evidenceSummary: {
     workspaceFileCount: number;
@@ -180,6 +180,7 @@ export async function runRuleEngine(input: {
     enabledRulePacks: enabledRulePacks.map((pack) => ({
       pack_id: pack.packId,
       display_name: pack.displayName,
+      ...(pack.version ? { version: pack.version } : {}),
     })),
     ruleEvidenceIndex,
     evidenceSummary: evidence.summary,

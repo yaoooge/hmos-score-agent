@@ -358,7 +358,7 @@ export function renderHtmlReport(viewModel: HtmlReportViewModel): string {
                   ? `<ul class="plain-list">${viewModel.boundRulePacks.items
                       .map(
                         (item) =>
-                          `<li><strong>${escapeHtml(item.packId)}</strong> ${escapeHtml(item.displayName || "未命名规则集")}</li>`,
+                          `<li><strong>${escapeHtml(item.ruleSet || item.packId)}</strong> ${escapeHtml(item.displayName || "未命名规则集")}</li>`,
                       )
                       .join("")}</ul>`
                   : `<p class="empty-state">${escapeHtml(viewModel.boundRulePacks.emptyState)}</p>`

@@ -42,6 +42,11 @@
             {{ formatDateTime(row.createdAt) }}
           </template>
         </el-table-column>
+        <el-table-column label="更新时间" min-width="152">
+          <template #default="{ row }">
+            {{ formatDateTime(row.updatedAt) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="128" align="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openTaskDetail(row.id)">详情</el-button>
@@ -49,6 +54,7 @@
               <el-button link type="primary" :icon="MoreFilled" class="consistency-more-button" />
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item command="task-info">任务信息</el-dropdown-item>
                   <el-dropdown-item command="refresh">刷新状态</el-dropdown-item>
                   <el-dropdown-item command="rerun" :disabled="!canRerunTask(row)">重新运行</el-dropdown-item>
                   <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
@@ -137,6 +143,7 @@
           >
             下载结果 ZIP
           </el-button>
+          <el-button @click="openSelectedTaskInfo">任务信息</el-button>
           <el-button
             :icon="Refresh"
             :loading="refreshingTaskId === selectedTask.id"
@@ -320,6 +327,55 @@
       @refresh="reloadRunReport"
     />
   </div>
+
+  <el-drawer v-model="taskInfoDrawerVisible" size="46%" title="一致性任务信息">
+    <div v-if="taskInfoDrawerTask && taskInfoDrawerInputInfo" class="page-stack">
+      <el-descriptions :column="2" border class="consistency-task-info">
+        <el-descriptions-item label="评分服务地址">
+          {{ taskInfoDrawerInputInfo.serviceBaseUrl }}
+        </el-descriptions-item>
+        <el-descriptions-item label="运行次数">
+          {{ taskInfoDrawerInputInfo.runCount }}
+        </el-descriptions-item>
+        <el-descriptions-item label="原始 taskId">
+          {{ taskInfoDrawerInputInfo.originalTaskId }}
+        </el-descriptions-item>
+        <el-descriptions-item label="用例 ID">
+          {{ taskInfoDrawerInputInfo.caseId }}
+        </el-descriptions-item>
+        <el-descriptions-item label="用例名称" :span="2">
+          {{ taskInfoDrawerInputInfo.caseName }}
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <el-alert
+        v-if="!taskInfoDrawerInputInfo.sourceTaskAvailable"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="该任务缺少完整的首次输入 JSON，可能来自旧数据或原始任务文件已不可用。"
+      />
+
+      <div class="consistency-source-json-header">
+        <h4>执行使用的 JSON</h4>
+        <el-button
+          size="small"
+          :disabled="taskInfoDrawerInputInfo.sourceTaskJson.length === 0"
+          @click="copyTaskInfoJson"
+        >
+          复制 JSON
+        </el-button>
+      </div>
+      <el-input
+        :model-value="taskInfoDrawerInputInfo.sourceTaskJson"
+        type="textarea"
+        :rows="18"
+        readonly
+        resize="vertical"
+      />
+    </div>
+    <el-empty v-else description="未找到任务信息" />
+  </el-drawer>
 </template>
 
 <script setup lang="ts">
@@ -353,6 +409,7 @@ import {
   buildConsistencyExportFiles,
   buildConsistencyExportPayload,
   buildConsistencyHistoryChartRows,
+  buildConsistencyTaskInputInfo,
   buildConsistencyTaskPersistDelta,
   buildConsistencyTaskRoundOptions,
   buildConsistencyTaskPersistRecord,
@@ -373,6 +430,7 @@ import {
   validateRemoteTaskJson,
   type ConsistencyAnalysisHistoryItem,
   type ConsistencyTaskCollectionRecord,
+  type ConsistencyTaskInputInfo,
   type ConsistencyAnalysisSummary,
   type ConsistencyRiskSummary,
   type ConsistencyRunStatus,
@@ -394,6 +452,7 @@ type ConsistencyTask = {
   caseId: number;
   caseName: string;
   createdAt: string;
+  updatedAt: string;
   status: ConsistencyTaskStatus;
   sourceTask: RemoteEvaluationTaskInput;
   runs: ConsistencyRunSummary[];
@@ -419,6 +478,8 @@ const reportError = ref("");
 const reportRun = ref<ConsistencyRunSummary | null>(null);
 const reportCase = ref<CaseReportViewModel | null>(null);
 const downloadingResults = ref(false);
+const taskInfoDrawerVisible = ref(false);
+const taskInfoDrawerTaskId = ref("");
 const serviceBaseUrl = ref(DEFAULT_SERVICE_BASE_URL);
 const jsonInput = ref("");
 const validationErrors = ref<string[]>([]);
@@ -500,6 +561,12 @@ const selectedRoundView = computed<ConsistencyTask | null>(() => {
   }
   return selectConsistencyTaskRoundSnapshot(selectedTask.value, selectedRound.value) as ConsistencyTask;
 });
+const taskInfoDrawerTask = computed(() =>
+  tasks.value.find((task) => task.id === taskInfoDrawerTaskId.value),
+);
+const taskInfoDrawerInputInfo = computed<ConsistencyTaskInputInfo | null>(() =>
+  taskInfoDrawerTask.value ? buildConsistencyTaskInputInfo(taskInfoDrawerTask.value, RUN_COUNT) : null,
+);
 const historyChartRows = computed(() =>
   selectedTask.value ? buildConsistencyHistoryChartRows(selectedTask.value.analysisHistory) : [],
 );
@@ -596,6 +663,7 @@ function buildPersistPayload(task: ConsistencyTask, includeSourceTask = false) {
 
 function persistTaskNow(task: ConsistencyTask, includeSourceTask = false): Promise<void> {
   pendingPersistTaskIds.delete(task.id);
+  task.updatedAt = new Date().toISOString();
   const payload = buildPersistPayload(task, includeSourceTask);
   const run = persistChain.then(async () => {
     await saveConsistencyTask(task.id, payload);
@@ -613,6 +681,7 @@ function cloneTaskForDelta(task: ConsistencyTask): ConsistencyTask {
 
 function persistTaskDelta(previous: ConsistencyTask, next: ConsistencyTask): Promise<void> {
   pendingPersistTaskIds.delete(next.id);
+  next.updatedAt = new Date().toISOString();
   const payload = buildConsistencyTaskPersistDelta(previous, next);
   if (Object.keys(payload).length === 0) {
     return Promise.resolve();
@@ -864,6 +933,7 @@ async function createTask() {
       unsatisfiedRules: [],
       risks: [],
     }));
+    const now = new Date().toISOString();
     const task: ConsistencyTask = {
       id: `C-${String(sequence).padStart(3, "0")}`,
       sequence,
@@ -871,7 +941,8 @@ async function createTask() {
       originalTaskId: validation.task.taskId,
       caseId: validation.task.testCase.id,
       caseName: validation.task.testCase.name,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       status: "running",
       sourceTask: validation.task,
       runs,
@@ -896,6 +967,18 @@ function openTaskDetail(taskId: string) {
   selectedTaskId.value = taskId;
   detailTab.value = "runs";
   void router.push(`/consistency/${encodeURIComponent(taskId)}`);
+}
+
+function openTaskInfo(taskId: string) {
+  taskInfoDrawerTaskId.value = taskId;
+  taskInfoDrawerVisible.value = true;
+}
+
+function openSelectedTaskInfo() {
+  if (!selectedTask.value) {
+    return;
+  }
+  openTaskInfo(selectedTask.value.id);
 }
 
 function backToTaskList() {
@@ -1019,6 +1102,10 @@ function canRerunTask(task: ConsistencyTask) {
 }
 
 function handleTaskAction(task: ConsistencyTask, command: string) {
+  if (command === "task-info") {
+    openTaskInfo(task.id);
+    return;
+  }
   if (command === "refresh") {
     void refreshTaskStatus(task);
     return;
@@ -1029,6 +1116,19 @@ function handleTaskAction(task: ConsistencyTask, command: string) {
   }
   if (command === "delete") {
     void deleteTask(task.id);
+  }
+}
+
+async function copyTaskInfoJson() {
+  const json = taskInfoDrawerInputInfo.value?.sourceTaskJson ?? "";
+  if (!json) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(json);
+    ElMessage.success("任务 JSON 已复制");
+  } catch (error) {
+    ElMessage.error(`复制失败：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

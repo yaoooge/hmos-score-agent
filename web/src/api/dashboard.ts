@@ -153,23 +153,6 @@ export type AgentTraceEventRawResponse = {
   rawPayload?: unknown;
 };
 
-export type DailyReportItem = {
-  date: string;
-  received: number;
-  completed: number;
-  failed: number;
-  queued: number;
-  running: number;
-  averageScore: number | null;
-};
-
-export type ScoreBucket = {
-  label: string;
-  min: number;
-  max: number;
-  count: number;
-};
-
 export type ManualAnalysisStatus = "pending" | "analyzed";
 
 export type HumanRatingGap = {
@@ -401,17 +384,6 @@ export function deleteDashboardTask(taskId: number) {
   const params = new URLSearchParams({ taskIds: String(taskId) });
   return deleteJson<{ success: true; deletedTaskIds: number[] }>(
     `/score/remote-tasks?${params.toString()}`,
-  );
-}
-
-export function fetchDailyReport(params?: Record<string, string | number | undefined>) {
-  return getJson<{ success: true; items: DailyReportItem[] }>("/dashboard/reports/daily", params);
-}
-
-export function fetchScoreDistribution(params?: Record<string, string | number | undefined>) {
-  return getJson<{ success: true; buckets: ScoreBucket[] }>(
-    "/dashboard/reports/score-distribution",
-    params,
   );
 }
 

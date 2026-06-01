@@ -723,29 +723,17 @@ test("dashboard task logs return tail content without exposing case dir", async 
   assert.equal(missingLog.content, "");
 });
 
-test("dashboard reports expose daily counts and score distribution", async (t) => {
+test("dashboard reports endpoints are not exposed", async (t) => {
   const fixture = await createFixture(t);
   const app = createDashboardTestApp(fixture);
 
-  const daily = await getJson(app, "/dashboard/reports/daily");
-  const dailyItems = daily.items as Array<Record<string, unknown>>;
-  assert.equal(dailyItems.length, 1);
-  assert.equal(dailyItems[0]?.received, 4);
-  assert.equal(dailyItems[0]?.completed, 1);
-  assert.equal(dailyItems[0]?.failed, 2);
-  assert.equal(dailyItems[0]?.averageScore, 88);
-
-  const distribution = await getJson(app, "/dashboard/reports/score-distribution");
-  const buckets = distribution.buckets as Array<Record<string, unknown>>;
-  assert.deepEqual(
-    buckets.map((bucket) => [bucket.label, bucket.count]),
-    [
-      ["0-59", 2],
-      ["60-69", 0],
-      ["70-79", 0],
-      ["80-89", 1],
-      ["90-100", 0],
-    ],
+  await assert.rejects(
+    () => invokeExpressGet(app, "/dashboard/reports/daily"),
+    /Unhandled request path: \/dashboard\/reports\/daily/,
+  );
+  await assert.rejects(
+    () => invokeExpressGet(app, "/dashboard/reports/score-distribution"),
+    /Unhandled request path: \/dashboard\/reports\/score-distribution/,
   );
 });
 

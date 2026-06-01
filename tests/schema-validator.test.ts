@@ -159,6 +159,8 @@ test("validateReportResult accepts result with bound_rule_packs", () => {
     {
       pack_id: "arkts-language",
       display_name: "从 TypeScript 到 ArkTS 的适配规则与 ArkTS 编程规范",
+      version: "1.0.0",
+      rule_set: "arkts-language@1.0.0",
     },
     {
       pack_id: "case-requirement_004",

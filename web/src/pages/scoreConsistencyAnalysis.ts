@@ -188,6 +188,7 @@ export type ConsistencyExportPayload = {
     caseId: number;
     caseName: string;
     createdAt: string;
+    updatedAt?: string;
     status: string;
     serviceBaseUrl: string;
   };
@@ -259,6 +260,7 @@ export type ConsistencyTaskCollectionRecord = {
   caseId: number;
   caseName: string;
   createdAt: string;
+  updatedAt?: string;
   status: string;
   sourceTask?: RemoteEvaluationTaskInput;
   runs: ConsistencyRunSummary[];
@@ -272,6 +274,7 @@ export type ConsistencyTaskSnapshot = ConsistencyTaskCollectionRecord & {
 };
 
 export type ConsistencyTaskPersistDelta = {
+  updatedAt?: string;
   status?: string;
   replaceRuns?: boolean;
   runs?: ConsistencyRunSummary[];
@@ -285,6 +288,16 @@ export type ConsistencyTaskRoundOption = {
   round?: number;
   label: string;
   capturedAt?: string;
+};
+
+export type ConsistencyTaskInputInfo = {
+  serviceBaseUrl: string;
+  runCount: number;
+  originalTaskId: number;
+  caseId: number;
+  caseName: string;
+  sourceTaskAvailable: boolean;
+  sourceTaskJson: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -688,11 +701,31 @@ export function buildConsistencyTaskPersistRecord(
   return record;
 }
 
+export function buildConsistencyTaskInputInfo(
+  snapshot: ConsistencyTaskCollectionRecord,
+  runCount = snapshot.runs.length,
+): ConsistencyTaskInputInfo {
+  const sourceTaskAvailable =
+    snapshot.sourceTask !== undefined && validateRemoteEvaluationTaskInput(snapshot.sourceTask).valid;
+  return {
+    serviceBaseUrl: snapshot.serviceBaseUrl,
+    runCount,
+    originalTaskId: snapshot.originalTaskId,
+    caseId: snapshot.caseId,
+    caseName: snapshot.caseName,
+    sourceTaskAvailable,
+    sourceTaskJson: snapshot.sourceTask ? JSON.stringify(snapshot.sourceTask, null, 2) : "",
+  };
+}
+
 export function buildConsistencyTaskPersistDelta(
   previous: ConsistencyTaskSnapshot,
   next: ConsistencyTaskSnapshot,
 ): ConsistencyTaskPersistDelta {
   const delta: ConsistencyTaskPersistDelta = {};
+  if (previous.updatedAt !== next.updatedAt) {
+    delta.updatedAt = next.updatedAt;
+  }
   if (previous.status !== next.status) {
     delta.status = next.status;
   }
@@ -733,6 +766,7 @@ export function hydrateConsistencyTaskSnapshot(
   const runs = compactRunsByRunIndex(record.runs.map(normalizeRunSnapshot));
   return {
     ...record,
+    updatedAt: record.updatedAt ?? record.createdAt,
     runs,
     sourceTask: record.sourceTask ?? createFallbackSourceTask(record),
     analysis: analyzeConsistency(runs),

@@ -170,8 +170,17 @@ function buildBoundRulePacks(state: ScoreGraphState): Array<Record<string, strin
     ).map((pack) => ({
       pack_id: pack.packId,
       display_name: pack.displayName,
+      ...(pack.version ? { version: pack.version } : {}),
     }));
-  const seenPackIds = new Set(builtInPacks.map((pack) => pack.pack_id));
+  const normalizedBuiltInPacks = builtInPacks.map((pack) => {
+    const version = normalizeRulePackVersion(pack.version);
+    return {
+      pack_id: pack.pack_id,
+      display_name: pack.display_name,
+      ...(version ? { version, rule_set: `${pack.pack_id}@${version}` } : {}),
+    };
+  });
+  const seenPackIds = new Set(normalizedBuiltInPacks.map((pack) => pack.pack_id));
   const casePacks = Array.from(
     new Set((state.caseRuleDefinitions ?? []).map((definition) => definition.pack_id)),
   )
@@ -181,7 +190,15 @@ function buildBoundRulePacks(state: ScoreGraphState): Array<Record<string, strin
       display_name: formatCaseRulePackDisplayName(packId, state.caseInput.caseId),
     }));
 
-  return [...builtInPacks, ...casePacks];
+  return [...normalizedBuiltInPacks, ...casePacks];
+}
+
+function normalizeRulePackVersion(version: string | undefined): string | undefined {
+  const trimmed = version?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.startsWith("v") ? trimmed.slice(1) : trimmed;
 }
 
 function formatCaseRulePackDisplayName(packId: string, caseId: string): string {

@@ -43,5 +43,6 @@ export interface RegisteredRule {
 export interface RegisteredRulePack {
   packId: string;
   displayName: string;
+  version?: string;
   rules: RegisteredRule[];
 }
