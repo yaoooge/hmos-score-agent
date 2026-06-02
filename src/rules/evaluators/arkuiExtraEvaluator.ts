@@ -380,7 +380,7 @@ function runMultiBindSheetRule(rule: RegisteredRule, evidence: CollectedEvidence
 }
 
 export function runArkuiExtraRule(rule: RegisteredRule, evidence: CollectedEvidence): EvaluatedRule {
-  const check = rule.detector_config.check;
+  const check = rule.detector.config.check;
   if (check === "route_navdestination") {
     return runRouteNavDestinationRule(rule, evidence);
   }

@@ -9,6 +9,8 @@ import {
   findOfficialLinterRuleProfile,
   officialLinterSeverityToImpactSeverity,
 } from "./officialLinterRuleProfiles.js";
+import { getRegisteredRulePacks } from "../rules/engine/rulePackRegistry.js";
+import type { RuleMetricGroup, RuleProfile } from "../rules/engine/ruleTypes.js";
 import type {
   AgentRunStatus,
   CaseRuleDefinition,
@@ -79,6 +81,25 @@ const performanceRiskMetrics = ["性能风险"];
 const arkuiOrganizationMetrics = ["ArkUI组织方式合理性"];
 const harmonyEngineeringMetrics = ["HarmonyOS工程实践符合度"];
 
+const metricNamesByRuleGroup: Record<RuleMetricGroup, string[]> = {
+  type_safety: typeSafetyMetrics,
+  static_quality: staticQualityMetrics,
+  naming: namingMetrics,
+  complexity: complexityMetrics,
+  state_flow: stateFlowMetrics,
+  stability: stabilityRiskMetrics,
+  security_boundary: securityBoundaryMetrics,
+  performance: performanceRiskMetrics,
+  arkui_organization: arkuiOrganizationMetrics,
+  harmony_engineering: harmonyEngineeringMetrics,
+};
+
+const ruleProfileById = new Map(
+  getRegisteredRulePacks()
+    .flatMap((pack) => pack.rules)
+    .flatMap((rule) => (rule.profile ? [[rule.rule_id, rule.profile] as const] : [])),
+);
+
 function normalizeEvidenceAnchor(value: string | undefined): string {
   const source = value ?? "";
   const pathMatch = source.match(/(?:generated\/|workspace\/)?([A-Za-z0-9_.@/-]+\.(?:ets|ts|json|yaml|yml|c|cpp|h|hpp|xml|txt))/);
@@ -145,6 +166,10 @@ function ruleCanonicalTaxonomyEntry(
   if (!taxonomy) {
     return undefined;
   }
+  const profile = ruleProfileById.get(rule.rule_id);
+  if (profile?.riskCode) {
+    return findRiskTaxonomyEntry(taxonomy, profile.riskCode);
+  }
   const languageRulePrefixes = ["ARKTS-"];
   if (languageRulePrefixes.some((prefix) => rule.rule_id.startsWith(prefix))) {
     return findRiskTaxonomyEntry(taxonomy, "LANGUAGE_CONSTRAINT_VIOLATION");
@@ -199,6 +224,29 @@ function makePenaltyRule(input: {
   ];
 }
 
+function ratioFromRuleImpact(impact: RuleProfile["impact"]): number {
+  if (impact === "heavy") {
+    return 0.5;
+  }
+  if (impact === "medium") {
+    return 0.35;
+  }
+  return 0.15;
+}
+
+function makeProfilePenaltyRule(profile: RuleProfile): MetricPenaltyRule[] {
+  if (!profile.scoring) {
+    return [];
+  }
+  return makePenaltyRule({
+    metricNames: Array.from(
+      new Set(profile.metricGroups.flatMap((group) => metricNamesByRuleGroup[group] ?? [])),
+    ),
+    ratio: ratioFromRuleImpact(profile.impact),
+    severity: profile.impact,
+  });
+}
+
 function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
   if (rule.rule_id.startsWith("OFFICIAL-LINTER:")) {
     const officialProfile = findOfficialLinterRuleProfile(rule.rule_id);
@@ -213,6 +261,11 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
       ratio: officialProfile.ratio,
       severity,
     });
+  }
+
+  const profile = ruleProfileById.get(rule.rule_id);
+  if (profile) {
+    return makeProfilePenaltyRule(profile);
   }
 
   if (rule.rule_id === "ARKUI-MUST-001") {

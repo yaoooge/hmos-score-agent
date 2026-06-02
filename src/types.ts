@@ -1,4 +1,9 @@
-import type { RuleDecisionCriteria } from "./rules/engine/ruleTypes.js";
+export interface RuleDecisionCriteria {
+  pass?: string[];
+  fail?: string[];
+  not_applicable?: string[];
+  review?: string[];
+}
 
 export type TaskType = "full_generation" | "continuation" | "bug_fix";
 

@@ -1652,6 +1652,7 @@ let arrUnion: (number | string)[] = [1, 'hello'];
 let arrNum: number[] = [1, 1.1, 2];
 let sparse: number[] = [];
 sparse[9999] = 0;
+let stableTitle: string = 'title';
 
 function sum(num: number): number {
   for (let t = 1; t < 100; t++) {
@@ -1677,6 +1678,7 @@ intNum = 1.1;
     "ARKTS-PERF-FORBID-003",
     "ARKTS-PERF-FORBID-004",
     "ARKTS-PERF-FORBID-005",
+    "ARKTS-PERF-SHOULD-001",
     "ARKTS-PERF-SHOULD-002",
   ]) {
     assert.equal(
@@ -1689,7 +1691,6 @@ intNum = 1.1;
   }
 
   for (const ruleId of [
-    "ARKTS-PERF-SHOULD-001",
     "ARKTS-PERF-SHOULD-003",
     "ARKTS-PERF-SHOULD-004",
     "ARKTS-PERF-SHOULD-005",
@@ -1910,14 +1911,14 @@ test("runRuleEngine keeps unsupported rules without direct evidence as 未接入
 
   assert.equal(
     result.staticRuleAuditResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "未接入判定器",
+      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "未接入判定器",
     ),
     true,
   );
   assert.equal(
     result.staticRuleAuditResults.some(
       (item) =>
-        item.rule_id === "ARKTS-MUST-001" &&
+        item.rule_id === "ARKTS-MUST-003" &&
         item.conclusion.includes("当前版本未接入静态判定器，需要 Agent 辅助判定。"),
     ),
     true,
@@ -1940,15 +1941,15 @@ test("runRuleEngine keeps unsupported no-evidence rules in agent candidates", as
     true,
   );
   assert.equal(
-    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-001"),
+    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-003"),
     true,
   );
   assert.ok(
-    result.assistedRuleCandidates.find((item) => item.rule_id === "ARKTS-MUST-001")
+    result.assistedRuleCandidates.find((item) => item.rule_id === "ARKTS-MUST-003")
       ?.decision_criteria,
   );
   const unsupportedRuleCandidate = result.assistedRuleCandidates.find(
-    (item) => item.rule_id === "ARKTS-MUST-001",
+    (item) => item.rule_id === "ARKTS-MUST-003",
   );
   assert.match(
     unsupportedRuleCandidate?.why_uncertain ?? "",
@@ -1968,6 +1969,170 @@ test("runRuleEngine keeps unsupported no-evidence rules in agent candidates", as
   );
 });
 
+test("runRuleEngine evaluates conventional ArkTS language checks deterministically", async (t) => {
+  const filePath = "entry/src/main/ets/pages/Conventional.ets";
+  const caseDir = await createRuleFixture(t, {
+    [filePath]: [
+      "class concrete_base {}",
+      "interface Payload extends concrete_base {}",
+      "class Presenter implements concrete_base {",
+      "  public ready: boolean = false;",
+      "}",
+      "type DuplicatedName = string;",
+      "let DuplicatedName = 'shadow';",
+      "let leaked: ESObject = {} as ESObject;",
+      "class ViewModel {}",
+      "let viewModelFactory = ViewModel;",
+      "enum mixedEnum { small = 1, Big = 'two', Computed = Date.now() }",
+      "namespace mixedEnum { export const value = 1; }",
+      "const localConstant = 1;",
+      "let BadVariable = 2;",
+      "function Bad_function(BadParam: string, notReady: boolean): void {",
+      "  let gap  = 1;",
+      "  console.info(BadParam, notReady, gap);",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${filePath} b/${filePath}`,
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+      "@@ -1,0 +1,18 @@",
+      "+class concrete_base {}",
+      "+interface Payload extends concrete_base {}",
+      "+class Presenter implements concrete_base {",
+      "+  public ready: boolean = false;",
+      "+}",
+      "+type DuplicatedName = string;",
+      "+let DuplicatedName = 'shadow';",
+      "+let leaked: ESObject = {} as ESObject;",
+      "+class ViewModel {}",
+      "+let viewModelFactory = ViewModel;",
+      "+enum mixedEnum { small = 1, Big = 'two', Computed = Date.now() }",
+      "+namespace mixedEnum { export const value = 1; }",
+      "+const localConstant = 1;",
+      "+let BadVariable = 2;",
+      "+function Bad_function(BadParam: string, notReady: boolean): void {",
+      "+  let gap  = 1;",
+      "+  console.info(BadParam, notReady, gap);",
+      "+}",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  for (const ruleId of [
+    "ARKTS-MUST-001",
+    "ARKTS-MUST-004",
+    "ARKTS-SHOULD-002",
+    "ARKTS-SHOULD-003",
+    "ARKTS-SHOULD-005",
+    "ARKTS-SHOULD-006",
+    "ARKTS-SHOULD-007",
+    "ARKTS-SHOULD-008",
+    "ARKTS-SHOULD-009",
+    "ARKTS-FORBID-017",
+    "ARKTS-FORBID-023",
+  ]) {
+    assert.equal(
+      result.deterministicRuleResults.find((item) => item.rule_id === ruleId)?.result,
+      "不满足",
+      ruleId,
+    );
+    assert.equal(
+      result.assistedRuleCandidates.some((item) => item.rule_id === ruleId),
+      false,
+      `${ruleId} should not require agent assistance`,
+    );
+  }
+
+  assert.match(
+    result.ruleEvidenceIndex["ARKTS-MUST-001"]?.evidenceSnippets.join("\n") ?? "",
+    /DuplicatedName/,
+  );
+  assert.match(
+    result.ruleEvidenceIndex["ARKTS-FORBID-023"]?.evidenceSnippets.join("\n") ?? "",
+    /mixedEnum/,
+  );
+});
+
+test("runRuleEngine evaluates initial arkts_static checks deterministically", async (t) => {
+  const filePath = "entry/src/main/ets/pages/Index.ets";
+  const caseDir = await createRuleFixture(t, {
+    [filePath]: [
+      "class Person {",
+      "  name: string = '';",
+      "  public age: number = 0;",
+      "  greet() { console.info(this.name); }",
+      "}",
+      "let model: Person = { name: 'A', age: 1 };",
+      "let title: string = 'Home';",
+      "let count: number = 0;",
+      "count += 1;",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${filePath} b/${filePath}`,
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+      "@@ -1,0 +1,9 @@",
+      "+class Person {",
+      "+  name: string = '';",
+      "+  public age: number = 0;",
+      "+  greet() { console.info(this.name); }",
+      "+}",
+      "+let model: Person = { name: 'A', age: 1 };",
+      "+let title: string = 'Home';",
+      "+let count: number = 0;",
+      "+count += 1;",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-SHOULD-010")
+      ?.result,
+    "不满足",
+  );
+  assert.match(
+    result.ruleEvidenceIndex["ARKTS-SHOULD-010"]?.evidenceSnippets.join("\n") ?? "",
+    /name: string/,
+  );
+  assert.equal(
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-FORBID-011")
+      ?.result,
+    "不满足",
+  );
+  assert.equal(
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-PERF-SHOULD-001")
+      ?.result,
+    "不满足",
+  );
+  assert.match(
+    result.ruleEvidenceIndex["ARKTS-PERF-SHOULD-001"]?.evidenceSnippets.join("\n") ?? "",
+    /let title/,
+  );
+});
+
 test("runTextPatternRule marks rules as 不涉及 when applicability patterns do not match", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/pages/Index.ets": "let count = 1;\n",
@@ -1980,13 +2145,16 @@ test("runTextPatternRule marks rules as 不涉及 when applicability patterns do
       rule_id: "CUSTOM-FORBID-001",
       rule_source: "forbidden_pattern",
       summary: "禁止在 type 或 interface 中定义构造签名。",
-      detector_kind: "text_pattern",
-      detector_config: {
+      detector: {
+        kind: "static",
+        mode: "regex",
+        config: {
         fileExtensions: [".ets"],
         applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
         patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+        },
       },
-      fallback_policy: "agent_assisted",
+      fallback: { policy: "agent_assisted" },
     },
     evidence,
   );
@@ -2007,13 +2175,16 @@ test("runTextPatternRule marks rules as 满足 when applicability patterns match
       rule_id: "CUSTOM-FORBID-002",
       rule_source: "forbidden_pattern",
       summary: "禁止在 type 或 interface 中定义构造签名。",
-      detector_kind: "text_pattern",
-      detector_config: {
+      detector: {
+        kind: "static",
+        mode: "regex",
+        config: {
         fileExtensions: [".ets"],
         applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
         patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+        },
       },
-      fallback_policy: "agent_assisted",
+      fallback: { policy: "agent_assisted" },
     },
     evidence,
   );
@@ -2034,13 +2205,16 @@ test("runTextPatternRule marks rules as 不满足 when applicability patterns an
       rule_id: "CUSTOM-FORBID-003",
       rule_source: "forbidden_pattern",
       summary: "禁止在 type 或 interface 中定义构造签名。",
-      detector_kind: "text_pattern",
-      detector_config: {
+      detector: {
+        kind: "static",
+        mode: "regex",
+        config: {
         fileExtensions: [".ets"],
         applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
         patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+        },
       },
-      fallback_policy: "agent_assisted",
+      fallback: { policy: "agent_assisted" },
     },
     evidence,
   );
@@ -2062,12 +2236,12 @@ test("runRuleEngine keeps unsupported rules in assisted candidates even without 
 
   assert.equal(
     result.staticRuleAuditResults.some(
-      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "未接入判定器",
+      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "未接入判定器",
     ),
     true,
   );
   assert.equal(
-    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-001"),
+    result.assistedRuleCandidates.some((item) => item.rule_id === "ARKTS-MUST-003"),
     true,
   );
 });
@@ -2501,13 +2675,7 @@ test("runRuleEngine keeps AST-related unsupported rules in agent-assisted state"
     taskType: "full_generation",
   });
 
-  for (const ruleId of [
-    "ARKTS-MUST-001",
-    "ARKTS-FORBID-011",
-    "ARKTS-MUST-003",
-    "ARKTS-FORBID-017",
-    "ARKTS-FORBID-023",
-  ]) {
+  for (const ruleId of ["ARKTS-MUST-003", "ARKTS-MUST-005", "ARKTS-MUST-007"]) {
     assert.equal(
       result.staticRuleAuditResults.some(
         (item) => item.rule_id === ruleId && item.result === "未接入判定器",
@@ -2518,6 +2686,21 @@ test("runRuleEngine keeps AST-related unsupported rules in agent-assisted state"
     assert.equal(
       result.assistedRuleCandidates.some((item) => item.rule_id === ruleId),
       true,
+      ruleId,
+    );
+  }
+
+  for (const ruleId of ["ARKTS-MUST-001", "ARKTS-FORBID-017", "ARKTS-FORBID-023"]) {
+    assert.equal(
+      result.staticRuleAuditResults.some(
+        (item) => item.rule_id === ruleId && item.result === "不满足",
+      ),
+      true,
+      ruleId,
+    );
+    assert.equal(
+      result.assistedRuleCandidates.some((item) => item.rule_id === ruleId),
+      false,
       ruleId,
     );
   }

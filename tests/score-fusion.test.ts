@@ -756,6 +756,63 @@ test("fuseRubricScoreWithRules maps arkui bindSheet rules to ArkUI and engineeri
   assert.equal(impactedDetails[0]?.rule_impacts[0]?.severity, "medium");
 });
 
+test("fuseRubricScoreWithRules reads built-in rule profile for metric penalties", async () => {
+  const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
+  const snapshot = buildRubricSnapshot(rubric);
+
+  const result = fuseRubricScoreWithRules({
+    taskType: "full_generation",
+    rubric,
+    rubricSnapshot: snapshot,
+    rubricScoringResult: {
+      summary: { overall_assessment: "基础评分较高。", overall_confidence: "high" },
+      item_scores: snapshot.dimension_summaries.flatMap((dimension) =>
+        dimension.item_summaries.map((item) => ({
+          dimension_name: dimension.name,
+          item_name: item.name,
+          score: item.scoring_bands[0].score,
+          max_score: item.weight,
+          matched_band_score: item.scoring_bands[0].score,
+          rationale: "未发现明显问题。",
+          evidence_used: [],
+          confidence: "high" as const,
+          review_required: false,
+        })),
+      ),
+      hard_gate_candidates: [],
+      risks: [],
+      strengths: [],
+      main_issues: [],
+    },
+    rubricAgentRunStatus: "success",
+    ruleAuditResults: [
+      {
+        rule_id: "ARKTS-PERF-SHOULD-001",
+        rule_source: "should_rule",
+        result: "不满足",
+        conclusion: "entry/src/main/ets/pages/Index.ets:1 let title 未重新赋值。",
+      },
+    ],
+    ruleViolations: [],
+    evidenceSummary: {
+      workspaceFileCount: 1,
+      originalFileCount: 1,
+      changedFileCount: 1,
+      changedFiles: ["entry/src/main/ets/pages/Index.ets"],
+      hasPatch: true,
+    },
+  });
+
+  const impactedItems = result.scoreFusionDetails
+    .filter((detail) =>
+      detail.rule_impacts.some((impact) => impact.rule_id === "ARKTS-PERF-SHOULD-001"),
+    )
+    .map((detail) => detail.item_name)
+    .sort();
+
+  assert.deepEqual(impactedItems, ["性能风险", "静态坏味道控制"].sort());
+});
+
 test("fuseRubricScoreWithRules does not apply prefix fallback for unmapped official linter rules", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
@@ -957,7 +1014,7 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
       detail.dimension_name === "风险控制与稳定性" && detail.item_name === "安全与边界意识",
   );
   assert.ok(securityDetail);
-  assert.equal(securityDetail.score_fusion.rule_delta, -1.95);
+  assert.equal(securityDetail.score_fusion.rule_delta, -2.4);
   assert.equal(securityDetail.score_fusion.final_score, 1);
 
   const securityRubricItem = rubric.dimensions

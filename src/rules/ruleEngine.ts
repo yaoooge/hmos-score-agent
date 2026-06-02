@@ -5,6 +5,7 @@ import {
   listRegisteredRules,
 } from "./engine/rulePackRegistry.js";
 import type { RegisteredRule } from "./engine/ruleTypes.js";
+import { runArktsStaticRule } from "./evaluators/arktsStaticEvaluator.js";
 import { runArkuiExtraRule } from "./evaluators/arkuiExtraEvaluator.js";
 import { runCaseConstraintRule } from "./evaluators/caseConstraintEvaluator.js";
 import { runProjectStructureRule } from "./evaluators/projectStructureEvaluator.js";
@@ -161,11 +162,11 @@ export async function runRuleEngine(input: {
         evidence_snippets: ruleEvidenceIndex[rule.rule_id]?.evidenceSnippets ?? [],
         rule_name: registeredRule?.rule_name,
         priority: registeredRule?.priority,
-        decision_criteria: registeredRule?.decision_criteria,
-        kit: readStringArray(registeredRule?.detector_config.kit),
-        llm_prompt: readLlmPrompt(registeredRule?.detector_config),
-        ast_signals: readAstSignals(registeredRule?.detector_config.astSignals),
-        target_checks: readTargetChecks(registeredRule?.detector_config.targetChecks),
+        decision_criteria: toOutputDecisionCriteria(registeredRule?.decisionCriteria),
+        kit: readStringArray(registeredRule?.detector.config.kit),
+        llm_prompt: readLlmPrompt(registeredRule?.detector.config),
+        ast_signals: readAstSignals(registeredRule?.detector.config.astSignals),
+        target_checks: readTargetChecks(registeredRule?.detector.config.targetChecks),
         static_precheck: staticPrecheck,
         is_case_rule: registeredRule?.is_case_rule,
       };
@@ -184,6 +185,20 @@ export async function runRuleEngine(input: {
     })),
     ruleEvidenceIndex,
     evidenceSummary: evidence.summary,
+  };
+}
+
+function toOutputDecisionCriteria(
+  criteria: RegisteredRule["decisionCriteria"] | undefined,
+): AssistedRuleCandidate["decision_criteria"] | undefined {
+  if (!criteria) {
+    return undefined;
+  }
+  return {
+    ...(criteria.pass === undefined ? {} : { pass: criteria.pass }),
+    ...(criteria.fail === undefined ? {} : { fail: criteria.fail }),
+    ...(criteria.notApplicable === undefined ? {} : { not_applicable: criteria.notApplicable }),
+    ...(criteria.review === undefined ? {} : { review: criteria.review }),
   };
 }
 
@@ -263,22 +278,25 @@ function evaluateRegisteredRule(
   rule: RegisteredRule,
   evidence: Awaited<ReturnType<typeof collectEvidence>>,
 ): EvaluatedRule {
-  if (rule.detector_kind === "text_pattern") {
-    return runTextPatternRule(rule, evidence);
+  if (rule.detector.kind === "static") {
+    const evaluators = {
+      regex: runTextPatternRule,
+      project_structure: runProjectStructureRule,
+      arkui_extra: runArkuiExtraRule,
+      case_constraint_precheck: runCaseConstraintRule,
+      arkts_static: runArktsStaticRule,
+      api_usage: runUnsupportedStaticRule,
+    } satisfies Record<string, (rule: RegisteredRule, evidence: Awaited<ReturnType<typeof collectEvidence>>) => EvaluatedRule>;
+    return evaluators[rule.detector.mode](rule, evidence);
   }
 
-  if (rule.detector_kind === "project_structure") {
-    return runProjectStructureRule(rule, evidence);
-  }
+  return runUnsupportedStaticRule(rule, evidence);
+}
 
-  if (rule.detector_kind === "arkui_extra") {
-    return runArkuiExtraRule(rule, evidence);
-  }
-
-  if (rule.detector_kind === "case_constraint") {
-    return runCaseConstraintRule(rule, evidence);
-  }
-
+function runUnsupportedStaticRule(
+  rule: RegisteredRule,
+  _evidence: Awaited<ReturnType<typeof collectEvidence>>,
+): EvaluatedRule {
   return {
     rule_id: rule.rule_id,
     rule_source: rule.rule_source,

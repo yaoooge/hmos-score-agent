@@ -5,7 +5,7 @@ export type StaticRuleResult = "满足" | "不满足" | "不涉及" | "未接入
 export interface RuleDecisionCriteria {
   pass?: string[];
   fail?: string[];
-  not_applicable?: string[];
+  notApplicable?: string[];
   review?: string[];
 }
 
@@ -18,12 +18,45 @@ export interface StaticRuleAuditResult {
   conclusion: string;
 }
 
-export type DetectorKind =
-  | "text_pattern"
+export type StaticDetectorMode =
+  | "regex"
   | "project_structure"
   | "arkui_extra"
-  | "case_constraint"
-  | "not_implemented";
+  | "case_constraint_precheck"
+  | "arkts_static"
+  | "api_usage";
+
+export type RuleDetector =
+  | { kind: "static"; mode: StaticDetectorMode; config: Record<string, unknown> }
+  | { kind: "agent"; config: Record<string, unknown> }
+  | { kind: "external"; provider: "official_code_linter"; config: Record<string, unknown> }
+  | { kind: "none"; config: Record<string, unknown> };
+
+export interface RuleFallback {
+  policy: "agent_assisted" | "not_applicable";
+}
+
+export type RuleMetricGroup =
+  | "type_safety"
+  | "static_quality"
+  | "naming"
+  | "complexity"
+  | "state_flow"
+  | "stability"
+  | "security_boundary"
+  | "performance"
+  | "arkui_organization"
+  | "harmony_engineering";
+
+export type RuleImpact = "light" | "medium" | "heavy";
+
+export interface RuleProfile {
+  scoring: boolean;
+  riskCode?: string;
+  suppressRubricRiskCodes?: string[];
+  metricGroups: RuleMetricGroup[];
+  impact: RuleImpact;
+}
 
 // RegisteredRule 描述规则包中的单条规则定义，不直接绑定具体 evaluator 实现。
 export interface RegisteredRule {
@@ -31,12 +64,12 @@ export interface RegisteredRule {
   rule_id: string;
   rule_source: RuleSource;
   summary: string;
-  detector_kind: DetectorKind;
-  detector_config: Record<string, unknown>;
-  fallback_policy: "agent_assisted" | "not_applicable";
+  detector: RuleDetector;
+  fallback: RuleFallback;
+  profile?: RuleProfile;
   rule_name?: string;
   priority?: "P0" | "P1";
-  decision_criteria?: RuleDecisionCriteria;
+  decisionCriteria?: RuleDecisionCriteria;
   is_case_rule?: boolean;
 }
 

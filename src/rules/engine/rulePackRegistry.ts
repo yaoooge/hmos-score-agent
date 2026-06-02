@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { RegisteredRule, RegisteredRulePack } from "./ruleTypes.js";
-import type { CrossDeviceAdaptationUnderstanding } from "../../types.js";
+import type { CaseRuleDefinition, CrossDeviceAdaptationUnderstanding } from "../../types.js";
 import { loadRegisteredRulePacksFromYamlDirectory } from "./rulePackYamlLoader.js";
 
 const registeredRulePacks: RegisteredRulePack[] = loadRegisteredRulePacksFromYamlDirectory(
@@ -30,14 +30,38 @@ export function getEnabledRulePacks(enabledPackIds: string[]): RegisteredRulePac
 }
 
 export function listRegisteredRules(
-  input: RegisteredRule[] | { enabledPackIds?: string[]; runtimeRules?: RegisteredRule[] } = [],
+  input: Array<RegisteredRule | CaseRuleDefinition> | { enabledPackIds?: string[]; runtimeRules?: CaseRuleDefinition[] } = [],
 ): RegisteredRule[] {
   if (Array.isArray(input)) {
-    return [...registeredRulePacks.flatMap((pack) => pack.rules), ...input];
+    return [...registeredRulePacks.flatMap((pack) => pack.rules), ...input.map(normalizeRuntimeRule)];
   }
 
   const packs = input.enabledPackIds
     ? getEnabledRulePacks(input.enabledPackIds)
     : registeredRulePacks;
-  return [...packs.flatMap((pack) => pack.rules), ...(input.runtimeRules ?? [])];
+  return [...packs.flatMap((pack) => pack.rules), ...(input.runtimeRules ?? []).map(normalizeRuntimeRule)];
+}
+
+function normalizeRuntimeRule(rule: RegisteredRule | CaseRuleDefinition): RegisteredRule {
+  if ("detector" in rule) {
+    return rule;
+  }
+
+  return {
+    pack_id: rule.pack_id,
+    rule_id: rule.rule_id,
+    rule_source: rule.rule_source,
+    summary: rule.summary,
+    detector: {
+      kind: "static",
+      mode: "case_constraint_precheck",
+      config: rule.detector_config,
+    },
+    fallback: {
+      policy: rule.fallback_policy,
+    },
+    rule_name: rule.rule_name,
+    priority: rule.priority,
+    is_case_rule: rule.is_case_rule,
+  };
 }

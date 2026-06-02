@@ -2,11 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { load } from "js-yaml";
 import type {
-  DetectorKind,
   RegisteredRule,
   RegisteredRulePack,
   RuleDecisionCriteria,
+  RuleDetector,
+  RuleFallback,
+  RuleImpact,
+  RuleMetricGroup,
+  RuleProfile,
   RuleSource,
+  StaticDetectorMode,
 } from "./ruleTypes.js";
 
 const RULE_PACK_FILE_ORDER = [
@@ -18,18 +23,33 @@ const RULE_PACK_FILE_ORDER = [
 
 const ROOT_KEYS = ["name", "version", "summary", "rule_pack_meta", "must_rules", "should_rules", "forbidden_patterns"];
 const RULE_PACK_META_KEYS = ["pack_id", "source_name", "source_version"];
-const RULE_KEYS = ["id", "rule", "detector_kind", "detector_config", "fallback_policy", "rule_name", "priority", "decision_criteria"];
-const DECISION_CRITERIA_KEYS = ["pass", "fail", "not_applicable", "review"];
-const ALLOWED_DETECTOR_KINDS: DetectorKind[] = [
-  "text_pattern",
+const RULE_KEYS = ["id", "rule", "detector", "fallback", "profile", "rule_name", "priority", "decisionCriteria"];
+const DETECTOR_KEYS = ["kind", "mode", "provider", "config"];
+const FALLBACK_KEYS = ["policy"];
+const PROFILE_KEYS = ["scoring", "riskCode", "suppressRubricRiskCodes", "metricGroups", "impact"];
+const DECISION_CRITERIA_KEYS = ["pass", "fail", "notApplicable", "review"];
+const ALLOWED_STATIC_MODES: StaticDetectorMode[] = [
+  "regex",
   "project_structure",
   "arkui_extra",
-  "case_constraint",
-  "not_implemented",
+  "case_constraint_precheck",
+  "arkts_static",
+  "api_usage",
 ];
 const ALLOWED_FALLBACK_POLICIES = ["agent_assisted", "not_applicable"] as const;
-
-type RawRulePackDoc = Record<string, unknown>;
+const ALLOWED_METRIC_GROUPS: RuleMetricGroup[] = [
+  "type_safety",
+  "static_quality",
+  "naming",
+  "complexity",
+  "state_flow",
+  "stability",
+  "security_boundary",
+  "performance",
+  "arkui_organization",
+  "harmony_engineering",
+];
+const ALLOWED_IMPACTS: RuleImpact[] = ["light", "medium", "heavy"];
 
 export function loadRegisteredRulePacksFromYamlDirectory(directoryPath: string): RegisteredRulePack[] {
   if (!fs.existsSync(directoryPath)) {
@@ -52,10 +72,8 @@ export function loadRegisteredRulePacksFromYamlDirectory(directoryPath: string):
 }
 
 function loadRegisteredRulePackFromYamlFile(filePath: string): RegisteredRulePack[] {
-  const rawText = fs.readFileSync(filePath, "utf-8");
-  const parsed = load(rawText);
-  const document = parseRulePackDocument(parsed, filePath);
-  return [document];
+  const parsed = load(fs.readFileSync(filePath, "utf-8"));
+  return [parseRulePackDocument(parsed, filePath)];
 }
 
 function parseRulePackDocument(value: unknown, location: string): RegisteredRulePack {
@@ -92,7 +110,6 @@ function parseRuleGroup(
   if (!Array.isArray(value)) {
     throw new Error(`${location} must be an array`);
   }
-
   return value.map((rule, index) => parseRule(rule, ruleSource, packId, `${location}[${index}]`));
 }
 
@@ -105,28 +122,34 @@ function parseRule(
   const rule = expectRecord(value, location);
   assertSupportedKeys(rule, RULE_KEYS, location);
 
-  const detectorKind = expectDetectorKind(rule.detector_kind, `${location}.detector_kind`);
-  const fallbackPolicy = expectFallbackPolicy(rule.fallback_policy, `${location}.fallback_policy`);
-  const detectorConfig = expectRecord(rule.detector_config, `${location}.detector_config`);
+  const detector = parseDetector(rule.detector, `${location}.detector`);
+  const fallback = parseFallback(rule.fallback, `${location}.fallback`);
   const ruleSummary = expectString(rule.rule, `${location}.rule`);
-  const normalizedDetectorConfig = normalizeDetectorConfig(detectorConfig);
+  const profile = rule.profile === undefined ? undefined : parseProfile(rule.profile, `${location}.profile`);
   const inferredRuleName =
-    rule.rule_name === undefined && detectorKind === "case_constraint"
+    rule.rule_name === undefined && detector.kind === "static" && detector.mode === "case_constraint_precheck"
       ? inferRuleName(ruleSummary)
       : undefined;
   const inferredPriority =
-    rule.priority === undefined && detectorKind === "case_constraint"
+    rule.priority === undefined && detector.kind === "static" && detector.mode === "case_constraint_precheck"
       ? inferPriority(ruleSource)
       : undefined;
+
+  if (profile?.scoring === true && (!profile.riskCode || profile.metricGroups.length === 0)) {
+    throw new Error(`${location}.profile requires riskCode and metricGroups when scoring is true`);
+  }
+  if (profile === undefined) {
+    throw new Error(`${location}.profile is required`);
+  }
 
   return {
     pack_id: packId,
     rule_id: expectString(rule.id, `${location}.id`),
     rule_source: ruleSource,
     summary: ruleSummary,
-    detector_kind: detectorKind,
-    detector_config: normalizedDetectorConfig,
-    fallback_policy: fallbackPolicy,
+    detector,
+    fallback,
+    ...(profile === undefined ? {} : { profile }),
     ...(rule.rule_name === undefined
       ? inferredRuleName === undefined
         ? {}
@@ -137,14 +160,10 @@ function parseRule(
         ? {}
         : { priority: inferredPriority }
       : { priority: expectPriority(rule.priority, `${location}.priority`) }),
-    ...(rule.decision_criteria === undefined
+    ...(rule.decisionCriteria === undefined
       ? {}
-      : { decision_criteria: parseDecisionCriteria(rule.decision_criteria, `${location}.decision_criteria`) }),
+      : { decisionCriteria: parseDecisionCriteria(rule.decisionCriteria, `${location}.decisionCriteria`) }),
   };
-}
-
-function normalizeDetectorConfig(record: Record<string, unknown>): Record<string, unknown> {
-  return { ...record };
 }
 
 function inferRuleName(summary: string): string {
@@ -161,6 +180,77 @@ function inferPriority(ruleSource: RuleSource): "P0" | "P1" | undefined {
   return undefined;
 }
 
+function parseDetector(value: unknown, location: string): RuleDetector {
+  const detector = expectRecord(value, location);
+  assertSupportedKeys(detector, DETECTOR_KEYS, location);
+  const kind = expectString(detector.kind, `${location}.kind`);
+  const config = expectRecord(detector.config ?? {}, `${location}.config`);
+
+  if (kind === "static") {
+    return {
+      kind,
+      mode: expectStaticMode(detector.mode, `${location}.mode`),
+      config: { ...config },
+    };
+  }
+  if (kind === "agent") {
+    return { kind, config: { ...config } };
+  }
+  if (kind === "external") {
+    const provider = expectString(detector.provider, `${location}.provider`);
+    if (provider !== "official_code_linter") {
+      throw new Error(`${location}.provider must be official_code_linter`);
+    }
+    return { kind, provider, config: { ...config } };
+  }
+  if (kind === "none") {
+    return { kind, config: { ...config } };
+  }
+  throw new Error(`${location}.kind must be static, agent, external, or none`);
+}
+
+function expectStaticMode(value: unknown, location: string): StaticDetectorMode {
+  const mode = expectString(value, location);
+  if (!ALLOWED_STATIC_MODES.includes(mode as StaticDetectorMode)) {
+    throw new Error(`${location} must be one of ${ALLOWED_STATIC_MODES.join(", ")}`);
+  }
+  return mode as StaticDetectorMode;
+}
+
+function parseFallback(value: unknown, location: string): RuleFallback {
+  const fallback = expectRecord(value, location);
+  assertSupportedKeys(fallback, FALLBACK_KEYS, location);
+  const policy = expectString(fallback.policy, `${location}.policy`);
+  if (!ALLOWED_FALLBACK_POLICIES.includes(policy as RuleFallback["policy"])) {
+    throw new Error(`${location}.policy must be agent_assisted or not_applicable`);
+  }
+  return { policy: policy as RuleFallback["policy"] };
+}
+
+function parseProfile(value: unknown, location: string): RuleProfile {
+  const profile = expectRecord(value, location);
+  assertSupportedKeys(profile, PROFILE_KEYS, location);
+  const scoring = expectBoolean(profile.scoring, `${location}.scoring`);
+
+  return {
+    scoring,
+    ...(profile.riskCode === undefined ? {} : { riskCode: expectString(profile.riskCode, `${location}.riskCode`) }),
+    ...(profile.suppressRubricRiskCodes === undefined
+      ? {}
+      : {
+          suppressRubricRiskCodes: expectStringArray(
+            profile.suppressRubricRiskCodes,
+            `${location}.suppressRubricRiskCodes`,
+          ),
+        }),
+    metricGroups:
+      profile.metricGroups === undefined
+        ? []
+        : expectMetricGroups(profile.metricGroups, `${location}.metricGroups`),
+    impact: profile.impact === undefined ? "light" : expectImpact(profile.impact, `${location}.impact`),
+  };
+}
+
 function parseDecisionCriteria(value: unknown, location: string): RuleDecisionCriteria {
   const record = expectRecord(value, location);
   assertSupportedKeys(record, DECISION_CRITERIA_KEYS, location);
@@ -168,29 +258,29 @@ function parseDecisionCriteria(value: unknown, location: string): RuleDecisionCr
   return {
     ...(record.pass === undefined ? {} : { pass: expectStringArray(record.pass, `${location}.pass`) }),
     ...(record.fail === undefined ? {} : { fail: expectStringArray(record.fail, `${location}.fail`) }),
-    ...(record.not_applicable === undefined
+    ...(record.notApplicable === undefined
       ? {}
-      : { not_applicable: expectStringArray(record.not_applicable, `${location}.not_applicable`) }),
-    ...(record.review === undefined
-      ? {}
-      : { review: expectStringArray(record.review, `${location}.review`) }),
+      : { notApplicable: expectStringArray(record.notApplicable, `${location}.notApplicable`) }),
+    ...(record.review === undefined ? {} : { review: expectStringArray(record.review, `${location}.review`) }),
   };
 }
 
-function expectDetectorKind(value: unknown, location: string): DetectorKind {
-  const detectorKind = expectString(value, location);
-  if (!ALLOWED_DETECTOR_KINDS.includes(detectorKind as DetectorKind)) {
-    throw new Error(`${location} must be one of ${ALLOWED_DETECTOR_KINDS.join(", ")}`);
+function expectMetricGroups(value: unknown, location: string): RuleMetricGroup[] {
+  const groups = expectStringArray(value, location);
+  for (const group of groups) {
+    if (!ALLOWED_METRIC_GROUPS.includes(group as RuleMetricGroup)) {
+      throw new Error(`${location} must only contain ${ALLOWED_METRIC_GROUPS.join(", ")}`);
+    }
   }
-  return detectorKind as DetectorKind;
+  return groups as RuleMetricGroup[];
 }
 
-function expectFallbackPolicy(value: unknown, location: string): "agent_assisted" | "not_applicable" {
-  const fallbackPolicy = expectString(value, location);
-  if (!ALLOWED_FALLBACK_POLICIES.includes(fallbackPolicy as "agent_assisted" | "not_applicable")) {
-    throw new Error(`${location} must be agent_assisted or not_applicable`);
+function expectImpact(value: unknown, location: string): RuleImpact {
+  const impact = expectString(value, location);
+  if (!ALLOWED_IMPACTS.includes(impact as RuleImpact)) {
+    throw new Error(`${location} must be one of ${ALLOWED_IMPACTS.join(", ")}`);
   }
-  return fallbackPolicy as "agent_assisted" | "not_applicable";
+  return impact as RuleImpact;
 }
 
 function expectPriority(value: unknown, location: string): "P0" | "P1" {
@@ -210,6 +300,13 @@ function expectStringArray(value: unknown, location: string): string[] {
     throw new Error(`${location} must only contain strings`);
   }
   return entries;
+}
+
+function expectBoolean(value: unknown, location: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${location} must be a boolean`);
+  }
+  return value;
 }
 
 function assertSupportedKeys(

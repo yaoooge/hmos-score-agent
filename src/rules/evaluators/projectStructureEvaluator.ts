@@ -7,7 +7,7 @@ export function runProjectStructureRule(
   rule: RegisteredRule,
   evidence: CollectedEvidence,
 ): EvaluatedRule {
-  const requiredPaths = (rule.detector_config.requiredPaths as string[] | undefined) ?? [];
+  const requiredPaths = (rule.detector.config.requiredPaths as string[] | undefined) ?? [];
   const workspacePaths = new Set(evidence.workspaceFiles.map((item) => item.relativePath));
   const missingPaths = requiredPaths.filter((item) => !workspacePaths.has(item));
 

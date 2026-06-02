@@ -318,10 +318,10 @@ export function runCaseConstraintRule(
   rule: RegisteredRule,
   evidence: CollectedEvidence,
 ): EvaluatedRule {
-  const targetPatterns = (rule.detector_config.targetPatterns as string[] | undefined) ?? [];
+  const targetPatterns = (rule.detector.config.targetPatterns as string[] | undefined) ?? [];
   const astSignals =
-    (rule.detector_config.astSignals as Array<Record<string, string>> | undefined) ?? [];
-  const kit = (rule.detector_config.kit as string[] | undefined) ?? [];
+    (rule.detector.config.astSignals as Array<Record<string, string>> | undefined) ?? [];
+  const kit = (rule.detector.config.kit as string[] | undefined) ?? [];
   const candidateFiles = evidence.workspaceFiles.filter((file) =>
     targetPatterns.some((pattern) => matchesCaseTargetPattern(file.relativePath, pattern)),
   );

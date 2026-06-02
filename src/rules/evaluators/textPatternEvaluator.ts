@@ -375,21 +375,21 @@ export function runTextPatternRule(
   rule: RegisteredRule,
   evidence: CollectedEvidence,
 ): EvaluatedRule {
-  const fileExtensions = ((rule.detector_config.fileExtensions as string[] | undefined) ?? []).map(
+  const fileExtensions = ((rule.detector.config.fileExtensions as string[] | undefined) ?? []).map(
     (item) => item.toLowerCase(),
   );
   const applicabilityPatternTexts = (
-    (rule.detector_config.applicabilityPatterns as string[] | undefined) ?? []
+    (rule.detector.config.applicabilityPatterns as string[] | undefined) ?? []
   ).filter(Boolean);
-  const patternTexts = ((rule.detector_config.patterns as string[] | undefined) ?? []).filter(
+  const patternTexts = ((rule.detector.config.patterns as string[] | undefined) ?? []).filter(
     Boolean,
   );
   const applicabilityPatterns = compilePatterns(applicabilityPatternTexts);
   const patterns = compilePatterns(patternTexts);
   const keepComments = shouldKeepComments([...applicabilityPatternTexts, ...patternTexts]);
-  const ignoreStringLiteralMatches = rule.detector_config.ignoreStringLiteralMatches === true;
-  const stripStringLiteralContents = rule.detector_config.stripStringLiteralContents === true;
-  const finallyBlockControlFlowOnly = rule.detector_config.finallyBlockControlFlowOnly === true;
+  const ignoreStringLiteralMatches = rule.detector.config.ignoreStringLiteralMatches === true;
+  const stripStringLiteralContents = rule.detector.config.stripStringLiteralContents === true;
+  const finallyBlockControlFlowOnly = rule.detector.config.finallyBlockControlFlowOnly === true;
   const candidateFiles = evidence.workspaceFiles.filter((file) =>
     fileExtensions.includes(path.extname(file.relativePath).toLowerCase()),
   );
