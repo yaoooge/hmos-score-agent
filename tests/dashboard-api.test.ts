@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import express, { type Express } from "express";
 import test from "node:test";
-import { API_PATHS } from "../src/api/apiDefinitions.js";
+import { API_PATHS } from "../src/interfaces/http/apiDefinitions.js";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import { createRuleViolationStatsStore } from "../src/api/ruleViolationStatsStore.js";
-import { createDashboardRouter } from "../src/dashboard/dashboardHandlers.js";
+import { createDashboardRouter } from "../src/datasets/dashboard/dashboardHandlers.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "dashboard-api-"));

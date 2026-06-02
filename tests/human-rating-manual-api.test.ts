@@ -3,16 +3,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { API_DEFINITIONS, API_PATHS } from "../src/api/apiDefinitions.js";
+import { API_DEFINITIONS, API_PATHS } from "../src/interfaces/http/apiDefinitions.js";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import { createSubmitManualRatingHandler } from "../src/api/manualRatingHandler.js";
-import { createHumanReviewEvidenceStore } from "../src/humanReview/humanReviewEvidenceStore.js";
+import { createHumanReviewEvidenceStore } from "../src/datasets/humanReview/humanReviewEvidenceStore.js";
 import {
   writeHumanRatingAnalysis,
   writeHumanRatingRecord,
   writeHumanRatingSkipped,
-} from "../src/humanRating/humanRatingArtifactStore.js";
-import type { HumanRatingGapAnalysis } from "../src/humanRating/humanRatingTypes.js";
+} from "../src/datasets/humanRating/humanRatingArtifactStore.js";
+import type { HumanRatingGapAnalysis } from "../src/datasets/humanRating/humanRatingTypes.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "human-rating-"));

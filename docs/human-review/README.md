@@ -118,9 +118,9 @@ Content-Type: application/json
 接口实现位于：
 
 - `src/api/humanReviewHandler.ts`
-- `src/humanReview/applyHumanReviewRecalculation.ts`
-- `src/humanReview/humanReviewEvidenceStore.ts`
-- `src/humanRating/humanRatingSubmission.ts`
+- `src/datasets/humanReview/applyHumanReviewRecalculation.ts`
+- `src/datasets/humanReview/humanReviewEvidenceStore.ts`
+- `src/datasets/humanRating/humanRatingSubmission.ts`
 
 处理步骤：
 

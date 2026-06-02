@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
-import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
+import { buildRubricSnapshot } from "../src/agents/normalization/ruleAssistance.js";
 import { fuseRubricScoreWithRules } from "../src/scoring/scoreFusion.js";
 import { loadRiskTaxonomy } from "../src/scoring/riskTaxonomy.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";

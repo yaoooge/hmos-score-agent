@@ -6,7 +6,7 @@ import express, { type Express } from "express";
 import test from "node:test";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import { createRuleViolationStatsStore } from "../src/api/ruleViolationStatsStore.js";
-import { createDashboardRouter } from "../src/dashboard/dashboardHandlers.js";
+import { createDashboardRouter } from "../src/datasets/dashboard/dashboardHandlers.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-trace-dashboard-"));

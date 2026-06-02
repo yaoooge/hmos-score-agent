@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CaseInput, EvidenceSummary, TaskType } from "../types.js";
-import { collectVisibleFiles } from "../io/gitignoreMatcher.js";
-import { filterPatchTextForIgnoredFiles, isIgnoredCaseFilePath } from "../io/ignoredFiles.js";
+import { collectVisibleFiles } from "../commons/utils/gitignoreMatcher.js";
+import { filterPatchTextForIgnoredFiles, isIgnoredCaseFilePath } from "../commons/utils/ignoredFiles.js";
 
 const RULE_EVALUATION_IGNORED_PATH_PREFIXES = ["entry/src/test", "entry/src/ohosTest"];
 const RULE_EVALUATION_IGNORED_PATH_PATTERN = /(?:^|\/)src\/(?:test|ohosTest)(?:\/|$)/;

@@ -4,7 +4,7 @@ import {
   buildAgentBootstrapPayload,
   buildRubricSnapshot,
   mergeRuleAuditResults,
-} from "../src/agent/ruleAssistance.js";
+} from "../src/agents/normalization/ruleAssistance.js";
 import type {
   AgentAssistedRuleResult,
   AssistedRuleCandidate,

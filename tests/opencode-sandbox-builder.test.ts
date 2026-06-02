@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildOpencodeSandbox } from "../src/opencode/sandboxBuilder.js";
+import { buildOpencodeSandbox } from "../src/agents/opencode/sandboxBuilder.js";
 
 async function writeFile(filePath: string, content: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });

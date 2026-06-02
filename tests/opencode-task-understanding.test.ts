@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runOpencodeTaskUnderstanding } from "../src/agent/opencodeTaskUnderstanding.js";
+import { runOpencodeTaskUnderstanding } from "../src/agents/runners/opencodeTaskUnderstanding.js";
 import type { TaskUnderstandingAgentInput } from "../src/types.js";
 
 function input(): TaskUnderstandingAgentInput {

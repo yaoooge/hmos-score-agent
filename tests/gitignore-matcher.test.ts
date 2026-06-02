@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { collectVisibleFiles, loadIgnoreFilter } from "../src/io/gitignoreMatcher.js";
+import { collectVisibleFiles, loadIgnoreFilter } from "../src/commons/utils/gitignoreMatcher.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "gitignore-matcher-"));

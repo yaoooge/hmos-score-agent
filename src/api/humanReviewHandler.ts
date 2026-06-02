@@ -1,16 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Request, Response } from "express";
-import type { HumanReviewEvidenceStore } from "../humanReview/humanReviewEvidenceStore.js";
+import type { HumanReviewEvidenceStore } from "../datasets/humanReview/humanReviewEvidenceStore.js";
 import type {
   HumanReviewItemReview,
   HumanReviewSubmissionPayload,
   HumanRiskLevel,
   HumanRiskReview,
-} from "../humanReview/humanReviewTypes.js";
-import { applyHumanReviewRecalculation } from "../humanReview/applyHumanReviewRecalculation.js";
-import type { ManualRatingAnalyzer } from "../humanRating/humanRatingSubmission.js";
-import { processHumanRatingSubmission } from "../humanRating/humanRatingSubmission.js";
+} from "../datasets/humanReview/humanReviewTypes.js";
+import { applyHumanReviewRecalculation } from "../datasets/humanReview/applyHumanReviewRecalculation.js";
+import type { ManualRatingAnalyzer } from "../datasets/humanRating/humanRatingSubmission.js";
+import { processHumanRatingSubmission } from "../datasets/humanRating/humanRatingSubmission.js";
 import type { RemoteTaskRegistry } from "./remoteTaskRegistry.js";
 
 export type SubmitHumanReviewDeps = {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
+import { ruleMergeNode } from "../src/workflow/nodes/ruleMerge/index.js";
 
 test("rule merge appends official linter results after deterministic results", async () => {
   const result = await ruleMergeNode(

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { remoteTaskPreparationNode } from "../src/nodes/remoteTaskPreparationNode.js";
+import { remoteTaskPreparationNode } from "../src/workflow/nodes/remoteTaskPreparation/index.js";
 
 const execFileAsync = promisify(execFile);
 

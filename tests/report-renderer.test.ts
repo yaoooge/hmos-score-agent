@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildHtmlReportViewModel } from "../src/report/renderer/buildHtmlReportViewModel.js";
-import { renderHtmlReport } from "../src/report/renderer/renderHtmlReport.js";
+import { buildHtmlReportViewModel } from "../src/report/html/buildHtmlReportViewModel.js";
+import { renderHtmlReport } from "../src/report/html/renderHtmlReport.js";
 
 function makeResultJson(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {

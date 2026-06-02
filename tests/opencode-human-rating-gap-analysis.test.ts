@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runOpencodeHumanRatingGapAnalysis } from "../src/agent/opencodeHumanRatingGapAnalysis.js";
-import type { HumanRatingGapAnalysis, HumanRatingRecord } from "../src/humanRating/humanRatingTypes.js";
+import { runOpencodeHumanRatingGapAnalysis } from "../src/agents/runners/opencodeHumanRatingGapAnalysis.js";
+import type { HumanRatingGapAnalysis, HumanRatingRecord } from "../src/datasets/humanRating/humanRatingTypes.js";
 
 function manualRatingRecord(): HumanRatingRecord {
   return {

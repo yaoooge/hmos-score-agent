@@ -5,25 +5,25 @@ import path from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import Ajv2020 from "ajv/dist/2020.js";
-import { buildRubricSnapshot } from "../src/agent/ruleAssistance.js";
-import { ArtifactStore } from "../src/io/artifactStore.js";
-import { pruneCompletedCaseArtifacts } from "../src/io/caseArtifactCleanup.js";
-import { loadCaseFromPath } from "../src/io/caseLoader.js";
-import { inputClassificationNode } from "../src/nodes/inputClassificationNode.js";
-import { artifactPostProcessNode } from "../src/nodes/artifactPostProcessNode.js";
-import { persistAndUploadNode } from "../src/nodes/persistAndUploadNode.js";
-import { reportGenerationNode } from "../src/nodes/reportGenerationNode.js";
-import { rubricScoringAgentNode } from "../src/nodes/rubricScoringAgentNode.js";
-import { rubricScoringPromptBuilderNode } from "../src/nodes/rubricScoringPromptBuilderNode.js";
-import { ruleAgentPromptBuilderNode } from "../src/nodes/ruleAgentPromptBuilderNode.js";
-import { ruleAssessmentAgentNode } from "../src/nodes/ruleAssessmentAgentNode.js";
-import { ruleAuditNode } from "../src/nodes/ruleAuditNode.js";
-import { ruleMergeNode } from "../src/nodes/ruleMergeNode.js";
-import { scoreFusionOrchestrationNode } from "../src/nodes/scoreFusionOrchestrationNode.js";
+import { buildRubricSnapshot } from "../src/agents/normalization/ruleAssistance.js";
+import { ArtifactStore } from "../src/commons/io/artifactStore.js";
+import { pruneCompletedCaseArtifacts } from "../src/commons/io/caseArtifactCleanup.js";
+import { loadCaseFromPath } from "../src/commons/io/caseLoader.js";
+import { inputClassificationNode } from "../src/workflow/nodes/inputClassification/index.js";
+import { artifactPostProcessNode } from "../src/workflow/nodes/artifactPostProcess/index.js";
+import { persistAndUploadNode } from "../src/workflow/nodes/persistAndUpload/index.js";
+import { reportGenerationNode } from "../src/workflow/nodes/reportGeneration/index.js";
+import { rubricScoringAgentNode } from "../src/workflow/nodes/rubricScoringAgent/index.js";
+import { rubricScoringPromptBuilderNode } from "../src/workflow/nodes/rubricScoringPromptBuilder/index.js";
+import { ruleAgentPromptBuilderNode } from "../src/workflow/nodes/ruleAgentPromptBuilder/index.js";
+import { ruleAssessmentAgentNode } from "../src/workflow/nodes/ruleAssessmentAgent/index.js";
+import { ruleAuditNode } from "../src/workflow/nodes/ruleAudit/index.js";
+import { ruleMergeNode } from "../src/workflow/nodes/ruleMerge/index.js";
+import { scoreFusionOrchestrationNode } from "../src/workflow/nodes/scoreFusionOrchestration/index.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
-import { runScoreWorkflow as runScoreWorkflowBase } from "../src/workflow/scoreWorkflow.js";
-import type { OpencodeRuntimeConfig } from "../src/opencode/opencodeConfig.js";
-import type { OpencodeServeManager } from "../src/opencode/opencodeServeManager.js";
+import { runScoreWorkflow as runScoreWorkflowBase } from "../src/workflow/graph/scoreWorkflow.js";
+import type { OpencodeRuntimeConfig } from "../src/agents/opencode/config.js";
+import type { OpencodeServeManager } from "../src/agents/opencode/serveManager.js";
 import type { CaseInput } from "../src/types.js";
 
 const fixtureRoot = path.resolve(process.cwd(), "tests/fixtures");
@@ -695,7 +695,7 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   assert.equal((result.assistedRuleCandidates?.length ?? 0) > 0, true);
   assert.equal(
     result.staticRuleAuditResults?.some(
-      (item) => item.rule_id === "ARKTS-MUST-001" && item.result === "未接入判定器",
+      (item) => item.rule_id === "ARKTS-MUST-003" && item.result === "未接入判定器",
     ),
     true,
   );
@@ -2132,7 +2132,7 @@ test("pruneCompletedCaseArtifacts preserves only code-linter and hvigor result f
 });
 
 test("workflow cleanup keeps code-linter result files when linter or hvigor produced results", async () => {
-  const scoreWorkflowModule = (await import("../src/workflow/scoreWorkflow.js")) as {
+  const scoreWorkflowModule = (await import("../src/workflow/graph/scoreWorkflow.js")) as {
     shouldKeepCodeLinterResults?: (result: Record<string, unknown>) => boolean;
   };
 
@@ -2556,7 +2556,7 @@ test("runScoreWorkflow sends unsupported rules without direct evidence to agent 
   assert.equal(agentPromptPayload.assisted_rule_candidates.length > 0, true);
   assert.equal(
     agentPromptPayload.assisted_rule_candidates.some(
-      (item: { rule_id: string }) => item.rule_id === "ARKTS-MUST-001",
+      (item: { rule_id: string }) => item.rule_id === "ARKTS-MUST-003",
     ),
     true,
   );

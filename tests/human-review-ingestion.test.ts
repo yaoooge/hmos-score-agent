@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createSubmitHumanReviewHandler } from "../src/api/humanReviewHandler.js";
-import { API_DEFINITIONS, API_PATHS } from "../src/api/apiDefinitions.js";
+import { API_DEFINITIONS, API_PATHS } from "../src/interfaces/http/apiDefinitions.js";
 import { createRemoteTaskRegistry } from "../src/api/remoteTaskRegistry.js";
 import { getConfig } from "../src/config.js";
-import { createHumanReviewEvidenceStore } from "../src/humanReview/humanReviewEvidenceStore.js";
-import type { HumanRatingGapAnalysis } from "../src/humanRating/humanRatingTypes.js";
+import { createHumanReviewEvidenceStore } from "../src/datasets/humanReview/humanReviewEvidenceStore.js";
+import type { HumanRatingGapAnalysis } from "../src/datasets/humanRating/humanRatingTypes.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "human-review-"));

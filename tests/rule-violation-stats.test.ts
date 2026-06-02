@@ -9,7 +9,7 @@ import {
   extractRuleViolationRunSnapshot,
   type RuleViolationRunSnapshot,
 } from "../src/api/ruleViolationStatsStore.js";
-import { rebuildRuleViolationStatsIndex } from "../src/api/ruleViolationStatsRebuild.js";
+import { rebuildRuleViolationStatsIndex } from "../src/datasets/ruleViolation/statsRebuild.js";
 import { createGetRuleViolationStatsHandler, createRunRemoteTaskHandler } from "../src/api/app.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {

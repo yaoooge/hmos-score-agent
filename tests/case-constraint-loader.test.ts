@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { loadCaseFromPath } from "../src/io/caseLoader.js";
+import { loadCaseFromPath } from "../src/commons/io/caseLoader.js";
 import { loadCaseConstraintRules } from "../src/rules/caseConstraintLoader.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {

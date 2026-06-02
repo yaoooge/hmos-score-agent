@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { OpencodeRuntimeConfig } from "../src/opencode/opencodeConfig.js";
-import type { OpencodeServeManager } from "../src/opencode/opencodeServeManager.js";
-import type { OpencodeRunRequest, OpencodeRunResult } from "../src/opencode/opencodeCliRunner.js";
-import { createOpencodeRunnerPool } from "../src/opencode/opencodeRunnerPool.js";
+import type { OpencodeRuntimeConfig } from "../src/agents/opencode/config.js";
+import type { OpencodeServeManager } from "../src/agents/opencode/serveManager.js";
+import type { OpencodeRunRequest, OpencodeRunResult } from "../src/agents/opencode/cliRunner.js";
+import { createOpencodeRunnerPool } from "../src/agents/opencode/runnerPool.js";
 
 function runtimeConfig(port: number, slotId: number): OpencodeRuntimeConfig {
   return {

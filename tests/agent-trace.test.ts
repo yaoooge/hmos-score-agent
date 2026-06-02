@@ -5,20 +5,20 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { createAgentTraceRecorder } from "../src/agentTrace/agentTraceRecorder.js";
-import { createAgentTraceSqliteStore } from "../src/agentTrace/agentTraceSqliteStore.js";
-import { fetchOpencodeSessionSnapshot } from "../src/agentTrace/opencodeSessionClient.js";
+import { createAgentTraceRecorder } from "../src/agents/trace/recorder.js";
+import { createAgentTraceSqliteStore } from "../src/agents/trace/sqliteStore.js";
+import { fetchOpencodeSessionSnapshot } from "../src/agents/trace/sessionClient.js";
 import {
   parseOpencodeRawEventStream,
   parseOpencodeSessionEvents,
-} from "../src/agentTrace/opencodePartParser.js";
+} from "../src/agents/trace/partParser.js";
 import type {
   AgentTraceAttempt,
   AgentTraceRun,
   OpencodeSessionSnapshot,
-} from "../src/agentTrace/types.js";
-import { createScoreDatabase } from "../src/storage/sqliteDatabase.js";
-import { enrichAgentTraceRuns } from "../src/workflow/scoreWorkflow.js";
+} from "../src/agents/trace/types.js";
+import { createScoreDatabase } from "../src/datasets/sqlite/database.js";
+import { enrichAgentTraceRuns } from "../src/workflow/graph/scoreWorkflow.js";
 
 function tokenUsage(total: number) {
   return {

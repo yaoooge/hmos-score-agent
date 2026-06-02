@@ -6,9 +6,9 @@ import { getConfig } from "../src/config.js";
 import {
   buildSqliteRuleViolationStatsResponse,
   listSqliteRemoteTaskSummaries,
-} from "../src/storage/sqliteStores.js";
-import { backfillSqliteIndexes } from "../src/storage/sqliteBackfill.js";
-import { createScoreDatabase } from "../src/storage/sqliteDatabase.js";
+} from "../src/datasets/sqlite/stores.js";
+import { backfillSqliteIndexes } from "../src/datasets/sqlite/backfill.js";
+import { createScoreDatabase } from "../src/datasets/sqlite/database.js";
 
 type Options = {
   envFile?: string;

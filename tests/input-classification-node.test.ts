@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inputClassificationNode } from "../src/nodes/inputClassificationNode.js";
+import { inputClassificationNode } from "../src/workflow/nodes/inputClassification/index.js";
 
 test("inputClassificationNode preserves fixed taskType from upstream remote task", async () => {
   const result = await inputClassificationNode({

@@ -5,7 +5,7 @@ import test from "node:test";
 
 test("score workflow runs official linter and rubric preparation in parallel after rule audit", async () => {
   const source = await fs.readFile(
-    path.resolve(process.cwd(), "src/workflow/scoreWorkflow.ts"),
+    path.resolve(process.cwd(), "src/workflow/graph/scoreWorkflow.ts"),
     "utf-8",
   );
 

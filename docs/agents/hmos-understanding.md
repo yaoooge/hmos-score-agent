@@ -6,7 +6,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 入口 | `src/agent/opencodeTaskUnderstanding.ts` |
+| 入口 | `src/agents/runners/opencodeTaskUnderstanding.ts` |
 | system prompt | `.opencode/prompts/hmos-understanding-system.md` |
 | skill | `.opencode/skills/hmos-understanding/SKILL.md` |
 | 输出文件 | `metadata/agent-output/task-understanding.json` |

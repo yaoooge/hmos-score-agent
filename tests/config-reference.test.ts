@@ -110,7 +110,7 @@ test("getConfig derives hvigor run dir from legacy codelinter run dir", () => {
 test("repo-maintained runtime files no longer use direct model provider naming", async () => {
   const files = [
     "src/config.ts",
-    "src/workflow/scoreWorkflow.ts",
+    "src/workflow/graph/scoreWorkflow.ts",
   ];
 
   for (const file of files) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseConstraintSummary } from "../src/agent/taskUnderstanding.js";
+import { parseConstraintSummary } from "../src/agents/normalization/taskUnderstanding.js";
 
 function validSummary(overrides: Record<string, unknown> = {}) {
   return {

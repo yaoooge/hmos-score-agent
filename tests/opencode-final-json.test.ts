@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FinalJsonParseError, extractFinalJsonObject } from "../src/opencode/finalJson.js";
+import { FinalJsonParseError, extractFinalJsonObject } from "../src/commons/utils/finalJson.js";
 
 test("extractFinalJsonObject parses raw JSON object", () => {
   assert.deepEqual(extractFinalJsonObject('{"ok":true}'), { ok: true });

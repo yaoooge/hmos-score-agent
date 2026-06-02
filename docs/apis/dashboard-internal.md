@@ -1,6 +1,6 @@
 # Dashboard 内部查询接口
 
-本页记录 `/dashboard/*` 路由，供 `web/` 前端维护和 AI 编码查询使用。这些接口不作为远端平台对外契约提供，变更时优先以 `src/dashboard/dashboardHandlers.ts` 和 `web/src/api/dashboard.ts` 为准。
+本页记录 `/dashboard/*` 路由，供 `web/` 前端维护和 AI 编码查询使用。这些接口不作为远端平台对外契约提供，变更时优先以 `src/datasets/dashboard/dashboardHandlers.ts` 和 `web/src/api/dashboard.ts` 为准。
 
 ## 范围
 

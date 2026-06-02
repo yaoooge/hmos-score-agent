@@ -1,5 +1,5 @@
 import { getConfig } from "../config.js";
-import { rebuildRuleViolationStatsIndex } from "../api/ruleViolationStatsRebuild.js";
+import { rebuildRuleViolationStatsIndex } from "../datasets/ruleViolation/statsRebuild.js";
 
 async function main(): Promise<void> {
   const config = getConfig();

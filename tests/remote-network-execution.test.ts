@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { API_DEFINITIONS, API_PATHS } from "../src/api/apiDefinitions.js";
+import { API_DEFINITIONS, API_PATHS } from "../src/interfaces/http/apiDefinitions.js";
 import {
   createApp,
   createCorsMiddleware,
@@ -29,10 +29,10 @@ import {
   restoreAcceptedRemoteEvaluationTask,
   runRemoteEvaluationTask,
   setServiceOpencodeRunnerPoolForTesting,
-} from "../src/service.js";
+} from "../src/service/index.js";
 import type { LoadedRubricSnapshot } from "../src/types.js";
-import type { OpencodeRunner } from "../src/workflow/scoreWorkflow.js";
-import type { OpencodeRunnerPool } from "../src/opencode/opencodeRunnerPool.js";
+import type { OpencodeRunner } from "../src/workflow/graph/scoreWorkflow.js";
+import type { OpencodeRunnerPool } from "../src/agents/opencode/runnerPool.js";
 
 function createResponse() {
   const responseState: { statusCode: number; body?: Record<string, unknown> } = {
@@ -2878,7 +2878,7 @@ test("remote fetch helpers log request, response, and error details", async () =
   }) as typeof fetch;
 
   try {
-    const { downloadManifestToDirectory } = await import("../src/io/downloader.js");
+    const { downloadManifestToDirectory } = await import("../src/commons/io/downloader.js");
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-network-log-"));
     await downloadManifestToDirectory("https://remote.example.com/ok.json", tempDir);
     await assert.rejects(

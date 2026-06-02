@@ -6,7 +6,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 入口 | `src/agent/opencodeRuleAssessment.ts` |
+| 入口 | `src/agents/runners/opencodeRuleAssessment.ts` |
 | system prompt | `.opencode/prompts/hmos-rule-assessment-system.md` |
 | skill | `.opencode/skills/hmos-rule-assessment/SKILL.md` |
 | 输出文件 | `metadata/agent-output/rule-assessment.json` |

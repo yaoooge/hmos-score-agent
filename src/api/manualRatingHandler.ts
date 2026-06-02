@@ -1,21 +1,21 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Request, Response } from "express";
-import type { HumanReviewEvidenceStore } from "../humanReview/humanReviewEvidenceStore.js";
+import type { HumanReviewEvidenceStore } from "../datasets/humanReview/humanReviewEvidenceStore.js";
 import type { RemoteTaskRegistry } from "./remoteTaskRegistry.js";
-import { decideHumanRatingGap } from "../humanRating/humanRatingGapRules.js";
+import { decideHumanRatingGap } from "../datasets/humanRating/humanRatingGapRules.js";
 import {
   writeHumanRatingAnalysis,
   writeHumanRatingRecord,
   writeHumanRatingSkipped,
-} from "../humanRating/humanRatingArtifactStore.js";
+} from "../datasets/humanRating/humanRatingArtifactStore.js";
 import type {
   HumanManualRating,
   HumanRatingAnalysisRecord,
   HumanRatingGapAnalysis,
   HumanRatingRecord,
-} from "../humanRating/humanRatingTypes.js";
-import { humanRatingGapAnalysisNode } from "../nodes/humanRatingGapAnalysisNode.js";
+} from "../datasets/humanRating/humanRatingTypes.js";
+import { humanRatingGapAnalysisNode } from "../workflow/nodes/humanRatingGapAnalysis/index.js";
 
 export type ManualRatingAnalyzer = (input: {
   caseDir: string;

@@ -1,6 +1,6 @@
 import path from "node:path";
-import { generateCasePatch } from "../io/patchGenerator.js";
-import { resolveDefaultCasePath } from "../service.js";
+import { generateCasePatch } from "../commons/io/patchGenerator.js";
+import { resolveDefaultCasePath } from "../service/index.js";
 
 function parseArg(argv: string[], flag: string): string | undefined {
   const index = argv.findIndex((item) => item === flag);

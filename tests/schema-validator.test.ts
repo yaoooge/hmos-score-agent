@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
-import { validateReportResult } from "../src/report/schemaValidator.js";
+import { validateReportResult } from "../src/report/resultSchemaValidator.js";
 
 // 保持一个最小但完整的合法结果对象，作为 schema gate 的基线样本。
 function makeValidResultJson(): Record<string, unknown> {

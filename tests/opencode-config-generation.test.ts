@@ -6,7 +6,7 @@ import test from "node:test";
 import {
   OpencodeConfigError,
   createOpencodeRuntimeConfig,
-} from "../src/opencode/opencodeConfig.js";
+} from "../src/agents/opencode/config.js";
 
 const requiredEnv = {
   HMOS_OPENCODE_PORT: "4096",

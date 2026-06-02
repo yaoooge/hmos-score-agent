@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createManagedOpencodeRunner } from "../src/opencode/managedOpencodeRunner.js";
-import type { OpencodeRunRequest, OpencodeRunResult } from "../src/opencode/opencodeCliRunner.js";
-import type { OpencodeRuntimeConfig } from "../src/opencode/opencodeConfig.js";
+import { createManagedOpencodeRunner } from "../src/agents/opencode/managedRunner.js";
+import type { OpencodeRunRequest, OpencodeRunResult } from "../src/agents/opencode/cliRunner.js";
+import type { OpencodeRuntimeConfig } from "../src/agents/opencode/config.js";
 
 function runtimeConfig(): OpencodeRuntimeConfig {
   return {

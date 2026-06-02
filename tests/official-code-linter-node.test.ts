@@ -3,13 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { officialCodeLinterNode } from "../src/nodes/officialCodeLinterNode.js";
+import { officialCodeLinterNode } from "../src/workflow/nodes/officialCodeLinter/index.js";
 import {
   detectChangedHarmonyModules,
   detectHvigorModuleBuildTarget,
 } from "../src/rules/officialCodeLinter/hvigorBuildCheck.js";
 import { prepareOfficialCodeLinterWorkspace } from "../src/rules/officialCodeLinter/workspacePreparer.js";
-import type { ScoreGraphState } from "../src/workflow/state.js";
+import type { ScoreGraphState } from "../src/workflow/graph/state.js";
 
 async function collectWorkspaceFiles(rootDir: string): Promise<string[]> {
   const results: string[] = [];

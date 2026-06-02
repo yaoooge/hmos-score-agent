@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { collectVisibleFiles } from "../../io/gitignoreMatcher.js";
+import { collectVisibleFiles } from "../../commons/utils/gitignoreMatcher.js";
 import { writeOfficialCodeLinterConfig } from "./configWriter.js";
 
 export interface OfficialCodeLinterWorkspace {

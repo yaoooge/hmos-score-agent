@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { ArtifactStore } from "../src/io/artifactStore.js";
-import { taskUnderstandingNode } from "../src/nodes/taskUnderstandingNode.js";
+import { ArtifactStore } from "../src/commons/io/artifactStore.js";
+import { taskUnderstandingNode } from "../src/workflow/nodes/taskUnderstanding/index.js";
 
 const referenceRoot = path.resolve(process.cwd(), "references/scoring");
 

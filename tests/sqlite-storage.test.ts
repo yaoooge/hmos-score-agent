@@ -7,7 +7,7 @@ import {
   buildRuleViolationStatsResponse,
   type RuleViolationRunSnapshot,
 } from "../src/api/ruleViolationStatsStore.js";
-import { createScoreDatabase } from "../src/storage/sqliteDatabase.js";
+import { createScoreDatabase } from "../src/datasets/sqlite/database.js";
 import {
   buildSqliteRuleViolationStatsResponse,
   createSqliteConsistencyTaskStore,
@@ -16,8 +16,8 @@ import {
   listSqliteRemoteTaskPage,
   listSqliteRemoteTaskSummaries,
   updateSqliteRemoteTaskSummary,
-} from "../src/storage/sqliteStores.js";
-import { backfillSqliteIndexes } from "../src/storage/sqliteBackfill.js";
+} from "../src/datasets/sqlite/stores.js";
+import { backfillSqliteIndexes } from "../src/datasets/sqlite/backfill.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sqlite-storage-"));

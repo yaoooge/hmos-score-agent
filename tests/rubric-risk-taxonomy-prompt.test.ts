@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runOpencodeRubricScoring } from "../src/agent/opencodeRubricScoring.js";
+import { runOpencodeRubricScoring } from "../src/agents/runners/opencodeRubricScoring.js";
 import type { RubricScoringPayload } from "../src/types.js";
 
 function payload(): RubricScoringPayload {

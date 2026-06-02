@@ -1,4 +1,4 @@
-import { resolveDefaultCasePath, runSingleCase } from "./service.js";
+import { resolveDefaultCasePath, runSingleCase } from "./service/index.js";
 
 function parseCaseArg(argv: string[]): string {
   const idx = argv.findIndex((a) => a === "--case");

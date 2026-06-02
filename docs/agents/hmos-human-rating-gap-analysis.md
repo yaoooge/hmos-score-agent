@@ -6,8 +6,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 入口 | `src/agent/opencodeHumanRatingGapAnalysis.ts` |
-| 节点 | `src/nodes/humanRatingGapAnalysisNode.ts` |
+| 入口 | `src/agents/runners/opencodeHumanRatingGapAnalysis.ts` |
+| 节点 | `src/workflow/nodes/humanRatingGapAnalysis/index.ts` |
 | system prompt | `.opencode/prompts/hmos-human-rating-gap-analysis-system.md` |
 | skill | `.opencode/skills/hmos-human-rating-gap-analysis/SKILL.md` |
 | 输出文件 | `metadata/agent-output/human-rating-gap-analysis.json` |

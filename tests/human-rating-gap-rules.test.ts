@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decideHumanRatingGap, mapAutoScoreToRating } from "../src/humanRating/humanRatingGapRules.js";
+import { decideHumanRatingGap, mapAutoScoreToRating } from "../src/datasets/humanRating/humanRatingGapRules.js";
 
 test("mapAutoScoreToRating maps scoring thresholds", () => {
   assert.equal(mapAutoScoreToRating(100), "L6");

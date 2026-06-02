@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import express, { NextFunction, Request, Response } from "express";
-import { API_PATHS } from "./apiDefinitions.js";
+import { API_PATHS } from "../interfaces/http/apiDefinitions.js";
 import { getConfig } from "../config.js";
 import {
   createConsistencyTaskStore,
@@ -13,11 +13,11 @@ import type {
   RemoteTaskRecord as StoredRemoteTaskRecord,
   RemoteTaskRegistry,
 } from "./remoteTaskRegistry.js";
-import { uploadTaskCallback } from "../io/uploader.js";
+import { uploadTaskCallback } from "../commons/io/uploader.js";
 import {
   createHumanReviewEvidenceStore,
   type HumanReviewEvidenceStore,
-} from "../humanReview/humanReviewEvidenceStore.js";
+} from "../datasets/humanReview/humanReviewEvidenceStore.js";
 import {
   buildRuleViolationStatsResponse,
   createRuleViolationStatsStore,
@@ -33,13 +33,13 @@ import {
   prepareRemoteEvaluationTask,
   replayCompletedRemoteTaskCallback,
   restoreAcceptedRemoteEvaluationTask,
-} from "../service.js";
+} from "../service/index.js";
 import type { RemoteEvaluationTask } from "../types.js";
-import { createDashboardRouter } from "../dashboard/dashboardHandlers.js";
-import { createAgentTraceSqliteStore } from "../agentTrace/agentTraceSqliteStore.js";
-import type { AgentTraceReport } from "../agentTrace/types.js";
-import { createScoreDatabase } from "../storage/sqliteDatabase.js";
-import { backfillSqliteIndexes } from "../storage/sqliteBackfill.js";
+import { createDashboardRouter } from "../datasets/dashboard/dashboardHandlers.js";
+import { createAgentTraceSqliteStore } from "../agents/trace/sqliteStore.js";
+import type { AgentTraceReport } from "../agents/trace/types.js";
+import { createScoreDatabase } from "../datasets/sqlite/database.js";
+import { backfillSqliteIndexes } from "../datasets/sqlite/backfill.js";
 import {
   createSqliteConsistencyTaskStore,
   createSqliteRemoteTaskRegistry,
@@ -50,7 +50,7 @@ import {
   listSqliteRemoteTaskSummariesForRange,
   summarizeSqliteRemoteTasks,
   updateSqliteRemoteTaskSummary,
-} from "../storage/sqliteStores.js";
+} from "../datasets/sqlite/stores.js";
 
 type AppDeps = {
   acceptRemoteEvaluationTask: typeof acceptRemoteEvaluationTask;

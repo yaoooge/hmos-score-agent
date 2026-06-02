@@ -4,8 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { OpencodeRuntimeConfig } from "../src/opencode/opencodeConfig.js";
-import { OpencodeRunError, runOpencodePrompt } from "../src/opencode/opencodeCliRunner.js";
+import type { OpencodeRuntimeConfig } from "../src/agents/opencode/config.js";
+import { OpencodeRunError, runOpencodePrompt } from "../src/agents/opencode/cliRunner.js";
 
 function runtimeConfig(runtimeDir: string, overrides: Partial<OpencodeRuntimeConfig> = {}): OpencodeRuntimeConfig {
   return {

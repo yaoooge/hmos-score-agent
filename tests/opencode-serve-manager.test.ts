@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import type { OpencodeRuntimeConfig } from "../src/opencode/opencodeConfig.js";
+import type { OpencodeRuntimeConfig } from "../src/agents/opencode/config.js";
 import {
   OpencodeServeError,
   createOpencodeServeManager,
   ensureOpencodeCliAvailable,
-} from "../src/opencode/opencodeServeManager.js";
+} from "../src/agents/opencode/serveManager.js";
 
 function runtimeConfig(): OpencodeRuntimeConfig {
   return {

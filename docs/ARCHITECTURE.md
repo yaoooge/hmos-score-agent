@@ -63,27 +63,26 @@ hmos-score-agent/
   src/
     index.ts                        # Express API 启动入口
     cli.ts                          # 本地 CLI 评分入口
-    service.ts                      # case 接收、workflow 执行、远端回调编排
     config.ts                       # 环境变量读取与默认值归一化
     types.ts                        # 远端任务、评分结果、报告等共享类型
-    api/                            # HTTP 路由、远端任务 registry、人工接口和规则统计
-    agentTrace/                     # opencode run/attempt/event trace 采集、artifact 和 SQLite 摘要
-    agent/                          # opencode agent 调用、prompt 构建、输出解析
-    dashboard/                      # dashboard 数据聚合、数据读取和内部路由 handler
-    humanReview/                    # 逐条人工复核、复核样本写入、复算逻辑
-    humanRating/                    # 整单人工评级、差异阈值判断和分析产物
-    io/                             # case 加载、下载上传、patch、日志、产物存储
-    nodes/                          # LangGraph 节点，每个文件对应一个阶段
-    opencode/                       # runtime 配置、serve 管理、CLI runner、sandbox
+    interfaces/                     # API 契约、路径、schema 和 api.d.ts 声明入口
+    api/                            # HTTP 路由、远端任务 registry、人工接口和规则统计 handler
+    commons/                        # 公共类型、基础工具、case/artifact/download/upload IO
+    service/                        # case 接收、workflow 执行、远端回调编排
+    workflow/                       # graph 拓扑、状态、节点目录和流式观测
+      graph/                        # scoreWorkflow、状态定义、runtime lifecycle
+      nodes/                        # 每个 LangGraph 节点一个目录，含 index/types/tools
+      observability/                # workflow 事件解释、节点标签和日志
+    agents/                         # opencode agent 调用、prompt、runtime、trace 和输出归一化
+    datasets/                       # SQLite、dashboard 数据、人工复核/评级、统计数据集
     report/                         # result.json schema 校验和 HTML 报告渲染
     rules/                          # 静态规则引擎、规则包、官方工具适配
     scoring/                        # rubric 加载、基础评分和分数融合
-    workflow/                       # scoreWorkflow、状态定义和流式观测
     tools/                          # 运维和开发辅助脚本
   docs/
     README.md                       # 文档索引
     ARCHITECTURE.md                 # 本文档
-    apis/                           # 对外接口文档和 dashboard 内部查询接口索引
+    apis/                           # 对外接口文档和 dashboard 内部查询接口索引，openapi.yaml 保持在此供人工阅读
     agents/                         # opencode agent 文档
     superpowers/                    # 历史设计文档和实施计划
   tests/                            # node:test 测试用例与 fixtures
@@ -91,13 +90,13 @@ hmos-score-agent/
   .local-cases/                     # 本地运行产物目录，运行时生成
 ```
 
-Dashboard API 路由由 `src/dashboard/dashboardHandlers.ts` 注册，供 `web/` 前端和后续 AI 编码查询使用。
+Dashboard API 路由由 `src/datasets/dashboard/dashboardHandlers.ts` 注册，供 `web/` 前端和后续 AI 编码查询使用。
 
-Agent Trace 由 `src/agentTrace/` 在 opencode agent 调用时采集 run、attempt 和 event。完整 trace artifact 写入 `outputs/agent-trace.json`，dashboard 摘要接口展示 trace 基础信息，raw 子接口按需读取单个 run 或 event 的原始内容。
+Agent Trace 由 `src/agents/trace/` 在 opencode agent 调用时采集 run、attempt 和 event。完整 trace artifact 写入 `outputs/agent-trace.json`，dashboard 摘要接口展示 trace 基础信息，raw 子接口按需读取单个 run 或 event 的原始内容。
 
 ## 主评分 Workflow
 
-主流程定义在 `src/workflow/scoreWorkflow.ts`，由 LangGraph 串联节点。入口包括本地 CLI 用例和远端 API 任务，最终输出 `outputs/result.json` 与 `outputs/report.html`。
+主流程定义在 `src/workflow/graph/scoreWorkflow.ts`，由 LangGraph 串联 `src/workflow/nodes/` 下的节点目录。入口包括本地 CLI 用例和远端 API 任务，最终输出 `outputs/result.json` 与 `outputs/report.html`。
 
 | 顺序 | 节点 | 职责 |
 | --- | --- | --- |

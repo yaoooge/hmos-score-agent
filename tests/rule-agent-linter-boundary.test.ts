@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ruleAgentPromptBuilderNode } from "../src/nodes/ruleAgentPromptBuilderNode.js";
+import { ruleAgentPromptBuilderNode } from "../src/workflow/nodes/ruleAgentPromptBuilder/index.js";
 
 test("rule agent prompt builder excludes official linter results from bootstrap payload", async () => {
   const output = await ruleAgentPromptBuilderNode(
