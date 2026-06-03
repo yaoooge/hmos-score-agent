@@ -1,274 +1,263 @@
-# One-Multi UI Test Spike Design
+# 一多 UI 自动化穿刺方案
 
-## Goal
+## 目标
 
-Validate a narrow UI automation path for HarmonyOS one-multi adaptation rules without integrating it into the main scoring workflow.
+做一个尽量小的本地穿刺，验证一多组件规则能否通过固定 UI 自动化测试产出确定性结果。
 
-The spike proves that a cloud scoring service can dispatch one UI test task to a local machine, the local runner can execute fixed Hypium UI tests against HarmonyOS emulator profiles, and the runner can upload deterministic JSON evidence back to the cloud service.
+本穿刺只接收一个指定的本地 HarmonyOS 工程地址，由启动脚本在该工程上挂载 `List` 和 `Swiper` 的固定测试，执行后生成一个结果 JSON。暂不考虑完整一多规则集整改，不接入现有评分流程，不做云端任务编排，也不做 Web 类规则。
 
-This spike is intentionally small. It covers only pure ArkUI component rules for `List` and `Swiper`; it excludes Web rules, full score fusion, dashboard integration, and automatic scoring decisions.
-
-## Non-Goals
-
-- Do not merge UI test execution into the main score workflow.
-- Do not run HarmonyOS emulators or DevEco Testing tools on the Linux cloud service.
-- Do not rely on runtime window resizing as the primary breakpoint mechanism.
-- Do not cover Web, Native-Web synchronization, CSS media query, hover, performance, or visual regression rules.
-- Do not generate UI test scripts dynamically per case.
-
-## Official Tooling Assumption
-
-Use the official HarmonyOS UI automation path:
-
-- DevEco Testing Hypium for UI automation scripts.
-- DevEco Studio / HarmonyOS SDK / Hvigor / hdc for build, install, and device interaction.
-- Local emulator profiles on the runner machine for one-multi breakpoint coverage.
-
-Official testing documentation describes DevEco Testing Hypium as the recommended UI automation framework and notes that CI/CD can call Hypium UI automation cases through a `run` command. The design treats Linux cloud deployment as orchestration only because the documented local emulator and DevEco Testing environments are primarily Windows/macOS oriented.
-
-## Rule Scope
-
-The spike validates three rules:
-
-| Rule ID | Source Rule | Component | Deterministic UI Oracle |
-| --- | --- | --- | --- |
-| `LIST-001` | `CMP-MUST-01` | `List` | Visible columns / item lanes are non-decreasing from small to wider profiles. |
-| `SWIPER-001` | `CMP-MUST-03` | `Swiper` | Visible swiper item count is non-decreasing from small to wider profiles. |
-| `SWIPER-002` | `CMP-MUST-04` | `Swiper` | Indicator is present for single-item display and absent for multi-item display. |
-
-The simplified numbering is capped at three segments and grouped by component.
-
-## Component ID Contract
-
-The test scripts locate components only through fixed IDs. Test cases that participate in this spike must expose these IDs in the ArkUI code:
-
-| Component | ID |
-| --- | --- |
-| Main `List` | `list_001` |
-| First representative `ListItem` | `list_item_001` |
-| Main `Swiper` | `swiper_001` |
-| First representative swiper item | `swiper_item_001` |
-
-If a page contains multiple components of the same type, IDs increment by suffix:
-
-- `list_002`, `list_item_002`
-- `swiper_002`, `swiper_item_002`
-
-The spike only requires the `001` IDs.
-
-## Breakpoint Execution Strategy
-
-Do not depend on changing a single device's window size during the test. A single physical device has fixed dimensions, and runtime resize support is not assumed to be stable enough for deterministic scoring.
-
-Use emulator profiles as breakpoint proxies:
-
-| Breakpoint | Preferred Profile | Notes |
-| --- | --- | --- |
-| `sm` | `om_phone_sm` | Phone-like emulator. |
-| `md` | `om_tablet_md` | Tablet-like emulator if available. |
-| `lg` | `om_2in1_lg` | Wide / 2in1-like emulator if available. |
-
-If tablet or 2in1 local emulator support is not available on the runner, the spike can still pass the first milestone with one profile. The result must then be marked as `partial` rather than as a complete rule verdict.
-
-## Local Runner Environment
-
-The local runner machine should prepare:
-
-- Windows or macOS machine capable of running DevEco Studio and local emulators.
-- DevEco Studio installed.
-- HarmonyOS SDK matching the tested project API version.
-- DevEco Testing installed.
-- DevEco Testing Hypium installed.
-- `hdc` and DevEco command-line tools available to the runner process.
-- Node.js, `ohpm`, and Hvigor available for project dependency install and build.
-- Python runtime required by Hypium scripts.
-- At least one runnable local emulator profile.
-- Preferred pre-created emulator profiles: `om_phone_sm`, `om_tablet_md`, `om_2in1_lg`.
-- Runner config with cloud service URL, auth token, workspace path, and `maxConcurrency: 1`.
-
-Recommended resources:
-
-- Memory: 16 GB minimum, 32 GB recommended.
-- Disk: 100 GB available.
-- Network: access to the cloud service for task download and result upload.
-
-The cloud Linux service only needs task APIs, storage, and report receiving endpoints. It does not need DevEco Studio, Hypium, hdc, or emulator images.
-
-## Cloud-To-Local Architecture
-
-The cloud service owns orchestration and task state. The local runner owns build, emulator, UI test execution, and artifact collection.
+成功目标：
 
 ```text
-Cloud service
-  -> creates one pending UI test task
-  -> enforces one running task at a time
-  -> serves task package to the local runner
-  -> receives JSON result, logs, and screenshots
-
-Local runner
-  -> polls or long-polls for one pending task
-  -> claims the task atomically
-  -> downloads project/test bundle
-  -> builds and installs the app
-  -> runs fixed Hypium suites on configured emulator profiles
-  -> uploads result artifacts
-  -> cleans local temporary state
+给定一个本地工程地址
+  -> 启动脚本识别并准备工程
+  -> 挂载 List / Swiper UI 自动化测试
+  -> 在可用模拟器或设备上执行测试
+  -> 生成 result.json
 ```
 
-The runner must process tasks serially. Even if DevEco Testing supports multi-device execution, this spike intentionally uses one task lock and runner-side `maxConcurrency: 1` to avoid cross-task state pollution.
+## 非目标
 
-## Task Contract
+- 不改造整体一多规则集。
+- 不接入当前评分工作流。
+- 不新增看板展示。
+- 不实现云端下发、本机轮询、任务锁或结果回调。
+- 不覆盖 Web、Hover、Grid、Tabs、SideBar、WaterFlow、Flex 等规则。
+- 不证明所有断点完整覆盖；本穿刺只证明测试链路可运行并产出结构化结果。
 
-Example cloud task payload:
+## 官方工具假设
+
+本穿刺采用 HarmonyOS 官方推荐的 UI 自动化路径：
+
+- 使用 DevEco Testing Hypium 编写 UI 自动化脚本。
+- 使用 DevEco Studio / HarmonyOS SDK / Hvigor / hdc 完成构建、安装、启动和设备交互。
+- 使用本地模拟器优先验证，真机也可以作为临时替代。
+
+官方测试服务文档说明 UI 自动化测试可使用 DevEco Testing Hypium，CI/CD 可通过 `run` 命令调用 Hypium 用例。DevEco Testing 也说明 Hypium 支持多形态设备自动化用例编写。因此本穿刺优先研究本地模拟器，不要求 Linux 云端直接运行 UI 自动化。
+
+## 简易规则集
+
+只定义一个临时规则集 `one-multi-ui-spike`，包含三条规则：
+
+| 规则编号 | 来源规则 | 组件 | 检测目标 |
+| --- | --- | --- | --- |
+| `LIST-001` | `CMP-MUST-01` | `List` | `List` 在不同设备宽度下的可见列数不下降。 |
+| `SWIPER-001` | `CMP-MUST-03` | `Swiper` | `Swiper` 在不同设备宽度下的可见元素数不下降。 |
+| `SWIPER-002` | `CMP-MUST-04` | `Swiper` | 单元素展示时 indicator 可见，多元素展示时 indicator 不可见。 |
+
+规则编号不超过三段，并按组件归类。后续如果验证链路可行，再扩展其他组件规则。
+
+## 组件 ID 约定
+
+测试脚本只使用固定 ID 定位组件。被测工程需要严格采用以下 ID：
+
+| 组件 | ID |
+| --- | --- |
+| 主 `List` | `list_001` |
+| 代表性 `ListItem` | `list_item_001` |
+| 主 `Swiper` | `swiper_001` |
+| 代表性 `Swiper` 子项 | `swiper_item_001` |
+
+如果有多个同类组件，后续可递增为 `list_002`、`swiper_002`，但穿刺只要求 `001`。
+
+如果启动脚本发现组件存在但缺少约定 ID，该规则不执行 UI 测试，直接在结果中标记为 `blocked`。
+
+## 模拟器策略
+
+单台真机尺寸固定，不适合验证一多断点变化。本穿刺优先使用本地模拟器，通过不同模拟器 profile 近似不同断点：
+
+| 断点 | 推荐 profile | 说明 |
+| --- | --- | --- |
+| `sm` | `om_phone_sm` | 手机尺寸模拟器。 |
+| `md` | `om_tablet_md` | 平板尺寸模拟器，如本地环境支持。 |
+| `lg` | `om_2in1_lg` | 宽屏或 2in1 模拟器，如本地环境支持。 |
+
+第一阶段可以只跑通一个模拟器 profile，结果标记为 `partial`。只有在至少两个 profile 上跑通并能比较测量结果时，才输出完整规则判断。
+
+## 本机环境准备
+
+执行穿刺的本机需要准备：
+
+- Windows 或 macOS。
+- DevEco Studio。
+- 与被测工程 API 版本匹配的 HarmonyOS SDK。
+- DevEco Testing。
+- DevEco Testing Hypium。
+- 可用的 `hdc` 和 DevEco 命令行工具。
+- Node.js、`ohpm`、Hvigor。
+- Hypium 所需 Python 环境。
+- 至少一个可启动的本地模拟器。
+- 推荐预创建模拟器 profile：`om_phone_sm`、`om_tablet_md`、`om_2in1_lg`。
+
+推荐机器资源：
+
+- 内存至少 16 GB，推荐 32 GB。
+- 可用磁盘至少 100 GB。
+
+如果模拟器环境不足，穿刺仍可先用真机或单个模拟器验证脚本链路，但结果不得声明完整覆盖一多断点。
+
+## 启动脚本
+
+新增一个启动脚本作为穿刺入口。建议命令形态：
+
+```bash
+npm run uitest:spike -- --project /path/to/harmony-project --out /path/to/result.json
+```
+
+脚本职责：
+
+1. 校验 `--project` 是否存在。
+2. 检查工程中是否包含 HarmonyOS 工程关键文件。
+3. 扫描 `.ets` 文件，识别 `List(`、`Swiper(` 和约定 ID。
+4. 生成本次要执行的简易规则计划。
+5. 将固定 Hypium 测试文件挂载或复制到被测工程的测试目录。
+6. 调用构建命令。
+7. 选择可用模拟器 profile。
+8. 安装并启动应用。
+9. 执行 List / Swiper 测试。
+10. 归集测试输出、截图和日志。
+11. 写出 `result.json`。
+
+脚本只处理一个本地工程，不处理队列，不并发执行。
+
+## 规则触发
+
+穿刺使用最小静态扫描，不依赖完整 rule engine：
+
+| 条件 | 触发规则 |
+| --- | --- |
+| 扫描到 `List(` 且包含 `list_001` | `LIST-001` |
+| 扫描到 `Swiper(` 且包含 `swiper_001` | `SWIPER-001`、`SWIPER-002` |
+| 扫描到 `List(` 但缺少 `list_001` | `LIST-001` 输出 `blocked` |
+| 扫描到 `Swiper(` 但缺少 `swiper_001` | `SWIPER-001`、`SWIPER-002` 输出 `blocked` |
+
+这个扫描只服务穿刺。后续正式接入时再由现有规则引擎生成 `uiTestPlan`。
+
+## 测试挂载方式
+
+固定测试资产保存在当前评测工程中，例如：
+
+```text
+fixtures/uitest-spike/
+  hypium/
+    list_test.py
+    swiper_test.py
+  manifest.json
+```
+
+启动脚本把这些文件复制或链接到被测工程的测试目录。具体目录由被测工程结构探测得到，探测失败时允许通过参数指定：
+
+```bash
+npm run uitest:spike -- \
+  --project /path/to/harmony-project \
+  --test-dir /path/to/harmony-project/test \
+  --out /path/to/result.json
+```
+
+穿刺阶段不自动修改业务源码，只依赖用户已经按 ID 契约给组件加好 ID。
+
+## 结果 JSON
+
+输出文件必须包含脚本状态、触发规则、设备 profile、每条规则结果和证据。
+
+示例：
 
 ```json
 {
-  "taskId": "uitest-spike-001",
-  "caseId": "case-list-swiper",
-  "rules": ["LIST-001", "SWIPER-001", "SWIPER-002"],
-  "componentIds": {
-    "list": "list_001",
-    "listItem": "list_item_001",
-    "swiper": "swiper_001",
-    "swiperItem": "swiper_item_001"
-  },
-  "profiles": ["om_phone_sm", "om_tablet_md", "om_2in1_lg"],
-  "artifactUrl": "https://cloud.example/tasks/uitest-spike-001/artifact.zip",
-  "callbackUrl": "https://cloud.example/ui-test/tasks/uitest-spike-001/result"
-}
-```
-
-The artifact bundle contains:
-
-- HarmonyOS project or prepared project workspace.
-- Fixed Hypium UI test scripts for List and Swiper.
-- Runner manifest with package name, entry ability, build command, and expected profiles.
-
-## Result Contract
-
-Example runner result:
-
-```json
-{
-  "taskId": "uitest-spike-001",
-  "caseId": "case-list-swiper",
+  "schemaVersion": "uitest-spike-v1",
+  "project": "/path/to/harmony-project",
   "status": "completed",
-  "scope": "full",
-  "profiles": ["om_phone_sm", "om_tablet_md", "om_2in1_lg"],
-  "results": [
+  "scope": "partial",
+  "profiles": ["om_phone_sm"],
+  "rules": [
     {
       "ruleId": "LIST-001",
+      "component": "List",
       "result": "pass",
       "evidence": {
-        "sm": { "visibleColumns": 1 },
-        "md": { "visibleColumns": 2 },
-        "lg": { "visibleColumns": 3 }
+        "om_phone_sm": {
+          "visibleColumns": 1,
+          "selector": "list_001"
+        }
       }
     },
     {
       "ruleId": "SWIPER-001",
+      "component": "Swiper",
       "result": "pass",
       "evidence": {
-        "sm": { "visibleItems": 1 },
-        "md": { "visibleItems": 2 },
-        "lg": { "visibleItems": 3 }
+        "om_phone_sm": {
+          "visibleItems": 1,
+          "selector": "swiper_001"
+        }
       }
     },
     {
       "ruleId": "SWIPER-002",
+      "component": "Swiper",
       "result": "pass",
       "evidence": {
-        "sm": { "indicatorVisible": true },
-        "md": { "indicatorVisible": false },
-        "lg": { "indicatorVisible": false }
+        "om_phone_sm": {
+          "indicatorVisible": true,
+          "selector": "swiper_001"
+        }
       }
     }
   ],
   "artifacts": {
     "logs": ["hypium.log"],
-    "screenshots": ["sm-swiper.png", "md-swiper.png", "lg-swiper.png"]
+    "screenshots": []
   }
 }
 ```
 
-Allowed task statuses:
+允许的顶层状态：
 
-- `completed`: all requested profiles ran and results were produced.
-- `partial`: at least one profile ran, but not enough profiles were available for a complete verdict.
-- `failed`: build, install, launch, test execution, or upload failed.
-- `blocked`: no suitable emulator profile or device environment was available.
+| 状态 | 含义 |
+| --- | --- |
+| `completed` | 脚本执行完成并生成规则结果。 |
+| `partial` | 只跑通部分 profile 或部分规则。 |
+| `failed` | 构建、安装、启动或测试命令失败。 |
+| `blocked` | 本机环境不具备执行条件。 |
 
-Allowed rule results:
+允许的规则结果：
 
-- `pass`
-- `fail`
-- `not_applicable`
-- `blocked`
+| 结果 | 含义 |
+| --- | --- |
+| `pass` | 规则通过。 |
+| `fail` | 规则失败。 |
+| `not_applicable` | 未命中该组件或该规则不适用。 |
+| `blocked` | 命中组件但缺少 ID、缺少设备或无法执行测试。 |
 
-## Static Trigger For The Spike
+## 验收标准
 
-The spike does not integrate with the full rule engine. It can use a minimal static scanner that only detects whether changed `.ets` files contain `List(` or `Swiper(` and the required ID strings:
+穿刺完成时需要满足：
 
-- `List(` plus `list_001` enables `LIST-001`.
-- `Swiper(` plus `swiper_001` enables `SWIPER-001` and `SWIPER-002`.
+- 启动脚本可以接收一个指定的本地工程地址。
+- 脚本能识别 `List` 和 `Swiper` 的触发条件。
+- 脚本能检测 `list_001`、`list_item_001`、`swiper_001`、`swiper_item_001`。
+- 脚本能把固定 Hypium 测试挂载到被测工程。
+- 脚本能在至少一个可用模拟器或设备上执行测试命令。
+- 脚本能生成结构稳定的 `result.json`。
+- 缺少 ID、缺少设备、构建失败、测试失败都能在 JSON 中体现，而不是只在终端报错。
+- 不写入现有评分结果，不影响已有评分流程。
 
-If a component is present but its required ID is missing, the spike should create a blocked rule result:
+## 风险与处理
 
-```json
-{
-  "ruleId": "LIST-001",
-  "result": "blocked",
-  "reason": "List component was detected but required test id list_001 was missing."
-}
-```
+| 风险 | 处理 |
+| --- | --- |
+| 本地模拟器 profile 不齐全 | 允许单 profile 跑通，输出 `partial`。 |
+| DevEco / Hypium 命令行路径因机器不同而变化 | 启动脚本支持通过配置或环境变量指定工具路径。 |
+| Hypium 对组件定位依赖 ID，缺少 ID 会失败 | 缺少 ID 时直接输出 `blocked`，不做猜测定位。 |
+| 被测工程测试目录结构不一致 | 自动探测失败时允许显式传入 `--test-dir`。 |
+| 单 profile 无法证明断点非递减 | 单 profile 只验证链路，完整规则结论至少需要两个 profile。 |
 
-This scanner is deliberately narrow. A later production design can replace it with the existing rule engine and official linter signals.
+## 后续扩展
 
-## Execution Flow
+穿刺跑通后再考虑：
 
-1. Cloud service creates a pending spike task with artifact URL, rules, IDs, and profiles.
-2. Local runner polls the cloud service.
-3. Cloud service atomically assigns one pending task to that runner.
-4. Runner downloads and unpacks the artifact.
-5. Runner validates local tools and emulator profiles.
-6. Runner builds the app through the configured Hvigor command.
-7. Runner starts one emulator profile at a time.
-8. Runner installs and launches the app.
-9. Runner executes the fixed Hypium suite for the requested rules.
-10. Runner records measurements, screenshots, and logs.
-11. Runner repeats for remaining profiles.
-12. Runner uploads JSON result and artifacts.
-13. Cloud service marks the task completed, partial, failed, or blocked.
-
-## Acceptance Criteria
-
-The spike is successful when:
-
-- A cloud task can be created for `LIST-001`, `SWIPER-001`, and `SWIPER-002`.
-- The local runner claims at most one task at a time.
-- The runner can execute at least one emulator profile and upload a structured result.
-- When multiple profiles are available, the runner can compare List and Swiper measurements across profiles.
-- Missing component IDs produce deterministic `blocked` results.
-- Build, install, launch, and test failures include logs and screenshots where available.
-- No UI test result is written into the normal scoring flow.
-
-## Risks And Mitigations
-
-- Emulator availability may differ by OS, API version, and DevEco Studio version.
-  - Mitigation: treat profile availability as runner capability and allow `partial` results for the spike.
-- Tablet or 2in1 local emulators may not be available in the installed environment.
-  - Mitigation: start with phone and one wider custom profile if possible; do not claim full verdict without enough profiles.
-- Hypium scripts may be brittle without stable IDs.
-  - Mitigation: require the fixed ID contract and mark missing IDs as `blocked`.
-- Cloud-to-local callbacks can race if multiple runners are installed.
-  - Mitigation: cloud task claim must be atomic, and each runner must set `maxConcurrency: 1`.
-- Long-running emulators can leave stale state.
-  - Mitigation: runner cleans temporary workspaces and resets app state between profiles.
-
-## Future Work
-
-- Add `GRID-001`, `TABS-*`, `SIDEBAR-*`, `GRIDROW-001`, `GRIDCOL-001`, `FLEX-001`, and `WATERFLOW-001`.
-- Replace the spike scanner with rule-engine generated `uiTestPlan`.
-- Add dashboard display for UI test evidence.
-- Add AGC cloud testing as an alternative runner backend.
-- Add Web rules after the pure ArkUI component path is stable.
+- 增加 `GRID-001`、`TABS-*`、`SIDEBAR-*` 等纯 UI 组件规则。
+- 把简易扫描替换成现有规则引擎生成的 `uiTestPlan`。
+- 接入云端任务下发和本机 Runner 串行执行。
+- 接入结果报告和评分流程。
+- 最后再评估 Web 类规则。
