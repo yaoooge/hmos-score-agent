@@ -416,6 +416,7 @@ import {
   buildRiskReport,
   buildRuleReport,
   collectExclusiveRoundTaskIds,
+  DEFAULT_SERVICE_BASE_URL,
   extractConsistencyRunSummary,
   generateSubmittedTaskIds,
   generateNextSubmittedTaskIds,
@@ -463,7 +464,6 @@ type ConsistencyTask = {
 };
 
 const RUN_COUNT = 10;
-const DEFAULT_SERVICE_BASE_URL = "http://8.136.155.63:3000";
 const MAX_RESUBMIT_ATTEMPTS = 1;
 
 const tasks = ref<ConsistencyTask[]>([]);

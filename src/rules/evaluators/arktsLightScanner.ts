@@ -14,6 +14,7 @@ export interface ArktsVariableDeclarationFact {
   line: number;
   name: string;
   kind: "let" | "const" | "var";
+  scope: "topLevel" | "local";
   typeName?: string;
   initializer?: string;
   text: string;
@@ -401,6 +402,7 @@ function scanFile(file: WorkspaceFile): ArktsFileFacts {
         line,
         kind: declarationMatch[1] as "let" | "const" | "var",
         name: declarationMatch[2],
+        scope: braceDepth === 0 ? "topLevel" : "local",
         ...(declarationMatch[3] ? { typeName: declarationMatch[3] } : {}),
         ...(declarationMatch[4] ? { initializer: declarationMatch[4] } : {}),
         text: rawLine.trim(),

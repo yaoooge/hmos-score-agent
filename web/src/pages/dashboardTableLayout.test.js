@@ -43,3 +43,12 @@ test("dashboard tab tables do not set fixed table heights", () => {
     );
   }
 });
+
+test("task dashboard exposes direct remote task creation drawer", () => {
+  const source = readPage("TaskDashboard.vue");
+  assert.match(source, /创建任务/);
+  assert.match(source, /createDrawerVisible/);
+  assert.match(source, /DEFAULT_SERVICE_BASE_URL/);
+  assert.match(source, /validateRemoteTaskJson/);
+  assert.match(source, /submitRemoteScoreTask/);
+});

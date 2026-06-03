@@ -52,6 +52,14 @@
           controls-position="right"
           style="width: 120px"
         />
+        <el-button
+          type="primary"
+          :icon="Plus"
+          style="margin-left: auto"
+          @click="openCreateDrawer"
+        >
+          创建任务
+        </el-button>
       </div>
 
       <el-table :data="tasks" v-loading="loading" stripe class="task-dashboard-table">
@@ -128,6 +136,42 @@
       <pre v-else class="log-content">{{ logState.content }}</pre>
     </el-drawer>
 
+    <el-drawer v-model="createDrawerVisible" size="46%" title="创建任务">
+      <div class="page-stack">
+        <el-form label-position="top">
+          <el-form-item label="评分服务地址">
+            <el-input v-model="serviceBaseUrl" />
+          </el-form-item>
+          <el-form-item label="远端任务 JSON">
+            <el-input
+              v-model="jsonInput"
+              type="textarea"
+              :rows="20"
+              resize="vertical"
+              placeholder='{"taskId": 1306, "testCase": {...}, "executionResult": {...}}'
+            />
+          </el-form-item>
+        </el-form>
+
+        <el-alert
+          v-if="validationErrors.length > 0"
+          type="error"
+          :closable="false"
+          show-icon
+          title="JSON 校验失败"
+        >
+          <ul class="create-task-error-list">
+            <li v-for="error in validationErrors" :key="error">{{ error }}</li>
+          </ul>
+        </el-alert>
+
+        <div class="drawer-actions">
+          <el-button @click="createDrawerVisible = false">取消</el-button>
+          <el-button type="primary" :loading="creatingTask" @click="createTask">创建任务</el-button>
+        </div>
+      </div>
+    </el-drawer>
+
     <CaseReportDrawer
       v-model="reportDrawerVisible"
       :title="reportDrawerTitle"
@@ -144,7 +188,7 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onBeforeUnmount, reactive, ref, watch, type Ref } from "vue";
-import { Delete, Download, Refresh } from "@element-plus/icons-vue";
+import { Delete, Download, Plus, Refresh } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import CaseReportDrawer from "../components/CaseReportDrawer.vue";
 import MetricCard from "../components/MetricCard.vue";
@@ -171,6 +215,14 @@ import {
   buildCaseReportViewModel,
   type CaseReportViewModel,
 } from "./caseReportViewModel";
+import {
+  submitRemoteScoreTask,
+  normalizeServiceBaseUrl,
+} from "../api/scoreConsistency";
+import {
+  DEFAULT_SERVICE_BASE_URL,
+  validateRemoteTaskJson,
+} from "./scoreConsistencyAnalysis";
 
 const loading = ref(false);
 const summary = ref<DashboardSummary | null>(null);
@@ -189,6 +241,11 @@ const reportLoading = ref(false);
 const reportError = ref("");
 const caseReport = ref<CaseReportViewModel | null>(null);
 const range = ref<[Date, Date] | null>(null);
+const createDrawerVisible = ref(false);
+const serviceBaseUrl = ref(DEFAULT_SERVICE_BASE_URL);
+const jsonInput = ref("");
+const validationErrors = ref<string[]>([]);
+const creatingTask = ref(false);
 const taskTypeAccentPalette = [
   "#2563eb",
   "#16a34a",
@@ -302,6 +359,32 @@ async function openLog(task: DashboardTask) {
   drawerTask.value = task;
   drawerVisible.value = true;
   await reloadLog();
+}
+
+function openCreateDrawer() {
+  validationErrors.value = [];
+  createDrawerVisible.value = true;
+}
+
+async function createTask() {
+  const validation = validateRemoteTaskJson(jsonInput.value);
+  if (!validation.valid) {
+    validationErrors.value = validation.errors;
+    return;
+  }
+  validationErrors.value = [];
+  creatingTask.value = true;
+  try {
+    serviceBaseUrl.value = normalizeServiceBaseUrl(serviceBaseUrl.value);
+    const response = await submitRemoteScoreTask(serviceBaseUrl.value, validation.task);
+    createDrawerVisible.value = false;
+    ElMessage.success(`评测任务 #${String(response.taskId)} 已创建`);
+    await loadData({ includeSummary: true });
+  } catch (error) {
+    validationErrors.value = [error instanceof Error ? error.message : String(error)];
+  } finally {
+    creatingTask.value = false;
+  }
 }
 
 function resolveRawResultFilename(contentDisposition: string | null, taskId: number): string {
@@ -475,5 +558,16 @@ onBeforeUnmount(() => {
 .task-action-bar :deep(.el-button) {
   margin-left: 0;
   padding: 0;
+}
+
+.drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.create-task-error-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
 }
 </style>

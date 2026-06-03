@@ -2065,6 +2065,54 @@ test("runRuleEngine evaluates conventional ArkTS language checks deterministical
   );
 });
 
+test("runRuleEngine does not require upper snake case for local const variables", async (t) => {
+  const filePath = "entry/src/main/ets/pages/LocalConst.ets";
+  const caseDir = await createRuleFixture(t, {
+    [filePath]: [
+      "const TOP_LEVEL_VALUE = 1;",
+      "enum PlaybackState { READY = 1, PLAYING = 2 }",
+      "function routeToDetail(itemId: string): void {",
+      "  const params: Record<string, string> = { id: itemId };",
+      "  const result = params.id;",
+      "  const videoData = result;",
+      "  console.info(videoData);",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${filePath} b/${filePath}`,
+      `--- a/${filePath}`,
+      `+++ b/${filePath}`,
+      "@@ -1,0 +1,8 @@",
+      "+const TOP_LEVEL_VALUE = 1;",
+      "+enum PlaybackState { READY = 1, PLAYING = 2 }",
+      "+function routeToDetail(itemId: string): void {",
+      "+  const params: Record<string, string> = { id: itemId };",
+      "+  const result = params.id;",
+      "+  const videoData = result;",
+      "+  console.info(videoData);",
+      "+}",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-SHOULD-007")
+      ?.result,
+    "满足",
+  );
+});
+
 test("runRuleEngine evaluates initial arkts_static checks deterministically", async (t) => {
   const filePath = "entry/src/main/ets/pages/Index.ets";
   const caseDir = await createRuleFixture(t, {

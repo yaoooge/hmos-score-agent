@@ -290,6 +290,8 @@ export type ConsistencyTaskRoundOption = {
   capturedAt?: string;
 };
 
+export const DEFAULT_SERVICE_BASE_URL = "http://8.136.155.63:3000";
+
 export type ConsistencyTaskInputInfo = {
   serviceBaseUrl: string;
   runCount: number;

@@ -223,18 +223,18 @@ function runConstantEnumUpperSnakeRule(
   rule: RegisteredRule,
   index: ArktsLightScanIndex,
 ): EvaluatedRule {
-  const matches = allNamedDeclarations(index)
-    .filter(
-      (declaration) =>
-        declaration.kind === "enumMember" ||
-        (declaration.kind === "variable" && declaration.text.trim().startsWith("const ")),
-    )
+  const enumMemberMatches = allNamedDeclarations(index)
+    .filter((declaration) => declaration.kind === "enumMember")
+    .filter((declaration) => !isUpperSnakeCase(declaration.name));
+  const topLevelConstMatches = index.files
+    .flatMap((file) => file.variableDeclarations)
+    .filter((declaration) => declaration.kind === "const" && declaration.scope === "topLevel")
     .filter((declaration) => !isUpperSnakeCase(declaration.name))
-    .map((declaration) => ({
-      relativePath: declaration.relativePath,
-      line: declaration.line,
-      text: declaration.text,
-    }));
+  const matches = [...enumMemberMatches, ...topLevelConstMatches].map((declaration) => ({
+    relativePath: declaration.relativePath,
+    line: declaration.line,
+    text: declaration.text,
+  }));
   return buildViolationResult(rule, matches);
 }
 
