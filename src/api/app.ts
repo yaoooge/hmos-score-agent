@@ -368,8 +368,10 @@ export function createRemoteTaskExecutionQueue(
   ruleViolationStatsStore?: RuleViolationStatsStore,
   _humanReviewEvidenceStore?: HumanReviewEvidenceStore,
   remoteTaskSummaryStore?: RemoteTaskSummaryStore,
+  options: { maxRemoteTaskConcurrency?: number } = {},
 ) {
-  const maxRemoteTaskConcurrency = resolveRemoteTaskConcurrency();
+  const maxRemoteTaskConcurrency =
+    options.maxRemoteTaskConcurrency ?? resolveRemoteTaskConcurrency();
   const runningTaskIds = new Set<number>();
   const queuedTaskIds = new Set<number>();
   const remoteTaskRecords = new Map<number, RemoteTaskRecord>();

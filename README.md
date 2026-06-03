@@ -18,7 +18,6 @@
 ```bash
 npm install
 cp .env.example .env
-npm run score -- --case cases/simple_test
 ```
 
 启动 API 服务：
@@ -32,7 +31,6 @@ curl http://localhost:3000/health
 
 ## 服务启动
 
-- 本地 CLI 评分：`npm run score -- --case <case-path>`
 - 本地 API 服务：`npm run dev:api`
 - 生产构建后启动：`npm run build && npm start`
 
@@ -55,7 +53,6 @@ SQLite 索引数据库默认写在 `<LOCAL_CASE_ROOT>/score-index.sqlite3`，由
 | `npm run build:dashboard` | 构建 dashboard 前端产物到 `web/dist/`。 |
 | `npm run preview:dashboard` | 预览已构建的 dashboard 前端产物。 |
 | `npm run build:all` | 依次构建后端 TypeScript 和 dashboard 前端。 |
-| `npm run score` | 直接运行本地单用例评分。 |
 | `npm run rulepack:export` | 导出规则包 YAML。 |
 | `npm test` | 运行全部 node:test 测试。 |
 | `npm run lint` | 运行 ESLint。 |

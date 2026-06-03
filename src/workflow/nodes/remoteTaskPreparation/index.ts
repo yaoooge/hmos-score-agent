@@ -51,17 +51,8 @@ export async function remoteTaskPreparationNode(
   emitNodeStarted("remoteTaskPreparationNode");
   let rootDir: string | undefined;
   try {
-    if (state.caseInput) {
-      return {
-        caseInput: state.caseInput,
-        sourceCasePath: state.sourceCasePath,
-        inputMode: "local",
-        passthrough: true,
-      };
-    }
-
     if (!state.remoteTask) {
-      throw new Error("Workflow requires either caseInput or remoteTask.");
+      throw new Error("Workflow requires remoteTask.");
     }
 
     rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-remote-task-"));

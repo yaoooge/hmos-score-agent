@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { getConfig } from "../config.js";
 import { ArtifactStore } from "../commons/io/artifactStore.js";
-import { loadCaseFromPath } from "../commons/io/caseLoader.js";
 import { CaseLogger } from "../commons/io/caseLogger.js";
 import { formatElapsedDuration } from "../commons/utils/duration.js";
 import { uploadTaskCallback } from "../commons/io/uploader.js";
@@ -16,7 +14,7 @@ import {
 import { inputClassificationNode } from "../workflow/nodes/inputClassification/index.js";
 import { remoteTaskPreparationNode } from "../workflow/nodes/remoteTaskPreparation/index.js";
 import { taskUnderstandingNode } from "../workflow/nodes/taskUnderstanding/index.js";
-import { buildRunCaseId, inferTaskTypeFromCaseInput } from "./runCaseId.js";
+import { buildRunCaseId } from "./runCaseId.js";
 import {
   CaseInput,
   CaseRuleDefinition,
@@ -27,8 +25,6 @@ import {
 } from "../types.js";
 import {
   runPreparedScoreWorkflow,
-  runScoreWorkflow,
-  type OpencodeRuntimeLifecycle,
   type OpencodeRunner,
 } from "../workflow/graph/scoreWorkflow.js";
 import type { ScoreGraphState } from "../workflow/graph/state.js";
@@ -62,82 +58,6 @@ export function setServiceOpencodeRunnerPoolForTesting(
   pool: OpencodeRunnerPool | undefined,
 ): void {
   sharedServiceOpencodeRunnerPool = pool;
-}
-
-async function runCaseInput(input: {
-  caseInput: CaseInput;
-  sourceCasePath: string;
-  opencodeRuntimeLifecycle?: OpencodeRuntimeLifecycle;
-}): Promise<{ caseDir: string; uploadMessage?: string; resultJson?: Record<string, unknown> }> {
-  const config = getConfig();
-  const artifactStore = new ArtifactStore(config.localCaseRoot);
-  const caseInput = input.caseInput;
-  const taskType = inferTaskTypeFromCaseInput(caseInput);
-  const sourceCasePath = path.resolve(input.sourceCasePath);
-  const caseDir = await artifactStore.ensureCaseDir(
-    buildRunCaseId({
-      taskType,
-      uniqueId: randomUUID().replace(/-/g, "").slice(0, 8),
-    }),
-  );
-  const logger = new CaseLogger(artifactStore, caseDir);
-  const caseInfoBase = {
-    case_id: path.basename(caseDir),
-    source_case_path: sourceCasePath,
-    task_type: taskType,
-    original_project_path: caseInput.originalProjectPath,
-    generated_project_path: caseInput.generatedProjectPath,
-    patch_path: caseInput.patchPath ?? null,
-    started_at: new Date().toISOString(),
-    rubric_scoring_payload_file: "inputs/rubric-scoring-payload.json",
-    rule_agent_bootstrap_payload_file: "inputs/rule-agent-bootstrap-payload.json",
-    agent_runtime: "opencode",
-  };
-
-  await logger.info(`启动评分流程 sourceCasePath=${sourceCasePath}`);
-  await logger.info(`用例加载完成 caseId=${caseInput.caseId}`);
-  await logger.info(`任务类型读取完成 taskType=${taskType}`);
-  await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
-    ...caseInfoBase,
-    rubric_agent_run_status: "not_enabled",
-    rule_agent_run_status: "not_enabled",
-  });
-  await logger.info("输入元数据写入完成");
-
-  try {
-    await logger.info("工作流开始执行");
-    const result = await runScoreWorkflow({
-      caseInput,
-      sourceCasePath,
-      caseDir,
-      referenceRoot: config.referenceRoot,
-      artifactStore,
-      opencodeRuntimeLifecycle: input.opencodeRuntimeLifecycle,
-    });
-    await artifactStore.writeJson(caseDir, "inputs/case-info.json", {
-      ...caseInfoBase,
-      rubric_agent_run_status:
-        typeof result.rubricAgentRunStatus === "string"
-          ? result.rubricAgentRunStatus
-          : "not_enabled",
-      rule_agent_run_status:
-        typeof result.ruleAgentRunStatus === "string" ? result.ruleAgentRunStatus : "not_enabled",
-    });
-    await logger.info("工作流执行完成");
-    await logger.info("结果已落盘");
-
-    return {
-      caseDir,
-      resultJson:
-        typeof result.resultJson === "object" && result.resultJson !== null
-          ? (result.resultJson as Record<string, unknown>)
-          : undefined,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    await logger.error(`执行失败 error=${message}`);
-    throw error;
-  }
 }
 
 function buildRemoteCallbackPayload(input: {
@@ -393,19 +313,6 @@ function toAcceptedRemoteWorkflowState(
     workspaceFileCount: state.workspaceFileCount,
     hasPatch: state.hasPatch,
     remoteBuildSuccess: state.remoteBuildSuccess,
-  };
-}
-
-export async function runSingleCase(casePath: string): Promise<{ caseDir: string }> {
-  const caseInput = await loadCaseFromPath(casePath);
-  const result = await runCaseInput({
-    caseInput,
-    sourceCasePath: casePath,
-    opencodeRuntimeLifecycle: "ephemeral",
-  });
-
-  return {
-    caseDir: result.caseDir,
   };
 }
 
@@ -720,23 +627,4 @@ export async function runRemoteEvaluationTask(
     taskId: acceptedTask.taskId,
     uploadMessage,
   };
-}
-
-export function resolveDefaultCasePath(): string {
-  const caseRoot = path.resolve(process.cwd(), "cases");
-  if (!fs.existsSync(caseRoot) || !fs.statSync(caseRoot).isDirectory()) {
-    throw new Error(`Default case root does not exist: ${caseRoot}`);
-  }
-
-  const firstCaseEntry = fs
-    .readdirSync(caseRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .sort((left, right) => left.name.localeCompare(right.name, "en"))
-    .find((entry) => fs.existsSync(path.join(caseRoot, entry.name, "input.txt")));
-
-  if (!firstCaseEntry) {
-    throw new Error(`No valid cases found under default case root: ${caseRoot}`);
-  }
-
-  return path.join(caseRoot, firstCaseEntry.name);
 }

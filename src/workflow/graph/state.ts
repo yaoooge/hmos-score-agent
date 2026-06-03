@@ -35,7 +35,6 @@ export const ScoreState = Annotation.Root({
   remoteTaskRootDir: Annotation<string>(),
   opencodeSandboxRoot: Annotation<string>(),
   inputMode: Annotation<string>(),
-  passthrough: Annotation<boolean>(),
   originalFileCount: Annotation<number>(),
   workspaceFileCount: Annotation<number>(),
   hasPatch: Annotation<boolean>(),

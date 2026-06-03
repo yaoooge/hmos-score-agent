@@ -7,7 +7,6 @@ import { parseOpencodeSessionEvents } from "../../agents/trace/partParser.js";
 import type { AgentTraceRun } from "../../agents/trace/types.js";
 import { pruneCompletedCaseArtifacts } from "../../commons/io/caseArtifactCleanup.js";
 import { CaseLogger } from "../../commons/io/caseLogger.js";
-import { formatElapsedDuration } from "../../commons/utils/duration.js";
 import { artifactPostProcessNode } from "../nodes/artifactPostProcess/index.js";
 import { inputClassificationNode } from "../nodes/inputClassification/index.js";
 import { opencodeSandboxPreparationNode } from "../nodes/opencodeSandboxPreparation/index.js";
@@ -36,7 +35,7 @@ import {
   ensureOpencodeCliAvailable,
   type OpencodeServeManager,
 } from "../../agents/opencode/serveManager.js";
-import { CaseInput, RemoteEvaluationTask } from "../../types.js";
+import { RemoteEvaluationTask } from "../../types.js";
 import { ScoreState } from "./state.js";
 import { WorkflowEventLogger } from "../observability/workflowEventLogger.js";
 import { interpretStreamChunk } from "../observability/workflowStreamInterpreter.js";
@@ -54,18 +53,6 @@ export type OpencodeRunner = {
 };
 
 let sharedOpencodeRuntime: Promise<OpencodeWorkflowRuntime> | undefined;
-
-type LocalWorkflowInput = {
-  caseInput: CaseInput;
-  caseDir: string;
-  sourceCasePath?: string;
-  referenceRoot: string;
-  artifactStore: ArtifactStore;
-  opencodeRuntime?: OpencodeRuntimeConfig;
-  opencodeServeManager?: OpencodeServeManager;
-  opencodeRuntimeLifecycle?: OpencodeRuntimeLifecycle;
-  opencodeRunner?: OpencodeRunner;
-};
 
 type RemoteWorkflowInput = {
   remoteTask: RemoteEvaluationTask;
@@ -475,26 +462,14 @@ async function runWithOpencodeRuntimeLifecycle(
 }
 
 export async function runScoreWorkflow(
-  input: LocalWorkflowInput | RemoteWorkflowInput,
+  input: RemoteWorkflowInput,
 ): Promise<Record<string, unknown>> {
-  const startedAt = Date.now();
-  const logger = new CaseLogger(input.artifactStore, input.caseDir);
   const result = await runWithOpencodeRuntimeLifecycle(input, async (preparedInput) => {
     const { logger, graph, traceRecorder } = createCompiledScoreGraph(preparedInput, false);
-    const initialState = (() => {
-      if ("remoteTask" in input) {
-        return {
-          remoteTask: input.remoteTask,
-          caseDir: input.caseDir,
-        };
-      }
-
-      return {
-        caseInput: input.caseInput,
-        sourceCasePath: input.sourceCasePath,
-        caseDir: input.caseDir,
-      };
-    })();
+    const initialState = {
+      remoteTask: input.remoteTask,
+      caseDir: input.caseDir,
+    };
 
     const workflowResult = await runCompiledScoreGraph(logger, graph as never, initialState);
     await writeWorkflowAgentTrace({
@@ -506,10 +481,6 @@ export async function runScoreWorkflow(
     });
     return workflowResult;
   });
-
-  if ("caseInput" in input) {
-    await logger.info(`本次用例评分耗时=${formatElapsedDuration(Date.now() - startedAt)}`);
-  }
   await pruneCompletedCaseArtifacts(input.caseDir, {
     keepCodeLinterDiagnostics: shouldKeepCodeLinterResults(result),
   });

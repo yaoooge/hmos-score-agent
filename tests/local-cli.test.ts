@@ -6,7 +6,6 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { upsertEnvVars } from "../src/commons/utils/envFile.js";
-import { resolveDefaultCasePath } from "../src/service/index.js";
 import { buildRunCaseId } from "../src/service/runCaseId.js";
 
 const repoRoot = process.cwd();
@@ -35,13 +34,13 @@ async function createCaseDirectory(rootDir: string, caseName: string): Promise<s
   return casePath;
 }
 
-test("package scripts expose score but not the removed launcher entry", async () => {
+test("package scripts do not expose local scoring entrypoints", async () => {
   const packageJson = JSON.parse(
     await fs.readFile(path.join(repoRoot, "package.json"), "utf-8"),
   ) as { scripts?: Record<string, string> };
   const removedScript = ["launch", "score"].join(":");
 
-  assert.equal(typeof packageJson.scripts?.score, "string");
+  assert.equal("score" in (packageJson.scripts ?? {}), false);
   assert.equal(
     packageJson.scripts?.["db:generate"],
     "node --import tsx scripts/generateSqliteDatabase.ts",
@@ -158,18 +157,4 @@ test("buildRunCaseId includes task id when provided", () => {
   });
 
   assert.equal(result, "20260416T112233_case_1628_abc12345");
-});
-
-test("resolveDefaultCasePath picks the first case directory under cases", async (t) => {
-  const originalCwd = process.cwd();
-  const tempRoot = await makeTempDir(t);
-  t.after(() => {
-    process.chdir(originalCwd);
-  });
-
-  await createCaseDirectory(tempRoot, "z_last_case");
-  await createCaseDirectory(tempRoot, "a_first_case");
-  process.chdir(tempRoot);
-
-  assert.equal(resolveDefaultCasePath(), path.resolve(process.cwd(), "cases", "a_first_case"));
 });

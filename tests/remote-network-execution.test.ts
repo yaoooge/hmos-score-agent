@@ -2307,7 +2307,6 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
   const startedTaskIds = new Set<number>();
   let maxActiveExecutions = 0;
   let startedCount = 0;
-  let startedCountResolve: (() => void) | undefined;
   let fourthExecutionStartedResolve: (() => void) | undefined;
   const fourthExecutionStarted = new Promise<void>((resolve) => {
     fourthExecutionStartedResolve = resolve;
@@ -2336,9 +2335,6 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
       startedTaskIds.add(acceptedTask.taskId);
       maxActiveExecutions = Math.max(maxActiveExecutions, activeTaskIds.size);
       startedCount += 1;
-      if (startedCount === 3) {
-        startedCountResolve?.();
-      }
       if (acceptedTask.taskId === 4) {
         fourthExecutionStartedResolve?.();
       }
@@ -2349,7 +2345,10 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
       calls.push(`execute:end:${String(acceptedTask.taskId)}`);
     },
   };
-  const handler = createRunRemoteTaskHandler(deps as never);
+  const queue = createRemoteTaskExecutionQueue(deps as never, undefined, undefined, undefined, undefined, {
+    maxRemoteTaskConcurrency: 3,
+  });
+  const handler = createRunRemoteTaskHandler(deps as never, undefined, undefined, undefined, queue);
 
   const responses = [1, 2, 3, 4].map(() => createResponse());
   await Promise.all(
@@ -2360,23 +2359,19 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
       ),
     ),
   );
-  await Promise.race([
-    new Promise<void>((resolve) => {
-      startedCountResolve = resolve;
-      if (startedCount >= 3) {
-        resolve();
-      }
-    }),
-    new Promise<void>((resolve) => setTimeout(resolve, 20)),
-  ]);
+  await waitForAssertion(async () => {
+    if (startedCount < 3) {
+      throw new Error(`Expected three started executions, got ${String(startedCount)}`);
+    }
+  });
 
   assert.deepEqual(
     responses.map(({ responseState }) => responseState.statusCode),
     [200, 200, 200, 200],
   );
   assert.deepEqual(
-    [...startedTaskIds].sort((left, right) => left - right),
-    [1, 2, 3],
+    [1, 2, 3].every((taskId) => startedTaskIds.has(taskId)),
+    true,
   );
   assert.equal(activeTaskIds.size, 3);
   assert.equal(maxActiveExecutions, 3);
@@ -2395,17 +2390,7 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
   releases.get(4)?.();
 });
 
-test("createRunRemoteTaskHandler honors HMOS_REMOTE_TASK_CONCURRENCY", async (t) => {
-  const originalConcurrency = process.env.HMOS_REMOTE_TASK_CONCURRENCY;
-  process.env.HMOS_REMOTE_TASK_CONCURRENCY = "2";
-  t.after(() => {
-    if (originalConcurrency === undefined) {
-      delete process.env.HMOS_REMOTE_TASK_CONCURRENCY;
-    } else {
-      process.env.HMOS_REMOTE_TASK_CONCURRENCY = originalConcurrency;
-    }
-  });
-
+test("createRunRemoteTaskHandler honors configured remote task concurrency", async () => {
   const releases = new Map<number, () => void>();
   const activeTaskIds = new Set<number>();
   const startedTaskIds = new Set<number>();
@@ -2437,7 +2422,10 @@ test("createRunRemoteTaskHandler honors HMOS_REMOTE_TASK_CONCURRENCY", async (t)
       activeTaskIds.delete(acceptedTask.taskId);
     },
   };
-  const handler = createRunRemoteTaskHandler(deps as never);
+  const queue = createRemoteTaskExecutionQueue(deps as never, undefined, undefined, undefined, undefined, {
+    maxRemoteTaskConcurrency: 2,
+  });
+  const handler = createRunRemoteTaskHandler(deps as never, undefined, undefined, undefined, queue);
   const responses = [1, 2, 3].map(() => createResponse());
 
   await Promise.all(
@@ -2629,7 +2617,10 @@ test("createRunRemoteTaskHandler uploads pending callback for queued remote task
       });
     },
   };
-  const handler = createRunRemoteTaskHandler(deps as never);
+  const queue = createRemoteTaskExecutionQueue(deps as never, undefined, undefined, undefined, undefined, {
+    maxRemoteTaskConcurrency: 3,
+  });
+  const handler = createRunRemoteTaskHandler(deps as never, undefined, undefined, undefined, queue);
   const responses = [1, 2, 3, 4].map(() => createResponse());
 
   await Promise.all(

@@ -11,7 +11,6 @@
     "build:dashboard": "npm --prefix web run build",
     "preview:dashboard": "npm --prefix web run preview",
     "build:all": "npm run build && npm run build:dashboard",
-    "score": "tsx src/cli.ts",
     "db:generate": "node --import tsx scripts/generateSqliteDatabase.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "lint": "eslint .",

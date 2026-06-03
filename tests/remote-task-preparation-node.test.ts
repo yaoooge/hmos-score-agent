@@ -108,6 +108,24 @@ test("remoteTaskPreparationNode converts RemoteEvaluationTask into caseInput", a
   assert.equal(result.remoteBuildSuccess, true);
 });
 
+test("remoteTaskPreparationNode requires a remote task instead of local case passthrough", async () => {
+  await assert.rejects(
+    () =>
+      remoteTaskPreparationNode({
+        caseDir: "/tmp/remote-task-only",
+        sourceCasePath: "/tmp/local-case",
+        caseInput: {
+          caseId: "local-case",
+          promptText: "local prompt",
+          originalProjectPath: "/tmp/local-case/original",
+          generatedProjectPath: "/tmp/local-case/workspace",
+          originalProjectProvided: true,
+        },
+      } as never),
+    /Workflow requires remoteTask/,
+  );
+});
+
 test("remoteTaskPreparationNode uses fixed remote task type without prompt inference", async (t) => {
   const originalUrl = "https://remote.example.com/fixed-type-original.json";
   const workspaceUrl = "https://remote.example.com/fixed-type-workspace.json";
