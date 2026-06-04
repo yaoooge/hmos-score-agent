@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { loadRegisteredRulePacksFromYamlDirectory } from "../src/rules/engine/rulePackYamlLoader.js";
+import { loadRegisteredRulePacksFromYamlDirectory } from "../src/rules/rule-pack/yamlLoader.js";
 
 async function makeTempRulePackDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-rule-pack-"));
@@ -18,13 +18,17 @@ test("loads built-in rule packs directly from references/rules yaml", () => {
     path.resolve(process.cwd(), "references/rules"),
   );
 
-  assert.deepEqual(
-    packs.map((pack) => pack.packId).sort(),
-    ["arkts-language", "arkts-performance", "arkui-extra", "cross-device-adaptation"],
-  );
+  assert.deepEqual(packs.map((pack) => pack.packId).sort(), [
+    "arkts-language",
+    "arkts-performance",
+    "arkui-extra",
+    "cross-device-adaptation",
+  ]);
   assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "ARKTS-MUST-002"));
   assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "ARKUI-MUST-001"));
-  assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "OM-BREAKPOINT-MUST-01"));
+  assert.ok(
+    packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "OM-BREAKPOINT-MUST-01"),
+  );
 });
 
 test("loads built-in rule pack versions from yaml", () => {
@@ -32,15 +36,12 @@ test("loads built-in rule pack versions from yaml", () => {
     path.resolve(process.cwd(), "references/rules"),
   );
 
-  assert.deepEqual(
-    packs.map((pack) => [pack.packId, pack.version]).sort(),
-    [
-      ["arkts-language", "v1.0.0"],
-      ["arkts-performance", "v1.0.0"],
-      ["arkui-extra", "v1.0.0"],
-      ["cross-device-adaptation", "v1.0.0"],
-    ],
-  );
+  assert.deepEqual(packs.map((pack) => [pack.packId, pack.version]).sort(), [
+    ["arkts-language", "v1.0.0"],
+    ["arkts-performance", "v1.0.0"],
+    ["arkui-extra", "v1.0.0"],
+    ["cross-device-adaptation", "v1.0.0"],
+  ]);
 });
 
 test("loads arkui-extra rules with arkui extra detector metadata", () => {
@@ -70,7 +71,10 @@ test("loads arkui-extra rules with arkui extra detector metadata", () => {
     ],
   );
   assert.deepEqual(arkuiPack.rules[0]?.fallback, { policy: "agent_assisted" });
-  assert.equal(arkuiPack.rules[0]?.decisionCriteria?.notApplicable?.[0], "module.json5 未配置 routerMap。");
+  assert.equal(
+    arkuiPack.rules[0]?.decisionCriteria?.notApplicable?.[0],
+    "module.json5 未配置 routerMap。",
+  );
   assert.equal(arkuiPack.rules[0]?.profile?.riskCode, "API_USAGE_DEVIATION");
 });
 
@@ -150,9 +154,7 @@ test("loads cross-device rules as built-in unified-schema rules", () => {
       ],
     },
   });
-  assert.deepEqual(crossDeviceRule.detector.config.kit, [
-    "ArkUI: GridRow / WidthBreakpoint",
-  ]);
+  assert.deepEqual(crossDeviceRule.detector.config.kit, ["ArkUI: GridRow / WidthBreakpoint"]);
   assert.equal(crossDeviceRule.profile?.riskCode, "API_USAGE_DEVIATION");
 });
 

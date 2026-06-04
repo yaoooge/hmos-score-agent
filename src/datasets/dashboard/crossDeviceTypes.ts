@@ -1,4 +1,7 @@
-import type { DashboardStatusCategory, RiskReviewCalibrationDashboardItem } from "./dashboardTypes.js";
+import type {
+  DashboardStatusCategory,
+  RiskReviewCalibrationDashboardItem,
+} from "./dashboardTypes.js";
 
 export type CrossDeviceOfficialLinterResult = {
   ruleId: string;

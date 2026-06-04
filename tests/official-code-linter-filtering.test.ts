@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mapOfficialCodeLinterFindings } from "../src/rules/officialCodeLinter/resultMapper.js";
-import { sanitizeOfficialCodeLinterOutput } from "../src/rules/officialCodeLinter/sanitizer.js";
+import { mapOfficialCodeLinterFindings } from "../src/rules/official-linter/map/resultMapper.js";
+import { sanitizeOfficialCodeLinterOutput } from "../src/rules/official-linter/parse/sanitizer.js";
 import type { OfficialLinterFinding } from "../src/types.js";
 
 const findings: OfficialLinterFinding[] = [
@@ -33,9 +33,10 @@ test("changed-file filtering drops unchanged findings before artifacts and rule 
     changedFiles: ["entry/src/main/ets/pages/Changed.ets"],
   });
 
-  assert.deepEqual(mapped.effectiveFindings.map((item) => item.file), [
-    "entry/src/main/ets/pages/Changed.ets",
-  ]);
+  assert.deepEqual(
+    mapped.effectiveFindings.map((item) => item.file),
+    ["entry/src/main/ets/pages/Changed.ets"],
+  );
   assert.equal(mapped.ruleResults.length, 1);
   assert.equal(mapped.ruleResults[0]?.rule_id, "OFFICIAL-LINTER:@security/no-http");
   assert.equal(mapped.ruleResults[0]?.rule_source, "forbidden_pattern");
@@ -148,8 +149,7 @@ test("aggregated official rule results preserve the highest linter severity", ()
 
 test("sanitized diagnostics do not include finding detail lines or filtered counts", () => {
   const sanitized = sanitizeOfficialCodeLinterOutput({
-    text:
-      "/tmp/workspace/entry/src/main/ets/pages/Legacy.ets:9:1 error legacy issue @security/no-http\nfinished\n",
+    text: "/tmp/workspace/entry/src/main/ets/pages/Legacy.ets:9:1 error legacy issue @security/no-http\nfinished\n",
     effectiveFindingCount: 1,
     runStatus: "success",
   });

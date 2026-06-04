@@ -70,7 +70,9 @@ test("opencode agents can only use their matching project skill", async () => {
 });
 
 test("task understanding agent can read only through explicit prompt-file flow", async () => {
-  const template = (await parseTemplateConfig()) as { agent?: Record<string, { permission?: Record<string, unknown> }> };
+  const template = (await parseTemplateConfig()) as {
+    agent?: Record<string, { permission?: Record<string, unknown> }>;
+  };
   const permission = template.agent?.["hmos-understanding"]?.permission ?? {};
 
   assert.equal(permission.read, "allow");
@@ -108,7 +110,9 @@ test("project opencode template configures json formatter for agent output files
 });
 
 test("opencode scoring agents can edit only sandbox agent output files", async () => {
-  const template = (await parseTemplateConfig()) as { agent?: Record<string, { permission?: Record<string, unknown> }> };
+  const template = (await parseTemplateConfig()) as {
+    agent?: Record<string, { permission?: Record<string, unknown> }>;
+  };
 
   for (const agent of [
     "hmos-understanding",
@@ -186,19 +190,34 @@ test("project opencode skills avoid unnecessary scoped references", async () => 
   await assert.rejects(
     () =>
       fs.access(
-        path.join(repoRoot, ".opencode", "skills", "hmos-rubric-scoring", "references", "risk-taxonomy.md"),
+        path.join(
+          repoRoot,
+          ".opencode",
+          "skills",
+          "hmos-rubric-scoring",
+          "references",
+          "risk-taxonomy.md",
+        ),
       ),
     /ENOENT/,
   );
   await assert.rejects(
     () =>
       fs.access(
-        path.join(repoRoot, ".opencode", "skills", "hmos-rubric-scoring", "references", "risk-taxonomy.yaml"),
+        path.join(
+          repoRoot,
+          ".opencode",
+          "skills",
+          "hmos-rubric-scoring",
+          "references",
+          "risk-taxonomy.yaml",
+        ),
       ),
     /ENOENT/,
   );
   await assert.rejects(
-    () => fs.access(path.join(repoRoot, ".opencode", "skills", "hmos-rule-assessment", "references")),
+    () =>
+      fs.access(path.join(repoRoot, ".opencode", "skills", "hmos-rule-assessment", "references")),
     /ENOENT/,
   );
   await assert.rejects(
@@ -236,7 +255,9 @@ test("project opencode agent system prompts require matching skills", async () =
   const taskPrompt = await readProjectFile(".opencode/prompts/hmos-understanding-system.md");
   const rubricPrompt = await readProjectFile(".opencode/prompts/hmos-rubric-scoring-system.md");
   const rulePrompt = await readProjectFile(".opencode/prompts/hmos-rule-assessment-system.md");
-  const humanRatingPrompt = await readProjectFile(".opencode/prompts/hmos-human-rating-gap-analysis-system.md");
+  const humanRatingPrompt = await readProjectFile(
+    ".opencode/prompts/hmos-human-rating-gap-analysis-system.md",
+  );
   const taskSkill = await readProjectFile(".opencode/skills/hmos-understanding/SKILL.md");
   const rubricSkill = await readProjectFile(".opencode/skills/hmos-rubric-scoring/SKILL.md");
   const ruleSkill = await readProjectFile(".opencode/skills/hmos-rule-assessment/SKILL.md");
@@ -260,7 +281,10 @@ test("project opencode agent system prompts require matching skills", async () =
   assert.doesNotMatch(rulePrompt, /JSON 字符串中的英文双引号必须转义/);
   assert.doesNotMatch(rulePrompt, /未接入静态判定器本身不是人工复核理由/);
   assert.match(ruleSkill, /JSON 字符串中的英文双引号必须转义/);
-  assert.match(ruleSkill, /none_matched[\s\S]*必须复核目标文件和相关调用链是否存在真实 kit 来源证据/);
+  assert.match(
+    ruleSkill,
+    /none_matched[\s\S]*必须复核目标文件和相关调用链是否存在真实 kit 来源证据/,
+  );
 
   assert.match(humanRatingPrompt, /你是评分流程中的人工评级差异分析 agent/);
   assert.match(humanRatingPrompt, /必须使用 hmos-human-rating-gap-analysis skill/);

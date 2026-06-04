@@ -5,7 +5,7 @@ import type {
   CrossDeviceRiskReviewQuery,
   CrossDeviceRuleViolationQuery,
 } from "./crossDeviceTypes.js";
-import { getRegisteredRulePacks } from "../../rules/engine/rulePackRegistry.js";
+import { getRegisteredRulePacks } from "../../rules/registry/rulePackRegistry.js";
 
 const CROSS_DEVICE_CONDITIONAL_RULE_PACK_ID = "cross-device-adaptation";
 
@@ -23,7 +23,11 @@ function matchesKeyword(
   if (!normalized) {
     return true;
   }
-  return [String(item.taskId ?? ""), String(item.testCaseId ?? ""), item.name ?? item.caseName ?? ""]
+  return [
+    String(item.taskId ?? ""),
+    String(item.testCaseId ?? ""),
+    item.name ?? item.caseName ?? "",
+  ]
     .join(" ")
     .toLowerCase()
     .includes(normalized);
@@ -75,7 +79,10 @@ export function sortCrossDeviceCases(
   });
 }
 
-function matchesRuleKeyword(rule: { ruleId: string; ruleSummary?: string }, keyword?: string): boolean {
+function matchesRuleKeyword(
+  rule: { ruleId: string; ruleSummary?: string },
+  keyword?: string,
+): boolean {
   const normalized = keyword?.trim().toLowerCase();
   if (!normalized) {
     return true;

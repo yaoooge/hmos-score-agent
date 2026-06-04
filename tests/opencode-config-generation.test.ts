@@ -3,10 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import {
-  OpencodeConfigError,
-  createOpencodeRuntimeConfig,
-} from "../src/agents/opencode/config.js";
+import { OpencodeConfigError, createOpencodeRuntimeConfig } from "../src/agents/opencode/config.js";
 
 const requiredEnv = {
   HMOS_OPENCODE_PORT: "4096",
@@ -104,7 +101,10 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   assert.equal(runtime.timeoutMs, 600000);
   assert.equal(runtime.maxOutputBytes, 1048576);
   assert.equal(runtime.configDir, path.join(repoRoot, ".opencode"));
-  assert.equal(runtime.configPath, path.join(repoRoot, ".opencode", "runtime", "opencode.generated.json"));
+  assert.equal(
+    runtime.configPath,
+    path.join(repoRoot, ".opencode", "runtime", "opencode.generated.json"),
+  );
 
   const generatedText = await fs.readFile(runtime.configPath, "utf-8");
   assert.doesNotMatch(generatedText, /\$\{/);
@@ -134,10 +134,7 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
     runtime.env.XDG_STATE_HOME,
     path.join(repoRoot, ".opencode", "runtime", "xdg-state"),
   );
-  assert.equal(
-    runtime.env.XDG_DATA_HOME,
-    path.join(repoRoot, ".opencode", "runtime", "xdg-data"),
-  );
+  assert.equal(runtime.env.XDG_DATA_HOME, path.join(repoRoot, ".opencode", "runtime", "xdg-data"));
   assert.equal(
     runtime.env.XDG_CACHE_HOME,
     path.join(repoRoot, ".opencode", "runtime", "xdg-cache"),
@@ -153,20 +150,35 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   assert.equal(await fs.readFile(xdgConfigPath, "utf-8"), generatedText);
 
   assert.match(
-    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-understanding-system.md"), "utf-8"),
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-understanding-system.md"),
+      "utf-8",
+    ),
     /必须使用 hmos-understanding skill/,
   );
   assert.match(
-    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rubric-scoring-system.md"), "utf-8"),
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rubric-scoring-system.md"),
+      "utf-8",
+    ),
     /必须使用 hmos-rubric-scoring skill/,
   );
   assert.match(
-    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rule-assessment-system.md"), "utf-8"),
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-rule-assessment-system.md"),
+      "utf-8",
+    ),
     /必须使用 hmos-rule-assessment skill/,
   );
   assert.match(
     await fs.readFile(
-      path.join(repoRoot, ".opencode", "runtime", "prompts", "hmos-human-rating-gap-analysis-system.md"),
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "prompts",
+        "hmos-human-rating-gap-analysis-system.md",
+      ),
       "utf-8",
     ),
     /必须使用 hmos-human-rating-gap-analysis skill/,
@@ -198,9 +210,9 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
         "opencode",
         "prompts",
         "hmos-understanding-system.md",
+      ),
+      "utf-8",
     ),
-    "utf-8",
-  ),
     /必须使用 hmos-understanding skill/,
   );
   assert.match(
@@ -213,9 +225,9 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
         "opencode",
         "prompts",
         "hmos-rubric-scoring-system.md",
+      ),
+      "utf-8",
     ),
-    "utf-8",
-  ),
     /必须使用 hmos-rubric-scoring skill/,
   );
   assert.match(
@@ -228,9 +240,9 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
         "opencode",
         "prompts",
         "hmos-rule-assessment-system.md",
+      ),
+      "utf-8",
     ),
-    "utf-8",
-  ),
     /必须使用 hmos-rule-assessment skill/,
   );
   assert.match(
@@ -250,7 +262,10 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   );
 
   assert.match(
-    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "formatters", "format-json.mjs"), "utf-8"),
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "formatters", "format-json.mjs"),
+      "utf-8",
+    ),
     /JSON\.parse/,
   );
   assert.match(
@@ -270,20 +285,36 @@ test("createOpencodeRuntimeConfig writes generated config and isolated environme
   );
 
   assert.match(
-    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-understanding", "SKILL.md"), "utf-8"),
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-understanding", "SKILL.md"),
+      "utf-8",
+    ),
     /metadata\/agent-output\/task-understanding\.json/,
   );
   assert.match(
-    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-rubric-scoring", "SKILL.md"), "utf-8"),
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-rubric-scoring", "SKILL.md"),
+      "utf-8",
+    ),
     /metadata\/agent-output\/rubric-scoring\.json/,
   );
   assert.match(
-    await fs.readFile(path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-rule-assessment", "SKILL.md"), "utf-8"),
+    await fs.readFile(
+      path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-rule-assessment", "SKILL.md"),
+      "utf-8",
+    ),
     /metadata\/agent-output\/rule-assessment\.json/,
   );
   assert.match(
     await fs.readFile(
-      path.join(repoRoot, ".opencode", "runtime", "skills", "hmos-human-rating-gap-analysis", "SKILL.md"),
+      path.join(
+        repoRoot,
+        ".opencode",
+        "runtime",
+        "skills",
+        "hmos-human-rating-gap-analysis",
+        "SKILL.md",
+      ),
       "utf-8",
     ),
     /metadata\/agent-output\/human-rating-gap-analysis\.json/,

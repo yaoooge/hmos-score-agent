@@ -148,10 +148,7 @@ export function filterHumanRatingGaps(
     if (query.primaryConclusion && gap.primaryConclusion !== query.primaryConclusion) {
       return false;
     }
-    if (
-      query.manualAnalysisStatus &&
-      gap.manualAnalysisStatus !== query.manualAnalysisStatus
-    ) {
+    if (query.manualAnalysisStatus && gap.manualAnalysisStatus !== query.manualAnalysisStatus) {
       return false;
     }
     if (query.from && (!gap.reviewedAt || Date.parse(gap.reviewedAt) < Date.parse(query.from))) {
@@ -249,8 +246,7 @@ export function filterRiskReviewCalibrations(
       matchesDashboardAnalysisKeyword(
         {
           ...item,
-          riskTitle:
-            typeof item.resultRisk?.title === "string" ? item.resultRisk.title : undefined,
+          riskTitle: typeof item.resultRisk?.title === "string" ? item.resultRisk.title : undefined,
         },
         keyword,
       ),

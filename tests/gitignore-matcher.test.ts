@@ -52,11 +52,7 @@ test("collectVisibleFiles returns only non-ignored relative paths", async (t) =>
   await fs.writeFile(path.join(rootDir, "src", "Index.ets"), "let value = 1;\n", "utf-8");
   await fs.writeFile(path.join(rootDir, ".DS_Store"), "metadata\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "src", "._Index.ets"), "metadata\n", "utf-8");
-  await fs.writeFile(
-    path.join(rootDir, "__MACOSX", "src", "._Index.ets"),
-    "metadata\n",
-    "utf-8",
-  );
+  await fs.writeFile(path.join(rootDir, "__MACOSX", "src", "._Index.ets"), "metadata\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "generated", "artifact.txt"), "noise\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "foo-build", "artifact.txt"), "noise\n", "utf-8");
   await fs.writeFile(path.join(rootDir, "foo-build.txt"), "noise\n", "utf-8");

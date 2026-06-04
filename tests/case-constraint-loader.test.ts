@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { loadCaseFromPath } from "../src/commons/io/caseLoader.js";
-import { loadCaseConstraintRules } from "../src/rules/caseConstraintLoader.js";
+import { loadCaseConstraintRules } from "../src/rules/case-constraints/loader.js";
 
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-score-agent-case-rules-"));

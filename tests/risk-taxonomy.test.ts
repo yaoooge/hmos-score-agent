@@ -4,7 +4,9 @@ import test from "node:test";
 import { loadRiskTaxonomy, normalizeRiskItem } from "../src/scoring/riskTaxonomy.js";
 
 test("loads engineering oriented risk taxonomy entries", () => {
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
 
   assert.ok(taxonomy.entries.some((entry) => entry.code === "REQUIREMENT_NOT_IMPLEMENTED"));
   assert.ok(taxonomy.entries.some((entry) => entry.code === "LANGUAGE_CONSTRAINT_VIOLATION"));
@@ -17,7 +19,9 @@ test("loads engineering oriented risk taxonomy entries", () => {
 });
 
 test("normalizes known risk codes to stable taxonomy titles and levels", () => {
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
   const risk = normalizeRiskItem(
     {
       id: 1,
@@ -34,16 +38,13 @@ test("normalizes known risk codes to stable taxonomy titles and levels", () => {
   assert.equal(risk.title, "需求未实现");
 });
 
-
 test("loads split score and review-only taxonomy with one primary item per score entry", () => {
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
 
-  assert.ok(
-    taxonomy.scoreEntries.some((entry) => entry.code === "REQUIREMENT_NOT_IMPLEMENTED"),
-  );
-  assert.ok(
-    taxonomy.reviewOnlyEntries.some((entry) => entry.code === "EVALUATION_METADATA_RISK"),
-  );
+  assert.ok(taxonomy.scoreEntries.some((entry) => entry.code === "REQUIREMENT_NOT_IMPLEMENTED"));
+  assert.ok(taxonomy.reviewOnlyEntries.some((entry) => entry.code === "EVALUATION_METADATA_RISK"));
   assert.equal(
     taxonomy.entries.some((entry) => entry.code === "EVALUATION_METADATA_RISK"),
     false,
@@ -59,7 +60,9 @@ test("loads split score and review-only taxonomy with one primary item per score
 });
 
 test("risk taxonomy covers production risk review gap vocabulary without new first-level codes", () => {
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
   const codes = taxonomy.scoreEntries.map((entry) => entry.code);
 
   assert.equal(codes.includes("FOLDABLE_ADAPTATION_RISK"), false);

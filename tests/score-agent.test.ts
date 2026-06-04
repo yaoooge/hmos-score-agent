@@ -622,7 +622,10 @@ test("ruleAuditNode excludes cross-device rules when task is not cross-device re
     { referenceRoot },
   );
 
-  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "OM-BREAKPOINT-MUST-01"), false);
+  assert.equal(
+    result.staticRuleAuditResults?.some((item) => item.rule_id === "OM-BREAKPOINT-MUST-01"),
+    false,
+  );
   assert.deepEqual(result.enabledRulePacks, [
     {
       pack_id: "arkts-language",
@@ -647,7 +650,8 @@ test("ruleAuditNode enables cross-device rules and preserves assisted candidate 
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {
     promptText: "实现一多适配响应式布局，按断点适配手机和平板",
-    workspaceContent: "GridRow({ breakpoints: { value: ['320vp','600vp','840vp','1440vp'] } }) {}\n",
+    workspaceContent:
+      "GridRow({ breakpoints: { value: ['320vp','600vp','840vp','1440vp'] } }) {}\n",
   });
   const caseInput = await loadCaseFromPath(caseDir);
 
@@ -670,25 +674,31 @@ test("ruleAuditNode enables cross-device rules and preserves assisted candidate 
     { referenceRoot },
   );
 
-  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "OM-BREAKPOINT-MUST-01"), true);
+  assert.equal(
+    result.staticRuleAuditResults?.some((item) => item.rule_id === "OM-BREAKPOINT-MUST-01"),
+    true,
+  );
   assert.equal(
     result.enabledRulePacks?.some((pack) => pack.pack_id === "cross-device-adaptation"),
     true,
   );
 
-  const candidate = result.assistedRuleCandidates?.find((item) => item.rule_id === "OM-BREAKPOINT-MUST-01");
+  const candidate = result.assistedRuleCandidates?.find(
+    (item) => item.rule_id === "OM-BREAKPOINT-MUST-03",
+  );
   assert.ok(candidate);
   assert.equal(candidate.rule_source, "must_rule");
-  assert.equal(candidate.rule_name, "横向断点划分范围必须符合系统推荐值");
+  assert.equal(candidate.rule_name, "断点值分发工具类必须覆盖 sm/md/lg/xl 四个断点");
   assert.equal(candidate.priority, "P0");
-  assert.deepEqual(candidate.kit, ["ArkUI: GridRow / WidthBreakpoint"]);
+  assert.deepEqual(candidate.kit, ["ArkUI: WidthBreakpoint"]);
   assert.equal(candidate.is_case_rule, undefined);
   assert.match(candidate.llm_prompt ?? "", /请基于静态证据复核/);
   assert.deepEqual(candidate.target_checks, [
     {
       target: "**/*.ets",
       ast_signals: [],
-      llm_prompt: "横向断点划分范围必须符合系统推荐值。请基于静态证据复核是否满足该约束。",
+      llm_prompt:
+        "断点值分发工具类必须覆盖 sm/md/lg/xl 四个断点。请基于静态证据复核是否满足该约束。",
     },
   ]);
 });
@@ -739,10 +749,10 @@ test("ruleMergeNode merges official linter rule results with deterministic resul
     {},
   );
 
-  assert.deepEqual(result.mergedRuleAuditResults?.map((item) => item.rule_id), [
-    "ARKTS-SHOULD-001",
-    "OFFICIAL-LINTER:@performance/foreach-args-check",
-  ]);
+  assert.deepEqual(
+    result.mergedRuleAuditResults?.map((item) => item.rule_id),
+    ["ARKTS-SHOULD-001", "OFFICIAL-LINTER:@performance/foreach-args-check"],
+  );
 });
 
 test("ruleMergeNode preserves structured agent judgments from canonical runner result", async () => {
@@ -1364,12 +1374,12 @@ test("reportGenerationNode stores official linter findings on rule_audit_results
               {
                 rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
                 rule_source: "forbidden_pattern",
-              result: "不满足",
-              severity: "light",
-              score_delta: -1.2,
-              agent_assisted: false,
-              needs_human_review: false,
-            },
+                result: "不满足",
+                severity: "light",
+                score_delta: -1.2,
+                agent_assisted: false,
+                needs_human_review: false,
+              },
             ],
             score_fusion: {
               base_score: 10,
@@ -1981,9 +1991,7 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
   await assert.rejects(
     fs.readFile(path.join(caseDir, "inputs", "rubric-scoring-prompt.txt"), "utf-8"),
   );
-  await assert.rejects(
-    fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"),
-  );
+  await assert.rejects(fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"));
 });
 
 test("pruneCompletedCaseArtifacts preserves only code-linter and hvigor result files when requested", async (t) => {
@@ -1999,19 +2007,28 @@ test("pruneCompletedCaseArtifacts preserves only code-linter and hvigor result f
   );
   await fs.writeFile(
     path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"),
-    "{\"status\":\"failed\"}\n",
+    '{"status":"failed"}\n',
   );
   await fs.writeFile(
     path.join(caseDir, "intermediate", "code-linter", "summary.json"),
-    "{\"runStatus\":\"success\"}\n",
+    '{"runStatus":"success"}\n',
   );
   await fs.writeFile(
     path.join(caseDir, "intermediate", "code-linter", "findings.effective.json"),
     "[]\n",
   );
-  await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "code-linter.json5"), "{}\n");
-  await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "stdout.sanitized.txt"), "out\n");
-  await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "stderr.sanitized.txt"), "err\n");
+  await fs.writeFile(
+    path.join(caseDir, "intermediate", "code-linter", "code-linter.json5"),
+    "{}\n",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "intermediate", "code-linter", "stdout.sanitized.txt"),
+    "out\n",
+  );
+  await fs.writeFile(
+    path.join(caseDir, "intermediate", "code-linter", "stderr.sanitized.txt"),
+    "err\n",
+  );
   await fs.writeFile(path.join(caseDir, "intermediate", "code-linter", "exit-code.txt"), "0\n");
   await fs.writeFile(path.join(caseDir, "intermediate", "temporary.json"), "{}\n");
 
@@ -2020,12 +2037,30 @@ test("pruneCompletedCaseArtifacts preserves only code-linter and hvigor result f
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "summary.json"));
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "findings.effective.json"));
   await fs.access(path.join(caseDir, "intermediate", "code-linter", "hvigor-summary.json"));
-  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace")), /ENOENT/);
-  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "code-linter.json5")), /ENOENT/);
-  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "stdout.sanitized.txt")), /ENOENT/);
-  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "stderr.sanitized.txt")), /ENOENT/);
-  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "code-linter", "exit-code.txt")), /ENOENT/);
-  await assert.rejects(() => fs.access(path.join(caseDir, "intermediate", "temporary.json")), /ENOENT/);
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "intermediate", "code-linter", "workspace")),
+    /ENOENT/,
+  );
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "intermediate", "code-linter", "code-linter.json5")),
+    /ENOENT/,
+  );
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "intermediate", "code-linter", "stdout.sanitized.txt")),
+    /ENOENT/,
+  );
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "intermediate", "code-linter", "stderr.sanitized.txt")),
+    /ENOENT/,
+  );
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "intermediate", "code-linter", "exit-code.txt")),
+    /ENOENT/,
+  );
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "intermediate", "temporary.json")),
+    /ENOENT/,
+  );
 });
 
 test("workflow cleanup keeps code-linter result files when linter or hvigor produced results", async () => {

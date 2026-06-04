@@ -4,12 +4,12 @@ import { getConfig } from "../src/config.js";
 import {
   buildOfficialCodeLinterConfig,
   serializeOfficialCodeLinterConfig,
-} from "../src/rules/officialCodeLinter/configWriter.js";
+} from "../src/rules/official-linter/config/configWriter.js";
 import {
   officialCodeLinterBaseRecommendedRuleSets,
   officialCodeLinterCrossDeviceRecommendedRuleSet,
   resolveOfficialCodeLinterRecommendedRuleSets,
-} from "../src/rules/officialCodeLinter/recommendedRuleSets.js";
+} from "../src/rules/official-linter/config/recommendedRuleSets.js";
 
 test("official Code Linter v1 uses exactly four recommended rule sets", () => {
   assert.deepEqual(officialCodeLinterBaseRecommendedRuleSets, [
@@ -18,7 +18,10 @@ test("official Code Linter v1 uses exactly four recommended rule sets", () => {
     "plugin:@performance/recommended",
     "plugin:@hw-stylistic/recommended",
   ]);
-  assert.equal(officialCodeLinterBaseRecommendedRuleSets.includes("plugin:@previewer/recommended"), false);
+  assert.equal(
+    officialCodeLinterBaseRecommendedRuleSets.includes("plugin:@previewer/recommended"),
+    false,
+  );
   assert.equal(
     officialCodeLinterBaseRecommendedRuleSets.includes("plugin:@cross-device-app-dev/recommended"),
     false,
@@ -85,14 +88,20 @@ test("generated code-linter config explicitly includes the four v1 recommended r
 
 test("generated code-linter config can use resolved cross-device rule sets", () => {
   const config = buildOfficialCodeLinterConfig({
-    ruleSets: [...officialCodeLinterBaseRecommendedRuleSets, officialCodeLinterCrossDeviceRecommendedRuleSet],
+    ruleSets: [
+      ...officialCodeLinterBaseRecommendedRuleSets,
+      officialCodeLinterCrossDeviceRecommendedRuleSet,
+    ],
   });
 
   assert.deepEqual(config.ruleSet, [
     ...officialCodeLinterBaseRecommendedRuleSets,
     officialCodeLinterCrossDeviceRecommendedRuleSet,
   ]);
-  assert.match(serializeOfficialCodeLinterConfig(config), /plugin:@cross-device-app-dev\/recommended/);
+  assert.match(
+    serializeOfficialCodeLinterConfig(config),
+    /plugin:@cross-device-app-dev\/recommended/,
+  );
 });
 
 test("official Code Linter config defaults to global node with optional run dir", () => {

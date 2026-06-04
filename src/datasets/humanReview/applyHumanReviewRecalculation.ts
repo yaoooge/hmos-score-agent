@@ -124,7 +124,11 @@ export function applyHumanReviewRecalculation(input: {
   const overall = ensureRecord(resultJson, "overall_conclusion");
   overall.total_score = revisedTotalScore;
   overall.hard_gate_triggered = activeGateCaps.size > 0;
-  if (applied || revisedTotalScore !== originalTotalScore || originalHardGateTriggered !== activeGateCaps.size > 0) {
+  if (
+    applied ||
+    revisedTotalScore !== originalTotalScore ||
+    originalHardGateTriggered !== activeGateCaps.size > 0
+  ) {
     overall.summary = `已根据人工逐条复核重新计分：${formatScore(originalTotalScore)} -> ${formatScore(revisedTotalScore)}。`;
   }
 
@@ -149,7 +153,9 @@ export function applyHumanReviewRecalculation(input: {
     resultJson,
     summary: {
       scoreRecalculationApplied:
-        applied || revisedTotalScore !== originalTotalScore || originalHardGateTriggered !== activeGateCaps.size > 0,
+        applied ||
+        revisedTotalScore !== originalTotalScore ||
+        originalHardGateTriggered !== activeGateCaps.size > 0,
       originalTotalScore,
       revisedTotalScore,
       changedItemScoreCount: recalc.changedItemScoreCount,
@@ -177,7 +183,12 @@ function applyRiskLevelEffect(
   const levelWeights = asRecord(effect.level_weights) ?? asRecord(scorePolicy?.risk_level_weights);
   const originalWeight = readNumber(levelWeights?.[originalLevel ?? ""]);
   const correctedWeight = readNumber(levelWeights?.[correctedLevel]);
-  if (!ruleId || originalWeight === undefined || originalWeight === 0 || correctedWeight === undefined) {
+  if (
+    !ruleId ||
+    originalWeight === undefined ||
+    originalWeight === 0 ||
+    correctedWeight === undefined
+  ) {
     return;
   }
   const impacts = Array.isArray(effect.impacts) ? effect.impacts : [];
@@ -196,7 +207,8 @@ function applyRiskLevelEffect(
     }
   }
   const activeLevels = readStringArray(effect.hard_gate_active_levels);
-  const shouldActivateGate = activeLevels.length === 0 ? correctedLevel === "high" : activeLevels.includes(correctedLevel);
+  const shouldActivateGate =
+    activeLevels.length === 0 ? correctedLevel === "high" : activeLevels.includes(correctedLevel);
   const gateIds = readStringArray(effect.hard_gate_ids);
   if (shouldActivateGate) {
     addGates(gateIds, asRecord(effect.gate_caps), activeGateCaps);
@@ -229,7 +241,11 @@ function applyAgreedHardGateReview(
 function recalculateScores(
   resultJson: Record<string, unknown>,
   activeGateCaps: Map<string, number>,
-): { revisedTotalScore?: number; changedItemScoreCount: number; changedDimensionScoreCount: number } {
+): {
+  revisedTotalScore?: number;
+  changedItemScoreCount: number;
+  changedDimensionScoreCount: number;
+} {
   let changedItemScoreCount = 0;
   let changedDimensionScoreCount = 0;
   const dimensions = readDimensions(resultJson);
@@ -310,7 +326,8 @@ function collectInitialGateCaps(
     }
     const activeLevels = readStringArray(effect.hard_gate_active_levels);
     const level = readString(risk.level);
-    const isActive = activeLevels.length === 0 ? level === "high" : Boolean(level && activeLevels.includes(level));
+    const isActive =
+      activeLevels.length === 0 ? level === "high" : Boolean(level && activeLevels.includes(level));
     if (isActive) {
       addGates(readStringArray(effect.hard_gate_ids), asRecord(effect.gate_caps), active);
     }
@@ -424,7 +441,9 @@ function findArrayItemById(value: unknown, id: number): Record<string, unknown> 
 
 function readRecords(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    ? value.filter(
+        (item): item is Record<string, unknown> => typeof item === "object" && item !== null,
+      )
     : [];
 }
 
@@ -439,7 +458,9 @@ function ensureRecord(parent: Record<string, unknown>, key: string): Record<stri
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function readString(value: unknown): string | undefined {

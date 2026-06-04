@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getRegisteredRulePacks } from "../rules/engine/rulePackRegistry.js";
+import { getRegisteredRulePacks } from "../rules/registry/rulePackRegistry.js";
 import type { RuleAuditResult } from "../types.js";
 
 export type RuleViolationBoundRulePack = {

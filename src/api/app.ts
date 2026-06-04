@@ -693,9 +693,7 @@ function readConsistencyRunTaskIds(record: ConsistencyTaskRecord): number[] {
     }
     for (const run of runs) {
       const taskId =
-        typeof run === "object" && run !== null
-          ? (run as { taskId?: unknown }).taskId
-          : undefined;
+        typeof run === "object" && run !== null ? (run as { taskId?: unknown }).taskId : undefined;
       if (Number.isSafeInteger(taskId) && Number(taskId) > 0) {
         ids.add(Number(taskId));
       }
@@ -845,7 +843,9 @@ function mergeConsistencyTaskPatch(
   return merged;
 }
 
-function compactRunRecordsByRunIndex(runs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+function compactRunRecordsByRunIndex(
+  runs: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
   const indexedRuns = new Map<number, Record<string, unknown>>();
   const unindexedRuns: Array<Record<string, unknown>> = [];
   for (const run of runs) {
@@ -1337,10 +1337,7 @@ export function createApp(
         const report = JSON.parse(text) as AgentTraceReport;
         await Promise.all(
           report.runs.map((run) =>
-            agentTraceStore.upsertRun(
-              { ...run, taskId: input.taskId },
-              "outputs/agent-trace.json",
-            ),
+            agentTraceStore.upsertRun({ ...run, taskId: input.taskId }, "outputs/agent-trace.json"),
           ),
         );
       } catch (error) {
@@ -1406,11 +1403,11 @@ export function createApp(
     createDeleteConsistencyTaskHandler(consistencyTaskStore, { remoteTaskRegistry: registry }),
   );
   app.use(
-	    createDashboardRouter({
-	      registry,
-	      ruleViolationStatsStore,
-	      agentTraceStore,
-	      humanReviewEvidenceRoot: config.humanReviewEvidenceRoot,
+    createDashboardRouter({
+      registry,
+      ruleViolationStatsStore,
+      agentTraceStore,
+      humanReviewEvidenceRoot: config.humanReviewEvidenceRoot,
       taskSummaryProvider: async (query) =>
         listSqliteRemoteTaskSummariesForRange(scoreDb, query ?? {}),
       taskPageProvider: async (query) => listSqliteRemoteTaskPage(scoreDb, query),

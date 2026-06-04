@@ -101,9 +101,9 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
         taskId,
         record.testCaseId,
         {
-        success: false,
-        taskId,
-        message: reviewValidation.message,
+          success: false,
+          taskId,
+          message: reviewValidation.message,
         },
       );
       return;
@@ -136,9 +136,9 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
           taskId,
           record.testCaseId,
           {
-          success: false,
-          taskId,
-          message: recalculation.message,
+            success: false,
+            taskId,
+            message: recalculation.message,
           },
         );
         return;
@@ -186,9 +186,9 @@ export function createSubmitHumanReviewHandler(deps: SubmitHumanReviewDeps) {
         taskId,
         record.testCaseId,
         {
-        success: false,
-        taskId,
-        message: manualRating.message,
+          success: false,
+          taskId,
+          message: manualRating.message,
         },
       );
       return;
@@ -431,7 +431,9 @@ async function appendItemReviewCalibrationSamples(input: {
   resultJson: Record<string, unknown>;
   payload: HumanReviewSubmissionPayload;
 }): Promise<number> {
-  const resultItemsById = new Map(readResultReviewItems(input.resultJson).map((item) => [item.id, item]));
+  const resultItemsById = new Map(
+    readResultReviewItems(input.resultJson).map((item) => [item.id, item]),
+  );
   let count = 0;
   for (const review of input.payload.itemReviews ?? []) {
     const resultReviewItem = resultItemsById.get(review.itemId);
@@ -498,7 +500,8 @@ function readResultReviewItems(resultJson: Record<string, unknown>): NormalizedR
     return [];
   }
   return resultJson.human_review_items.flatMap((item, index) => {
-    const reviewItem = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const reviewItem =
+      typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
     const id = readResultArrayId(reviewItem, index);
     if (!Number.isInteger(id) || id <= 0) {
       return [];
@@ -553,7 +556,9 @@ function hasNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function sanitizeOverallComment(overallComment: HumanReviewSubmissionPayload["overallComment"]): string | undefined {
+function sanitizeOverallComment(
+  overallComment: HumanReviewSubmissionPayload["overallComment"],
+): string | undefined {
   if (typeof overallComment !== "string") {
     return undefined;
   }

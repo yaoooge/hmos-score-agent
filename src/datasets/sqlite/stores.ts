@@ -1,4 +1,7 @@
-import type { ConsistencyTaskRecord, ConsistencyTaskStore } from "../../api/consistencyTaskStore.js";
+import type {
+  ConsistencyTaskRecord,
+  ConsistencyTaskStore,
+} from "../../api/consistencyTaskStore.js";
 import type {
   RemoteTaskRecord,
   RemoteTaskRecordPatch,

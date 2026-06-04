@@ -83,7 +83,7 @@ test("generateCasePatch excludes dot directories without hiding resources direct
   );
   await fs.writeFile(
     path.join(caseDir, "workspace", "entry", "src", "main", "resources", "string.json"),
-    "{\"app_name\":\"Demo\"}\n",
+    '{"app_name":"Demo"}\n',
     "utf-8",
   );
 

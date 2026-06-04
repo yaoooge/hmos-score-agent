@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { RegisteredRule } from "../src/rules/engine/ruleTypes.js";
-import type { CollectedEvidence } from "../src/rules/evidenceCollector.js";
-import { runArkuiStaticRule } from "../src/rules/evaluators/arkuiStaticEvaluator.js";
+import type { RegisteredRule } from "../src/rules/types/ruleTypes.js";
+import type { CollectedEvidence } from "../src/rules/evidence/types.js";
+import { runArkuiStaticRule } from "../src/rules/evaluators/arkui/staticEvaluator.js";
 
 function makeRule(check: string): RegisteredRule {
   return {
@@ -37,7 +37,9 @@ function makeEvidence(content: string): CollectedEvidence {
   ]);
 }
 
-function makeEvidenceFiles(files: Array<{ relativePath: string; content: string }>): CollectedEvidence {
+function makeEvidenceFiles(
+  files: Array<{ relativePath: string; content: string }>,
+): CollectedEvidence {
   return {
     workspaceFiles: files,
     allWorkspaceFiles: files,
@@ -129,7 +131,9 @@ test("passes stable Grid columnsTemplate helper", () => {
 test("passes fixed GridCol span when GridRow columns are responsive in the same file", () => {
   const result = runArkuiStaticRule(
     makeRule("gridcol_span_by_breakpoint"),
-    makeEvidence("GridRow({ columns: this.gridColumns.getValue(this.windowModel.currentBreakpoint) }){ GridCol({ span: 1 }){} }"),
+    makeEvidence(
+      "GridRow({ columns: this.gridColumns.getValue(this.windowModel.currentBreakpoint) }){ GridCol({ span: 1 }){} }",
+    ),
   );
 
   assert.equal(result.result, "满足");
@@ -202,11 +206,13 @@ test("only checks hap entry modules for deviceTypes", () => {
     makeEvidenceFiles([
       {
         relativePath: "entry/src/main/module.json5",
-        content: '{ "module": { "name": "entry", "type": "entry", "deviceTypes": ["phone", "tablet"] } }',
+        content:
+          '{ "module": { "name": "entry", "type": "entry", "deviceTypes": ["phone", "tablet"] } }',
       },
       {
         relativePath: "commons/lib_search/src/main/module.json5",
-        content: '{ "module": { "name": "lib_search", "type": "har", "deviceTypes": ["default"] } }',
+        content:
+          '{ "module": { "name": "lib_search", "type": "har", "deviceTypes": ["default"] } }',
       },
     ]),
   );
@@ -227,7 +233,9 @@ test("flags hardcoded breakpoint width comparisons", () => {
 test("flags breakpoint listener registered before loadContent", () => {
   const result = runArkuiStaticRule(
     makeRule("breakpoint_listener_after_load_content"),
-    makeEvidence("onWindowStageCreate(){ windowClass.on('windowSizeChange', () => {}); windowStage.loadContent('pages/Index'); }"),
+    makeEvidence(
+      "onWindowStageCreate(){ windowClass.on('windowSizeChange', () => {}); windowStage.loadContent('pages/Index'); }",
+    ),
   );
 
   assert.equal(result.result, "不满足");
@@ -245,7 +253,9 @@ test("flags custom breakpoint source derived from hardcoded width", () => {
 test("passes fullscreen FolderStack", () => {
   const result = runArkuiStaticRule(
     makeRule("folderstack_fullscreen"),
-    makeEvidence("FolderStack({ upperItems: ['video'] }) { Video().id('video') }.width('100%').height('100%')"),
+    makeEvidence(
+      "FolderStack({ upperItems: ['video'] }) { Video().id('video') }.width('100%').height('100%')",
+    ),
   );
 
   assert.equal(result.result, "满足");
@@ -295,7 +305,9 @@ test("flags fixed aspectRatio when aspectRatio rule requires breakpoint awarenes
 test("does not fail dynamic constraintSize when grid system is present", () => {
   const result = runArkuiStaticRule(
     makeRule("gridrow_no_dynamic_constraint_size_centering"),
-    makeEvidence("GridRow({ columns: { sm: 4, md: 8, lg: 12 } }) { GridCol({ span: 8 }){} }\nColumn().constraintSize({ maxWidth: this.contentMaxWidth.getValue(this.windowModel.currentBreakpoint) || undefined })"),
+    makeEvidence(
+      "GridRow({ columns: { sm: 4, md: 8, lg: 12 } }) { GridCol({ span: 8 }){} }\nColumn().constraintSize({ maxWidth: this.contentMaxWidth.getValue(this.windowModel.currentBreakpoint) || undefined })",
+    ),
   );
 
   assert.equal(result.result, "满足");
@@ -307,11 +319,13 @@ test("resolves numeric constants used by GridRow columns", () => {
     makeEvidenceFiles([
       {
         relativePath: "entry/src/main/ets/common/Constants.ets",
-        content: "export default class Constants { static readonly GRID_ALL_COLUMNS: number = 4; static readonly GRID_ROW_COLUMNS: number[] = [1, 2, 4]; }",
+        content:
+          "export default class Constants { static readonly GRID_ALL_COLUMNS: number = 4; static readonly GRID_ROW_COLUMNS: number[] = [1, 2, 4]; }",
       },
       {
         relativePath: "entry/src/main/ets/pages/Index.ets",
-        content: "GridRow({ columns: { md: Constants.GRID_ROW_COLUMNS[1], lg: Constants.GRID_ROW_COLUMNS[2] } }){}\nGridRow({ columns: Constants.GRID_ALL_COLUMNS }){}",
+        content:
+          "GridRow({ columns: { md: Constants.GRID_ROW_COLUMNS[1], lg: Constants.GRID_ROW_COLUMNS[2] } }){}\nGridRow({ columns: Constants.GRID_ALL_COLUMNS }){}",
       },
     ]),
   );
@@ -322,7 +336,9 @@ test("resolves numeric constants used by GridRow columns", () => {
 test("passes default GridCol spans inside responsive GridRow", () => {
   const result = runArkuiStaticRule(
     makeRule("gridcol_span_by_breakpoint"),
-    makeEvidence("GridRow({ columns: { md: 2, lg: 4 } }) { GridCol(){} GridCol({ span: { md: 2, lg: 1 } }){} }"),
+    makeEvidence(
+      "GridRow({ columns: { md: 2, lg: 4 } }) { GridCol(){} GridCol({ span: { md: 2, lg: 1 } }){} }",
+    ),
   );
 
   assert.equal(result.result, "满足");
@@ -340,7 +356,9 @@ test("does not pass default GridCol spans just because a responsive GridRow exis
 test("does not require breakpoint-aware List space inside sm-only branch", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
-    makeEvidence("if (this.curBp === 'sm') { List({ space: Constants.LIST_GUTTER }){} } else { GridRow({ columns: { md: 2, lg: 4 } }){} }"),
+    makeEvidence(
+      "if (this.curBp === 'sm') { List({ space: Constants.LIST_GUTTER }){} } else { GridRow({ columns: { md: 2, lg: 4 } }){} }",
+    ),
   );
 
   assert.equal(result.result, "满足");
@@ -358,7 +376,9 @@ test("does not pass sm-only List space without an alternate GridRow branch", () 
 test("does not treat not-sm List branch as sm-only fallback", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
-    makeEvidence("if (this.curBp !== 'sm') { List({ space: Constants.LIST_GUTTER }){} } else { GridRow({ columns: { md: 2, lg: 4 } }){} }"),
+    makeEvidence(
+      "if (this.curBp !== 'sm') { List({ space: Constants.LIST_GUTTER }){} } else { GridRow({ columns: { md: 2, lg: 4 } }){} }",
+    ),
   );
 
   assert.equal(result.result, "不满足");
@@ -383,7 +403,8 @@ test("resolves non-Constants numeric constants used by GridRow columns", () => {
       },
       {
         relativePath: "entry/src/main/ets/pages/Index.ets",
-        content: "GridRow({ columns: { sm: GRID_COLUMNS[0], md: GridSpec.GRID_COLUMNS[1], lg: GridSpec.GRID_COLUMNS[2] } }){}",
+        content:
+          "GridRow({ columns: { sm: GRID_COLUMNS[0], md: GridSpec.GRID_COLUMNS[1], lg: GridSpec.GRID_COLUMNS[2] } }){}",
       },
     ]),
   );
@@ -419,13 +440,19 @@ test("writes intermediate scan artifacts under case intermediate directory", asy
   runArkuiStaticRule(makeRule("tabs_vertical_by_breakpoint"), evidence);
 
   const artifactDir = path.join(caseDir, "intermediate", "arkui-static-scan");
-  const index = JSON.parse(await fs.readFile(path.join(artifactDir, "arkui-scan-index.json"), "utf-8")) as {
+  const index = JSON.parse(
+    await fs.readFile(path.join(artifactDir, "arkui-scan-index.json"), "utf-8"),
+  ) as {
     componentInstances: unknown[];
   };
-  const traces = JSON.parse(await fs.readFile(path.join(artifactDir, "arkui-rule-traces.json"), "utf-8")) as {
+  const traces = JSON.parse(
+    await fs.readFile(path.join(artifactDir, "arkui-rule-traces.json"), "utf-8"),
+  ) as {
     ruleTraces: unknown[];
   };
-  const unresolved = JSON.parse(await fs.readFile(path.join(artifactDir, "unresolved-expressions.json"), "utf-8")) as {
+  const unresolved = JSON.parse(
+    await fs.readFile(path.join(artifactDir, "unresolved-expressions.json"), "utf-8"),
+  ) as {
     unresolvedExpressions: unknown[];
   };
 

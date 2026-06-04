@@ -268,10 +268,7 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
   ]);
   assert.equal("llm_prompt" in (payload.assisted_rule_candidates[0] ?? {}), false);
   assert.equal("rule_summary" in (payload.assisted_rule_candidates[0] ?? {}), false);
-  assert.equal(
-    "summary" in (payload.assisted_rule_candidates[0]?.static_precheck ?? {}),
-    false,
-  );
+  assert.equal("summary" in (payload.assisted_rule_candidates[0]?.static_precheck ?? {}), false);
   assert.equal("priority" in (payload.assisted_rule_candidates[0] ?? {}), false);
   assert.equal("rule_source" in (payload.assisted_rule_candidates[0] ?? {}), false);
   assert.equal("local_preliminary_signal" in (payload.assisted_rule_candidates[0] ?? {}), false);

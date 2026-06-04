@@ -194,7 +194,10 @@ test("official linter results render finding details and score impact", () => {
   const viewModel = buildHtmlReportViewModel(
     makeResultJson({
       official_linter_summary: {
-        configuredRuleSets: ["plugin:@typescript-eslint/recommended", "plugin:@security/recommended"],
+        configuredRuleSets: [
+          "plugin:@typescript-eslint/recommended",
+          "plugin:@security/recommended",
+        ],
         effectiveFindingCount: 1,
         runStatus: "success",
         durationMs: 50,
@@ -232,7 +235,10 @@ test("official linter results render finding details and score impact", () => {
   assert.match(html, /@security\/no-commented-code/);
   assert.match(html, /entry\/src\/main\/ets\/components\/HomeTab\.ets:58:27/);
   assert.match(html, /Delete the related code completely when it is invalid\./);
-  assert.doesNotMatch(JSON.stringify(viewModel.officialLinter), /Legacy\.ets|legacy issue|filtered/i);
+  assert.doesNotMatch(
+    JSON.stringify(viewModel.officialLinter),
+    /Legacy\.ets|legacy issue|filtered/i,
+  );
   assert.doesNotMatch(html, /Legacy\.ets|legacy issue|filtered|unchanged/i);
 });
 

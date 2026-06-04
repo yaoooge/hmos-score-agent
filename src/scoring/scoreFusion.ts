@@ -9,8 +9,8 @@ import {
   findOfficialLinterRuleProfile,
   officialLinterSeverityToImpactSeverity,
 } from "./officialLinterRuleProfiles.js";
-import { getRegisteredRulePacks } from "../rules/engine/rulePackRegistry.js";
-import type { RuleMetricGroup, RuleProfile } from "../rules/engine/ruleTypes.js";
+import { getRegisteredRulePacks } from "../rules/registry/rulePackRegistry.js";
+import type { RuleMetricGroup, RuleProfile } from "../rules/types/ruleTypes.js";
 import type {
   AgentRunStatus,
   CaseRuleDefinition,
@@ -102,11 +102,17 @@ const ruleProfileById = new Map(
 
 function normalizeEvidenceAnchor(value: string | undefined): string {
   const source = value ?? "";
-  const pathMatch = source.match(/(?:generated\/|workspace\/)?([A-Za-z0-9_.@/-]+\.(?:ets|ts|json|yaml|yml|c|cpp|h|hpp|xml|txt))/);
+  const pathMatch = source.match(
+    /(?:generated\/|workspace\/)?([A-Za-z0-9_.@/-]+\.(?:ets|ts|json|yaml|yml|c|cpp|h|hpp|xml|txt))/,
+  );
   if (pathMatch?.[1]) {
     return pathMatch[1].replace(/^generated\//, "").replace(/^workspace\//, "");
   }
-  return source.trim().replace(/:\d+:\d+/g, "").replace(/:\d+/g, "").slice(0, 160);
+  return source
+    .trim()
+    .replace(/:\d+:\d+/g, "")
+    .replace(/:\d+/g, "")
+    .slice(0, 160);
 }
 
 function makeCanonicalIssueId(input: {
@@ -208,7 +214,6 @@ function buildRuleCanonicalIssue(input: {
     evidenceAnchor,
   };
 }
-
 
 function makePenaltyRule(input: {
   metricNames: string[];
@@ -409,10 +414,7 @@ function findPenaltyRules(rule: RuleAuditResult): MetricPenaltyRule[] {
   return [];
 }
 
-function riskLevelFromRuleImpact(
-  rule: RuleAuditResult,
-  penaltyRules: MetricPenaltyRule[],
-): string {
+function riskLevelFromRuleImpact(rule: RuleAuditResult, penaltyRules: MetricPenaltyRule[]): string {
   if (penaltyRules.some((penalty) => penalty.severity === "heavy")) {
     return "high";
   }
@@ -585,7 +587,7 @@ function formatHardGateDescription(input: FuseRubricScoreWithRulesInput, gateId:
   if (gateId === "G1" && signals.length >= 4) {
     return `${signals[0]}、${signals[1].replace(/^大量/, "")}、${signals[2].replace(/明显$/, "")}或${signals[3]}。`;
   }
-  return signals.length > 0 ? `${signals.join("；")}。` : gate?.name ?? gateId;
+  return signals.length > 0 ? `${signals.join("；")}。` : (gate?.name ?? gateId);
 }
 
 function buildHardGateTriggerDetail(
@@ -851,14 +853,20 @@ function buildHvigorBuildRisk(summary: HvigorBuildCheckSummary): RiskItem {
   };
 }
 
-function buildDeprecatedApiRisk(summary: HvigorBuildCheckSummary, id: number): RiskItem | undefined {
+function buildDeprecatedApiRisk(
+  summary: HvigorBuildCheckSummary,
+  id: number,
+): RiskItem | undefined {
   const warnings = summary.deprecatedApiWarnings ?? [];
   if (warnings.length === 0) {
     return undefined;
   }
   const examples = warnings.slice(0, 3);
   const exampleText = examples
-    .map((warning) => `${warning.file}:${String(warning.line)}:${String(warning.column)} '${warning.apiName}'`)
+    .map(
+      (warning) =>
+        `${warning.file}:${String(warning.line)}:${String(warning.column)} '${warning.apiName}'`,
+    )
     .join("；");
   const first = warnings[0];
   return {
@@ -954,7 +962,10 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
     });
   }
   if (input.hvigorBuildCheckSummary) {
-    const deprecatedApiRisk = buildDeprecatedApiRisk(input.hvigorBuildCheckSummary, risks.length + 1);
+    const deprecatedApiRisk = buildDeprecatedApiRisk(
+      input.hvigorBuildCheckSummary,
+      risks.length + 1,
+    );
     if (deprecatedApiRisk) {
       risks.push(deprecatedApiRisk);
     }
@@ -1085,11 +1096,7 @@ export function fuseRubricScoreWithRules(input: FuseRubricScoreWithRulesInput): 
   const hvigorConclusionDetail = hvigorHardGateTriggered
     ? buildHvigorBuildConclusionDetail(input.hvigorBuildCheckSummary)
     : undefined;
-  const hardGates = buildTriggeredHardGateDetails(
-    input,
-    triggeredGateIds,
-    hvigorHardGateTriggered,
-  );
+  const hardGates = buildTriggeredHardGateDetails(input, triggeredGateIds, hvigorHardGateTriggered);
   const triggeredHardGateCandidates = selectTriggeredHardGateCandidates(input);
   const uncertainHardGateCandidates = selectUncertainHardGateCandidates(input);
   const humanReviewItems: HumanReviewItem[] =

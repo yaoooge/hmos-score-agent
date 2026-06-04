@@ -762,5 +762,8 @@ test("remoteTaskPreparationNode materializes top-level list expected constraint 
     await fs.readFile(path.join(result.sourceCasePath, "expected_constraints.yaml"), "utf-8"),
     expectedConstraintsYaml,
   );
-  assert.equal(result.caseInput?.expectedConstraintsPath, path.join(result.sourceCasePath, "expected_constraints.yaml"));
+  assert.equal(
+    result.caseInput?.expectedConstraintsPath,
+    path.join(result.sourceCasePath, "expected_constraints.yaml"),
+  );
 });

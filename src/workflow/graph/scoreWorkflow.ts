@@ -1,6 +1,9 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { ArtifactStore } from "../../commons/io/artifactStore.js";
-import { buildAgentTraceReport, writeAgentTraceArtifacts } from "../../agents/trace/artifactStore.js";
+import {
+  buildAgentTraceReport,
+  writeAgentTraceArtifacts,
+} from "../../agents/trace/artifactStore.js";
 import { createAgentTraceRecorder, type AgentTraceRecorder } from "../../agents/trace/recorder.js";
 import { fetchOpencodeSessionSnapshot } from "../../agents/trace/sessionClient.js";
 import { parseOpencodeSessionEvents } from "../../agents/trace/partParser.js";
@@ -23,7 +26,10 @@ import { ruleMergeNode } from "../nodes/ruleMerge/index.js";
 import { scoreFusionOrchestrationNode } from "../nodes/scoreFusionOrchestration/index.js";
 import { officialCodeLinterNode } from "../nodes/officialCodeLinter/index.js";
 import { taskUnderstandingNode } from "../nodes/taskUnderstanding/index.js";
-import { createOpencodeRuntimeConfig, type OpencodeRuntimeConfig } from "../../agents/opencode/config.js";
+import {
+  createOpencodeRuntimeConfig,
+  type OpencodeRuntimeConfig,
+} from "../../agents/opencode/config.js";
 import {
   runOpencodePrompt,
   type OpencodeRunRequest,
@@ -297,7 +303,8 @@ export async function enrichAgentTraceRuns(input: {
   }
   const enriched: AgentTraceRun[] = [];
   for (const run of input.runs) {
-    const sessionId = run.opencodeSession?.id ?? run.attempts.find((attempt) => attempt.sessionId)?.sessionId;
+    const sessionId =
+      run.opencodeSession?.id ?? run.attempts.find((attempt) => attempt.sessionId)?.sessionId;
     if (!sessionId) {
       enriched.push(run);
       continue;
@@ -349,7 +356,9 @@ export async function enrichAgentTraceRuns(input: {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await input.logger.warn(`agent trace session 读取失败 session=${sessionId} warning=${message}`);
+      await input.logger.warn(
+        `agent trace session 读取失败 session=${sessionId} warning=${message}`,
+      );
       enriched.push({
         ...run,
         warnings: [...run.warnings, "opencode_session_read_failed"],

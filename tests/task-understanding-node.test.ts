@@ -112,20 +112,23 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
         requestTag: request.requestTag,
         rawEvents: "",
         rawText: JSON.stringify({
-        explicitConstraints: [
-          "任务类型: bug_fix",
-          "行业: 餐饮",
-          "场景: 餐厅列表页",
-          "目标: 修复评分筛选异常",
-        ],
-        contextualConstraints: ["模块: entry", "实现约束: 保持 restaurant viewmodel 与 pages 分层"],
-        implicitConstraints: [
-          "修改范围: 2 个 ArkTS/TS 文件",
-          "侵入程度: 中等",
-          "改动类型: UI 接入与筛选逻辑",
-        ],
-        classificationHints: ["bug_fix", "has_patch"],
-        crossDeviceAdaptation: notInvolvedCrossDevice(),
+          explicitConstraints: [
+            "任务类型: bug_fix",
+            "行业: 餐饮",
+            "场景: 餐厅列表页",
+            "目标: 修复评分筛选异常",
+          ],
+          contextualConstraints: [
+            "模块: entry",
+            "实现约束: 保持 restaurant viewmodel 与 pages 分层",
+          ],
+          implicitConstraints: [
+            "修改范围: 2 个 ArkTS/TS 文件",
+            "侵入程度: 中等",
+            "改动类型: UI 接入与筛选逻辑",
+          ],
+          classificationHints: ["bug_fix", "has_patch"],
+          crossDeviceAdaptation: notInvolvedCrossDevice(),
         }),
         elapsedMs: 1,
       };
@@ -149,7 +152,10 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
   assert.equal(prompts.length, 1);
   assert.match(prompts[0] ?? "", /修复餐厅列表页评分筛选 bug/);
   assert.match(prompts[0] ?? "", /entry\/src\/main\/ets\/pages\/Index\.ets/);
-  assert.match(prompts[0] ?? "", /entry\/src\/main\/ets\/restaurant\/viewmodels\/RestaurantListVM\.ts/);
+  assert.match(
+    prompts[0] ?? "",
+    /entry\/src\/main\/ets\/restaurant\/viewmodels\/RestaurantListVM\.ts/,
+  );
 
   assert.deepEqual(result.constraintSummary?.explicitConstraints, [
     "任务类型: bug_fix",

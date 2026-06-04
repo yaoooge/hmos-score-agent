@@ -19,6 +19,9 @@ test("cross-device rule violation tab keeps date range filtering and only adds h
   assert.match(crossDeviceVue, /fetchCrossDeviceRuleViolations\(\{\s+\.\.\.dateParams\(\)/);
   assert.match(crossDeviceVue, /ruleSummaryText/);
   assert.match(crossDeviceVue, /label="命中比例"/);
-  assert.match(crossDeviceVue, /formatHitRatio\(row\.affectedTaskCount, ruleSummary\.relatedCaseCount/);
+  assert.match(
+    crossDeviceVue,
+    /formatHitRatio\(row\.affectedTaskCount, ruleSummary\.relatedCaseCount/,
+  );
   assert.doesNotMatch(crossDeviceVue, /label="影响 taskId"/);
 });

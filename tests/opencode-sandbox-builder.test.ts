@@ -50,8 +50,14 @@ test("buildOpencodeSandbox copies only allowed case inputs into a prepared sandb
   });
 
   assert.equal(sandbox.root, path.join(caseDir, "opencode-sandbox"));
-  assert.equal(await fs.readFile(path.join(sandbox.generatedRoot, "entry", "src", "main.ets"), "utf-8"), "generated");
-  assert.equal(await fs.readFile(path.join(sandbox.originalRoot!, "entry", "src", "main.ets"), "utf-8"), "original");
+  assert.equal(
+    await fs.readFile(path.join(sandbox.generatedRoot, "entry", "src", "main.ets"), "utf-8"),
+    "generated",
+  );
+  assert.equal(
+    await fs.readFile(path.join(sandbox.originalRoot!, "entry", "src", "main.ets"), "utf-8"),
+    "original",
+  );
   assert.equal(await fs.readFile(sandbox.patchPath!, "utf-8"), "diff --git a/a b/a\n");
   assert.equal(
     await fs.readFile(path.join(sandbox.metadataRoot, "metadata.json"), "utf-8"),
@@ -59,7 +65,10 @@ test("buildOpencodeSandbox copies only allowed case inputs into a prepared sandb
   );
 
   assert.equal(await exists(path.join(sandbox.generatedRoot, ".env")), false);
-  assert.equal(await exists(path.join(sandbox.generatedRoot, "node_modules", "pkg", "index.js")), false);
+  assert.equal(
+    await exists(path.join(sandbox.generatedRoot, "node_modules", "pkg", "index.js")),
+    false,
+  );
   assert.equal(await exists(path.join(sandbox.generatedRoot, "BuildProfile.ets")), false);
   assert.equal(await exists(path.join(sandbox.generatedRoot, "outside-link.txt")), false);
   assert.equal(await exists(path.join(sandbox.root, "references")), false);

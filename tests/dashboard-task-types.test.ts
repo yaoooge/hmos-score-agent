@@ -30,11 +30,7 @@ test("dashboard task type helpers summarize options after alias merge", () => {
     { taskType: "continuation", count: 12 },
     { taskType: "full_generation", count: 5 },
   ]);
-  assert.deepEqual(buildTaskTypeOptions(counts), [
-    "bug_fix",
-    "continuation",
-    "full_generation",
-  ]);
+  assert.deepEqual(buildTaskTypeOptions(counts), ["bug_fix", "continuation", "full_generation"]);
 });
 
 test("dashboard task type helpers normalize table rows", () => {

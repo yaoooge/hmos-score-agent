@@ -523,10 +523,7 @@ function notInvolvedCrossDevice() {
 
 test("API definitions include the remote task result endpoint", () => {
   assert.equal(API_PATHS.remoteTaskResult, "/score/remote-tasks/:taskId/result");
-  assert.equal(
-    API_PATHS.remoteTaskRawResult,
-    "/score/remote-tasks/:taskId/result/raw",
-  );
+  assert.equal(API_PATHS.remoteTaskRawResult, "/score/remote-tasks/:taskId/result/raw");
   assert.equal(API_PATHS.remoteTaskStatuses, "/score/remote-tasks/status");
   assert.equal(API_PATHS.remoteTasks, "/score/remote-tasks");
   assert.equal(API_PATHS.consistencyTasks, "/score/consistency-tasks");
@@ -550,14 +547,12 @@ test("API definitions include the remote task result endpoint", () => {
   );
   assert.ok(
     API_DEFINITIONS.some(
-      (definition) =>
-        definition.method === "GET" && definition.path === "/score/consistency-tasks",
+      (definition) => definition.method === "GET" && definition.path === "/score/consistency-tasks",
     ),
   );
   assert.ok(
     API_DEFINITIONS.some(
-      (definition) =>
-        definition.method === "PUT" && definition.path === "/score/consistency-tasks",
+      (definition) => definition.method === "PUT" && definition.path === "/score/consistency-tasks",
     ),
   );
   assert.ok(
@@ -702,7 +697,10 @@ test("createGetRemoteTaskResultHandler omits testExecution from completed result
     },
   };
   await fs.mkdir(path.join(caseDir, "outputs"), { recursive: true });
-  await fs.writeFile(path.join(caseDir, "outputs", "result.json"), JSON.stringify(storedResultJson));
+  await fs.writeFile(
+    path.join(caseDir, "outputs", "result.json"),
+    JSON.stringify(storedResultJson),
+  );
 
   const registry = createRemoteTaskRegistry(localCaseRoot);
   await registry.upsert({
@@ -939,7 +937,10 @@ test("createGetRemoteTaskStatusesHandler validates taskIds query", async (t) => 
 
   assert.equal(responseState.statusCode, 400);
   assert.equal(responseState.body?.success, false);
-  assert.equal(responseState.body?.message, "Invalid query parameter: taskIds must be comma-separated positive integers");
+  assert.equal(
+    responseState.body?.message,
+    "Invalid query parameter: taskIds must be comma-separated positive integers",
+  );
 });
 
 test("consistency task store persists records beside remote task index", async (t) => {
@@ -1018,9 +1019,7 @@ test("consistency task handlers read and replace persisted task collection", asy
   await getHandler({} as never, getResponse.response as never);
 
   assert.equal(getResponse.responseState.statusCode, 200);
-  assert.deepEqual(getResponse.responseState.body?.items, [
-    { id: "C-002", sequence: 2, runs: [] },
-  ]);
+  assert.deepEqual(getResponse.responseState.body?.items, [{ id: "C-002", sequence: 2, runs: [] }]);
 });
 
 test("consistency task reader backfills missing sourceTask from original remote task payload", async (t) => {
@@ -1347,11 +1346,17 @@ test("consistency task replacement validates record shape", async (t) => {
   const handler = createReplaceConsistencyTasksHandler(createConsistencyTaskStore(localCaseRoot));
   const { response, responseState } = createResponse();
 
-  await handler(createConsistencyTasksRequest([{ id: "", sequence: 1 }]) as never, response as never);
+  await handler(
+    createConsistencyTasksRequest([{ id: "", sequence: 1 }]) as never,
+    response as never,
+  );
 
   assert.equal(responseState.statusCode, 400);
   assert.equal(responseState.body?.success, false);
-  assert.equal(responseState.body?.message, "Invalid request body: items must be consistency task records");
+  assert.equal(
+    responseState.body?.message,
+    "Invalid request body: items must be consistency task records",
+  );
 });
 
 test("remote task registry reloads persisted records after restart", async (t) => {
@@ -1504,7 +1509,10 @@ test("createRunRemoteTaskHandler stores remote task file pointer without prompt 
   await waitForAssertion(async () => {
     const record = await registry.get(810);
     assert.equal(record?.remoteTaskFile, "inputs/remote-task.json");
-    const indexText = await fs.readFile(path.join(localCaseRoot, "remote-task-index.json"), "utf-8");
+    const indexText = await fs.readFile(
+      path.join(localCaseRoot, "remote-task-index.json"),
+      "utf-8",
+    );
     assert.equal(indexText.includes("large prompt text"), false);
   });
 });
@@ -2345,9 +2353,16 @@ test("createRunRemoteTaskHandler executes at most three remote tasks concurrentl
       calls.push(`execute:end:${String(acceptedTask.taskId)}`);
     },
   };
-  const queue = createRemoteTaskExecutionQueue(deps as never, undefined, undefined, undefined, undefined, {
-    maxRemoteTaskConcurrency: 3,
-  });
+  const queue = createRemoteTaskExecutionQueue(
+    deps as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      maxRemoteTaskConcurrency: 3,
+    },
+  );
   const handler = createRunRemoteTaskHandler(deps as never, undefined, undefined, undefined, queue);
 
   const responses = [1, 2, 3, 4].map(() => createResponse());
@@ -2422,9 +2437,16 @@ test("createRunRemoteTaskHandler honors configured remote task concurrency", asy
       activeTaskIds.delete(acceptedTask.taskId);
     },
   };
-  const queue = createRemoteTaskExecutionQueue(deps as never, undefined, undefined, undefined, undefined, {
-    maxRemoteTaskConcurrency: 2,
-  });
+  const queue = createRemoteTaskExecutionQueue(
+    deps as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      maxRemoteTaskConcurrency: 2,
+    },
+  );
   const handler = createRunRemoteTaskHandler(deps as never, undefined, undefined, undefined, queue);
   const responses = [1, 2, 3].map(() => createResponse());
 
@@ -2473,9 +2495,8 @@ test("executeAcceptedRemoteEvaluationTask leases distinct opencode runners for t
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
-    const manifestMatch = /https:\/\/remote\.example\.com\/assets\/pool-(\d+)\/(original|workspace)\.json/.exec(
-      url,
-    );
+    const manifestMatch =
+      /https:\/\/remote\.example\.com\/assets\/pool-(\d+)\/(original|workspace)\.json/.exec(url);
     if (manifestMatch) {
       return new Response(JSON.stringify(createManifest(`let value${manifestMatch[1]} = 1;\n`)), {
         status: 200,
@@ -2563,15 +2584,29 @@ test("executeAcceptedRemoteEvaluationTask leases distinct opencode runners for t
     ),
   );
 
-  await Promise.all(acceptedTasks.map((acceptedTask) => executeAcceptedRemoteEvaluationTask(acceptedTask)));
+  await Promise.all(
+    acceptedTasks.map((acceptedTask) => executeAcceptedRemoteEvaluationTask(acceptedTask)),
+  );
 
   assert.deepEqual(acquiredSlots, [0, 1, 2]);
-  assert.deepEqual(releasedSlots.sort((left, right) => left - right), [0, 1, 2]);
+  assert.deepEqual(
+    releasedSlots.sort((left, right) => left - right),
+    [0, 1, 2],
+  );
   for (const slotId of [0, 1, 2]) {
     const tags = runnerTags.get(slotId) ?? [];
-    assert.ok(tags.some((tag) => tag.startsWith("task-understanding-")), String(slotId));
-    assert.ok(tags.some((tag) => tag.startsWith("rubric-scoring-")), String(slotId));
-    assert.ok(tags.some((tag) => tag.startsWith("rule-assessment-")), String(slotId));
+    assert.ok(
+      tags.some((tag) => tag.startsWith("task-understanding-")),
+      String(slotId),
+    );
+    assert.ok(
+      tags.some((tag) => tag.startsWith("rubric-scoring-")),
+      String(slotId),
+    );
+    assert.ok(
+      tags.some((tag) => tag.startsWith("rule-assessment-")),
+      String(slotId),
+    );
   }
   assert.equal(callbackCalls.filter((call) => call.status === "completed").length, 3);
 });
@@ -2617,9 +2652,16 @@ test("createRunRemoteTaskHandler uploads pending callback for queued remote task
       });
     },
   };
-  const queue = createRemoteTaskExecutionQueue(deps as never, undefined, undefined, undefined, undefined, {
-    maxRemoteTaskConcurrency: 3,
-  });
+  const queue = createRemoteTaskExecutionQueue(
+    deps as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      maxRemoteTaskConcurrency: 3,
+    },
+  );
   const handler = createRunRemoteTaskHandler(deps as never, undefined, undefined, undefined, queue);
   const responses = [1, 2, 3, 4].map(() => createResponse());
 

@@ -722,10 +722,12 @@ test("submit human review handler recalculates scores from risk level review", a
     summary: "已根据人工逐条复核重新计分：70 -> 90。",
   });
   assert.equal(
-    ((resultJson.human_review_revision as Record<string, unknown>).score_recalculation as Record<
-      string,
-      unknown
-    >).revised_total_score,
+    (
+      (resultJson.human_review_revision as Record<string, unknown>).score_recalculation as Record<
+        string,
+        unknown
+      >
+    ).revised_total_score,
     90,
   );
 });
@@ -847,7 +849,10 @@ test("submit human review handler records item review without corrected assessme
   );
 
   assert.equal(state.statusCode, 200);
-  assert.equal(Object.hasOwn(state.body?.summary as Record<string, unknown>, "scoreRecalculationApplied"), false);
+  assert.equal(
+    Object.hasOwn(state.body?.summary as Record<string, unknown>, "scoreRecalculationApplied"),
+    false,
+  );
 
   const resultJson = JSON.parse(
     await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
@@ -1119,7 +1124,6 @@ test("submit human review handler rejects duplicate ids", async (t) => {
     duplicateRisk.response as never,
   );
   assert.equal(duplicateRisk.state.statusCode, 400);
-
 });
 
 test("submit human review handler rejects running, missing, and invalid review requests", async (t) => {
@@ -1208,7 +1212,10 @@ test("human review config reads persistent evidence root from environment", () =
 
 test("aliyun deployment script writes persistent human review environment", async () => {
   const script = await fs.readFile("scripts/aliyun-single-instance-deploy.sh", "utf-8");
-  const updateSection = script.slice(script.indexOf("    update)"), script.indexOf("    bootstrap)"));
+  const updateSection = script.slice(
+    script.indexOf("    update)"),
+    script.indexOf("    bootstrap)"),
+  );
 
   assert.match(script, /DEPLOY_MODE="\$\{DEPLOY_MODE:-update\}"/);
   assert.match(script, /DEPLOY_MODE=bootstrap/);
@@ -1279,7 +1286,9 @@ test("api definitions document human review submission endpoint", () => {
     true,
   );
   assert.equal(
-    Object.keys(humanReviewDefinition.request?.body?.properties ?? {}).sort().join(","),
+    Object.keys(humanReviewDefinition.request?.body?.properties ?? {})
+      .sort()
+      .join(","),
     "itemReviews,manualLevel,overallComment,reviewer,riskReviews",
   );
   assert.equal(

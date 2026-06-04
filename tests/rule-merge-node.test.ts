@@ -32,8 +32,8 @@ test("rule merge appends official linter results after deterministic results", a
     { logger: { info: async () => undefined } },
   );
 
-  assert.deepEqual(result.mergedRuleAuditResults?.map((item) => item.rule_id), [
-    "ARKTS-MUST-001",
-    "OFFICIAL-LINTER:@performance/no-use-any-import",
-  ]);
+  assert.deepEqual(
+    result.mergedRuleAuditResults?.map((item) => item.rule_id),
+    ["ARKTS-MUST-001", "OFFICIAL-LINTER:@performance/no-use-any-import"],
+  );
 });

@@ -42,11 +42,17 @@ function readTokenUsage(value: unknown): Record<string, number | undefined> | un
   return Object.values(tokenUsage).some((item) => item !== undefined) ? tokenUsage : undefined;
 }
 
-function readRawTokenUsage(rawPayload: Record<string, unknown> | undefined): Record<string, number | undefined> | undefined {
+function readRawTokenUsage(
+  rawPayload: Record<string, unknown> | undefined,
+): Record<string, number | undefined> | undefined {
   const part = asRecord(rawPayload?.part);
   const properties = asRecord(rawPayload?.properties);
   const info = asRecord(rawPayload?.info) ?? asRecord(properties?.info);
-  return readTokenUsage(rawPayload?.tokens) ?? readTokenUsage(part?.tokens) ?? readTokenUsage(info?.tokens);
+  return (
+    readTokenUsage(rawPayload?.tokens) ??
+    readTokenUsage(part?.tokens) ??
+    readTokenUsage(info?.tokens)
+  );
 }
 
 function toIso(value: number): string {
@@ -149,7 +155,8 @@ function readTaskType(resultJson: Record<string, unknown>): string | undefined {
 }
 
 function readRemoteCaseName(caseInfo: Record<string, unknown> | undefined): string | undefined {
-  const caseName = caseInfo?.remote_test_case_name ?? caseInfo?.test_case_name ?? caseInfo?.case_name;
+  const caseName =
+    caseInfo?.remote_test_case_name ?? caseInfo?.test_case_name ?? caseInfo?.case_name;
   return typeof caseName === "string" && caseName.trim().length > 0 ? caseName : undefined;
 }
 
@@ -312,7 +319,9 @@ export async function readTaskLog(input: {
   }
 }
 
-async function readAgentTraceArtifact(caseDir: string): Promise<Record<string, unknown> | undefined> {
+async function readAgentTraceArtifact(
+  caseDir: string,
+): Promise<Record<string, unknown> | undefined> {
   try {
     const text = await fs.readFile(path.join(caseDir, "outputs", "agent-trace.json"), "utf-8");
     return JSON.parse(text) as Record<string, unknown>;
@@ -640,7 +649,9 @@ export async function updateRiskReviewManualAnalysisStatus(
 }> {
   const filePath = path.join(root, "datasets", RISK_REVIEW_CALIBRATION_DATASET);
   const lines = await readDatasetLines(filePath);
-  const requested = new Map(items.map((item) => [`${String(item.taskId)}:${String(item.riskId)}`, item]));
+  const requested = new Map(
+    items.map((item) => [`${String(item.taskId)}:${String(item.riskId)}`, item]),
+  );
   const found = new Set<string>();
   const skipped: Array<{ taskId: number; riskId: number; reason: "not_disagreed" }> = [];
   let updated = 0;

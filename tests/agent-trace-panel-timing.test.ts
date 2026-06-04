@@ -28,7 +28,14 @@ test("stepDuration uses step-start to step-finish timestamps before event elapse
 test("stepDuration prefers complete step timestamps over step-finish elapsed", () => {
   const elapsedMs = stepDuration([
     { id: "start", type: "step-start", title: "step-start", sequence: 0, timestampMs: 1_000 },
-    { id: "finish", type: "step-finish", title: "tool-calls", sequence: 1, timestampMs: 11_000, elapsedMs: 5 },
+    {
+      id: "finish",
+      type: "step-finish",
+      title: "tool-calls",
+      sequence: 1,
+      timestampMs: 11_000,
+      elapsedMs: 5,
+    },
   ]);
 
   assert.equal(elapsedMs, 10_000);
@@ -51,14 +58,26 @@ test("buildStepGaps computes gaps between adjacent complete steps", () => {
       id: "step-1",
       events: [
         { id: "start-1", type: "step-start", title: "step-start", sequence: 0, timestampMs: 1_000 },
-        { id: "finish-1", type: "step-finish", title: "tool-calls", sequence: 1, timestampMs: 2_000 },
+        {
+          id: "finish-1",
+          type: "step-finish",
+          title: "tool-calls",
+          sequence: 1,
+          timestampMs: 2_000,
+        },
       ],
     },
     {
       id: "step-2",
       events: [
         { id: "start-2", type: "step-start", title: "step-start", sequence: 2, timestampMs: 7_000 },
-        { id: "finish-2", type: "step-finish", title: "tool-calls", sequence: 3, timestampMs: 9_000 },
+        {
+          id: "finish-2",
+          type: "step-finish",
+          title: "tool-calls",
+          sequence: 3,
+          timestampMs: 9_000,
+        },
       ],
     },
   ];
@@ -77,13 +96,21 @@ test("buildStepGaps skips gaps when either adjacent step lacks complete timestam
   const steps: TraceStepGroupLike[] = [
     {
       id: "step-1",
-      events: [{ id: "start-1", type: "step-start", title: "step-start", sequence: 0, timestampMs: 1_000 }],
+      events: [
+        { id: "start-1", type: "step-start", title: "step-start", sequence: 0, timestampMs: 1_000 },
+      ],
     },
     {
       id: "step-2",
       events: [
         { id: "start-2", type: "step-start", title: "step-start", sequence: 1, timestampMs: 7_000 },
-        { id: "finish-2", type: "step-finish", title: "tool-calls", sequence: 2, timestampMs: 9_000 },
+        {
+          id: "finish-2",
+          type: "step-finish",
+          title: "tool-calls",
+          sequence: 2,
+          timestampMs: 9_000,
+        },
       ],
     },
   ];

@@ -4,7 +4,7 @@ import type { RemoteTaskRecord, RemoteTaskRegistry } from "../../api/remoteTaskR
 import {
   crossDeviceAdaptationRulePackId,
   getRegisteredRulePacks,
-} from "../../rules/engine/rulePackRegistry.js";
+} from "../../rules/registry/rulePackRegistry.js";
 import { statusCategory, readRiskReviewCalibrationDataset } from "./dashboardDataStore.js";
 import type {
   CrossDeviceBoundRulePack,
@@ -118,7 +118,9 @@ function readRisks(resultJson: Record<string, unknown> | undefined) {
     .filter((risk): risk is { level?: string; title?: string } => Boolean(risk));
 }
 
-function readOfficialLinterRunStatus(resultJson: Record<string, unknown> | undefined): string | undefined {
+function readOfficialLinterRunStatus(
+  resultJson: Record<string, unknown> | undefined,
+): string | undefined {
   return readString(asRecord(resultJson?.official_linter_summary), "runStatus");
 }
 
@@ -127,7 +129,9 @@ function readCrossDeviceRuleSetApplied(resultJson: Record<string, unknown> | und
   return Array.isArray(configuredRuleSets) && configuredRuleSets.includes(CROSS_DEVICE_RULE_SET);
 }
 
-function readBoundRulePacks(resultJson: Record<string, unknown> | undefined): CrossDeviceBoundRulePack[] {
+function readBoundRulePacks(
+  resultJson: Record<string, unknown> | undefined,
+): CrossDeviceBoundRulePack[] {
   const packs = resultJson?.bound_rule_packs;
   if (!Array.isArray(packs)) {
     return [];
@@ -141,7 +145,8 @@ function readBoundRulePacks(resultJson: Record<string, unknown> | undefined): Cr
       }
       return {
         packId,
-        displayName: readString(record, "display_name") ?? rulePackDisplayNameById.get(packId) ?? packId,
+        displayName:
+          readString(record, "display_name") ?? rulePackDisplayNameById.get(packId) ?? packId,
       };
     })
     .filter((item): item is CrossDeviceBoundRulePack => Boolean(item));
@@ -163,7 +168,8 @@ function readOfficialLinterResults(resultJson: Record<string, unknown> | undefin
           ruleResultId: readString(record, "rule_result_id"),
           sourceRuleSet: readString(record, "source_rule_set"),
           severity: readString(record, "severity"),
-          findingCount: typeof findingCount === "number" && Number.isFinite(findingCount) ? findingCount : 1,
+          findingCount:
+            typeof findingCount === "number" && Number.isFinite(findingCount) ? findingCount : 1,
           conclusion: readString(record, "conclusion"),
         };
       })
@@ -182,13 +188,16 @@ function readOfficialLinterResults(resultJson: Record<string, unknown> | undefin
         return undefined;
       }
       const findingCount = record.finding_count;
-      const findings = Array.isArray(record.findings) ? record.findings.map((finding) => asRecord(finding)) : [];
+      const findings = Array.isArray(record.findings)
+        ? record.findings.map((finding) => asRecord(finding))
+        : [];
       return {
         ruleId: ruleId.replace(/^OFFICIAL-LINTER:/, ""),
         ruleResultId: ruleId,
         sourceRuleSet: CROSS_DEVICE_RULE_SET,
         severity: readString(findings[0], "severity"),
-        findingCount: typeof findingCount === "number" && Number.isFinite(findingCount) ? findingCount : 1,
+        findingCount:
+          typeof findingCount === "number" && Number.isFinite(findingCount) ? findingCount : 1,
         conclusion: readString(record, "conclusion"),
       };
     })
@@ -196,7 +205,9 @@ function readOfficialLinterResults(resultJson: Record<string, unknown> | undefin
 }
 
 function isCrossDeviceOfficialRule(rule: { ruleId: string; sourceRuleSet?: string }): boolean {
-  return rule.sourceRuleSet === CROSS_DEVICE_RULE_SET || rule.ruleId.startsWith("@cross-device-app-dev/");
+  return (
+    rule.sourceRuleSet === CROSS_DEVICE_RULE_SET || rule.ruleId.startsWith("@cross-device-app-dev/")
+  );
 }
 
 function readRuleAuditResults(resultJson: Record<string, unknown> | undefined) {
@@ -231,7 +242,9 @@ function filterCrossDeviceRuleAuditResults(
   return ruleAuditResults.filter((rule) => rule.packId === crossDeviceAdaptationRulePackId);
 }
 
-function buildRuleAuditCounts(ruleAuditResults: CrossDeviceRuleAuditResult[]): CrossDeviceRuleAuditCounts {
+function buildRuleAuditCounts(
+  ruleAuditResults: CrossDeviceRuleAuditResult[],
+): CrossDeviceRuleAuditCounts {
   return {
     violated: ruleAuditResults.filter((rule) => rule.result === "不满足").length,
     review: ruleAuditResults.filter((rule) => rule.result === "待人工复核").length,
@@ -241,7 +254,9 @@ function buildRuleAuditCounts(ruleAuditResults: CrossDeviceRuleAuditResult[]): C
   };
 }
 
-function buildTopCrossDeviceRules(officialLinterResults: ReturnType<typeof readOfficialLinterResults>) {
+function buildTopCrossDeviceRules(
+  officialLinterResults: ReturnType<typeof readOfficialLinterResults>,
+) {
   return officialLinterResults
     .filter(isCrossDeviceOfficialRule)
     .map((result) => ({
@@ -263,7 +278,9 @@ function buildRiskLevelCounts(risks: Array<{ level?: string }>) {
   return Array.from(counts.entries()).map(([level, count]) => ({ level, count }));
 }
 
-async function readCrossDeviceTask(record: RemoteTaskRecord): Promise<CrossDeviceRelatedTask | undefined> {
+async function readCrossDeviceTask(
+  record: RemoteTaskRecord,
+): Promise<CrossDeviceRelatedTask | undefined> {
   if (!record.caseDir) {
     return undefined;
   }

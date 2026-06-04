@@ -33,7 +33,9 @@ function negativeResults(): NegativeResults {
       highRiskTaskCount: 0,
       violatedRuleCount: 0,
     },
-    failedTasks: [task(1, { status: "failed", statusCategory: "failed", error: "workflow failed" })],
+    failedTasks: [
+      task(1, { status: "failed", statusCategory: "failed", error: "workflow failed" }),
+    ],
     lowScoreTasks: [task(2, { score: 55 }), task(3, { score: 62 })],
     hardGateTasks: [task(4, { hardGateTriggered: true })],
     riskLevelCounts: [],

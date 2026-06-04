@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseOfficialCodeLinterOutput } from "../src/rules/officialCodeLinter/parser.js";
+import { parseOfficialCodeLinterOutput } from "../src/rules/official-linter/parse/parser.js";
 
 test("parseOfficialCodeLinterOutput parses ESLint-like JSON", () => {
   const parsed = parseOfficialCodeLinterOutput({
@@ -55,7 +55,6 @@ test("parseOfficialCodeLinterOutput parses Code Linter JSON after CLI banners", 
   assert.equal(parsed.findings[0]?.severity, "warn");
   assert.equal(parsed.findings[0]?.source_rule_set, "plugin:@hw-stylistic/recommended");
 });
-
 
 test("parseOfficialCodeLinterOutput parses common text output", () => {
   const parsed = parseOfficialCodeLinterOutput({

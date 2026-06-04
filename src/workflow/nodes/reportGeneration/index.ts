@@ -5,8 +5,8 @@ import {
   getEnabledRulePacks,
   listRegisteredRules,
   resolveEnabledRulePackIds,
-} from "../../../rules/engine/rulePackRegistry.js";
-import { officialCodeLinterRecommendedRuleSets } from "../../../rules/officialCodeLinter/recommendedRuleSets.js";
+} from "../../../rules/registry/rulePackRegistry.js";
+import { officialCodeLinterRecommendedRuleSets } from "../../../rules/official-linter/config/recommendedRuleSets.js";
 import type {
   ConfidenceLevel,
   HvigorBuildCheckSummary,
@@ -263,9 +263,7 @@ function roundScoreDelta(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function pickHighestSeverity(
-  findings: OfficialLinterFinding[],
-): OfficialLinterFinding["severity"] {
+function pickHighestSeverity(findings: OfficialLinterFinding[]): OfficialLinterFinding["severity"] {
   return findings.reduce<OfficialLinterFinding["severity"]>((highest, finding) => {
     return severityRank[finding.severity] > severityRank[highest] ? finding.severity : highest;
   }, "unknown");
@@ -385,12 +383,13 @@ function buildHvigorBuildCheckSummary(
 function buildOverallConclusion(state: ScoreGraphState): Record<string, unknown> {
   const overall = state.scoreComputation.overallConclusion as Record<string, unknown>;
   const totalScore =
-    typeof overall.total_score === "number" ? overall.total_score : state.scoreComputation.totalScore;
+    typeof overall.total_score === "number"
+      ? overall.total_score
+      : state.scoreComputation.totalScore;
   return {
     ...overall,
     total_score: totalScore,
-    pre_cap_score:
-      typeof overall.pre_cap_score === "number" ? overall.pre_cap_score : totalScore,
+    pre_cap_score: typeof overall.pre_cap_score === "number" ? overall.pre_cap_score : totalScore,
     hard_gate_triggered:
       typeof overall.hard_gate_triggered === "boolean"
         ? overall.hard_gate_triggered

@@ -308,10 +308,7 @@ function getRuleImpactSeverity(rule: RuleAuditResult): RuleImpactDetail["severit
   return "light";
 }
 
-function riskLevelFromRuleImpact(
-  rule: RuleAuditResult,
-  penaltyRules: MetricPenaltyRule[],
-): string {
+function riskLevelFromRuleImpact(rule: RuleAuditResult, penaltyRules: MetricPenaltyRule[]): string {
   const severities = penaltyRules.map((penalty) => penalty.severity ?? getRuleImpactSeverity(rule));
   if (severities.some((severity) => severity === "heavy")) {
     return "high";

@@ -55,7 +55,9 @@ async function invokeExpressGet(
         return res;
       },
       send(value: unknown) {
-        chunks.push(Buffer.from(typeof value === "string" ? value : JSON.stringify(value), "utf-8"));
+        chunks.push(
+          Buffer.from(typeof value === "string" ? value : JSON.stringify(value), "utf-8"),
+        );
         resolve({ statusCode: res.statusCode, body: Buffer.concat(chunks).toString("utf-8") });
         return res;
       },
@@ -121,13 +123,13 @@ test("dashboard agent trace returns summary first and raw payloads on demand", a
             status: "success",
             prompt: "attempt prompt should not be in summary",
             assistantText: "attempt assistant raw",
-            outputFileText: "{\"attempt\":true}",
+            outputFileText: '{"attempt":true}',
             warnings: [],
           },
         ],
         prompt: "full prompt should not be in summary",
         assistantText: "assistant raw",
-        outputFileText: "{\"ok\":true}",
+        outputFileText: '{"ok":true}',
         opencodeMessages: [{ info: { id: "msg-1" }, parts: [] }],
         events: [
           {

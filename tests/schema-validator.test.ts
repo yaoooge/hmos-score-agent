@@ -245,7 +245,8 @@ test("validateReportResult accepts v2 hard gates and rule risks with evidence", 
       item: "硬门槛复核",
       current_assessment: "G1",
       uncertainty_reason: "G1 高密度静态错误：must_rule 不满足数量为 3，达到触发阈值 2。",
-      suggested_focus: "请确认 G1（高密度静态错误，总分上限 69）是否应因 must_rule 不满足数量达到阈值而保留。",
+      suggested_focus:
+        "请确认 G1（高密度静态错误，总分上限 69）是否应因 must_rule 不满足数量达到阈值而保留。",
       score_effect: {
         type: "hard_gate",
         gate_ids: ["G1"],

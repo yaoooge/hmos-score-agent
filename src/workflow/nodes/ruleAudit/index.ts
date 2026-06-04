@@ -1,5 +1,5 @@
-import { runRuleEngine } from "../../../rules/ruleEngine.js";
-import { resolveEnabledRulePackIds } from "../../../rules/engine/rulePackRegistry.js";
+import { runRuleEngine } from "../../../rules/core/ruleEngine.js";
+import { resolveEnabledRulePackIds } from "../../../rules/registry/rulePackRegistry.js";
 import { emitNodeFailed, emitNodeStarted } from "../../observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../../graph/state.js";
 

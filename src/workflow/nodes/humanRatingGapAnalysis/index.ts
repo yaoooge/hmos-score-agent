@@ -1,5 +1,8 @@
 import type { OpencodeRunRequest, OpencodeRunResult } from "../../../agents/opencode/cliRunner.js";
-import { createOpencodeRuntimeConfig, type OpencodeRuntimeConfig } from "../../../agents/opencode/config.js";
+import {
+  createOpencodeRuntimeConfig,
+  type OpencodeRuntimeConfig,
+} from "../../../agents/opencode/config.js";
 import { createManagedOpencodeRunner } from "../../../agents/opencode/managedRunner.js";
 import {
   createOpencodeServeManager,
@@ -7,7 +10,10 @@ import {
   type OpencodeServeManager,
 } from "../../../agents/opencode/serveManager.js";
 import { runOpencodeHumanRatingGapAnalysis } from "../../../agents/runners/opencodeHumanRatingGapAnalysis.js";
-import type { HumanRatingGapAnalysis, HumanRatingRecord } from "../../../datasets/humanRating/humanRatingTypes.js";
+import type {
+  HumanRatingGapAnalysis,
+  HumanRatingRecord,
+} from "../../../datasets/humanRating/humanRatingTypes.js";
 
 export type HumanRatingGapAnalysisNodeInput = {
   caseDir: string;
@@ -26,9 +32,7 @@ export type HumanRatingGapAnalysisNodeDeps = {
   };
 };
 
-async function createRuntimeDeps(
-  deps: HumanRatingGapAnalysisNodeDeps,
-): Promise<{
+async function createRuntimeDeps(deps: HumanRatingGapAnalysisNodeDeps): Promise<{
   runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
   cleanup(): Promise<void>;
 }> {
@@ -39,7 +43,8 @@ async function createRuntimeDeps(
     };
   }
 
-  const runtime = deps.opencodeRuntime ?? (await createOpencodeRuntimeConfig({ repoRoot: process.cwd() }));
+  const runtime =
+    deps.opencodeRuntime ?? (await createOpencodeRuntimeConfig({ repoRoot: process.cwd() }));
   const serveManager = deps.opencodeServeManager ?? createOpencodeServeManager(runtime);
   await ensureOpencodeCliAvailable();
   await serveManager.start();

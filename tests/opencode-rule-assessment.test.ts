@@ -308,7 +308,7 @@ test("runOpencodeRuleAssessment omits expected constraints from original prompt 
           "  - id: RSP-MUST-01",
           "    name: 横向断点划分范围必须符合系统推荐值",
           "    kit:",
-          "      - \"ArkUI: GridRow / WidthBreakpoint\"",
+          '      - "ArkUI: GridRow / WidthBreakpoint"',
         ].join("\n"),
       },
     },
@@ -336,7 +336,12 @@ test("runOpencodeRuleAssessment omits expected constraints from original prompt 
 });
 
 test("runOpencodeRuleAssessment retries once in the first session while preserving retry attempt logs", async () => {
-  const calls: Array<{ requestTag: string; title?: string; prompt: string; continueSessionId?: string }> = [];
+  const calls: Array<{
+    requestTag: string;
+    title?: string;
+    prompt: string;
+    continueSessionId?: string;
+  }> = [];
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
     bootstrapPayload: payload(),
@@ -350,7 +355,8 @@ test("runOpencodeRuleAssessment retries once in the first session while preservi
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
-        rawText: calls.length === 1 ? "规则判定完成，但这里不是 JSON。" : JSON.stringify(finalAnswer()),
+        rawText:
+          calls.length === 1 ? "规则判定完成，但这里不是 JSON。" : JSON.stringify(finalAnswer()),
         elapsedMs: 1,
         sessionId: "ses_rule_first",
       };
@@ -359,8 +365,14 @@ test("runOpencodeRuleAssessment retries once in the first session while preservi
 
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
-  assert.equal(calls[0]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a");
-  assert.equal(calls[1]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
+  assert.equal(
+    calls[0]?.requestTag,
+    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a",
+  );
+  assert.equal(
+    calls[1]?.requestTag,
+    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  );
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.equal(calls[0]?.continueSessionId, undefined);
   assert.equal(calls[1]?.continueSessionId, "ses_rule_first");
@@ -421,7 +433,10 @@ test("runOpencodeRuleAssessment retries with full assessment context after reque
 
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
-  assert.equal(calls[1]?.requestTag, "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
+  assert.equal(
+    calls[1]?.requestTag,
+    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  );
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试，但上一轮没有可复用的有效输出/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rule-assessment skill/);
@@ -456,10 +471,13 @@ test("runOpencodeRuleAssessment retries with full assessment context after initi
   });
 
   assert.equal(result.outcome, "success");
-  assert.deepEqual(calls.map((call) => call.requestTag), [
-    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a",
-    "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
-  ]);
+  assert.deepEqual(
+    calls.map((call) => call.requestTag),
+    [
+      "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a",
+      "rule-assessment-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+    ],
+  );
   assert.match(calls[1]?.prompt ?? "", /规则判定 agent。本次是重试，但上一轮没有可复用的有效输出/);
   assert.match(calls[1]?.prompt ?? "", /opencode 调用超时/);
   assert.match(calls[1]?.prompt ?? "", /必须重新阅读 bootstrap_payload 和 patch/);
@@ -518,7 +536,8 @@ test("runOpencodeRuleAssessment fails when both retries also time out", async ()
 });
 
 test("runOpencodeRuleAssessment retries missing rules by repairing the first output file", async () => {
-  const calls: Array<{ requestTag: string; prompt: string; preserveOutputFileOnStart?: boolean }> = [];
+  const calls: Array<{ requestTag: string; prompt: string; preserveOutputFileOnStart?: boolean }> =
+    [];
   const result = await runOpencodeRuleAssessment({
     sandboxRoot: "/sandbox/case",
     bootstrapPayload: payloadWithTwoRules(),
@@ -629,7 +648,10 @@ test("runOpencodeRuleAssessment ignores extra fields and coerces review boolean 
 
   assert.equal(result.outcome, "success");
   assert.equal(result.final_answer?.rule_assessments[0]?.needs_human_review, false);
-  assert.equal("extra_top_level" in (result.final_answer as unknown as Record<string, unknown>), false);
+  assert.equal(
+    "extra_top_level" in (result.final_answer as unknown as Record<string, unknown>),
+    false,
+  );
   assert.equal(
     "extra_assessment_note" in
       (result.final_answer?.rule_assessments[0] as unknown as Record<string, unknown>),
@@ -662,7 +684,10 @@ test("runOpencodeRuleAssessment rejects replacement reason fields without requir
   });
 
   assert.equal(result.outcome, "protocol_error");
-  assert.match(result.failure_reason ?? "", /rule_assessments\.0\.reason|rule_assessments\[0\]\.reason/);
+  assert.match(
+    result.failure_reason ?? "",
+    /rule_assessments\.0\.reason|rule_assessments\[0\]\.reason/,
+  );
 });
 
 test("runOpencodeRuleAssessment retry prompt targets concrete protocol failures", async () => {

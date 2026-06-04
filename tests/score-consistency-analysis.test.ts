@@ -111,21 +111,20 @@ test("validateRemoteTaskJson reports missing required fields", () => {
 });
 
 test("generateSubmittedTaskIds derives ten increasing safe ids", () => {
-  assert.deepEqual(generateSubmittedTaskIds(1306, 1), [
-    130600101, 130600102, 130600103, 130600104, 130600105, 130600106, 130600107,
-    130600108, 130600109, 130600110,
-  ]);
+  assert.deepEqual(
+    generateSubmittedTaskIds(1306, 1),
+    [
+      130600101, 130600102, 130600103, 130600104, 130600105, 130600106, 130600107, 130600108,
+      130600109, 130600110,
+    ],
+  );
 });
 
 test("generateNextSubmittedTaskIds derives the next unused block across rounds", () => {
   const firstRoundRuns = generateSubmittedTaskIds(1263, 2).map((taskId, index) =>
     completedRun(index, { taskId }),
   );
-  const history = appendAnalysisHistorySnapshot(
-    [],
-    firstRoundRuns,
-    "2026-05-20T01:00:00.000Z",
-  );
+  const history = appendAnalysisHistorySnapshot([], firstRoundRuns, "2026-05-20T01:00:00.000Z");
 
   assert.deepEqual(
     generateNextSubmittedTaskIds({
@@ -141,8 +140,8 @@ test("generateNextSubmittedTaskIds derives the next unused block across rounds",
       analysisHistory: history,
     }),
     [
-      126300211, 126300212, 126300213, 126300214, 126300215, 126300216, 126300217,
-      126300218, 126300219, 126300220,
+      126300211, 126300212, 126300213, 126300214, 126300215, 126300216, 126300217, 126300218,
+      126300219, 126300220,
     ],
   );
 });
@@ -195,9 +194,10 @@ test("extractConsistencyRunSummary reads score, unsatisfied rules, and risks", (
       conclusion: "未看到 cloudResPrefetch",
     },
   ]);
-  assert.deepEqual(summary.risks.map((risk) => risk.key), [
-    "high|预加载失败后缺少兜底逻辑",
-  ]);
+  assert.deepEqual(
+    summary.risks.map((risk) => risk.key),
+    ["high|预加载失败后缺少兜底逻辑"],
+  );
 });
 
 test("extractConsistencyRunSummary prefers risk_code over generated identity text", () => {
@@ -439,7 +439,10 @@ test("appendAnalysisHistorySnapshot appends one terminal round and avoids duplic
   assert.equal(first[0]?.round, 1);
   assert.equal(first[0]?.capturedAt, "2026-05-20T01:00:00.000Z");
   assert.equal(first[0]?.summary.averageScore, 84);
-  assert.deepEqual(first[0]?.runs.map((run) => run.taskId), [130600101, 130600102]);
+  assert.deepEqual(
+    first[0]?.runs.map((run) => run.taskId),
+    [130600101, 130600102],
+  );
   assert.equal(duplicated.length, 1);
   assert.equal(second.length, 2);
   assert.equal(second[1]?.round, 2);
@@ -470,7 +473,11 @@ test("selectConsistencyTaskRoundSnapshot returns a historical round view", () =>
   const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
   const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
   const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
-  const history = appendAnalysisHistorySnapshot(firstHistory, secondRuns, "2026-05-20T02:00:00.000Z");
+  const history = appendAnalysisHistorySnapshot(
+    firstHistory,
+    secondRuns,
+    "2026-05-20T02:00:00.000Z",
+  );
 
   const selected = selectConsistencyTaskRoundSnapshot(
     {
@@ -492,14 +499,21 @@ test("selectConsistencyTaskRoundSnapshot returns a historical round view", () =>
   );
 
   assert.equal(selected.analysis?.averageScore, 84);
-  assert.deepEqual(selected.runs.map((run) => run.taskId), [130600101, 130600102]);
+  assert.deepEqual(
+    selected.runs.map((run) => run.taskId),
+    [130600101, 130600102],
+  );
 });
 
 test("removeConsistencyAnalysisHistoryRound removes the latest current round and rolls back current data", () => {
   const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
   const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
   const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
-  const history = appendAnalysisHistorySnapshot(firstHistory, secondRuns, "2026-05-20T02:00:00.000Z");
+  const history = appendAnalysisHistorySnapshot(
+    firstHistory,
+    secondRuns,
+    "2026-05-20T02:00:00.000Z",
+  );
 
   const removed = removeConsistencyAnalysisHistoryRound(
     {
@@ -523,14 +537,27 @@ test("removeConsistencyAnalysisHistoryRound removes the latest current round and
   assert.equal(removed.analysisHistory?.length, 1);
   assert.equal(removed.analysisHistory?.[0]?.round, 1);
   assert.equal(removed.analysis?.averageScore, 84);
-  assert.deepEqual(removed.runs.map((run) => run.totalScore), [82, 86]);
+  assert.deepEqual(
+    removed.runs.map((run) => run.totalScore),
+    [82, 86],
+  );
 });
 
 test("collectExclusiveRoundTaskIds includes ids orphaned after current round rollback", () => {
-  const firstRuns = [completedRun(0, { taskId: 130600101 }), completedRun(1, { taskId: 130600102 })];
-  const sharedRuns = [completedRun(0, { taskId: 130600201 }), completedRun(1, { taskId: 130600202 })];
+  const firstRuns = [
+    completedRun(0, { taskId: 130600101 }),
+    completedRun(1, { taskId: 130600102 }),
+  ];
+  const sharedRuns = [
+    completedRun(0, { taskId: 130600201 }),
+    completedRun(1, { taskId: 130600202 }),
+  ];
   const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
-  const history = appendAnalysisHistorySnapshot(firstHistory, sharedRuns, "2026-05-20T02:00:00.000Z");
+  const history = appendAnalysisHistorySnapshot(
+    firstHistory,
+    sharedRuns,
+    "2026-05-20T02:00:00.000Z",
+  );
 
   const exclusiveIds = collectExclusiveRoundTaskIds(
     {
@@ -597,7 +624,11 @@ test("removeConsistencyAnalysisHistoryRound removes an earlier history round wit
   const firstRuns = [completedRun(0), completedRun(1, { totalScore: 86 })];
   const firstHistory = appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z");
   const secondRuns = [completedRun(0, { totalScore: 70 }), completedRun(1, { totalScore: 74 })];
-  const history = appendAnalysisHistorySnapshot(firstHistory, secondRuns, "2026-05-20T02:00:00.000Z");
+  const history = appendAnalysisHistorySnapshot(
+    firstHistory,
+    secondRuns,
+    "2026-05-20T02:00:00.000Z",
+  );
 
   const removed = removeConsistencyAnalysisHistoryRound(
     {
@@ -621,7 +652,10 @@ test("removeConsistencyAnalysisHistoryRound removes an earlier history round wit
   assert.equal(removed.analysisHistory?.length, 1);
   assert.equal(removed.analysisHistory?.[0]?.round, 1);
   assert.equal(removed.analysis?.averageScore, 72);
-  assert.deepEqual(removed.runs.map((run) => run.totalScore), [70, 74]);
+  assert.deepEqual(
+    removed.runs.map((run) => run.totalScore),
+    [70, 74],
+  );
 });
 
 test("appendAnalysisHistorySnapshot skips non-terminal runs", () => {
@@ -706,18 +740,24 @@ test("buildConsistencyExportFiles splits overview and round result files", () =>
     summary?: { averageScore?: number };
   };
 
-  assert.deepEqual([...files.keys()], [
-    "overview.json",
-    "rounds/round-001/summary.json",
-    "rounds/round-001/run-01-task-130600101.json",
-    "rounds/round-001/run-02-task-130600102.json",
-  ]);
+  assert.deepEqual(
+    [...files.keys()],
+    [
+      "overview.json",
+      "rounds/round-001/summary.json",
+      "rounds/round-001/run-01-task-130600101.json",
+      "rounds/round-001/run-02-task-130600102.json",
+    ],
+  );
   assert.equal(overview.task?.id, "C-001");
   assert.equal(overview.runs?.length, 2);
   assert.equal(overview.analysisHistory?.length, 1);
   assert.equal(firstRound.summary?.averageScore, 84);
   assert.match(files.get("rounds/round-001/run-01-task-130600101.json") ?? "", /total_score/);
-  assert.match(files.get("rounds/round-001/run-02-task-130600102.json") ?? "", /result unavailable/);
+  assert.match(
+    files.get("rounds/round-001/run-02-task-130600102.json") ?? "",
+    /result unavailable/,
+  );
 });
 
 test("createStoredZip writes a zip archive containing provided files", () => {
@@ -963,11 +1003,7 @@ test("buildConsistencyTaskPersistDelta replaces current runs when rerun changes 
     status: "completed",
     sourceTask: JSON.parse(remoteTaskJson),
     runs: previousRuns,
-    analysisHistory: appendAnalysisHistorySnapshot(
-      [],
-      previousRuns,
-      "2026-05-19T11:30:45.183Z",
-    ),
+    analysisHistory: appendAnalysisHistorySnapshot([], previousRuns, "2026-05-19T11:30:45.183Z"),
   };
   const next = {
     ...previous,

@@ -189,8 +189,14 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
 
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
-  assert.equal(calls[0]?.requestTag, "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a");
-  assert.equal(calls[1]?.requestTag, "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
+  assert.equal(
+    calls[0]?.requestTag,
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a",
+  );
+  assert.equal(
+    calls[1]?.requestTag,
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  );
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /上一次任务理解输出无效/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-understanding skill/);
@@ -308,7 +314,10 @@ test("runOpencodeTaskUnderstanding retries once with strict output format after 
 
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
-  assert.equal(calls[1]?.requestTag, "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
+  assert.equal(
+    calls[1]?.requestTag,
+    "task-understanding-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  );
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /上一次任务理解输出无效/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-understanding skill/);

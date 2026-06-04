@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  HumanReviewDatasetSample,
-  HumanReviewDatasetType,
-} from "./humanReviewTypes.js";
+import type { HumanReviewDatasetSample, HumanReviewDatasetType } from "./humanReviewTypes.js";
 
 export type HumanReviewEvidenceStore = {
-  appendDatasetSample(datasetType: HumanReviewDatasetType, sample: HumanReviewDatasetSample): Promise<string>;
+  appendDatasetSample(
+    datasetType: HumanReviewDatasetType,
+    sample: HumanReviewDatasetSample,
+  ): Promise<string>;
   upsertDatasetSample(
     datasetType: HumanReviewDatasetType,
     sample: HumanReviewDatasetSample,

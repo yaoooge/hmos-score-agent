@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildArkuiStaticScanIndex } from "../src/rules/evaluators/arkuiStaticScanner.js";
+import { buildArkuiStaticScanIndex } from "../src/rules/evaluators/arkui/staticScanner.js";
 
 test("indexes ArkUI component calls and chained property calls from ets files", () => {
   const index = buildArkuiStaticScanIndex([
@@ -36,7 +36,10 @@ test("indexes ArkUI component calls and chained property calls from ets files", 
       usesBreakpoint: true,
     },
   ]);
-  assert.equal(index.componentInstances.find((item) => item.component === "GridRow")?.argumentText, "{ columns: this.columns }");
+  assert.equal(
+    index.componentInstances.find((item) => item.component === "GridRow")?.argumentText,
+    "{ columns: this.columns }",
+  );
 });
 
 test("keeps one scan index for multiple components and ignores comments or strings", () => {

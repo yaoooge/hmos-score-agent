@@ -10,7 +10,9 @@ export interface RiskTaxonomyPrimaryItem {
   item: string;
 }
 
-export type RiskTaxonomyPrimaryItemsByTask = Partial<Record<TaskType | "all", RiskTaxonomyPrimaryItem>>;
+export type RiskTaxonomyPrimaryItemsByTask = Partial<
+  Record<TaskType | "all", RiskTaxonomyPrimaryItem>
+>;
 
 export interface RiskTaxonomyEntry {
   code: string;
@@ -55,7 +57,8 @@ export function loadRiskTaxonomy(filePath: string): RiskTaxonomy {
   const root = expectRecord(parsed, filePath);
   assertSupportedKeys(root, ROOT_KEYS, filePath);
 
-  const hasSplitTaxonomy = root.score_taxonomy !== undefined || root.review_only_taxonomy !== undefined;
+  const hasSplitTaxonomy =
+    root.score_taxonomy !== undefined || root.review_only_taxonomy !== undefined;
   const version = typeof root.version === "string" ? root.version : "v1";
 
   if (hasSplitTaxonomy) {
@@ -74,7 +77,9 @@ export function loadRiskTaxonomy(filePath: string): RiskTaxonomy {
   }
 
   const legacyEntries = parseEntryArray(root.entries, `${filePath}.entries`, false);
-  const reviewOnlyEntries = legacyEntries.filter((entry) => entry.code === "EVALUATION_METADATA_RISK");
+  const reviewOnlyEntries = legacyEntries.filter(
+    (entry) => entry.code === "EVALUATION_METADATA_RISK",
+  );
   const scoreEntries = legacyEntries.filter((entry) => entry.code !== "EVALUATION_METADATA_RISK");
   return {
     version,
@@ -166,7 +171,9 @@ function parseRiskTaxonomyEntry(
       title,
       description,
       matchHints:
-        matchHintsSource === undefined ? [] : expectStringArray(matchHintsSource, `${location}.matchHints`),
+        matchHintsSource === undefined
+          ? []
+          : expectStringArray(matchHintsSource, `${location}.matchHints`),
       primaryItem: primaryItem ?? primaryItemsByTask?.all ?? firstPrimaryItem(primaryItemsByTask),
       primaryItemsByTask,
     },

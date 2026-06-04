@@ -166,7 +166,9 @@ const profilesByOfficialRuleId = new Map(
   officialLinterRuleProfiles.map((item) => [`OFFICIAL-LINTER:${item.ruleId}`, item]),
 );
 
-export function findOfficialLinterRuleProfile(ruleId: string): OfficialLinterRuleProfile | undefined {
+export function findOfficialLinterRuleProfile(
+  ruleId: string,
+): OfficialLinterRuleProfile | undefined {
   return profilesByOfficialRuleId.get(ruleId);
 }
 

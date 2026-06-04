@@ -92,17 +92,18 @@ test("opencode runner pool leases three isolated runners and waits for release",
     ],
   );
 
-  await Promise.all(leases.map((lease, index) => lease.runner.runPrompt(request(`task-${String(index)}`))));
+  await Promise.all(
+    leases.map((lease, index) => lease.runner.runPrompt(request(`task-${String(index)}`))),
+  );
   assert.deepEqual(runServerUrls.sort(), [
     "http://127.0.0.1:4096",
     "http://127.0.0.1:4097",
     "http://127.0.0.1:4098",
   ]);
-  assert.deepEqual([...new Set(startedPorts)].sort((left, right) => left - right), [
-    4096,
-    4097,
-    4098,
-  ]);
+  assert.deepEqual(
+    [...new Set(startedPorts)].sort((left, right) => left - right),
+    [4096, 4097, 4098],
+  );
 
   leases[1]?.release();
   const fourth = await fourthLease;
@@ -115,7 +116,10 @@ test("opencode runner pool leases three isolated runners and waits for release",
   fourth.release();
   await pool.stopAll();
 
-  assert.deepEqual(stoppedPorts.sort((left, right) => left - right), [4096, 4097, 4098]);
+  assert.deepEqual(
+    stoppedPorts.sort((left, right) => left - right),
+    [4096, 4097, 4098],
+  );
 });
 
 test("opencode runner pool cleans up partially started slots when initialization fails", async () => {
@@ -150,7 +154,10 @@ test("opencode runner pool cleans up partially started slots when initialization
   shouldFailSecondSlot = false;
   const leases = await Promise.all([pool.acquire(), pool.acquire(), pool.acquire()]);
 
-  assert.deepEqual(leases.map((lease) => lease.slotId), [0, 1, 2]);
+  assert.deepEqual(
+    leases.map((lease) => lease.slotId),
+    [0, 1, 2],
+  );
   assert.deepEqual(startedPorts, [4096, 4096, 4097, 4098]);
 
   leases.forEach((lease) => lease.release());

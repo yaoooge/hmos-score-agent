@@ -2,13 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getConfig } from "../../../config.js";
 import { findOfficialLinterRuleProfile } from "../../../scoring/officialLinterRuleProfiles.js";
-import { resolveOfficialCodeLinterRecommendedRuleSets } from "../../../rules/officialCodeLinter/recommendedRuleSets.js";
-import { parseOfficialCodeLinterOutput } from "../../../rules/officialCodeLinter/parser.js";
-import { mapOfficialCodeLinterFindings } from "../../../rules/officialCodeLinter/resultMapper.js";
-import { runOfficialCodeLinter } from "../../../rules/officialCodeLinter/runner.js";
-import { sanitizeOfficialCodeLinterOutput } from "../../../rules/officialCodeLinter/sanitizer.js";
-import { prepareOfficialCodeLinterWorkspace } from "../../../rules/officialCodeLinter/workspacePreparer.js";
-import { runHvigorBuildCheck } from "../../../rules/officialCodeLinter/hvigorBuildCheck.js";
+import { resolveOfficialCodeLinterRecommendedRuleSets } from "../../../rules/official-linter/config/recommendedRuleSets.js";
+import { parseOfficialCodeLinterOutput } from "../../../rules/official-linter/parse/parser.js";
+import { mapOfficialCodeLinterFindings } from "../../../rules/official-linter/map/resultMapper.js";
+import { runOfficialCodeLinter } from "../../../rules/official-linter/run/runner.js";
+import { sanitizeOfficialCodeLinterOutput } from "../../../rules/official-linter/parse/sanitizer.js";
+import { prepareOfficialCodeLinterWorkspace } from "../../../rules/official-linter/run/workspacePreparer.js";
+import { runHvigorBuildCheck } from "../../../rules/official-linter/hvigor/buildCheck.js";
 import type {
   HvigorBuildCheckStatus,
   HvigorBuildCheckSummary,
@@ -48,7 +48,11 @@ async function writeSummaryArtifacts(input: {
   stderr: string;
   exitCode?: number;
 }) {
-  await writeLinterArtifact(input.caseDir, "summary.json", `${JSON.stringify(input.summary, null, 2)}\n`);
+  await writeLinterArtifact(
+    input.caseDir,
+    "summary.json",
+    `${JSON.stringify(input.summary, null, 2)}\n`,
+  );
   await writeLinterArtifact(
     input.caseDir,
     "findings.effective.json",
@@ -60,7 +64,11 @@ async function writeSummaryArtifacts(input: {
 }
 
 async function writeHvigorSummaryArtifact(caseDir: string, summary: HvigorBuildCheckSummary) {
-  await writeLinterArtifact(caseDir, "hvigor-summary.json", `${JSON.stringify(summary, null, 2)}\n`);
+  await writeLinterArtifact(
+    caseDir,
+    "hvigor-summary.json",
+    `${JSON.stringify(summary, null, 2)}\n`,
+  );
 }
 
 function makeSummary(input: {
@@ -86,7 +94,9 @@ function appendDiagnostics(...messages: Array<string | undefined>): string | und
   return diagnostics.length > 0 ? diagnostics.join("; ") : undefined;
 }
 
-function summarizeMissingOfficialRuleProfiles(ruleResults: Array<{ rule_id: string }>): string | undefined {
+function summarizeMissingOfficialRuleProfiles(
+  ruleResults: Array<{ rule_id: string }>,
+): string | undefined {
   const missingCrossDeviceRuleIds = ruleResults
     .map((rule) => rule.rule_id)
     .filter((ruleId) => ruleId.startsWith("OFFICIAL-LINTER:@cross-device-app-dev/"))
@@ -185,7 +195,8 @@ export async function officialCodeLinterNode(
     const config = getConfig();
     const enabled = deps.enabled ?? config.officialCodeLinterEnabled;
     const hvigorEnabled =
-      deps.hvigorEnabled ?? (deps.enabled === undefined ? config.hvigorBuildCheckEnabled : deps.enabled);
+      deps.hvigorEnabled ??
+      (deps.enabled === undefined ? config.hvigorBuildCheckEnabled : deps.enabled);
     const runDir = deps.runDir ?? config.officialCodeLinterRunDir;
     const hvigorRunDir =
       deps.hvigorRunDir ??

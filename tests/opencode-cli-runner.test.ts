@@ -7,7 +7,10 @@ import test from "node:test";
 import type { OpencodeRuntimeConfig } from "../src/agents/opencode/config.js";
 import { OpencodeRunError, runOpencodePrompt } from "../src/agents/opencode/cliRunner.js";
 
-function runtimeConfig(runtimeDir: string, overrides: Partial<OpencodeRuntimeConfig> = {}): OpencodeRuntimeConfig {
+function runtimeConfig(
+  runtimeDir: string,
+  overrides: Partial<OpencodeRuntimeConfig> = {},
+): OpencodeRuntimeConfig {
   return {
     host: "127.0.0.1",
     port: 4096,
@@ -60,7 +63,10 @@ test("runOpencodePrompt invokes attached opencode run with the requested custom 
       spawnProcess: (command, args, options) => {
         spawned.push({ command, args, env: options.env });
         queueMicrotask(() => {
-          child.stdout.emit("data", Buffer.from('{"type":"text","part":{"type":"text","text":"{\\"ok\\":true}"}}\n'));
+          child.stdout.emit(
+            "data",
+            Buffer.from('{"type":"text","part":{"type":"text","text":"{\\"ok\\":true}"}}\n'),
+          );
           child.emit("exit", 0);
         });
         return child;
@@ -367,7 +373,10 @@ test("runOpencodePrompt removes stale output file before invoking opencode", asy
         deps: {
           spawnProcess: () => {
             queueMicrotask(() => {
-              child.stdout.emit("data", Buffer.from('{"type":"text","part":{"type":"text","text":"done"}}\n'));
+              child.stdout.emit(
+                "data",
+                Buffer.from('{"type":"text","part":{"type":"text","text":"done"}}\n'),
+              );
               child.emit("exit", 0);
             });
             return child;
@@ -403,7 +412,10 @@ test("runOpencodePrompt can preserve existing output file for retry repair", asy
     deps: {
       spawnProcess: () => {
         queueMicrotask(() => {
-          child.stdout.emit("data", Buffer.from('{"type":"text","part":{"type":"text","text":"done"}}\n'));
+          child.stdout.emit(
+            "data",
+            Buffer.from('{"type":"text","part":{"type":"text","text":"done"}}\n'),
+          );
           child.emit("exit", 0);
         });
         return child;
@@ -498,7 +510,10 @@ test("runOpencodePrompt falls back to the output file when assistant text is mis
         queueMicrotask(async () => {
           await fs.mkdir(path.dirname(outputPath), { recursive: true });
           await fs.writeFile(outputPath, '{"ok":true}\n', "utf-8");
-          child.stdout.emit("data", Buffer.from('{"type":"step_finish","part":{"type":"step-finish"}}\n'));
+          child.stdout.emit(
+            "data",
+            Buffer.from('{"type":"step_finish","part":{"type":"step-finish"}}\n'),
+          );
           child.emit("exit", 0);
         });
         return child;

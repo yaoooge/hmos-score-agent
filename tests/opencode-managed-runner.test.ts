@@ -104,10 +104,10 @@ test("managed opencode runner allows concurrent prompts on the same serve sessio
     runner.runPrompt(request("rule-assessment")),
   ]);
 
-  assert.deepEqual(
-    outputs.map((output) => output.requestTag).sort(),
-    ["rubric-scoring", "rule-assessment"],
-  );
+  assert.deepEqual(outputs.map((output) => output.requestTag).sort(), [
+    "rubric-scoring",
+    "rule-assessment",
+  ]);
   assert.equal(maxActiveRuns, 2);
 });
 

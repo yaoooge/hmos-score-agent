@@ -87,9 +87,15 @@ test("official linter rule profiles cover every v1 recommended rule explicitly",
 
 test("official linter rule profiles define concrete score impact for every rule", () => {
   for (const profile of officialLinterRuleProfiles) {
-    assert.ok(profile.metricNames.length > 0, `${profile.ruleId} should target at least one metric`);
+    assert.ok(
+      profile.metricNames.length > 0,
+      `${profile.ruleId} should target at least one metric`,
+    );
     assert.ok(profile.ratio > 0, `${profile.ruleId} should have a positive ratio`);
-    assert.match(profile.ruleId, /^@(?:typescript-eslint|security|performance|hw-stylistic|cross-device-app-dev)\//);
+    assert.match(
+      profile.ruleId,
+      /^@(?:typescript-eslint|security|performance|hw-stylistic|cross-device-app-dev)\//,
+    );
   }
 });
 

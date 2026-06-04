@@ -235,7 +235,10 @@ async function createFixture(t: test.TestContext) {
 async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFixture>>) {
   const crossDeviceCaseDir = path.join(fixture.localCaseRoot, "case-cross-device");
   const notInvolvedCaseDir = path.join(fixture.localCaseRoot, "case-not-involved");
-  const missingSummaryCaseDir = path.join(fixture.localCaseRoot, "case-missing-cross-device-summary");
+  const missingSummaryCaseDir = path.join(
+    fixture.localCaseRoot,
+    "case-missing-cross-device-summary",
+  );
 
   await writeJson(path.join(crossDeviceCaseDir, "intermediate", "constraint-summary.json"), {
     explicitConstraints: ["目标: 手机和平板一多适配"],
@@ -1109,7 +1112,10 @@ test("dashboard cross-device rule violations only show cross-device built-in pac
   const allItems = withOtherRules.items as Array<Record<string, unknown>>;
   assert.ok(allItems.some((item) => item.ruleId === "ARKTS-MUST-001"));
   assert.ok(allItems.some((item) => item.ruleId === "OM-BREAKPOINT-MUST-01"));
-  assert.equal(allItems.some((item) => item.ruleId === "@cross-device-app-dev/size-unit"), false);
+  assert.equal(
+    allItems.some((item) => item.ruleId === "@cross-device-app-dev/size-unit"),
+    false,
+  );
   assert.equal(
     allItems.some((item) => item.ruleId === "OFFICIAL-LINTER:@cross-device-app-dev/font-size"),
     false,

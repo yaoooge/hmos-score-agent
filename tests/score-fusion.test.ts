@@ -68,7 +68,9 @@ test("fuseRubricScoreWithRules uses rubric agent scores as the base", async () =
 test("fuseRubricScoreWithRules assigns stable risk codes to rule violations", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
 
   const result = fuseRubricScoreWithRules({
     taskType: "full_generation",
@@ -121,7 +123,9 @@ test("fuseRubricScoreWithRules assigns stable risk codes to rule violations", as
 test("fuseRubricScoreWithRules normalizes rubric risks using taxonomy entries", async () => {
   const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
 
   const result = fuseRubricScoreWithRules({
     taskType: "bug_fix",
@@ -312,7 +316,7 @@ test("fuseRubricScoreWithRules creates hard gate review item for triggered G1", 
   assert.equal(result.hardGateTriggered, true);
   assert.match(result.hardGateReason ?? "", /G1/);
   const hardGateReview = result.humanReviewItems.find((item) => item.item === "硬门槛复核") as
-    | (typeof result.humanReviewItems[number] & { score_effect?: Record<string, unknown> })
+    | ((typeof result.humanReviewItems)[number] & { score_effect?: Record<string, unknown> })
     | undefined;
   assert.ok(hardGateReview);
   assert.equal(hardGateReview.current_assessment, "G1");
@@ -404,7 +408,7 @@ test("fuseRubricScoreWithRules exposes v2 pre-cap score, structured gates, and r
   ]);
 
   const ruleRisk = result.risks.find((risk) => risk.source_rule_id === "ARKTS-MUST-001") as
-    | (typeof result.risks[number] & { score_effect?: Record<string, unknown> })
+    | ((typeof result.risks)[number] & { score_effect?: Record<string, unknown> })
     | undefined;
   assert.ok(ruleRisk);
   assert.equal("description" in ruleRisk, false);
@@ -477,7 +481,8 @@ test("fuseRubricScoreWithRules maps official commented-code rule to static quali
         rule_id: "OFFICIAL-LINTER:@security/no-commented-code",
         rule_source: "forbidden_pattern",
         result: "不满足",
-        conclusion: "entry/src/main/ets/pages/Index.ets:1:1 @security/no-commented-code remove code",
+        conclusion:
+          "entry/src/main/ets/pages/Index.ets:1:1 @security/no-commented-code remove code",
       },
     ],
     ruleViolations: [],
@@ -543,8 +548,9 @@ test("fuseRubricScoreWithRules maps official performance linter rules to perform
   assert.equal(performanceDetail.rule_impacts[0]?.severity, "light");
   assert.ok((performanceDetail.rule_impacts[0]?.score_delta ?? 0) < 0);
   assert.equal(
-    result.risks.find((risk) => risk.title === "规则违规：OFFICIAL-LINTER:@performance/foreach-args-check")
-      ?.level,
+    result.risks.find(
+      (risk) => risk.title === "规则违规：OFFICIAL-LINTER:@performance/foreach-args-check",
+    )?.level,
     "low",
   );
 });
@@ -1035,7 +1041,7 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
   assert.ok(Number.isInteger(riskDimension?.score));
 
   const forbiddenRisk = result.risks.find((risk) => risk.title === "规则违规：ARKTS-FORBID-001") as
-    | (typeof result.risks[number] & { score_effect?: Record<string, unknown> })
+    | ((typeof result.risks)[number] & { score_effect?: Record<string, unknown> })
     | undefined;
   assert.ok(forbiddenRisk?.score_effect);
   assert.equal(forbiddenRisk.score_effect.type, "risk_level_rule_impact");
@@ -1101,7 +1107,7 @@ test("fuseRubricScoreWithRules writes uncertain hard gate rules into suggested f
 
   assert.equal(result.hardGateTriggered, false);
   const hardGateReview = result.humanReviewItems.find((item) => item.item === "硬门槛复核") as
-    | (typeof result.humanReviewItems[number] & { score_effect?: Record<string, unknown> })
+    | ((typeof result.humanReviewItems)[number] & { score_effect?: Record<string, unknown> })
     | undefined;
   assert.ok(hardGateReview);
   assert.equal(hardGateReview.current_assessment, "none");
@@ -1226,7 +1232,8 @@ test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fa
       checkedModules: ["entry"],
       hardGateTriggered: true,
       scoreCap: 59,
-      diagnostics: "整包 assembleApp 编译失败：组件包可编译，但整包编译未通过，判断为原代码问题，非新增修改引入。",
+      diagnostics:
+        "整包 assembleApp 编译失败：组件包可编译，但整包编译未通过，判断为原代码问题，非新增修改引入。",
       durationMs: 1000,
       moduleResults: [
         {
@@ -1268,7 +1275,9 @@ test("fuseRubricScoreWithRules caps total score at 59 when hvigor build check fa
 test("fuseRubricScoreWithRules aggregates hvigor deprecated API warnings into one medium risk", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
   const itemScores = snapshot.dimension_summaries.flatMap((dimension) =>
     dimension.item_summaries.map((item) => ({
       dimension_name: dimension.name,
@@ -1453,11 +1462,12 @@ test("fuseRubricScoreWithRules caps total score at 59 when remote build check fa
   assert.doesNotMatch(buildRisk.description, /hvigor 编译校验状态/);
 });
 
-
 test("fuseRubricScoreWithRules suppresses rubric risk when a rule reports the same canonical issue", async () => {
   const rubric = await loadRubricForTaskType("full_generation", referenceRoot);
   const snapshot = buildRubricSnapshot(rubric);
-  const taxonomy = loadRiskTaxonomy(path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"));
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
 
   const result = fuseRubricScoreWithRules({
     taskType: "full_generation",

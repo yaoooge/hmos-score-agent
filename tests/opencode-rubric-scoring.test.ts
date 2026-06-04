@@ -4,7 +4,11 @@ import path from "node:path";
 import test from "node:test";
 import { buildOpencodeRubricPayload } from "../src/agents/prompts/rubricPrompt.js";
 import { runOpencodeRubricScoring } from "../src/agents/runners/opencodeRubricScoring.js";
-import type { LoadedRubricSnapshot, RubricScoringPayload, RubricScoringResult } from "../src/types.js";
+import type {
+  LoadedRubricSnapshot,
+  RubricScoringPayload,
+  RubricScoringResult,
+} from "../src/types.js";
 
 function payload(): RubricScoringPayload {
   return {
@@ -214,7 +218,7 @@ test("runOpencodeRubricScoring omits expected constraints from original prompt s
           "  - id: RSP-MUST-01",
           "    name: 横向断点划分范围必须符合系统推荐值",
           "    kit:",
-          "      - \"ArkUI: GridRow / WidthBreakpoint\"",
+          '      - "ArkUI: GridRow / WidthBreakpoint"',
         ].join("\n"),
       },
     },
@@ -283,7 +287,12 @@ test("runOpencodeRubricScoring omits expected constraints with prompt label vari
 });
 
 test("runOpencodeRubricScoring retries once in the first session while preserving retry attempt logs", async () => {
-  const calls: Array<{ requestTag: string; title?: string; prompt: string; continueSessionId?: string }> = [];
+  const calls: Array<{
+    requestTag: string;
+    title?: string;
+    prompt: string;
+    continueSessionId?: string;
+  }> = [];
   const result = await runOpencodeRubricScoring({
     sandboxRoot: "/runs/20260427T031830_full_generation_8a3c0a1a/opencode-sandbox",
     scoringPayload: payload(),
@@ -297,7 +306,8 @@ test("runOpencodeRubricScoring retries once in the first session while preservin
       return {
         requestTag: request.requestTag,
         rawEvents: "{}\n",
-        rawText: calls.length === 1 ? "我已经完成评分，但这里不是 JSON。" : JSON.stringify(finalAnswer()),
+        rawText:
+          calls.length === 1 ? "我已经完成评分，但这里不是 JSON。" : JSON.stringify(finalAnswer()),
         elapsedMs: 1,
         sessionId: "ses_rubric_first",
       };
@@ -306,8 +316,14 @@ test("runOpencodeRubricScoring retries once in the first session while preservin
 
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
-  assert.equal(calls[0]?.requestTag, "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a");
-  assert.equal(calls[1]?.requestTag, "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
+  assert.equal(
+    calls[0]?.requestTag,
+    "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a",
+  );
+  assert.equal(
+    calls[1]?.requestTag,
+    "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  );
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.equal(calls[0]?.continueSessionId, undefined);
   assert.equal(calls[1]?.continueSessionId, "ses_rubric_first");
@@ -375,7 +391,10 @@ test("runOpencodeRubricScoring retries once with strict format guidance after re
 
   assert.equal(result.outcome, "success");
   assert.equal(calls.length, 2);
-  assert.equal(calls[1]?.requestTag, "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1");
+  assert.equal(
+    calls[1]?.requestTag,
+    "rubric-scoring-case-1-20260427T031830_full_generation_8a3c0a1a-retry-1",
+  );
   assert.equal(calls[1]?.title, calls[1]?.requestTag);
   assert.match(calls[1]?.prompt ?? "", /rubric 评分 agent。本次是重试/);
   assert.match(calls[1]?.prompt ?? "", /本次是重试。仍必须使用 hmos-rubric-scoring skill/);
@@ -583,9 +602,13 @@ test("runOpencodeRubricScoring ignores extra fields and coerces scalar strings",
   assert.equal(result.final_answer?.item_scores[0]?.max_score, 40);
   assert.equal(result.final_answer?.item_scores[0]?.review_required, false);
   assert.equal(result.final_answer?.hard_gate_candidates[0]?.triggered, false);
-  assert.equal("extra_top_level" in (result.final_answer as unknown as Record<string, unknown>), false);
   assert.equal(
-    "extra_item_note" in (result.final_answer?.item_scores[0] as unknown as Record<string, unknown>),
+    "extra_top_level" in (result.final_answer as unknown as Record<string, unknown>),
+    false,
+  );
+  assert.equal(
+    "extra_item_note" in
+      (result.final_answer?.item_scores[0] as unknown as Record<string, unknown>),
     false,
   );
 });
@@ -698,7 +721,10 @@ test("runOpencodeRubricScoring retry prompt targets concrete protocol failures",
   assert.match(calls[1]?.prompt ?? "", /只修复 listed protocol errors/);
   assert.match(calls[1]?.prompt ?? "", /invalid_deduction_trace/);
   assert.match(calls[1]?.prompt ?? "", /risk_code/);
-  assert.doesNotMatch(calls[1]?.prompt ?? "", /必须且只能包含 level、title、description、evidence 四个 string 字段/);
+  assert.doesNotMatch(
+    calls[1]?.prompt ?? "",
+    /必须且只能包含 level、title、description、evidence 四个 string 字段/,
+  );
   assert.doesNotMatch(calls[1]?.prompt ?? "", /rubric_retry_payload/);
 });
 

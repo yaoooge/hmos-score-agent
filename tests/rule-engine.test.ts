@@ -3,15 +3,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { collectEvidence } from "../src/rules/evidenceCollector.js";
-import { runTextPatternRule } from "../src/rules/evaluators/textPatternEvaluator.js";
+import { collectEvidence } from "../src/rules/evidence/collectEvidence.js";
+import { runTextPatternRule } from "../src/rules/evaluators/text-pattern/evaluator.js";
 import {
   defaultEnabledRulePackIds,
   getEnabledRulePacks,
   listRegisteredRules,
   resolveEnabledRulePackIds,
-} from "../src/rules/engine/rulePackRegistry.js";
-import { runRuleEngine } from "../src/rules/ruleEngine.js";
+} from "../src/rules/registry/rulePackRegistry.js";
+import { runRuleEngine } from "../src/rules/core/ruleEngine.js";
 import type { CaseInput, CaseRuleDefinition } from "../src/types.js";
 
 const referenceRoot = path.resolve(process.cwd(), "references/scoring");
@@ -372,9 +372,10 @@ test("runRuleEngine only reports patch-scoped routerMap targets as NavDestinatio
 
   assert.ok(routeRule);
   assert.equal(routeRule.result, "不满足");
-  assert.deepEqual(result.ruleViolations.find((item) => item.rule_id === "ARKUI-MUST-001")?.affected_items, [
-    addedPagePath,
-  ]);
+  assert.deepEqual(
+    result.ruleViolations.find((item) => item.rule_id === "ARKUI-MUST-001")?.affected_items,
+    [addedPagePath],
+  );
   assert.match(routeRule.conclusion, /AddedPage\.ets/);
   assert.doesNotMatch(routeRule.conclusion, /LegacyPage\.ets/);
 });
@@ -513,10 +514,7 @@ test("cross-device component precheck uses full changed file content for kit anc
   await fs.writeFile(path.join(caseDir, "workspace", relativePath), workspaceFile, "utf-8");
   await fs.writeFile(
     path.join(caseDir, "original", relativePath),
-    workspaceFile.replace(
-      ".displayCount(this.currentDisplayCount)",
-      ".displayCount(1)",
-    ),
+    workspaceFile.replace(".displayCount(this.currentDisplayCount)", ".displayCount(1)"),
     "utf-8",
   );
   await fs.writeFile(
@@ -551,7 +549,9 @@ test("cross-device component precheck uses full changed file content for kit anc
 
   assert.ok(displayCountRule);
   assert.equal(displayCountRule.result, "不满足");
-  assert.deepEqual(result.ruleEvidenceIndex["OM-SWIPER-MUST-01"]?.evidenceFiles, [`${relativePath}:7`]);
+  assert.deepEqual(result.ruleEvidenceIndex["OM-SWIPER-MUST-01"]?.evidenceFiles, [
+    `${relativePath}:7`,
+  ]);
 });
 
 test("ARKTS-FORBID-006 ignores typed arrow function callbacks", () => {
@@ -1016,8 +1016,7 @@ test("runRuleEngine routes all runtime case rules to agent candidates and keeps 
     ["Account Kit"],
   );
   assert.deepEqual(
-    result.assistedRuleCandidates.find((item) => item.rule_id === "HM-REQ-008-01")
-      ?.target_checks,
+    result.assistedRuleCandidates.find((item) => item.rule_id === "HM-REQ-008-01")?.target_checks,
     [
       {
         target: "**/pages/*.ets",
@@ -1072,9 +1071,7 @@ test("runRuleEngine derives candidate llm prompt from target checks when summary
     ],
   });
 
-  const candidate = result.assistedRuleCandidates.find(
-    (item) => item.rule_id === "HM-REQ-008-01",
-  );
+  const candidate = result.assistedRuleCandidates.find((item) => item.rule_id === "HM-REQ-008-01");
 
   assert.ok(candidate);
   assert.equal(
@@ -1954,10 +1951,7 @@ test("runRuleEngine keeps unsupported no-evidence rules in agent candidates", as
     unsupportedRuleCandidate?.why_uncertain ?? "",
     /未接入静态判定器，需要 Agent 辅助判定/,
   );
-  assert.doesNotMatch(
-    unsupportedRuleCandidate?.why_uncertain ?? "",
-    /当前版本未接入对应判定器/,
-  );
+  assert.doesNotMatch(unsupportedRuleCandidate?.why_uncertain ?? "", /当前版本未接入对应判定器/);
   const unsupportedCandidates = result.assistedRuleCandidates.filter((item) => !item.is_case_rule);
   assert.equal(unsupportedCandidates.length > 1, true);
   assert.equal(
@@ -2106,8 +2100,7 @@ test("runRuleEngine does not require upper snake case for local const variables"
   });
 
   assert.equal(
-    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-SHOULD-007")
-      ?.result,
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-SHOULD-007")?.result,
     "满足",
   );
 });
@@ -2156,8 +2149,7 @@ test("runRuleEngine evaluates initial arkts_static checks deterministically", as
   });
 
   assert.equal(
-    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-SHOULD-010")
-      ?.result,
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-SHOULD-010")?.result,
     "不满足",
   );
   assert.match(
@@ -2165,8 +2157,7 @@ test("runRuleEngine evaluates initial arkts_static checks deterministically", as
     /name: string/,
   );
   assert.equal(
-    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-FORBID-011")
-      ?.result,
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-FORBID-011")?.result,
     "不满足",
   );
   assert.equal(
@@ -2196,9 +2187,9 @@ test("runTextPatternRule marks rules as 不涉及 when applicability patterns do
         kind: "static",
         mode: "regex",
         config: {
-        fileExtensions: [".ets"],
-        applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
-        patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+          fileExtensions: [".ets"],
+          applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
+          patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
         },
       },
       fallback: { policy: "agent_assisted" },
@@ -2226,9 +2217,9 @@ test("runTextPatternRule marks rules as 满足 when applicability patterns match
         kind: "static",
         mode: "regex",
         config: {
-        fileExtensions: [".ets"],
-        applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
-        patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+          fileExtensions: [".ets"],
+          applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
+          patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
         },
       },
       fallback: { policy: "agent_assisted" },
@@ -2256,9 +2247,9 @@ test("runTextPatternRule marks rules as 不满足 when applicability patterns an
         kind: "static",
         mode: "regex",
         config: {
-        fileExtensions: [".ets"],
-        applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
-        patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
+          fileExtensions: [".ets"],
+          applicabilityPatterns: ["\\binterface\\b|\\btype\\b"],
+          patterns: ["^\\s*new\\s*\\([^)]*\\)\\s*:\\s*[^;{]+;?$"],
         },
       },
       fallback: { policy: "agent_assisted" },
@@ -2631,11 +2622,7 @@ test("runRuleEngine flags dynamic property access and common style should-rules"
     taskType: "continuation",
   });
 
-  for (const ruleId of [
-    "ARKTS-FORBID-001",
-    "ARKTS-SHOULD-001",
-    "ARKTS-SHOULD-011",
-  ]) {
+  for (const ruleId of ["ARKTS-FORBID-001", "ARKTS-SHOULD-001", "ARKTS-SHOULD-011"]) {
     assert.equal(
       result.deterministicRuleResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",

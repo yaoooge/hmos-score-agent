@@ -39,13 +39,13 @@ test("createScoreDatabase initializes schema and enables WAL", async (t) => {
     "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
   );
   assert.deepEqual(
-	    tables.map((table) => table.name),
-	    [
-	      "agent_trace_attempt",
-	      "agent_trace_event",
-	      "agent_trace_run",
-	      "analysis_event",
-	      "consistency_task",
+    tables.map((table) => table.name),
+    [
+      "agent_trace_attempt",
+      "agent_trace_event",
+      "agent_trace_run",
+      "analysis_event",
+      "consistency_task",
       "remote_task",
       "rule_violation_item",
       "rule_violation_run",

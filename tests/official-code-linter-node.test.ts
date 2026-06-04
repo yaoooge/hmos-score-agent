@@ -7,8 +7,8 @@ import { officialCodeLinterNode } from "../src/workflow/nodes/officialCodeLinter
 import {
   detectChangedHarmonyModules,
   detectHvigorModuleBuildTarget,
-} from "../src/rules/officialCodeLinter/hvigorBuildCheck.js";
-import { prepareOfficialCodeLinterWorkspace } from "../src/rules/officialCodeLinter/workspacePreparer.js";
+} from "../src/rules/official-linter/hvigor/buildCheck.js";
+import { prepareOfficialCodeLinterWorkspace } from "../src/rules/official-linter/run/workspacePreparer.js";
 import type { ScoreGraphState } from "../src/workflow/graph/state.js";
 
 async function collectWorkspaceFiles(rootDir: string): Promise<string[]> {
@@ -86,10 +86,16 @@ test("official linter workspace only contains copied project files and code-lint
     path.join(generated, "entry", "src", "main", "resources", "base", "profile", "route_map.json"),
     "{}\n",
   );
-  await fs.writeFile(path.join(generated, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n");
+  await fs.writeFile(
+    path.join(generated, "node_modules", "left-pad", "index.js"),
+    "module.exports = 1;\n",
+  );
   await fs.writeFile(path.join(caseDir, "inputs", "secret.txt"), "must not copy\n");
 
-  const result = await prepareOfficialCodeLinterWorkspace({ generatedProjectPath: generated, caseDir });
+  const result = await prepareOfficialCodeLinterWorkspace({
+    generatedProjectPath: generated,
+    caseDir,
+  });
   const workspaceFiles = await collectWorkspaceFiles(result.workspaceDir);
 
   assert.deepEqual(workspaceFiles, [
@@ -99,7 +105,10 @@ test("official linter workspace only contains copied project files and code-lint
   ]);
   assert.equal(workspaceFiles.includes("summary.json"), false);
   assert.equal(workspaceFiles.includes("findings.effective.json"), false);
-  assert.equal(workspaceFiles.some((item) => item.startsWith("inputs/")), false);
+  assert.equal(
+    workspaceFiles.some((item) => item.startsWith("inputs/")),
+    false,
+  );
 });
 
 test("official linter workspace writes caller-provided rule sets into config", async (t) => {
@@ -110,15 +119,15 @@ test("official linter workspace writes caller-provided rule sets into config", a
   await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
     recursive: true,
   });
-  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "let a = 1;\n",
+  );
 
   const result = await prepareOfficialCodeLinterWorkspace({
     generatedProjectPath: generated,
     caseDir,
-    ruleSets: [
-      "plugin:@typescript-eslint/recommended",
-      "plugin:@cross-device-app-dev/recommended",
-    ],
+    ruleSets: ["plugin:@typescript-eslint/recommended", "plugin:@cross-device-app-dev/recommended"],
   });
   const config = JSON.parse(await fs.readFile(result.configPath, "utf-8")) as { ruleSet: string[] };
   const workspaceConfig = JSON.parse(await fs.readFile(result.workspaceConfigPath, "utf-8")) as {
@@ -175,7 +184,10 @@ test("officialCodeLinterNode configures cross-device rule set from constraint su
   await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
     recursive: true,
   });
-  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "let a = 1;\n",
+  );
 
   const result = await officialCodeLinterNode(
     {
@@ -209,7 +221,10 @@ test("officialCodeLinterNode configures cross-device rule set from constraint su
     { enabled: true, runDir: "", timeoutMs: 120000, hvigorEnabled: false },
   );
   const config = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "code-linter", "code-linter.json5"), "utf-8"),
+    await fs.readFile(
+      path.join(caseDir, "intermediate", "code-linter", "code-linter.json5"),
+      "utf-8",
+    ),
   ) as { ruleSet: string[] };
 
   assert.ok(config.ruleSet.includes("plugin:@cross-device-app-dev/recommended"));
@@ -224,7 +239,10 @@ test("officialCodeLinterNode treats prepared state missing cross-device field as
   await fs.mkdir(path.join(generated, "entry", "src", "main", "ets", "pages"), {
     recursive: true,
   });
-  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "let a = 1;\n",
+  );
 
   const result = await officialCodeLinterNode(
     {
@@ -254,7 +272,9 @@ test("officialCodeLinterNode treats prepared state missing cross-device field as
   );
 
   assert.equal(
-    result.officialLinterSummary?.configuredRuleSets.includes("plugin:@cross-device-app-dev/recommended"),
+    result.officialLinterSummary?.configuredRuleSets.includes(
+      "plugin:@cross-device-app-dev/recommended",
+    ),
     false,
   );
   assert.match(
@@ -350,7 +370,10 @@ test("officialCodeLinterNode can run hvigor when codelinter is disabled", async 
   await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
   await fs.mkdir(hvigorRunDir, { recursive: true });
   await fs.mkdir(path.join(root, "tools", "ohpm", "bin"), { recursive: true });
-  await fs.writeFile(path.join(generated, "entry", "hvigorfile.ts"), "export const hapTasks = [];\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "hvigorfile.ts"),
+    "export const hapTasks = [];\n",
+  );
   await fs.writeFile(
     path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
     "let a = 1;\n",
@@ -482,7 +505,10 @@ test("officialCodeLinterNode runs hvigor build check for changed modules and cle
   await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
   await fs.mkdir(hvigorRunDir, { recursive: true });
   await fs.mkdir(path.join(root, "tools", "ohpm", "bin"), { recursive: true });
-  await fs.writeFile(path.join(generated, "entry", "hvigorfile.ts"), "export const hapTasks = [];\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "hvigorfile.ts"),
+    "export const hapTasks = [];\n",
+  );
   await fs.writeFile(
     path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
     "let a = 1;\n",
@@ -598,10 +624,24 @@ test("officialCodeLinterNode records patch-attributed deprecated API warnings fr
   await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
   await fs.mkdir(hvigorRunDir, { recursive: true });
   await fs.mkdir(path.join(root, "tools", "ohpm", "bin"), { recursive: true });
-  await fs.writeFile(path.join(generated, "entry", "hvigorfile.ts"), "export const hapTasks = [];\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "hvigorfile.ts"),
+    "export const hapTasks = [];\n",
+  );
   await fs.writeFile(
     path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
-    ["@Entry", "@Component", "struct Index {", "  build() {", "    Column() {", "      Text('x')", "    }", "    this.keep()", "    this.showToast()", "    this.legacy()"].join("\n"),
+    [
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  build() {",
+      "    Column() {",
+      "      Text('x')",
+      "    }",
+      "    this.keep()",
+      "    this.showToast()",
+      "    this.legacy()",
+    ].join("\n"),
   );
   const fakeLinterBin = path.join(runDir, "bin", "codelinter");
   await fs.writeFile(fakeLinterBin, "#!/usr/bin/env node\nconsole.log('[]');\n");
@@ -670,7 +710,8 @@ test("officialCodeLinterNode records patch-attributed deprecated API warnings fr
       modulePath: "entry",
       moduleName: "entry",
       command: "assembleHap",
-      message: "ArkTS:WARN File: entry/src/main/ets/pages/Index.ets:9:18 'showToast' has been deprecated.",
+      message:
+        "ArkTS:WARN File: entry/src/main/ets/pages/Index.ets:9:18 'showToast' has been deprecated.",
     },
   ]);
 });
@@ -689,7 +730,10 @@ test("officialCodeLinterNode runs assembleApp after changed modules compile and 
   await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
   await fs.mkdir(hvigorRunDir, { recursive: true });
   await fs.mkdir(path.join(root, "tools", "ohpm", "bin"), { recursive: true });
-  await fs.writeFile(path.join(generated, "entry", "hvigorfile.ts"), "export const hapTasks = [];\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "hvigorfile.ts"),
+    "export const hapTasks = [];\n",
+  );
   await fs.writeFile(
     path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
     "let a = 1;\n",
@@ -783,7 +827,10 @@ test("officialCodeLinterNode truncates long hvigor stderr excerpts", async (t) =
   await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
   await fs.mkdir(hvigorRunDir, { recursive: true });
   await fs.mkdir(path.join(root, "tools", "ohpm", "bin"), { recursive: true });
-  await fs.writeFile(path.join(generated, "entry", "hvigorfile.ts"), "export const hapTasks = [];\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "hvigorfile.ts"),
+    "export const hapTasks = [];\n",
+  );
   await fs.writeFile(
     path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
     "let a = 1;\n",
@@ -917,7 +964,10 @@ test("officialCodeLinterNode stops when ohpm install fails", async (t) => {
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as string[]);
-  assert.deepEqual(commandCalls, [["hvigor", "--version"], ["ohpm", "install"]]);
+  assert.deepEqual(commandCalls, [
+    ["hvigor", "--version"],
+    ["ohpm", "install"],
+  ]);
 });
 
 test("officialCodeLinterNode marks hvigor failure as a hard gate", async (t) => {
@@ -1005,7 +1055,10 @@ test("officialCodeLinterNode marks hvigor failure as a hard gate", async (t) => 
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as string[]);
-  assert.equal(commandCalls.some((call) => call[1] === "assembleApp"), false);
+  assert.equal(
+    commandCalls.some((call) => call[1] === "assembleApp"),
+    false,
+  );
   const artifactDir = path.join(caseDir, "intermediate", "code-linter");
   await fs.access(path.join(artifactDir, "hvigor-summary.json"));
   await fs.access(path.join(artifactDir, "workspace", ".hvigor"));
@@ -1077,10 +1130,16 @@ test("officialCodeLinterNode writes only effective findings and diagnostics outs
   );
 
   assert.equal(result.officialLinterRunStatus, "success");
-  assert.deepEqual(result.officialLinterFindings?.map((item) => item.file), [
-    "entry/src/main/ets/pages/Changed.ets",
-  ]);
-  const effectivePath = path.join(caseDir, "intermediate", "code-linter", "findings.effective.json");
+  assert.deepEqual(
+    result.officialLinterFindings?.map((item) => item.file),
+    ["entry/src/main/ets/pages/Changed.ets"],
+  );
+  const effectivePath = path.join(
+    caseDir,
+    "intermediate",
+    "code-linter",
+    "findings.effective.json",
+  );
   const effective = await fs.readFile(effectivePath, "utf-8");
   assert.match(effective, /Changed\.ets/);
   assert.doesNotMatch(
@@ -1108,7 +1167,10 @@ test("officialCodeLinterNode reports missing profile for unknown cross-device ru
     recursive: true,
   });
   await fs.mkdir(path.join(runDir, "bin"), { recursive: true });
-  await fs.writeFile(path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"), "let a = 1;\n");
+  await fs.writeFile(
+    path.join(generated, "entry", "src", "main", "ets", "pages", "Index.ets"),
+    "let a = 1;\n",
+  );
   const fakeLinterBin = path.join(runDir, "bin", "codelinter");
   await fs.writeFile(
     fakeLinterBin,
@@ -1155,7 +1217,13 @@ test("officialCodeLinterNode reports missing profile for unknown cross-device ru
   );
 
   assert.equal(result.officialLinterRunStatus, "success");
-  assert.equal(result.officialLinterRuleResults?.[0]?.rule_id, "OFFICIAL-LINTER:@cross-device-app-dev/future-rule");
+  assert.equal(
+    result.officialLinterRuleResults?.[0]?.rule_id,
+    "OFFICIAL-LINTER:@cross-device-app-dev/future-rule",
+  );
   assert.match(result.officialLinterSummary?.diagnostics ?? "", /profile missing/);
-  assert.match(result.officialLinterSummary?.diagnostics ?? "", /@cross-device-app-dev\/future-rule/);
+  assert.match(
+    result.officialLinterSummary?.diagnostics ?? "",
+    /@cross-device-app-dev\/future-rule/,
+  );
 });

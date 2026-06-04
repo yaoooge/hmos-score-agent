@@ -113,12 +113,12 @@ test("parseOpencodeSessionEvents binds OpenCode events to retry attempts", () =>
             title: "Write rubric output",
             created: 2_300,
             input: { filePath: "metadata/agent-output/rubric-scoring.json" },
-            output: "{\"ok\":true}",
+            output: '{"ok":true}',
           },
           {
             id: "part-5",
             type: "text",
-            text: "{\"output_file\":\"metadata/agent-output/rubric-scoring.json\"}",
+            text: '{"output_file":"metadata/agent-output/rubric-scoring.json"}',
             created: 2_650,
           },
         ],
@@ -244,14 +244,14 @@ test("AgentTraceRecorder records successful and failed runPrompt attempts", asyn
     },
     async () => ({
       requestTag: "rubric-case-retry-1",
-      rawText: "{\"ok\":true}",
+      rawText: '{"ok":true}',
       rawEvents: "",
       elapsedMs: 850,
       sessionId: "ses_retry",
       tokenUsage: tokenUsage(42),
-      assistantText: "{\"output_file\":\"metadata/agent-output/rubric-scoring.json\"}",
+      assistantText: '{"output_file":"metadata/agent-output/rubric-scoring.json"}',
       outputFile: "metadata/agent-output/rubric-scoring.json",
-      outputFileText: "{\"ok\":true}",
+      outputFileText: '{"ok":true}',
     }),
   );
 
@@ -309,7 +309,7 @@ test("AgentTraceRecorder parses streamed OpenCode raw events into trace events",
     },
     async () => ({
       requestTag: "rule-assessment-case",
-      rawText: "{\"output_file\":\"metadata/agent-output/rule-assessment.json\"}",
+      rawText: '{"output_file":"metadata/agent-output/rule-assessment.json"}',
       rawEvents: [
         '{"type":"session.updated","properties":{"info":{"id":"ses_raw_events"}}}',
         '{"type":"message.updated","properties":{"info":{"id":"msg-1","role":"assistant","agent":"hmos-rule-assessment","model":"test-model"}}}',
@@ -320,9 +320,9 @@ test("AgentTraceRecorder parses streamed OpenCode raw events into trace events",
       elapsedMs: 500,
       sessionId: "ses_raw_events",
       tokenUsage: tokenUsage(16),
-      assistantText: "{\"output_file\":\"metadata/agent-output/rule-assessment.json\"}",
+      assistantText: '{"output_file":"metadata/agent-output/rule-assessment.json"}',
       outputFile: "metadata/agent-output/rule-assessment.json",
-      outputFileText: "{\"ok\":true}",
+      outputFileText: '{"ok":true}',
     }),
   );
 
@@ -337,8 +337,14 @@ test("AgentTraceRecorder parses streamed OpenCode raw events into trace events",
   assert.equal(toolEvent?.elapsedMs, 37);
   assert.equal(toolEvent?.summary, "patch/effective.patch");
   assert.equal(toolEvent?.hasRawPayload, true);
-  assert.equal(run?.events.some((event) => event.type === "text"), true);
-  assert.equal(run?.events.some((event) => event.type === "step-finish"), true);
+  assert.equal(
+    run?.events.some((event) => event.type === "text"),
+    true,
+  );
+  assert.equal(
+    run?.events.some((event) => event.type === "step-finish"),
+    true,
+  );
 });
 
 test("enrichAgentTraceRuns preserves raw stream events when OpenCode session messages are empty", async (t) => {

@@ -27,7 +27,10 @@ test("result analysis rule violation list uses dashboard date range and only add
   assert.match(resultAnalysisVue, /setTitleControls\?\.\(\{ dateRange: \{ model: range \} \}\)/);
   assert.match(resultAnalysisVue, /fetchNegativeResults\(dateParams\(\)\)/);
   assert.match(resultAnalysisVue, /label="命中比例"/);
-  assert.match(resultAnalysisVue, /formatHitRatio\(row\.affectedTaskIds\.length, negative\?\.summary\.totalCaseCount/);
+  assert.match(
+    resultAnalysisVue,
+    /formatHitRatio\(row\.affectedTaskIds\.length, negative\?\.summary\.totalCaseCount/,
+  );
   assert.doesNotMatch(resultAnalysisVue, /label="规则包"/);
   assert.doesNotMatch(resultAnalysisVue, /label="影响用例"/);
   assert.doesNotMatch(resultAnalysisVue, /label="影响 taskId"/);
@@ -54,16 +57,15 @@ test("manual analysis status defaults to pending and appears after selection col
       selectionIndex,
     );
 
-    assert.ok(statusIndex < taskIdIndex, `${tableName} status column should be first after selection`);
+    assert.ok(
+      statusIndex < taskIdIndex,
+      `${tableName} status column should be first after selection`,
+    );
   }
 });
 
 test("risk analysis keyword input advertises risk title filtering", () => {
-  const riskTabIndex = firstIndexAfter(
-    resultAnalysisVue,
-    '<el-tab-pane label="风险项分析"',
-    0,
-  );
+  const riskTabIndex = firstIndexAfter(resultAnalysisVue, '<el-tab-pane label="风险项分析"', 0);
   const placeholderIndex = firstIndexAfter(
     resultAnalysisVue,
     'placeholder="名称 / taskId / 风险标题"',

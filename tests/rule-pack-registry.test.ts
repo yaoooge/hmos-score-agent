@@ -6,7 +6,7 @@ import {
   defaultEnabledRulePackIds,
   getRegisteredRulePacks,
   listRegisteredRules,
-} from "../src/rules/engine/rulePackRegistry.js";
+} from "../src/rules/registry/rulePackRegistry.js";
 
 test("arkts-language pack registers all rules from current source set", () => {
   const packs = getRegisteredRulePacks();
@@ -118,7 +118,10 @@ test("registered rules carry real summaries and detector configs instead of plac
   });
   assert.doesNotMatch(must004.summary, /当前默认进入静态规则包/);
 
-  assert.equal(rules.some((item) => /单引号|switch 语句|大括号/.test(item.summary)), false);
+  assert.equal(
+    rules.some((item) => /单引号|switch 语句|大括号/.test(item.summary)),
+    false,
+  );
 });
 
 test("registered rules carry performance-pack summaries and detector configs", () => {
@@ -130,14 +133,20 @@ test("registered rules carry performance-pack summaries and detector configs", (
   assert.ok(perfShould002);
   assert.equal(perfShould002.pack_id, "arkts-performance");
   assert.equal(perfShould002.detector.kind, "static");
-  assert.equal(perfShould002.detector.kind === "static" ? perfShould002.detector.mode : undefined, "regex");
+  assert.equal(
+    perfShould002.detector.kind === "static" ? perfShould002.detector.mode : undefined,
+    "regex",
+  );
   assert.match(perfShould002.summary, /整型与浮点型混用/);
   assert.deepEqual(perfShould002.detector.config.fileExtensions, [".ets"]);
 
   assert.ok(perfForbid003);
   assert.equal(perfForbid003.pack_id, "arkts-performance");
   assert.equal(perfForbid003.detector.kind, "static");
-  assert.equal(perfForbid003.detector.kind === "static" ? perfForbid003.detector.mode : undefined, "regex");
+  assert.equal(
+    perfForbid003.detector.kind === "static" ? perfForbid003.detector.mode : undefined,
+    "regex",
+  );
   assert.match(perfForbid003.summary, /混用整型和浮点型/);
 
   assert.ok(perfShould001);
@@ -173,7 +182,8 @@ test("registered rule packs use yaml source of truth", () => {
   assert.ok(languagePack);
   assert.ok(languagePack.rules.some((rule) => rule.rule_id === "ARKTS-MUST-002"));
   assert.equal(
-    languagePack.rules.find((rule) => rule.rule_id === "ARKTS-MUST-001")?.decisionCriteria?.fail?.[0],
+    languagePack.rules.find((rule) => rule.rule_id === "ARKTS-MUST-001")?.decisionCriteria
+      ?.fail?.[0],
     "存在类型、枚举、接口或命名空间与变量或函数标识符冲突。",
   );
 });

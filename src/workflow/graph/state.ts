@@ -47,7 +47,8 @@ export const ScoreState = Annotation.Root({
   taskType: Annotation<TaskType>(),
   rubricSnapshot: Annotation<LoadedRubricSnapshot>(),
   staticRuleAuditResults: Annotation<StaticRuleAuditResult[]>(),
-  enabledRulePacks: Annotation<Array<{ pack_id: string; display_name: string; version?: string }>>(),
+  enabledRulePacks:
+    Annotation<Array<{ pack_id: string; display_name: string; version?: string }>>(),
   ruleEvidenceIndex: Annotation<RuleEvidenceIndex>(),
   deterministicRuleResults: Annotation<RuleAuditResult[]>(),
   officialLinterRunStatus: Annotation<OfficialLinterRunStatus>(),

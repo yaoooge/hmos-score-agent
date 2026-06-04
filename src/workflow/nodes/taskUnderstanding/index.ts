@@ -3,11 +3,14 @@ import path from "node:path";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { runOpencodeTaskUnderstanding } from "../../../agents/runners/opencodeTaskUnderstanding.js";
 import type { ArtifactStore } from "../../../commons/io/artifactStore.js";
-import { filterPatchTextForIgnoredFiles, isIgnoredCaseFilePath } from "../../../commons/utils/ignoredFiles.js";
+import {
+  filterPatchTextForIgnoredFiles,
+  isIgnoredCaseFilePath,
+} from "../../../commons/utils/ignoredFiles.js";
 import { generateCasePatch } from "../../../commons/io/patchGenerator.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../../../agents/opencode/cliRunner.js";
 import { buildOpencodeSandbox } from "../../../agents/opencode/sandboxBuilder.js";
-import { loadCaseConstraintRules } from "../../../rules/caseConstraintLoader.js";
+import { loadCaseConstraintRules } from "../../../rules/case-constraints/loader.js";
 import { inferTaskTypeFromCaseInput } from "../../../service/runCaseId.js";
 import { emitNodeFailed, emitNodeStarted } from "../../observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../../graph/state.js";

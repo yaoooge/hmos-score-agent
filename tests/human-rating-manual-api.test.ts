@@ -65,7 +65,12 @@ function analysisFixtureWithReason(reasonSummary: string): HumanRatingGapAnalysi
 
 async function writeCompletedTask(
   t: test.TestContext,
-  options: { taskId?: number; status?: "completed" | "running"; autoScore?: number; omitScore?: boolean } = {},
+  options: {
+    taskId?: number;
+    status?: "completed" | "running";
+    autoScore?: number;
+    omitScore?: boolean;
+  } = {},
 ) {
   const localCaseRoot = await makeTempDir(t);
   const caseDir = path.join(localCaseRoot, "remote-case");
@@ -187,11 +192,17 @@ test("submit manual rating handler analyzes qualified L1 gap and keeps result js
   assert.equal((state.body?.summary as Record<string, unknown>).analysisStatus, "completed");
   assert.equal((state.body?.summary as Record<string, unknown>).gapQualified, true);
   assert.equal(analyzerCallCount, 1);
-  assert.equal(await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"), beforeResult);
+  assert.equal(
+    await fs.readFile(path.join(caseDir, "outputs", "result.json"), "utf-8"),
+    beforeResult,
+  );
   await fs.access(path.join(caseDir, "human-rating", "manual-rating.json"));
   await fs.access(path.join(caseDir, "human-rating", "analysis.json"));
   const datasetLines = (
-    await fs.readFile(path.join(evidenceRoot, "datasets", "human_rating_gap_analyses.jsonl"), "utf-8")
+    await fs.readFile(
+      path.join(evidenceRoot, "datasets", "human_rating_gap_analyses.jsonl"),
+      "utf-8",
+    )
   )
     .trim()
     .split("\n");
@@ -255,7 +266,10 @@ test("submit manual rating handler reruns qualified gap analysis and overwrites 
     await fs.readFile(path.join(caseDir, "human-rating", "analysis.json"), "utf-8"),
   ) as Record<string, unknown>;
   const datasetLines = (
-    await fs.readFile(path.join(evidenceRoot, "datasets", "human_rating_gap_analyses.jsonl"), "utf-8")
+    await fs.readFile(
+      path.join(evidenceRoot, "datasets", "human_rating_gap_analyses.jsonl"),
+      "utf-8",
+    )
   )
     .trim()
     .split("\n");
@@ -312,7 +326,10 @@ test("submit manual rating handler clears previous analysis when repeated submis
     await fs.readFile(path.join(caseDir, "human-rating", "manual-rating.json"), "utf-8"),
   ) as Record<string, unknown>;
   await fs.access(path.join(caseDir, "human-rating", "analysis-skipped.json"));
-  await assert.rejects(() => fs.access(path.join(caseDir, "human-rating", "analysis.json")), /ENOENT/);
+  await assert.rejects(
+    () => fs.access(path.join(caseDir, "human-rating", "analysis.json")),
+    /ENOENT/,
+  );
   await assert.rejects(
     () => fs.access(path.join(evidenceRoot, "datasets", "human_rating_gap_analyses.jsonl")),
     /ENOENT/,
@@ -328,7 +345,10 @@ test("submit manual rating handler skips non-qualified ratings without analyzer 
     { manualRating: "L3", autoScore: 100 },
   ].entries()) {
     const taskId = 100 + index;
-    const { caseDir, registry } = await writeCompletedTask(t, { taskId, autoScore: item.autoScore });
+    const { caseDir, registry } = await writeCompletedTask(t, {
+      taskId,
+      autoScore: item.autoScore,
+    });
     const evidenceRoot = await makeTempDir(t);
     const store = createHumanReviewEvidenceStore(evidenceRoot);
     const handler = createSubmitManualRatingHandler({
