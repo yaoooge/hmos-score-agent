@@ -622,7 +622,7 @@ test("ruleAuditNode excludes cross-device rules when task is not cross-device re
     { referenceRoot },
   );
 
-  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "RSP-MUST-01"), false);
+  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "OM-BREAKPOINT-MUST-01"), false);
   assert.deepEqual(result.enabledRulePacks, [
     {
       pack_id: "arkts-language",
@@ -670,26 +670,25 @@ test("ruleAuditNode enables cross-device rules and preserves assisted candidate 
     { referenceRoot },
   );
 
-  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "RSP-MUST-01"), true);
+  assert.equal(result.staticRuleAuditResults?.some((item) => item.rule_id === "OM-BREAKPOINT-MUST-01"), true);
   assert.equal(
     result.enabledRulePacks?.some((pack) => pack.pack_id === "cross-device-adaptation"),
     true,
   );
 
-  const candidate = result.assistedRuleCandidates?.find((item) => item.rule_id === "RSP-MUST-01");
+  const candidate = result.assistedRuleCandidates?.find((item) => item.rule_id === "OM-BREAKPOINT-MUST-01");
   assert.ok(candidate);
   assert.equal(candidate.rule_source, "must_rule");
   assert.equal(candidate.rule_name, "横向断点划分范围必须符合系统推荐值");
   assert.equal(candidate.priority, "P0");
   assert.deepEqual(candidate.kit, ["ArkUI: GridRow / WidthBreakpoint"]);
   assert.equal(candidate.is_case_rule, undefined);
-  assert.match(candidate.llm_prompt ?? "", /横向断点划分必须为/);
+  assert.match(candidate.llm_prompt ?? "", /请基于静态证据复核/);
   assert.deepEqual(candidate.target_checks, [
     {
       target: "**/*.ets",
       ast_signals: [],
-      llm_prompt:
-        "检查工程中自定义断点系统或 WidthBreakpointType 工具类的断点边界定义，横向断点划分必须为 xs:(0,320)、sm:[320,600)、md:[600,840)、lg:[840,1440)、xl:[1440,+∞)。若使用 GridRow 的 breakpoints.value，值必须为 ['320vp','600vp','840vp','1440vp']。断点边界值与系统推荐不一致即判定失败",
+      llm_prompt: "横向断点划分范围必须符合系统推荐值。请基于静态证据复核是否满足该约束。",
     },
   ]);
 });
@@ -1156,7 +1155,7 @@ test("reportGenerationNode includes cross-device pack only as enabled built-in p
     },
     deterministicRuleResults: [
       {
-        rule_id: "RSP-MUST-01",
+        rule_id: "OM-BREAKPOINT-MUST-01",
         rule_source: "must_rule",
         result: "满足",
         conclusion: "断点符合系统推荐值",
@@ -1164,7 +1163,7 @@ test("reportGenerationNode includes cross-device pack only as enabled built-in p
     ],
     mergedRuleAuditResults: [
       {
-        rule_id: "RSP-MUST-01",
+        rule_id: "OM-BREAKPOINT-MUST-01",
         rule_source: "must_rule",
         result: "满足",
         conclusion: "断点符合系统推荐值",
@@ -1253,7 +1252,7 @@ test("reportGenerationNode includes cross-device pack only as enabled built-in p
       },
       mergedRuleAuditResults: [
         {
-          rule_id: "RSP-MUST-01",
+          rule_id: "OM-BREAKPOINT-MUST-01",
           rule_source: "must_rule",
           result: "满足",
           conclusion: "断点符合系统推荐值",

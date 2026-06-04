@@ -20,6 +20,7 @@ export interface CollectedEvidence {
   originalFiles: string[];
   patchText?: string;
   changedFiles: string[];
+  caseDir?: string;
   summary: EvidenceSummary;
 }
 
@@ -149,6 +150,7 @@ export async function collectEvidence(
     originalFiles,
     patchText,
     changedFiles,
+    caseDir: deriveCaseDir(caseInput),
     summary: {
       workspaceFileCount: scopedWorkspaceFiles.length,
       originalFileCount: originalFiles.length,
@@ -158,6 +160,32 @@ export async function collectEvidence(
       hasPatch: Boolean(patchText),
     },
   };
+}
+
+function deriveCaseDir(caseInput: CaseInput): string | undefined {
+  if (caseInput.patchPath && path.basename(path.dirname(caseInput.patchPath)) === "diff") {
+    return path.dirname(path.dirname(caseInput.patchPath));
+  }
+  if (caseInput.patchPath && path.basename(path.dirname(caseInput.patchPath)) === "intermediate") {
+    return path.dirname(path.dirname(caseInput.patchPath));
+  }
+  if (
+    caseInput.patchPath &&
+    path.basename(path.dirname(caseInput.patchPath)) === "patch" &&
+    path.basename(path.dirname(path.dirname(caseInput.patchPath))) === "opencode-sandbox"
+  ) {
+    return path.dirname(path.dirname(path.dirname(caseInput.patchPath)));
+  }
+  if (path.basename(caseInput.generatedProjectPath) === "workspace") {
+    return path.dirname(caseInput.generatedProjectPath);
+  }
+  if (
+    path.basename(caseInput.generatedProjectPath) === "generated" &&
+    path.basename(path.dirname(caseInput.generatedProjectPath)) === "opencode-sandbox"
+  ) {
+    return path.dirname(path.dirname(caseInput.generatedProjectPath));
+  }
+  return undefined;
 }
 
 function isRuleEvaluationIgnoredPath(relativePath: string): boolean {

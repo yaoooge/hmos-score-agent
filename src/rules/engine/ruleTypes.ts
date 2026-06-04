@@ -22,6 +22,7 @@ export type StaticDetectorMode =
   | "regex"
   | "project_structure"
   | "arkui_extra"
+  | "arkui_static"
   | "case_constraint_precheck"
   | "arkts_static"
   | "api_usage";

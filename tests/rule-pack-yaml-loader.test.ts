@@ -24,7 +24,7 @@ test("loads built-in rule packs directly from references/rules yaml", () => {
   );
   assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "ARKTS-MUST-002"));
   assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "ARKUI-MUST-001"));
-  assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "RSP-MUST-01"));
+  assert.ok(packs.flatMap((pack) => pack.rules).some((rule) => rule.rule_id === "OM-BREAKPOINT-MUST-01"));
 });
 
 test("loads built-in rule pack versions from yaml", () => {
@@ -74,29 +74,78 @@ test("loads arkui-extra rules with arkui extra detector metadata", () => {
   assert.equal(arkuiPack.rules[0]?.profile?.riskCode, "API_USAGE_DEVIATION");
 });
 
+test("loads arkui_static detector metadata", async (t) => {
+  const dir = await makeTempRulePackDir(t);
+  await fs.writeFile(
+    path.join(dir, "arkui-static.yaml"),
+    [
+      "name: ArkUI Static",
+      "version: v1",
+      "rule_pack_meta:",
+      "  pack_id: arkui-static-test",
+      "  source_name: test",
+      "  source_version: test",
+      "must_rules:",
+      "  - id: OM-TABS-MUST-01",
+      "    rule: Tabs.vertical 必须按断点设置。",
+      "    detector:",
+      "      kind: static",
+      "      mode: arkui_static",
+      "      config:",
+      "        check: tabs_vertical_by_breakpoint",
+      "        targetPatterns:",
+      "          - '**/*.ets'",
+      "    fallback:",
+      "      policy: agent_assisted",
+      "    profile:",
+      "      scoring: true",
+      "      riskCode: UI_LAYOUT_OR_BREAKPOINT_MISMATCH",
+      "      metricGroups:",
+      "        - type_safety",
+      "      impact: medium",
+      "should_rules: []",
+      "forbidden_patterns: []",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const pack = loadRegisteredRulePacksFromYamlDirectory(dir)[0];
+
+  assert.equal(pack?.rules[0]?.rule_id, "OM-TABS-MUST-01");
+  assert.deepEqual(pack?.rules[0]?.detector, {
+    kind: "static",
+    mode: "arkui_static",
+    config: {
+      check: "tabs_vertical_by_breakpoint",
+      targetPatterns: ["**/*.ets"],
+    },
+  });
+});
+
 test("loads cross-device rules as built-in unified-schema rules", () => {
   const packs = loadRegisteredRulePacksFromYamlDirectory(
     path.resolve(process.cwd(), "references/rules"),
   );
   const crossDeviceRule = packs
     .flatMap((pack) => pack.rules)
-    .find((rule) => rule.rule_id === "RSP-MUST-01");
+    .find((rule) => rule.rule_id === "OM-BREAKPOINT-MUST-01");
 
   assert.ok(crossDeviceRule);
   assert.equal(crossDeviceRule.rule_name, "横向断点划分范围必须符合系统推荐值");
   assert.equal(crossDeviceRule.priority, "P0");
   assert.deepEqual(crossDeviceRule.detector, {
     kind: "static",
-    mode: "case_constraint_precheck",
+    mode: "arkui_static",
     config: {
+      check: "breakpoint_ranges_standard",
       targetPatterns: ["**/*.ets"],
       kit: ["ArkUI: GridRow / WidthBreakpoint"],
       targetChecks: [
         {
           target: "**/*.ets",
           astSignals: [],
-          llmPrompt:
-            "检查工程中自定义断点系统或 WidthBreakpointType 工具类的断点边界定义，横向断点划分必须为 xs:(0,320)、sm:[320,600)、md:[600,840)、lg:[840,1440)、xl:[1440,+∞)。若使用 GridRow 的 breakpoints.value，值必须为 ['320vp','600vp','840vp','1440vp']。断点边界值与系统推荐不一致即判定失败",
+          llmPrompt: "横向断点划分范围必须符合系统推荐值。请基于静态证据复核是否满足该约束。",
         },
       ],
     },

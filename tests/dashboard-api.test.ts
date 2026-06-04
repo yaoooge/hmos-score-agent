@@ -313,7 +313,7 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
     ],
     rule_audit_results: [
       {
-        rule_id: "RSP-MUST-01",
+        rule_id: "OM-BREAKPOINT-MUST-01",
         rule_summary: "横向断点划分范围必须符合系统推荐值",
         rule_source: "must_rule",
         result: "不满足",
@@ -412,7 +412,7 @@ async function addCrossDeviceFixture(fixture: Awaited<ReturnType<typeof createFi
     },
     rule_audit_results: [
       {
-        rule_id: "RSP-MUST-01",
+        rule_id: "OM-BREAKPOINT-MUST-01",
         rule_summary: "横向断点划分范围必须符合系统推荐值",
         rule_source: "must_rule",
         result: "不满足",
@@ -1055,7 +1055,7 @@ test("dashboard cross-device cases list only involved tasks and support keyword 
     {
       packId: "cross-device-adaptation",
       packDisplayName: "HarmonyOS 一多适配通用规则",
-      ruleId: "RSP-MUST-01",
+      ruleId: "OM-BREAKPOINT-MUST-01",
       ruleSummary: "横向断点划分范围必须符合系统推荐值",
       ruleSource: "must_rule",
       result: "不满足",
@@ -1098,7 +1098,7 @@ test("dashboard cross-device rule violations only show cross-device built-in pac
   assert.equal(response.success, true);
   const items = response.items as Array<Record<string, unknown>>;
   assert.equal(items.length, 1);
-  assert.equal(items[0]?.ruleId, "RSP-MUST-01");
+  assert.equal(items[0]?.ruleId, "OM-BREAKPOINT-MUST-01");
   assert.equal(items[0]?.violationCount, 1);
   assert.equal(items[0]?.affectedTaskCount, 1);
 
@@ -1108,7 +1108,7 @@ test("dashboard cross-device rule violations only show cross-device built-in pac
   );
   const allItems = withOtherRules.items as Array<Record<string, unknown>>;
   assert.ok(allItems.some((item) => item.ruleId === "ARKTS-MUST-001"));
-  assert.ok(allItems.some((item) => item.ruleId === "RSP-MUST-01"));
+  assert.ok(allItems.some((item) => item.ruleId === "OM-BREAKPOINT-MUST-01"));
   assert.equal(allItems.some((item) => item.ruleId === "@cross-device-app-dev/size-unit"), false);
   assert.equal(
     allItems.some((item) => item.ruleId === "OFFICIAL-LINTER:@cross-device-app-dev/font-size"),

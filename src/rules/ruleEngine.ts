@@ -7,6 +7,7 @@ import {
 import type { RegisteredRule } from "./engine/ruleTypes.js";
 import { runArktsStaticRule } from "./evaluators/arktsStaticEvaluator.js";
 import { runArkuiExtraRule } from "./evaluators/arkuiExtraEvaluator.js";
+import { runArkuiStaticRule } from "./evaluators/arkuiStaticEvaluator.js";
 import { runCaseConstraintRule } from "./evaluators/caseConstraintEvaluator.js";
 import { runProjectStructureRule } from "./evaluators/projectStructureEvaluator.js";
 import type { EvaluatedRule } from "./evaluators/shared.js";
@@ -283,6 +284,7 @@ function evaluateRegisteredRule(
       regex: runTextPatternRule,
       project_structure: runProjectStructureRule,
       arkui_extra: runArkuiExtraRule,
+      arkui_static: runArkuiStaticRule,
       case_constraint_precheck: runCaseConstraintRule,
       arkts_static: runArktsStaticRule,
       api_usage: runUnsupportedStaticRule,

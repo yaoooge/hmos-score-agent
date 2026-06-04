@@ -545,14 +545,13 @@ test("cross-device component precheck uses full changed file content for kit anc
     enabledRulePackIds: ["cross-device-adaptation"],
   });
 
-  const candidate = result.assistedRuleCandidates.find(
-    (item) => item.rule_id === "CMP-MUST-03",
+  const displayCountRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "OM-SWIPER-MUST-01",
   );
 
-  assert.ok(candidate);
-  assert.equal(candidate.static_precheck?.signal_status, "all_matched");
-  assert.deepEqual(candidate.static_precheck?.matched_tokens, ["Swiper"]);
-  assert.deepEqual(candidate.evidence_files, [relativePath]);
+  assert.ok(displayCountRule);
+  assert.equal(displayCountRule.result, "不满足");
+  assert.deepEqual(result.ruleEvidenceIndex["OM-SWIPER-MUST-01"]?.evidenceFiles, [`${relativePath}:7`]);
 });
 
 test("ARKTS-FORBID-006 ignores typed arrow function callbacks", () => {
