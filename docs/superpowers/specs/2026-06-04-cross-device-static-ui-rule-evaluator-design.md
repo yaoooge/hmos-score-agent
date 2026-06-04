@@ -1,45 +1,45 @@
-# Cross-Device Static UI Rule Evaluator Design
+# 一多 UI 规则静态判定器设计
 
-## Problem
+## 问题
 
-The current cross-device adaptation rule pack contains many ArkUI component rules, but most of them use `case_constraint_precheck`. That evaluator only produces static hints and returns `未接入判定器`; the final pass/fail decision is still made by an agent. This creates inconsistent results for rules whose evidence is syntactic and should be deterministic, such as:
+当前一多适配规则集包含大量 ArkUI 组件规则，但大多数规则使用 `case_constraint_precheck`。该 evaluator 只产生静态辅助证据，并返回 `未接入判定器`；最终“满足/不满足”仍由 agent 判断。对于证据本身就是语法结构、理应确定性判定的规则，这会造成一致性波动，例如：
 
-- `Tabs.vertical(...)` mapping `sm/md/lg` incorrectly.
-- `List({ space: 12 })` using fixed spacing.
-- `GridRow({ columns: ... })` using fixed values instead of breakpoint objects.
-- `WaterFlow` dynamically switching columns without `SLIDING_WINDOW`.
+- `Tabs.vertical(...)` 对 `sm/md/lg` 的映射错误。
+- `List({ space: 12 })` 使用固定间距。
+- `GridRow({ columns: ... })` 使用固定值，而不是断点对象。
+- `WaterFlow` 动态切换列数但未使用 `SLIDING_WINDOW`。
 
-We need a full static evaluator for the cross-device UI component rules. The implementation should scan ArkUI component usage once, evaluate all related rules from the same scan index, persist intermediate scan results for early human review, and simplify the rule YAML so the detector configuration carries the precise static check while the natural-language rule text stays short.
+需要为一多 UI 组件规则实现完整静态判定器。实现应一次扫描 ArkUI 组件用法，从同一份扫描索引中判定所有相关规则，落盘中间扫描结果供早期人工复核，并精简规则 YAML：由 detector 配置承载精确静态检查，规则自然语言保持短句。
 
-## Goals
+## 目标
 
-- Implement all cross-device UI component rules in one static-evaluator framework rather than in batches.
-- Use a single scan pass over `.ets` files to produce reusable ArkUI component facts.
-- Use a registry model where each rule evaluator is registered by component name, properties, and check id.
-- Persist intermediate scan output and per-rule static evaluation traces for manual review during rollout.
-- Replace the old sequential `CMP-MUST-*` / `CMP-SHOULD-*` IDs with component-based IDs in one breaking migration.
-- Simplify `references/rules/cross-device-adaptation.yaml` rule descriptions and fallback prompts.
-- Keep `case_constraint_precheck` as agent-precheck only; do not overload it into a final static evaluator.
+- 一次性实现全部一多 UI 组件规则的静态判定框架，不分批迁移。
+- 对 `.ets` 文件做单次扫描，生成可复用的 ArkUI 组件 facts。
+- 使用注册式模型：每个规则 evaluator 按组件名、属性和 check id 注册。
+- 落盘中间扫描结果和每条规则的静态判定 trace，供 rollout 期间人工复核。
+- 将旧的顺序型 `CMP-MUST-*` / `CMP-SHOULD-*` ID 一次性替换为组件化 ID。
+- 精简 `references/rules/cross-device-adaptation.yaml` 中的规则描述和 fallback prompt。
+- 保持 `case_constraint_precheck` 仅用于 agent 前置辅助证据，不扩展成最终静态判定器。
 
-## Non-Goals
+## 非目标
 
-- Do not preserve old rule IDs through `legacyIds`; this is a one-time breaking switch.
-- Do not attempt a full ArkTS parser in this phase. Use a robust lightweight scanner with deterministic expression extraction and conservative `需要复核` output when an expression cannot be resolved.
-- Do not migrate non-UI hover, web, or form-factor rules unless they directly share the breakpoint scanner facts.
-- Do not remove `arkui_extra`; it remains for existing non-cross-device ArkUI special-case checks.
+- 不通过 `legacyIds` 保留旧规则 ID；这是一次性 breaking 切换。
+- 本阶段不实现完整 ArkTS parser。使用稳健的轻量扫描器做确定性表达式抽取；无法解析的表达式保守进入复核状态。
+- 除非直接复用断点扫描 facts，否则不迁移非 UI 的悬停态、Web 或设备形态规则。
+- 不移除 `arkui_extra`；它继续承载现有非一多组件框架的 ArkUI 特例检查。
 
-## Existing Evaluator Boundaries
+## 现有 Evaluator 边界
 
-`arkui_extra` is already static, but it is not the right home for this work.
+`arkui_extra` 已经是静态扫描，但它不是本次工作的合适承载点。
 
-Current `arkui_extra` checks are hand-written special cases:
+当前 `arkui_extra` 只接了两个手写特例：
 
 - `route_navdestination`
 - `multi_bindsheet_same_component`
 
-Those checks scan files directly inside each evaluator. They do not build a reusable component index, do not model breakpoint expressions, and are not organized around component/property registrations. Expanding `arkui_extra` with all cross-device rules would turn it into a large mixed-purpose file.
+这些检查在每个 evaluator 内部直接扫描文件。它们不构建可复用组件索引，不建模断点表达式，也不是围绕“组件/属性/规则注册”组织。若把全部一多规则继续塞进 `arkui_extra`，它会变成一个职责混杂的大文件。
 
-The new detector mode should be:
+新增 detector mode：
 
 ```ts
 type StaticDetectorMode =
@@ -52,20 +52,20 @@ type StaticDetectorMode =
   | "api_usage";
 ```
 
-Detector responsibilities:
+Detector 职责：
 
-| Detector | Responsibility |
+| Detector | 职责 |
 | --- | --- |
-| `arkts_static` | ArkTS language, naming, typing, and style checks. |
-| `arkui_extra` | Small ArkUI special-case checks that are not part of the cross-device component rule framework. |
-| `arkui_static` | Cross-device ArkUI component and breakpoint rules with reusable scan facts. |
-| `case_constraint_precheck` | Agent precheck evidence only; never final static pass/fail. |
+| `arkts_static` | ArkTS 语言、命名、类型和风格类静态检查。 |
+| `arkui_extra` | 少量 ArkUI 特例检查，不属于一多组件规则框架。 |
+| `arkui_static` | 一多 ArkUI 组件与断点规则，使用可复用扫描 facts。 |
+| `case_constraint_precheck` | 仅提供 agent 前置证据，不直接产出最终静态满足/不满足。 |
 
-## Architecture
+## 架构
 
-### Files
+### 文件
 
-Create:
+新增：
 
 - `src/rules/evaluators/arkuiComponentScanner.ts`
 - `src/rules/evaluators/arkuiExpressionFacts.ts`
@@ -73,34 +73,34 @@ Create:
 - `src/rules/evaluators/arkuiStaticRegistry.ts`
 - `src/rules/evaluators/arkuiStaticDebugWriter.ts`
 
-Modify:
+修改：
 
 - `src/rules/engine/ruleTypes.ts`
 - `src/rules/ruleEngine.ts`
 - `src/rules/engine/rulePackYamlLoader.ts`
 - `src/rules/evaluators/shared.ts`
 - `references/rules/cross-device-adaptation.yaml`
-- Rule-engine and score-agent tests.
+- rule-engine 和 score-agent 相关测试。
 
-### Data Flow
+### 数据流
 
 ```mermaid
 flowchart TD
   A["CollectedEvidence"] --> B["arkuiComponentScanner"]
   B --> C["ArkuiScanIndex"]
   C --> D["arkuiStaticRegistry"]
-  D --> E["Component/property evaluators"]
+  D --> E["组件/属性 evaluators"]
   E --> F["EvaluatedRule"]
   C --> G["Debug artifact writer"]
   E --> G
   F --> H["rule_audit_results / deterministicRuleResults"]
 ```
 
-`ArkuiScanIndex` is cached per `CollectedEvidence` with a `WeakMap`, matching the `arkts_static` pattern.
+`ArkuiScanIndex` 按 `CollectedEvidence` 使用 `WeakMap` 缓存，沿用 `arkts_static` 的模式。
 
-## Scan Facts
+## 扫描 Facts
 
-### Component Facts
+### 组件 Facts
 
 ```ts
 export interface ArkuiComponentFact {
@@ -131,14 +131,14 @@ export interface ArkuiConditionFact {
 }
 ```
 
-The scanner must capture both constructor-style properties and modifier-style properties:
+扫描器必须同时捕获构造参数属性和链式 modifier 属性：
 
 - `List({ lanes: 2, space: 12 })`
 - `.lanes(this.listLanes)`
 - `Tabs({ barPosition: ... })`
 - `.vertical(this.isWideScreen)`
 
-### Breakpoint and Expression Facts
+### 断点与表达式 Facts
 
 ```ts
 export type BreakpointName = "xs" | "sm" | "md" | "lg" | "xl";
@@ -160,27 +160,27 @@ export interface BreakpointValueFact {
 }
 ```
 
-The expression resolver must support:
+表达式解析器必须支持：
 
-- Fixed literals: `true`, `false`, `12`, `'1fr 1fr'`, `BarPosition.Start`.
-- Object maps: `{ sm: 1, md: 2, lg: 3, xl: 3 }`.
-- Ternaries: `bp === 'lg' ? true : false`.
-- Common breakpoint helpers: `this.value.getValue(this.currentBreakpoint)`.
-- Getters and simple class fields when defined in the same file.
-- Anti-patterns like `currentBreakpoint !== 'sm'`, which maps `md/lg/xl` together.
-- Unknown values with a clear reason.
+- 固定字面量：`true`、`false`、`12`、`'1fr 1fr'`、`BarPosition.Start`。
+- 断点对象：`{ sm: 1, md: 2, lg: 3, xl: 3 }`。
+- 三元表达式：`bp === 'lg' ? true : false`。
+- 常见断点 helper：`this.value.getValue(this.currentBreakpoint)`。
+- 同文件内定义的 getter 和简单 class field。
+- 反模式：`currentBreakpoint !== 'sm'`，即把 `md/lg/xl` 归为同一分支。
+- 无法解析时给出明确原因。
 
-### Debug Artifacts
+### Debug 产物
 
-Static scan artifacts must be written for early manual review. They should be emitted only when enabled by an environment variable or runtime option, so normal scoring output does not become noisy.
+静态扫描中间态必须可落盘，供早期人工复核。该输出只在环境变量或运行时选项开启时生成，避免普通评分输出变得嘈杂。
 
-Configuration:
+配置：
 
-- Env var: `HMOS_STATIC_SCAN_DEBUG=1`
-- Optional root: `HMOS_STATIC_SCAN_DEBUG_DIR`
-- Default root when enabled: `.local-analysis/static-scan-debug`
+- 环境变量：`HMOS_STATIC_SCAN_DEBUG=1`
+- 可选根目录：`HMOS_STATIC_SCAN_DEBUG_DIR`
+- 默认根目录：`.local-analysis/static-scan-debug`
 
-Directory layout:
+目录结构：
 
 ```text
 .local-analysis/static-scan-debug/<taskId-or-runId>/
@@ -189,9 +189,9 @@ Directory layout:
   unresolved-expressions.json
 ```
 
-`arkui-scan-index.json` contains component facts and breakpoint facts. It must include file paths, line numbers, raw snippets, extracted args, modifiers, parent/child ids, and surrounding conditions.
+`arkui-scan-index.json` 包含组件 facts 和断点 facts。必须包含文件路径、行号、原始片段、抽取出的 args、modifiers、父子 id 和条件上下文。
 
-`arkui-rule-traces.json` contains one item per evaluated rule:
+`arkui-rule-traces.json` 每条被判定规则一项：
 
 ```ts
 export interface ArkuiRuleTrace {
@@ -205,9 +205,9 @@ export interface ArkuiRuleTrace {
 }
 ```
 
-`unresolved-expressions.json` contains expressions that forced a rule into `需要复核` or `不涉及` due to insufficient static information. If the public `StaticRuleResult` type remains unchanged, unresolved rules should use `未接入判定器` with a conclusion that says static scanning found relevant evidence but needs review.
+`unresolved-expressions.json` 包含导致规则需要复核或无法静态完成判定的表达式。如果公共 `StaticRuleResult` 类型暂不增加“需要复核”，则这类规则使用 `未接入判定器`，并在 conclusion 中说明静态扫描找到了相关证据但需要复核。
 
-## Registry Design
+## 注册式设计
 
 ```ts
 export interface ArkuiStaticCheck {
@@ -227,7 +227,7 @@ export function registerArkuiStaticCheck(check: ArkuiStaticCheck): void;
 export function runArkuiStaticRule(rule: RegisteredRule, evidence: CollectedEvidence): EvaluatedRule;
 ```
 
-Rules are registered once:
+规则注册示例：
 
 ```ts
 registerArkuiStaticCheck({
@@ -238,13 +238,13 @@ registerArkuiStaticCheck({
 });
 ```
 
-The evaluator finds `rule.detector.config.check`, looks up the check, and runs it against the cached index.
+Evaluator 从 `rule.detector.config.check` 读取 check id，查 registry，并基于缓存后的 index 执行对应 evaluator。
 
-## Component-Based Rule IDs
+## 组件化规则 ID
 
-Rule IDs should be replaced in one migration. Old IDs are removed from the YAML. There is no `legacyIds` compatibility layer.
+规则 ID 在一次迁移中整体替换。旧 ID 从 YAML 中移除，不提供 `legacyIds` 兼容层。
 
-ID format:
+ID 格式：
 
 ```text
 CMP-<COMPONENT>-MUST-<NN>
@@ -253,7 +253,7 @@ RSP-BREAKPOINT-MUST-<NN>
 CFG-MODULE-MUST-<NN>
 ```
 
-Use uppercase component names:
+组件名使用大写：
 
 - `LIST`
 - `WATERFLOW`
@@ -271,9 +271,9 @@ Use uppercase component names:
 - `CONSTRAINT`
 - `BREAKPOINT`
 
-### ID Mapping
+### ID 映射
 
-| Old ID | New ID |
+| 旧 ID | 新 ID |
 | --- | --- |
 | `CFG-MUST-01` | `CFG-MODULE-MUST-01` |
 | `RSP-MUST-01` | `RSP-BREAKPOINT-MUST-01` |
@@ -315,20 +315,20 @@ Use uppercase component names:
 | `CMP-SHOULD-15` | `CMP-ASPECTRATIO-SHOULD-02` |
 | `CMP-SHOULD-16` | `CMP-CONSTRAINT-SHOULD-01` |
 
-## YAML Simplification
+## YAML 精简
 
-Each static UI rule should use:
+每条静态 UI 规则使用以下结构：
 
-- One short `rule` sentence.
+- 一句简短 `rule`。
 - `detector.kind: static`
 - `detector.mode: arkui_static`
 - `detector.config.check`
 - `detector.config.targetPatterns`
-- Optional small static config, such as expected breakpoint values.
-- Short decision criteria.
-- No duplicated long `llmPrompt` under every rule.
+- 可选的少量静态配置，例如期望断点值。
+- 简短 decision criteria。
+- 不在每条规则里重复长篇 `llmPrompt`。
 
-Example:
+示例：
 
 ```yaml
 - id: RSP-BREAKPOINT-MUST-03
@@ -358,98 +358,98 @@ Example:
       - 表达式或断点来源无法静态解析。
 ```
 
-Fallback prompt should be generated centrally, not repeated in YAML:
+Fallback prompt 由中心逻辑生成，不在 YAML 中重复：
 
 ```text
 静态扫描无法完整判定规则 <rule_id>。请仅复核以下扫描位置和表达式，不要自由重扫全工程：<locations>。
 ```
 
-## Rule Coverage by Component
+## 规则覆盖范围
 
-### Breakpoint Support
+### 断点支撑规则
 
-| Rule | Check | Scan Inputs |
+| 规则 | Check | 扫描输入 |
 | --- | --- | --- |
-| `RSP-BREAKPOINT-MUST-01` | `breakpoint_range_recommended` | `GridRow.breakpoints.value`, custom breakpoint constants, helper thresholds. |
-| `RSP-BREAKPOINT-MUST-02` | `no_hardcoded_width_breakpoint_condition` | Binary expressions using width/vp/screenWidth with `600`, `840`, `1440`. |
-| `RSP-BREAKPOINT-MUST-03` | `breakpoint_value_provider_complete` | `BreakpointType`, `BreakpointValue`, `ResponsiveValue`, constructor params, `getValue` branches. |
-| `RSP-BREAKPOINT-MUST-04` | `page_breakpoint_source_allowed` | `WidthBreakpoint`, `mediaquery`, `windowSizeChange`, `onAreaChange`, custom width calculation. |
-| `RSP-BREAKPOINT-MUST-05` | `breakpoint_listener_source_allowed` | `window.on('windowSizeChange')`, `mediaquery.matchMediaSync`, `display.on('change')`, banned listeners. |
-| `RSP-BREAKPOINT-MUST-06` | `breakpoint_listener_registration_timing` | Listener registration location: `loadContent` callback, `aboutToAppear`, `onCreate`, top-level. |
-| `RSP-BREAKPOINT-MUST-07` | `gridrow_breakpoints_value_recommended` | `GridRow({ breakpoints: { value: [...] } })`. |
+| `RSP-BREAKPOINT-MUST-01` | `breakpoint_range_recommended` | `GridRow.breakpoints.value`、自定义断点常量、helper 阈值。 |
+| `RSP-BREAKPOINT-MUST-02` | `no_hardcoded_width_breakpoint_condition` | 使用 width/vp/screenWidth 与 `600`、`840`、`1440` 比较的二元表达式。 |
+| `RSP-BREAKPOINT-MUST-03` | `breakpoint_value_provider_complete` | `BreakpointType`、`BreakpointValue`、`ResponsiveValue`、构造参数、`getValue` 分支。 |
+| `RSP-BREAKPOINT-MUST-04` | `page_breakpoint_source_allowed` | `WidthBreakpoint`、`mediaquery`、`windowSizeChange`、`onAreaChange`、自定义宽度计算。 |
+| `RSP-BREAKPOINT-MUST-05` | `breakpoint_listener_source_allowed` | `window.on('windowSizeChange')`、`mediaquery.matchMediaSync`、`display.on('change')`、禁止的监听来源。 |
+| `RSP-BREAKPOINT-MUST-06` | `breakpoint_listener_registration_timing` | 监听注册位置：`loadContent` 回调、`aboutToAppear`、`onCreate`、顶层语句。 |
+| `RSP-BREAKPOINT-MUST-07` | `gridrow_breakpoints_value_recommended` | `GridRow({ breakpoints: { value: [...] } })`。 |
 
-### Components
+### 组件规则
 
-| Component | Rules | Scan Inputs |
+| 组件 | 规则 | 扫描输入 |
 | --- | --- | --- |
-| `List` | `CMP-LIST-MUST-01`, `CMP-LIST-SHOULD-01`, `CMP-LIST-SHOULD-02`, `CMP-SCROLL-SHOULD-01` | `lanes`, `space`, `divider`, `listDirection(Axis.Horizontal)`. |
-| `WaterFlow` | `CMP-WATERFLOW-MUST-01`, `CMP-WATERFLOW-SHOULD-01`, `CMP-WATERFLOW-SHOULD-02` | `columnsTemplate`, `layoutMode`, `itemConstraintSize`, `FlowItem` child size constraints. |
-| `Swiper` | `CMP-SWIPER-MUST-01`, `CMP-SWIPER-MUST-02`, `CMP-SWIPER-MUST-03` | `displayCount`, `indicator`, `prevMargin`, `nextMargin`, fullscreen exclusion signals. |
-| `Grid` | `CMP-GRID-MUST-01` | `columnsTemplate`. |
-| `SideBarContainer` | `CMP-SIDEBAR-MUST-01`, `CMP-SIDEBAR-MUST-02`, `CMP-SIDEBAR-MUST-03` | constructor type, `showSideBar`, `sideBarWidth`. |
-| `Tabs` | `CMP-TABS-MUST-01`, `CMP-TABS-MUST-02`, `CMP-TABS-MUST-03` | `vertical`, `barPosition`, `barWidth`, `barHeight`; cross-check vertical/barPosition consistency. |
-| `GridRow` | `CMP-GRIDROW-MUST-01`, `CMP-GRIDROW-SHOULD-01`, `RSP-BREAKPOINT-MUST-07` | `columns`, `gutter`, `breakpoints.value`. |
-| `GridCol` | `CMP-GRIDCOL-MUST-01`, `CMP-GRIDCOL-SHOULD-01` | `span`, `offset`, parent `GridRow.columns`. |
-| `Flex` | `CMP-FLEX-MUST-01`, `CMP-FLEX-SHOULD-01`, `CMP-FLEX-SHOULD-02`, shared row/column rules | `flexGrow`, `flexShrink`, `justifyContent`, `wrap`, child layout modifiers. |
-| `Row` / `Column` | `CMP-ROWCOLUMN-SHOULD-01`, `CMP-ROWCOLUMN-SHOULD-02`, `CMP-ROWCOLUMN-SHOULD-03` | child `layoutWeight`, percent `width/height`, `displayPriority`, `Blank`, fixed empty containers. |
-| `Navigation` | `CMP-NAVIGATION-SHOULD-01` | `mode`, `NavigationMode.Split`, `navBarWidth`. |
-| `Scroll` | `CMP-SCROLL-SHOULD-01` | `scrollable(ScrollDirection.Horizontal)`, child `Row/Column`, horizontal list alternative. |
-| Any component | `CMP-ASPECTRATIO-SHOULD-01`, `CMP-ASPECTRATIO-SHOULD-02`, `CMP-CONSTRAINT-SHOULD-01` | `aspectRatio`, `width`, `height`, `constraintSize`, dynamic maxWidth/width with breakpoint expressions. |
+| `List` | `CMP-LIST-MUST-01`、`CMP-LIST-SHOULD-01`、`CMP-LIST-SHOULD-02`、`CMP-SCROLL-SHOULD-01` | `lanes`、`space`、`divider`、`listDirection(Axis.Horizontal)`。 |
+| `WaterFlow` | `CMP-WATERFLOW-MUST-01`、`CMP-WATERFLOW-SHOULD-01`、`CMP-WATERFLOW-SHOULD-02` | `columnsTemplate`、`layoutMode`、`itemConstraintSize`、`FlowItem` 子项尺寸约束。 |
+| `Swiper` | `CMP-SWIPER-MUST-01`、`CMP-SWIPER-MUST-02`、`CMP-SWIPER-MUST-03` | `displayCount`、`indicator`、`prevMargin`、`nextMargin`、全屏排除信号。 |
+| `Grid` | `CMP-GRID-MUST-01` | `columnsTemplate`。 |
+| `SideBarContainer` | `CMP-SIDEBAR-MUST-01`、`CMP-SIDEBAR-MUST-02`、`CMP-SIDEBAR-MUST-03` | 构造 type、`showSideBar`、`sideBarWidth`。 |
+| `Tabs` | `CMP-TABS-MUST-01`、`CMP-TABS-MUST-02`、`CMP-TABS-MUST-03` | `vertical`、`barPosition`、`barWidth`、`barHeight`；同时校验 vertical/barPosition 一致性。 |
+| `GridRow` | `CMP-GRIDROW-MUST-01`、`CMP-GRIDROW-SHOULD-01`、`RSP-BREAKPOINT-MUST-07` | `columns`、`gutter`、`breakpoints.value`。 |
+| `GridCol` | `CMP-GRIDCOL-MUST-01`、`CMP-GRIDCOL-SHOULD-01` | `span`、`offset`、父级 `GridRow.columns`。 |
+| `Flex` | `CMP-FLEX-MUST-01`、`CMP-FLEX-SHOULD-01`、`CMP-FLEX-SHOULD-02`、共享 Row/Column 规则 | `flexGrow`、`flexShrink`、`justifyContent`、`wrap`、子项布局 modifier。 |
+| `Row` / `Column` | `CMP-ROWCOLUMN-SHOULD-01`、`CMP-ROWCOLUMN-SHOULD-02`、`CMP-ROWCOLUMN-SHOULD-03` | 子项 `layoutWeight`、百分比 `width/height`、`displayPriority`、`Blank`、固定空容器。 |
+| `Navigation` | `CMP-NAVIGATION-SHOULD-01` | `mode`、`NavigationMode.Split`、`navBarWidth`。 |
+| `Scroll` | `CMP-SCROLL-SHOULD-01` | `scrollable(ScrollDirection.Horizontal)`、子级 `Row/Column`、横向 List 替代实现。 |
+| 任意组件 | `CMP-ASPECTRATIO-SHOULD-01`、`CMP-ASPECTRATIO-SHOULD-02`、`CMP-CONSTRAINT-SHOULD-01` | `aspectRatio`、`width`、`height`、`constraintSize`、带断点表达式的动态 maxWidth/width。 |
 
-## Evaluation Semantics
+## 判定语义
 
-Evaluators should use conservative deterministic rules:
+Evaluator 使用保守确定性规则：
 
-- Return `不满足` when the scan finds explicit violation evidence.
-- Return `满足` when all relevant component instances are statically resolvable and conform.
-- Return `不涉及` when no relevant component or scenario exists.
-- Return `未接入判定器` with a review conclusion when relevant syntax exists but the expression cannot be resolved safely.
+- 扫描到明确违规证据时返回 `不满足`。
+- 所有相关组件实例都能静态解析且符合规则时返回 `满足`。
+- 没有相关组件或适用场景时返回 `不涉及`。
+- 相关语法存在但表达式无法安全解析时，返回 `未接入判定器` 并在 conclusion 中说明需要复核。
 
-This keeps false positives low and makes early scan artifacts useful for human review.
+这样可以降低误报，同时让早期扫描产物更适合人工复核。
 
-## Result and Risk Impact
+## 结果与风险影响
 
-After migration, these rules should appear in deterministic rule results. Agent-assisted candidates should only contain unresolved cases. Risk generation should use the new rule IDs directly. Historical dashboards and consistency reports will show old IDs for old results and new IDs for new results; no compatibility mapping is required.
+迁移后，这些规则应进入 deterministic rule results。Agent-assisted candidates 只保留无法静态解析的场景。风险生成直接使用新的规则 ID。历史 dashboard 和一致性报告中，旧结果显示旧 ID，新结果显示新 ID；不需要兼容映射。
 
-## Testing Strategy
+## 测试策略
 
-Unit tests:
+单元测试：
 
-- Scanner extracts constructor args, modifiers, parent/child links, and conditions.
-- Scanner resolves fixed literals, object maps, ternaries, `currentBreakpoint !== 'sm'`, and simple helper `getValue` patterns.
-- Each component registry check has at least one pass, fail, not-applicable, and unresolved test where applicable.
-- Debug writer emits stable JSON when `HMOS_STATIC_SCAN_DEBUG=1`.
+- Scanner 能抽取构造参数、modifiers、父子关系和条件上下文。
+- Scanner 能解析固定字面量、断点对象、三元表达式、`currentBreakpoint !== 'sm'` 和简单 `getValue` helper。
+- 每个组件 registry check 至少覆盖满足、不满足、不涉及；适用时覆盖无法解析。
+- `HMOS_STATIC_SCAN_DEBUG=1` 时 debug writer 生成稳定 JSON。
 
-Integration tests:
+集成测试：
 
-- `runRuleEngine` evaluates migrated YAML rules as deterministic results.
-- `case_constraint_precheck` behavior remains unchanged for non-migrated case rules.
-- C-004-like fixture deterministically reports `CMP-TABS-MUST-01`, `CMP-TABS-MUST-02`, `CMP-LIST-SHOULD-01`, `CMP-GRIDROW-MUST-01`, and `RSP-BREAKPOINT-MUST-03`.
-- Rule audit results contain new component-based IDs only.
+- `runRuleEngine` 能将迁移后的 YAML 规则判定为 deterministic results。
+- 非迁移 case 规则的 `case_constraint_precheck` 行为保持不变。
+- C-004 风格 fixture 能稳定报告 `CMP-TABS-MUST-01`、`CMP-TABS-MUST-02`、`CMP-LIST-SHOULD-01`、`CMP-GRIDROW-MUST-01` 和 `RSP-BREAKPOINT-MUST-03`。
+- rule audit results 只包含新的组件化 ID。
 
-Regression tests:
+回归测试：
 
-- Existing `arkui_extra` tests continue to pass.
-- Existing `arkts_static` tests continue to pass.
-- YAML loader accepts `arkui_static` mode and rejects unknown checks with a clear error.
+- 现有 `arkui_extra` 测试继续通过。
+- 现有 `arkts_static` 测试继续通过。
+- YAML loader 接受 `arkui_static` mode，并对未知 check 给出清晰错误。
 
 ## Rollout
 
-This is a breaking rule-pack migration. The implementation should land in one branch and switch the YAML IDs and detector modes in the same change as the static evaluator.
+这是一次 breaking 的规则集迁移。实现应在同一个分支中同时切换 YAML ID、detector mode 和静态 evaluator。
 
-Early rollout should run scoring with `HMOS_STATIC_SCAN_DEBUG=1` on known consistency cases such as C-004. Human reviewers should inspect:
+早期 rollout 应在 C-004 等已知一致性案例上开启 `HMOS_STATIC_SCAN_DEBUG=1` 运行评分。人工复核重点：
 
-- Whether `arkui-scan-index.json` found the correct component instances.
-- Whether `arkui-rule-traces.json` used the right decision inputs.
-- Whether unresolved expressions are legitimate scanner limitations.
+- `arkui-scan-index.json` 是否找到正确的组件实例。
+- `arkui-rule-traces.json` 是否使用了正确的判定输入。
+- `unresolved-expressions.json` 中的无法解析项是否确实是扫描器限制。
 
-Once scan artifacts are validated, debug output can remain opt-in for future investigations.
+扫描产物确认无误后，debug 输出仍保留为后续排查用的 opt-in 能力。
 
-## Success Criteria
+## 成功标准
 
-- All UI component rules in the cross-device rule pack use component-based IDs.
-- All UI component rules use `arkui_static` unless explicitly documented as unsuitable.
-- Static scan debug artifacts can be produced for every scoring run.
-- C-004-style Tabs/List/GridRow/WaterFlow issues are reported deterministically.
-- The rule YAML is substantially shorter: rule text is one concise sentence, detector config contains `check`, and repeated long `llmPrompt` text is removed.
-- Agent involvement is limited to unresolved cases, not ordinary component/property checks.
+- 一多规则集中的全部 UI 组件规则使用组件化 ID。
+- 除非明确说明不适合静态化，否则全部 UI 组件规则使用 `arkui_static`。
+- 每次评分运行都能按需生成静态扫描 debug 产物。
+- C-004 风格的 Tabs/List/GridRow/WaterFlow 问题能够稳定判定。
+- 规则 YAML 明显缩短：`rule` 为一句短描述，detector config 包含 `check`，移除重复长篇 `llmPrompt`。
+- Agent 只参与无法解析的场景，不再参与普通组件/属性规则判断。
