@@ -239,6 +239,7 @@ test("taskUnderstandingNode generates patch when case patch is absent and loads 
   );
 
   assert.equal(typeof result.effectivePatchPath, "string");
+  assert.equal(result.hasPatch, true);
   assert.equal(result.caseRuleDefinitions?.length, 1);
   const patchText = await fs.readFile(result.effectivePatchPath as string, "utf-8");
   assert.match(patchText, /diff --git/);

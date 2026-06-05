@@ -716,7 +716,7 @@ components:
           description: 生成工程文件 manifest JSON 地址。
         diffFileUrl:
           type: string
-          description: 可选 patch/diff 文件地址。
+          description: 兼容字段，服务忽略该地址并根据原始工程与生成工程自行生成 patch。
 
     RunRemoteTaskAcceptedResponse:
       type: object

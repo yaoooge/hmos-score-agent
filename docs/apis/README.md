@@ -30,7 +30,7 @@
 | --- | --- | --- | --- |
 | `taskId` | number | 是 | 远端任务 ID。 |
 | `testCase` | object | 是 | 远端测试用例元数据，包含 `id`、`name`、`type`、`description`、`input`、`expectedOutput`、`fileUrl`。 |
-| `executionResult` | object | 是 | 提交的执行结果，包含 `isBuildSuccess`、`outputCodeUrl`、可选 `diffFileUrl`。 |
+| `executionResult` | object | 是 | 提交的执行结果，包含 `isBuildSuccess`、`outputCodeUrl`；兼容接收但忽略 `diffFileUrl`，patch 由前后工程差异生成。 |
 | `callback` | string | 是 | 远端平台 callback 地址。 |
 | `token` | string | 否 | 兼容字段，当前服务不再依赖。 |
 

@@ -554,6 +554,40 @@ test("cross-device component precheck uses full changed file content for kit anc
   ]);
 });
 
+test("cross-device static violations expose concrete line locations in conclusions", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "@Entry",
+      "@Component",
+      "struct Index {",
+      "  build() {",
+      "    GridRow({ columns: 12 }) {",
+      "      GridCol() { Text('A') }",
+      "    }",
+      "  }",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+    enabledRulePackIds: ["cross-device-adaptation"],
+  });
+
+  const gutterRule = result.deterministicRuleResults.find(
+    (item) => item.rule_id === "OM-GRIDROW-SHOULD-01",
+  );
+  const violation = result.ruleViolations.find(
+    (item) => item.rule_id === "OM-GRIDROW-SHOULD-01",
+  );
+
+  assert.equal(gutterRule?.result, "不满足");
+  assert.match(gutterRule?.conclusion ?? "", /位置：entry\/src\/main\/ets\/pages\/Index\.ets:5/);
+  assert.match(violation?.evidence ?? "", /位置：entry\/src\/main\/ets\/pages\/Index\.ets:5/);
+});
+
 test("ARKTS-FORBID-006 ignores typed arrow function callbacks", () => {
   const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-006");
   assert.ok(rule);

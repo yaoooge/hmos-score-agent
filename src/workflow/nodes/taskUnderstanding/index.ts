@@ -423,6 +423,7 @@ export async function taskUnderstandingNode(
         patchPath: effectivePatchPath,
       },
       effectivePatchPath,
+      hasPatch: patchSummary.hasPatch,
       taskType,
       opencodeSandboxRoot: opencodeSandbox?.root,
       caseRuleDefinitions,

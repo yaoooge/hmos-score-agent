@@ -79,7 +79,9 @@ export function runArkuiStaticRule(
     return result;
   }
 
-  const applicableInstances = instances.filter((instance) => isInstanceApplicable(instance, spec));
+  const applicableInstances = instances.filter((instance) =>
+    isInstanceApplicable(instance, spec, scanIndex),
+  );
   if (applicableInstances.length === 0) {
     const result = baseResult(
       rule,
@@ -98,17 +100,16 @@ export function runArkuiStaticRule(
     (instance) => !isInstanceSatisfied(instance, spec, scanIndex),
   );
   if (failedInstances.length > 0) {
-    const result = {
-      ...baseResult(
+    const result = withMatches(
+      baseResult(
         rule,
         "不满足",
         `${spec.component} ${spec.properties.join("/")} 未满足 ${describeRequirement(spec)}。`,
         buildPreliminaryData(spec, applicableInstances),
       ),
-      matchedFiles: unique(failedInstances.map((instance) => instance.filePath)),
-      matchedLocations: failedInstances.map((instance) => `${instance.filePath}:${instance.line}`),
-      matchedSnippets: failedInstances.map((instance) => buildInstanceSnippet(instance, spec)),
-    };
+      failedInstances.map((instance) => ({ file: instance.filePath, line: instance.line })),
+      failedInstances.map((instance) => buildInstanceSnippet(instance, spec)),
+    );
     writeDebugArtifacts(evidence, rule, result, scanIndex);
     return result;
   }
@@ -476,14 +477,11 @@ function checkCustomHoverFoldAndLandscape(
   evidence: CollectedEvidence,
 ): EvaluatedRule {
   const files = getEtsFiles(evidence);
-  const foldMatches = findPatternMatches(
-    files,
-    /\bfoldStatusChange\b|\bFOLD_STATUS_HALF_FOLDED\b/g,
-  );
-  if (foldMatches.length === 0) {
+  const hoverFiles = getCustomHoverFiles(files);
+  if (hoverFiles.length === 0) {
     return baseResult(rule, "不涉及", "未发现自定义悬停态 foldStatusChange，规则不涉及。");
   }
-  const badFiles = files.filter(
+  const badFiles = hoverFiles.filter(
     (file) =>
       (/\bfoldStatusChange\b|\bFOLD_STATUS_HALF_FOLDED\b/.test(file.content) &&
         !/\bFOLD_STATUS_HALF_FOLDED\b/.test(file.content)) ||
@@ -501,7 +499,10 @@ function checkCustomHoverFoldAndLandscape(
   }
   return withMatches(
     baseResult(rule, "满足", "自定义悬停态同时判断半折叠状态和横屏方向。"),
-    foldMatches.slice(0, 10),
+    hoverFiles.map((file) => ({
+      file: file.relativePath,
+      line: lineOfPattern(file.content, "foldStatus"),
+    })),
   );
 }
 
@@ -510,9 +511,7 @@ function checkCustomHoverCreaseRegionApi(
   evidence: CollectedEvidence,
 ): EvaluatedRule {
   const files = getEtsFiles(evidence);
-  const hoverFiles = files.filter((file) =>
-    /\bfoldStatusChange\b|\bFOLD_STATUS_HALF_FOLDED\b/.test(file.content),
-  );
+  const hoverFiles = getCustomHoverFiles(files);
   if (hoverFiles.length === 0) {
     return baseResult(rule, "不涉及", "未发现自定义悬停态，规则不涉及。");
   }
@@ -547,15 +546,15 @@ function checkCustomHoverFoldListenerCleanup(
   evidence: CollectedEvidence,
 ): EvaluatedRule {
   const files = getEtsFiles(evidence);
-  const listenerFiles = files.filter((file) =>
+  const listenerFiles = getCustomHoverFiles(files).filter((file) =>
     /display\.on\s*\(\s*['"]foldStatusChange['"]/.test(file.content),
   );
   if (listenerFiles.length === 0) {
-    return baseResult(rule, "不涉及", "未发现 foldStatusChange 监听注册，规则不涉及。");
+    return baseResult(rule, "不涉及", "未发现自定义悬停态 foldStatusChange 监听注册，规则不涉及。");
   }
   const failed = listenerFiles.filter(
     (file) =>
-      !/aboutToDisappear\s*\([^)]*\)\s*\{[\s\S]{0,500}display\.off\s*\(\s*['"]foldStatusChange['"]/.test(
+      !/aboutToDisappear\s*\([^)]*\)\s*(?::\s*[A-Za-z_][A-Za-z0-9_<>,\s.[\]]*)?\s*\{[\s\S]{0,500}display\.off\s*\(\s*['"]foldStatusChange['"]/.test(
         file.content,
       ),
   );
@@ -804,6 +803,18 @@ function isInstanceSatisfied(
   ) {
     return true;
   }
+  if (spec.check === "swiper_indicator_by_display_count") {
+    return values.some(
+      (value) =>
+        value &&
+        (isFalseExpression(value.valueText) ||
+          value.usesBreakpoint ||
+          isResponsiveExpression(value.valueText)),
+    );
+  }
+  if (spec.check === "swiper_margins_for_multi_display") {
+    return values.some(Boolean);
+  }
   if (spec.allPropertiesRequired === true && values.some((value) => !value)) {
     return false;
   }
@@ -822,13 +833,13 @@ function isInstanceSatisfied(
     return presentValues.every(
       (value) =>
         value.usesBreakpoint ||
-        hasBreakpointExpression(value.valueText) ||
+        isResponsiveExpression(value.valueText) ||
         hasBreakpointMap(value.valueText),
     );
   }
   if (spec.requirement === "non_decreasing") {
     return presentValues.every((value) =>
-      isNonDecreasingBreakpointMap(resolveConstants(value.valueText, scanIndex)),
+      isNonDecreasingBreakpointMap(resolveConstants(value.valueText, scanIndex), scanIndex),
     );
   }
   if (spec.requirement === "contains") {
@@ -844,12 +855,24 @@ function isInstanceSatisfied(
   return false;
 }
 
-function isInstanceApplicable(instance: ArkuiComponentInstance, spec: ArkuiRuleSpec): boolean {
+function isInstanceApplicable(
+  instance: ArkuiComponentInstance,
+  spec: ArkuiRuleSpec,
+  scanIndex: ArkuiStaticScanIndex,
+): boolean {
+  if (isTabsPageNavigationCheck(spec.check)) {
+    return isPageLevelTabs(instance, spec, scanIndex);
+  }
   if (spec.check === "swiper_indicator_by_display_count") {
-    return Boolean(readPropertyValue(instance, "displayCount"));
+    const displayCount = readPropertyValue(instance, "displayCount");
+    return Boolean(displayCount && !isFixedDisplayCount(displayCount.valueText, 1));
+  }
+  if (spec.check === "swiper_margins_for_multi_display") {
+    const displayCount = readPropertyValue(instance, "displayCount");
+    return Boolean(displayCount && !isFixedDisplayCount(displayCount.valueText, 1));
   }
   if (spec.check === "list_divider_by_lanes") {
-    return Boolean(readPropertyValue(instance, "lanes"));
+    return Boolean(readPropertyValue(instance, "lanes") && readPropertyValue(instance, "divider"));
   }
   if (spec.check === "list_space_by_breakpoint") {
     return Boolean(readPropertyValue(instance, "space"));
@@ -899,18 +922,76 @@ function readObjectProperty(argumentText: string, propertyName: string): string 
     cursor += 1;
   }
 
-  const opening = argumentText[cursor];
-  if (opening === "{" || opening === "[" || opening === "(") {
-    const closing = opening === "{" ? "}" : opening === "[" ? "]" : ")";
-    const end = findBalancedEnd(argumentText, cursor, opening, closing);
-    return argumentText.slice(cursor, end === undefined ? argumentText.length : end + 1).trim();
-  }
-
-  let end = cursor;
-  while (end < argumentText.length && argumentText[end] !== "," && argumentText[end] !== "}") {
-    end += 1;
-  }
+  const end = findObjectPropertyValueEnd(argumentText, cursor);
   return argumentText.slice(cursor, end).trim();
+}
+
+function findObjectPropertyValueEnd(content: string, startIndex: number): number {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let mode: "code" | "single" | "double" | "template" = "code";
+
+  for (let index = startIndex; index < content.length; index += 1) {
+    const current = content[index] ?? "";
+    const next = content[index + 1] ?? "";
+
+    if (mode !== "code") {
+      const quote = mode === "single" ? "'" : mode === "double" ? '"' : "`";
+      if (current === "\\" && next) {
+        index += 1;
+        continue;
+      }
+      if (current === quote) {
+        mode = "code";
+      }
+      continue;
+    }
+
+    if (current === "'") {
+      mode = "single";
+      continue;
+    }
+    if (current === '"') {
+      mode = "double";
+      continue;
+    }
+    if (current === "`") {
+      mode = "template";
+      continue;
+    }
+    if (current === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (current === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (current === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (current === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (current === "{") {
+      braceDepth += 1;
+      continue;
+    }
+    if (current === "}") {
+      if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+        return index;
+      }
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+    if (current === "," && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+      return index;
+    }
+  }
+  return content.length;
 }
 
 function hasBreakpointMap(valueText: string): boolean {
@@ -921,23 +1002,117 @@ function hasBreakpointMap(valueText: string): boolean {
 }
 
 function hasBreakpointExpression(valueText: string): boolean {
-  return /\b(?:breakpoint|currentBreakpoint|WidthBreakpoint|Breakpoint|isWideScreen|wideScreen|columnsCount|columnCount|sm|md|lg|xl|getValue)\b/i.test(
-    valueText,
+  return isResponsiveExpression(valueText);
+}
+
+function isResponsiveExpression(valueText: string): boolean {
+  return (
+    hasBreakpointMap(valueText) ||
+    /\b(?:sm|md|lg|xl)\b/.test(valueText) ||
+    /\bBreakpointConstants\.BREAKPOINT_[A-Z_]+\b/.test(valueText) ||
+    /\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.getValue\s*\(/.test(valueText) ||
+    /\bnew\s+[A-Za-z_$][\w$]*\s*\([^)]*,[^)]*,[^)]*\)\s*\.getValue\s*\(/.test(valueText) ||
+    /\b(?:isWideScreen|wideScreen|columnsCount|columnCount)\b/i.test(valueText)
   );
 }
 
-function isNonDecreasingBreakpointMap(valueText: string): boolean {
+function isNonDecreasingBreakpointMap(
+  valueText: string,
+  scanIndex?: ArkuiStaticScanIndex,
+): boolean {
   if (/^\s*[0-9]+(?:\.[0-9]+)?\s*$/.test(valueText)) {
     return true;
+  }
+  const helperValues = readBreakpointHelperNumbers(valueText, scanIndex);
+  if (helperValues.length >= 2) {
+    return helperValues.every((value, index) => index === 0 || value >= (helperValues[index - 1] ?? value));
   }
   const values = ["sm", "md", "lg", "xl"].flatMap((name) => {
     const match = new RegExp(`\\b${name}\\s*:\\s*([0-9]+)`).exec(valueText);
     return match?.[1] ? [Number(match[1])] : [];
   });
   if (values.length < 2) {
-    return hasBreakpointExpression(valueText) || isStableColumnsTemplate(valueText);
+    return isResponsiveExpression(valueText) || isStableColumnsTemplate(valueText);
   }
   return values.every((value, index) => index === 0 || value >= (values[index - 1] ?? value));
+}
+
+function readBreakpointHelperNumbers(valueText: string, scanIndex?: ArkuiStaticScanIndex): number[] {
+  const match = /\bnew\s+[A-Za-z_$][\w$]*\s*\(([\s\S]*?)\)\s*\.getValue\s*\(/.exec(valueText);
+  if (!match?.[1]) {
+    return [];
+  }
+  return splitTopLevelArguments(match[1])
+    .map((part) => resolveConstants(part.trim(), scanIndex))
+    .map((part) => Number(part))
+    .filter((value) => Number.isFinite(value));
+}
+
+function splitTopLevelArguments(content: string): string[] {
+  const values: string[] = [];
+  let start = 0;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let mode: "code" | "single" | "double" | "template" = "code";
+
+  for (let index = 0; index < content.length; index += 1) {
+    const current = content[index] ?? "";
+    const next = content[index + 1] ?? "";
+    if (mode !== "code") {
+      const quote = mode === "single" ? "'" : mode === "double" ? '"' : "`";
+      if (current === "\\" && next) {
+        index += 1;
+        continue;
+      }
+      if (current === quote) {
+        mode = "code";
+      }
+      continue;
+    }
+    if (current === "'") {
+      mode = "single";
+      continue;
+    }
+    if (current === '"') {
+      mode = "double";
+      continue;
+    }
+    if (current === "`") {
+      mode = "template";
+      continue;
+    }
+    if (current === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (current === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (current === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (current === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (current === "{") {
+      braceDepth += 1;
+      continue;
+    }
+    if (current === "}") {
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+    if (current === "," && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+      values.push(content.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  values.push(content.slice(start).trim());
+  return values.filter(Boolean);
 }
 
 function isStableColumnsTemplate(valueText: string): boolean {
@@ -1002,27 +1177,99 @@ function isSmOnlyListWithAlternateGrid(
   );
 }
 
-function resolveConstants(valueText: string, scanIndex: ArkuiStaticScanIndex): string {
+function isTabsPageNavigationCheck(check: string): boolean {
+  return [
+    "tabs_vertical_by_breakpoint",
+    "tabs_bar_position_by_breakpoint",
+    "tabs_bar_size_by_breakpoint",
+  ].includes(check);
+}
+
+function isPageLevelTabs(
+  instance: ArkuiComponentInstance,
+  spec: ArkuiRuleSpec,
+  scanIndex: ArkuiStaticScanIndex,
+): boolean {
+  if (spec.properties.some((property) => isResponsiveExpression(readPropertyValue(instance, property)?.valueText ?? ""))) {
+    return true;
+  }
+  const descendants = scanIndex.componentInstances.filter(
+    (item) =>
+      item.filePath === instance.filePath &&
+      item.startIndex > instance.startIndex &&
+      item.endIndex < instance.endIndex,
+  );
+  const tabContentCount = descendants.filter((item) => item.component === "TabContent").length;
+  if (tabContentCount < 2) {
+    return false;
+  }
+  const descendantComponents = new Set(descendants.map((item) => item.component));
+  if (
+    (descendantComponents.has("List") || descendantComponents.has("ListItem")) &&
+    !descendantComponents.has("NavDestination") &&
+    !descendantComponents.has("Navigation")
+  ) {
+    return false;
+  }
+  return descendants.some((item) =>
+    /(?:NavDestination|Navigation|Page|Content|Root|Entry)/.test(item.component),
+  );
+}
+
+function isFixedDisplayCount(valueText: string, expected: number): boolean {
+  return Number(resolveConstants(valueText).trim()) === expected;
+}
+
+function isFalseExpression(valueText: string): boolean {
+  return /^\s*false\s*$/.test(valueText);
+}
+
+function getCustomHoverFiles(files: ScanFile[]): ScanFile[] {
+  return files.filter((file) => {
+    const content = file.content;
+    if (/\b(?:FolderStack|FoldSplitContainer|upperItems|getCurrentFoldCreaseRegion)\b/.test(content)) {
+      return true;
+    }
+    if (
+      /\bFOLD_STATUS_HALF_FOLDED\b/.test(content) &&
+      /\b(?:LANDSCAPE|LANDSCAPE_INVERTED|orientation)\b/.test(content)
+    ) {
+      return true;
+    }
+    if (
+      /\bfoldStatusChange\b/.test(content) &&
+      /\bFOLD_STATUS_HALF_FOLDED\b/.test(content) &&
+      /\b(?:height|width|position|visibility|translate|top|bottom|upper|lower)\b[\s\S]{0,240}\b(?:foldStatus|FOLD_STATUS_HALF_FOLDED)\b|\b(?:foldStatus|FOLD_STATUS_HALF_FOLDED)\b[\s\S]{0,240}\b(?:height|width|position|visibility|translate|top|bottom|upper|lower)\b/.test(
+        content,
+      )
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function resolveConstants(valueText: string, scanIndex?: ArkuiStaticScanIndex): string {
   return valueText
     .replace(
       /\b[A-Z][A-Za-z0-9_]*\.([A-Z][A-Z0-9_]*)\[(\d+)\]/g,
       (_match, name: string, indexText: string) => {
-        const values = readNumericArray(scanIndex.constants[name] ?? "");
+        const values = readNumericArray(scanIndex?.constants[name] ?? "");
         const value = values[Number(indexText)];
         return value === undefined ? _match : String(value);
       },
     )
     .replace(/\b[A-Z][A-Za-z0-9_]*\.([A-Z][A-Z0-9_]*)\b/g, (_match, name: string) => {
-      const value = scanIndex.constants[name];
+      const value = scanIndex?.constants[name];
       return value ?? _match;
     })
     .replace(/\b([A-Z][A-Z0-9_]*)\[(\d+)\]/g, (_match, name: string, indexText: string) => {
-      const values = readNumericArray(scanIndex.constants[name] ?? "");
+      const values = readNumericArray(scanIndex?.constants[name] ?? "");
       const value = values[Number(indexText)];
       return value === undefined ? _match : String(value);
     })
     .replace(/\b([A-Z][A-Z0-9_]*)\b/g, (_match, name: string) => {
-      const value = scanIndex.constants[name];
+      const value = scanIndex?.constants[name];
       return value ?? _match;
     });
 }
@@ -1155,6 +1402,9 @@ function buildInstanceSnippet(instance: ArkuiComponentInstance, spec: ArkuiRuleS
 }
 
 function describeRequirement(spec: ArkuiRuleSpec): string {
+  if (spec.check === "swiper_margins_for_multi_display") {
+    return "多元素展示时至少配置 prevMargin 或 nextMargin 一侧边距";
+  }
   if (spec.requirement === "breakpoint_aware") {
     return "按断点动态设置";
   }
@@ -1192,12 +1442,21 @@ function withMatches(
   matches: LocationMatch[],
   snippets: string[] = matches.flatMap((match) => (match.snippet ? [match.snippet] : [])),
 ): EvaluatedRule {
+  const matchedLocations = matches.map((match) => `${match.file}:${match.line}`);
   return {
     ...result,
+    conclusion: appendViolationLocations(result, matchedLocations),
     matchedFiles: unique(matches.map((match) => match.file)),
-    matchedLocations: matches.map((match) => `${match.file}:${match.line}`),
+    matchedLocations,
     matchedSnippets: snippets,
   };
+}
+
+function appendViolationLocations(result: EvaluatedRule, locations: string[]): string {
+  if (result.result !== "不满足" || locations.length === 0 || /(?:位置|文件)：/.test(result.conclusion)) {
+    return result.conclusion;
+  }
+  return `${result.conclusion} 位置：${unique(locations).join(", ")}`;
 }
 
 function findPatternMatches(files: ScanFile[], pattern: RegExp): LocationMatch[] {

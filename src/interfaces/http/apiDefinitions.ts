@@ -163,7 +163,8 @@ const remoteExecutionResultSchema = {
     diffFileUrl: {
       type: "string",
       required: false,
-      description: "Optional URL of patch/diff file for the submitted changes.",
+      description:
+        "Deprecated compatibility field. The service ignores this value and generates patches from original/output code.",
     },
   },
 } as const satisfies ApiFieldSchema;

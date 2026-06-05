@@ -66,17 +66,18 @@ async function makeTempDir(t: test.TestContext): Promise<string> {
 test("fails when a registered component property is fixed instead of breakpoint aware", () => {
   const result = runArkuiStaticRule(
     makeRule("tabs_vertical_by_breakpoint"),
-    makeEvidence("Tabs(){}.vertical(false)"),
+    makeEvidence("Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(false)"),
   );
 
   assert.equal(result.result, "不满足");
   assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
+  assert.match(result.conclusion, /位置：entry\/src\/main\/ets\/pages\/Index\.ets:1/);
 });
 
 test("passes when a registered component property uses breakpoint expression", () => {
   const result = runArkuiStaticRule(
     makeRule("tabs_vertical_by_breakpoint"),
-    makeEvidence('Tabs(){}.vertical(this.currentBreakpoint === "lg")'),
+    makeEvidence('Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(this.currentBreakpoint === "lg")'),
   );
 
   assert.equal(result.result, "满足");
@@ -85,7 +86,7 @@ test("passes when a registered component property uses breakpoint expression", (
 test("passes when a registered component property uses breakpoint-derived helper", () => {
   const result = runArkuiStaticRule(
     makeRule("tabs_vertical_by_breakpoint"),
-    makeEvidence("Tabs(){}.vertical(this.isWideScreen)"),
+    makeEvidence("Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(this.isWideScreen)"),
   );
 
   assert.equal(result.result, "满足");
@@ -410,6 +411,117 @@ test("resolves non-Constants numeric constants used by GridRow columns", () => {
   );
 
   assert.equal(result.result, "满足");
+});
+
+test("parses breakpoint helper arguments without relying on selector variable names", () => {
+  const result = runArkuiStaticRule(
+    makeRule("gridrow_columns_non_decreasing"),
+    makeEvidence(
+      "GridRow({ columns: new BreakpointType(3, 6, 8).getValue(layoutSize), gutter: { x: 12, y: 12 } }){}",
+    ),
+  );
+
+  assert.equal(result.result, "满足");
+});
+
+test("does not treat breakpoint-looking variable names as responsive without breakpoint evidence", () => {
+  const result = runArkuiStaticRule(
+    makeRule("list_space_by_breakpoint"),
+    makeEvidence("List({ space: this.breakpointSpacing }){}"),
+  );
+
+  assert.equal(result.result, "不满足");
+});
+
+test("does not fail local business Tabs as page-level navigation", () => {
+  const result = runArkuiStaticRule(
+    makeRule("tabs_bar_position_by_breakpoint"),
+    makeEvidence(
+      "Column(){ Tabs({ barPosition: BarPosition.Start }) { TabContent(){ List(){} } TabContent(){ List(){} } } }",
+    ),
+  );
+
+  assert.equal(result.result, "不涉及");
+});
+
+test("does not apply custom hover rules to fold listeners that only close or sync state", () => {
+  const result = runArkuiStaticRule(
+    makeRule("custom_hover_fold_and_landscape"),
+    makeEvidence(
+      "aboutToAppear(){ display.on('foldStatusChange', (foldStatus) => { if (foldStatus === display.FoldStatus.FOLD_STATUS_FOLDED) { this.closePage(); } }); }",
+    ),
+  );
+
+  assert.equal(result.result, "不涉及");
+});
+
+test("does not treat fold listeners near unrelated window size code as custom hover layout", () => {
+  const result = runArkuiStaticRule(
+    makeRule("custom_hover_crease_region_api"),
+    makeEvidence(
+      "onWindowSizeChange(size){ this.updateBreakpoint(size.width); }\nprivate onFoldStatusChange = (foldStatus) => { if (foldStatus === display.FoldStatus.FOLD_STATUS_FOLDED) { this.context.terminateSelf(); } };",
+    ),
+  );
+
+  assert.equal(result.result, "不涉及");
+});
+
+test("does not require cleanup for fold listeners outside custom hover layout", () => {
+  const result = runArkuiStaticRule(
+    makeRule("custom_hover_fold_listener_cleanup"),
+    makeEvidence(
+      "Button('open').onClick(() => { display.on('foldStatusChange', (status) => { if (status === display.FoldStatus.FOLD_STATUS_FOLDED) { this.pageInfos.replacePath(new NavPathInfo('Detail', [])); } }); })",
+    ),
+  );
+
+  assert.equal(result.result, "不涉及");
+});
+
+test("recognizes foldStatusChange cleanup with a lifecycle return type", () => {
+  const result = runArkuiStaticRule(
+    makeRule("custom_hover_fold_listener_cleanup"),
+    makeEvidence(
+      "private onFoldStatusChange = (foldStatus) => { if (foldStatus === display.FoldStatus.FOLD_STATUS_HALF_FOLDED && display.getDefaultDisplaySync().orientation === display.Orientation.LANDSCAPE) { this.upperHeight = 320; } };\naboutToAppear(){ display.on('foldStatusChange', this.onFoldStatusChange); }\naboutToDisappear(): void { display.off('foldStatusChange'); }",
+    ),
+  );
+
+  assert.equal(result.result, "满足");
+});
+
+test("does not apply Swiper multi-display margins when displayCount is fixed to one", () => {
+  const result = runArkuiStaticRule(
+    makeRule("swiper_margins_for_multi_display"),
+    makeEvidence("Swiper(){}.displayCount(1).indicator(false)"),
+  );
+
+  assert.equal(result.result, "不涉及");
+});
+
+test("passes Swiper indicator when multi-display Swiper explicitly hides dots", () => {
+  const result = runArkuiStaticRule(
+    makeRule("swiper_indicator_by_display_count"),
+    makeEvidence("Swiper(){}.displayCount(new BreakpointType(2, 3, 4).getValue(sizeClass)).indicator(false)"),
+  );
+
+  assert.equal(result.result, "满足");
+});
+
+test("passes Swiper multi-display margins when either side margin is configured", () => {
+  const result = runArkuiStaticRule(
+    makeRule("swiper_margins_for_multi_display"),
+    makeEvidence("Swiper(){}.displayCount(new BreakpointType(1, 2, 3).getValue(sizeClass)).nextMargin(12)"),
+  );
+
+  assert.equal(result.result, "满足");
+});
+
+test("does not fail multi-lane List when divider is not configured", () => {
+  const result = runArkuiStaticRule(
+    makeRule("list_divider_by_lanes"),
+    makeEvidence("List(){}.lanes(new BreakpointType(1, 2, 3).getValue(sizeClass))"),
+  );
+
+  assert.equal(result.result, "不涉及");
 });
 
 test("returns not applicable when an optional scanned property is absent", () => {

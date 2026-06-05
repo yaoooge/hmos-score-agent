@@ -5,7 +5,6 @@ import { load } from "js-yaml";
 import { loadCaseFromPath } from "../../../commons/io/caseLoader.js";
 import {
   downloadManifestToDirectory,
-  downloadToFile,
   type RemoteDownloadLogger,
 } from "../../../commons/io/downloader.js";
 import { resolveRemoteTaskType } from "../../../service/runCaseId.js";
@@ -89,19 +88,6 @@ export async function remoteTaskPreparationNode(
         logger: deps.logger,
       },
     );
-    const hasPatch = Boolean(state.remoteTask.executionResult.diffFileUrl);
-
-    if (state.remoteTask.executionResult.diffFileUrl) {
-      await downloadToFile(
-        state.remoteTask.executionResult.diffFileUrl,
-        path.join(casePath, "diff", "changes.patch"),
-        {
-          label: "diff_patch",
-          logger: deps.logger,
-        },
-      );
-    }
-
     const caseInput = await loadCaseFromPath(casePath);
     const taskType = resolveRemoteTaskType(state.remoteTask.testCase.type);
 
@@ -112,7 +98,7 @@ export async function remoteTaskPreparationNode(
       inputMode: "remote",
       originalFileCount: originalFiles.length,
       workspaceFileCount: workspaceFiles.length,
-      hasPatch,
+      hasPatch: false,
       remoteBuildSuccess: state.remoteTask.executionResult.isBuildSuccess,
       taskType,
     };

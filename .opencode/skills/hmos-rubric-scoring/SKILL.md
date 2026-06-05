@@ -76,7 +76,7 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 4. 按 HarmonyOS / OpenHarmony 应用工程语境审查实现质量。
 5. 覆盖 `rubric_summary.dimension_summaries` 中每一个 `dimension_name + item_name`，逐项匹配 scoring band。
 6. 对扣分项补全 `deduction_trace`；满分项不要编造扣分链路。
-7. 输出 `risks` 前读取 `references/risk-taxonomy.yaml`，只从 `score_taxonomy` 选择风险；`review_only_taxonomy` 只用于人工复核语义，不能进入 `risks`。
+7. 输出 `risks` 前读取 `references/risk-taxonomy.yaml`，只从 `score_taxonomy` 选择风险；每个风险必须填写稳定 `risk_code`；`review_only_taxonomy` 只用于人工复核语义，不能进入 `risks`。
 8. 执行输出前自检，将最终 JSON object 写入 `output_file`。
 9. assistant 最终回复只返回 `{"output_file":"..."}`。
 
@@ -115,6 +115,7 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 ### 归并规则
 
 - 只从 `score_taxonomy` 选择 `risk_code`；`review_only_taxonomy` 不得进入 `risks`。
+- 若确有风险事实但无法稳定归入现有分类，只能使用 `OTHER_ISSUE`，并保持标题为 `其他问题`；不要自造 `risk_code` 或自由标题。
 - 同一组代码位置、同一条证据链、同一个根因只输出一个风险。
 - 每个风险只保留一个主落点，不要把同一根因拆成需求、接口、平台、状态、异常等多个近义风险。
 - 规则违规类风险由规则融合阶段生成；rubric agent 不要用自由风险重复表达同一条规则编号已经覆盖的事实。
@@ -156,9 +157,9 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 
 ### 输出字段规则
 
-- 已匹配 taxonomy 的风险必须包含稳定 `risk_code`。
-- 已匹配 taxonomy 的 `level` 和 `title` 必须与表格完全一致。
-- 已匹配 taxonomy 时，`risk_category` 应与 taxonomy 的 `level` 相同。
+- 每个风险必须包含稳定 `risk_code`，且只能来自 `score_taxonomy`。
+- `level` 和 `title` 必须与 `risk_code` 对应的 taxonomy 条目完全一致。
+- `risk_category` 应与 taxonomy 的 `level` 相同。
 - `description` 说明风险后果，不要只复述代码现象。
 - `evidence` 给出可复核证据摘要；如包含行号，必须使用 `generated/` 工程文件真实行号，不要使用 patch hunk 行号。
 
@@ -170,7 +171,7 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 
 - JSON 字段必须完全符合“正确输出格式”，不能增加额外字段，不能替换字段名。
 - 不要输出 `total_score`、`item_id`、`reason`、`risk_level`、`message` 等未声明字段。
-- `risks` 必须是 array；每项必须包含 `level`、`title`、`description`、`evidence` 四个 string 字段，可额外包含 `risk_code`、`risk_category`、`source_rule_id`。
+- `risks` 必须是 array；每项必须包含 `level`、`title`、`description`、`evidence`、`risk_code` 五个 string 字段，可额外包含 `risk_category`、`source_rule_id`。
 - `risk_category` 只能是 `low`、`medium`、`high` 之一；如果输出 `risk_code` 且已匹配 taxonomy，`risk_category` 应与 taxonomy 的 `level` 相同。
 - 除 JSON 字段名、枚举值、分类标签、文件路径、代码标识符和原始专有名词外，所有文案类内容必须使用中文。
 - 面向评测结论、原因、摘要、建议、风险、优势、问题、证据说明的字符串字段都必须用中文表达。
@@ -199,7 +200,7 @@ description: Use when scoring generated HarmonyOS/OpenHarmony code with rubric_s
 - `rationale`、`overall_assessment`、`main_issues` 给出基于完整功能链路的评分依据。
 - 已读取 `references/risk-taxonomy.yaml`，且只从 `score_taxonomy` 输出风险。
 - 没有把 `review_only_taxonomy` 条目写入 `risks`。
-- 已匹配 taxonomy 的风险包含稳定 `risk_code`，且 `level`、`title` 未被改写。
+- 每个风险都包含来自 `score_taxonomy` 的稳定 `risk_code`，且 `level`、`title` 未被改写；无法归类时使用 `OTHER_ISSUE`。
 - 已合并同根因、同证据链、同代码位置的近义风险，并只保留一个主落点。
 - 已避免重复输出规则融合阶段会生成的规则违规风险。
 - 已将低置信度、轻微风格或未证实问题留在评分说明中，而不是放入 `risks`。

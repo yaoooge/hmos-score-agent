@@ -418,12 +418,6 @@ export function validateRemoteEvaluationTaskInput(
   if (!isNonEmptyString(task.executionResult.outputCodeUrl)) {
     errors.push("sourceTask.executionResult.outputCodeUrl 必须是非空字符串");
   }
-  if (
-    task.executionResult.diffFileUrl !== undefined &&
-    !isNonEmptyString(task.executionResult.diffFileUrl)
-  ) {
-    errors.push("sourceTask.executionResult.diffFileUrl 必须是非空字符串");
-  }
   return errors.length > 0 ? { valid: false, errors } : { valid: true, errors: [] };
 }
 
@@ -874,13 +868,6 @@ export function validateRemoteTaskJson(jsonText: string): RemoteTaskValidationRe
       )
     : undefined;
   const diffFileUrlValue = executionResult?.diffFileUrl;
-  if (
-    executionResult &&
-    diffFileUrlValue !== undefined &&
-    !isNonEmptyString(diffFileUrlValue)
-  ) {
-    errors.push("executionResult.diffFileUrl 必须是非空字符串");
-  }
 
   if (errors.length > 0) {
     return { valid: false, errors };

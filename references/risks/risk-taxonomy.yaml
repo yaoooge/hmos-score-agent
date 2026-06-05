@@ -275,6 +275,17 @@ score_taxonomy:
       - 调用时机
       - 服务端触发
       - REST API
+  - code: OTHER_ISSUE
+    level: medium
+    title: 其他问题
+    description: 风险事实存在，但无法稳定归入现有 score taxonomy 代码；用于兜底承接未知或不规范风险代码。
+    primaryItem:
+      dimension: 风险控制与稳定性
+      item: 稳定性风险
+    matchHints:
+      - 其他问题
+      - 未知风险
+      - 未归类
 review_only_taxonomy:
   - code: EVALUATION_METADATA_RISK
     level: high

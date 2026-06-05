@@ -1,9 +1,12 @@
+import path from "node:path";
 import { z } from "zod";
 import { extractFinalJsonObject } from "../../commons/utils/finalJson.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../opencode/cliRunner.js";
 import type { LoadedRubricSnapshot, RubricScoringPayload, RubricScoringResult } from "../../types.js";
 import { booleanLikeSchema, finiteNumberSchema, snapScoreToAllowedBand } from "../normalization/agentOutputNormalization.js";
 import { buildOpencodeRequestTag } from "../opencode/requestTag.js";
+import { loadRiskTaxonomy, normalizeRiskItem } from "../../scoring/riskTaxonomy.js";
+import type { RiskTaxonomy } from "../../scoring/riskTaxonomy.js";
 
 const confidenceSchema = z.enum(["high", "medium", "low"]);
 
@@ -58,7 +61,7 @@ const opencodeRubricScoringSchema = z
           title: z.string(),
           description: z.string(),
           evidence: z.string(),
-          risk_code: z.string().min(1).optional(),
+          risk_code: z.string().min(1),
           risk_category: z.enum(["low", "medium", "high"]).optional(),
           source_rule_id: z.string().min(1).optional(),
         })
@@ -200,9 +203,9 @@ function renderRubricScoringRetryPrompt(input: {
     "3. 每个 score 必须来自对应 allowed score；matched_band_score 必须与 score 相同；max_score 必须等于该 item 的 max_score。",
     "4. 对扣分项必须提供 deduction_trace。",
     "5. evidence_used 只能填写 sandbox 内文件相对路径，不要带行号；deduction_trace.code_locations 可填写带行号的位置，但必须使用 generated/ 工程文件中的真实行号，禁止使用 patch hunk 行号。",
-    "6. risks 必须是 array；其中每一项必须包含 level、title、description、evidence 四个 string 字段，可包含 risk_code、risk_category、source_rule_id。",
+    "6. risks 必须是 array；其中每一项必须包含 level、title、description、evidence、risk_code 五个 string 字段，可包含 risk_category、source_rule_id。",
     "7. risks[].evidence 如包含行号，必须使用 generated/ 工程文件中的真实行号，禁止使用 patch hunk 行号、旧文件行号或未重新读取确认的记忆行号；无法确认真实行号时只写文件路径和证据摘要，不写行号。",
-    "8. risks 必须遵守 hmos-rubric-scoring skill 的风险 reference 规则；禁止使用 risk_level、message、reason 等自造字段；如果没有风险，risks 必须输出空数组 []。",
+    "8. risks 必须遵守 hmos-rubric-scoring skill 的风险 reference 规则；risk_code 必须来自 references/risk-taxonomy.yaml 的 score_taxonomy；禁止使用 risk_level、message、reason 等自造字段；如果没有风险，risks 必须输出空数组 []。",
     "9. JSON 字符串中的英文双引号必须转义；如果必须引用原文，先改写为不含双引号的中文转述再写入字段。",
     "",
     "最终输出要求:",
@@ -243,7 +246,7 @@ function renderRubricScoringPrompt(input: {
     "1. 按 rubric_summary 中的每个维度和评分项完成评分。",
     "2. 优先阅读 patch/effective.patch，评分范围仅限 patch 代码；根据 patch 中出现的文件路径继续阅读相关 generated/ 或 original/ 上下文，避免大量阅读无关代码。",
     "3. 按 hmos-rubric-scoring skill 的评分契约覆盖 rubric_summary.dimension_summaries 中每一个 item。",
-    "4. 输出 risks 前必须读取 hmos-rubric-scoring skill 的 references/risk-taxonomy.yaml，并按其中规则选择、归并和过滤风险。",
+    "4. 输出 risks 前必须读取 hmos-rubric-scoring skill 的 references/risk-taxonomy.yaml，并按其中规则选择、归并和过滤风险；每个风险必须填写 score_taxonomy 中的 risk_code。",
     "5. risks[].evidence 如包含行号，必须先读取对应 generated/ 工程文件并使用真实行号；禁止使用 patch hunk 行号、旧文件行号或未重新读取确认的记忆行号。无法确认真实行号时，只写文件路径和证据摘要，不写行号。",
     "",
     "最终输出要求:",
@@ -346,6 +349,7 @@ function rubricSkeleton(rubricSnapshot: LoadedRubricSnapshot): Array<{
 function normalizeRubricResult(
   finalAnswer: ParsedRubricScoringResult,
   rubricSnapshot: LoadedRubricSnapshot,
+  riskTaxonomy: RiskTaxonomy,
 ): RubricScoringResult {
   const itemsByKey = new Map<string, ParsedRubricScoringResult["item_scores"][number]>();
   for (const item of finalAnswer.item_scores) {
@@ -376,8 +380,13 @@ function normalizeRubricResult(
     ...finalAnswer,
     item_scores: normalizedItems,
     risks: finalAnswer.risks.map((risk, index) => ({
-      id: index + 1,
-      ...risk,
+      ...normalizeRiskItem(
+        {
+          id: index + 1,
+          ...risk,
+        },
+        riskTaxonomy,
+      ),
     })),
   };
 }
@@ -385,6 +394,7 @@ function normalizeRubricResult(
 function parseRubricRunResult(
   runResult: OpencodeRunResult,
   rubricSnapshot: LoadedRubricSnapshot,
+  riskTaxonomy: RiskTaxonomy,
 ): OpencodeRubricScoringResult {
   let parsedJson: Record<string, unknown>;
   try {
@@ -409,7 +419,7 @@ function parseRubricRunResult(
     };
   }
 
-  const finalAnswer = normalizeRubricResult(parsed.data, rubricSnapshot);
+  const finalAnswer = normalizeRubricResult(parsed.data, rubricSnapshot, riskTaxonomy);
   const validation = validateRubricCoverage(finalAnswer, rubricSnapshot);
   if (!validation.ok) {
     return {
@@ -431,6 +441,9 @@ function parseRubricRunResult(
 export async function runOpencodeRubricScoring(
   input: OpencodeRubricScoringInput,
 ): Promise<OpencodeRubricScoringResult> {
+  const riskTaxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references", "risks", "risk-taxonomy.yaml"),
+  );
   const requestTag = buildOpencodeRequestTag({
     prefix: "rubric-scoring",
     caseId: input.scoringPayload.case_context.case_id,
@@ -486,7 +499,11 @@ export async function runOpencodeRubricScoring(
     }
     retrySessionId ??= runResult.sessionId;
 
-    const parseResult = parseRubricRunResult(runResult, input.scoringPayload.rubric_summary);
+    const parseResult = parseRubricRunResult(
+      runResult,
+      input.scoringPayload.rubric_summary,
+      riskTaxonomy,
+    );
     if (parseResult.outcome !== "protocol_error") {
       return parseResult;
     }

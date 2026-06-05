@@ -359,6 +359,66 @@ test("remoteTaskPreparationNode supports full generation tasks without original 
   );
 });
 
+test("remoteTaskPreparationNode ignores deprecated diffFileUrl during preprocessing", async (t) => {
+  const originalUrl = "https://remote.example.com/deprecated-diff-original.json";
+  const workspaceUrl = "https://remote.example.com/deprecated-diff-workspace.json";
+  const originalFetch = globalThis.fetch;
+  const tempCaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "remote-task-node-"));
+  const requestedUrls: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requestedUrls.push(url);
+
+    if (url === originalUrl) {
+      return new Response(JSON.stringify(createManifest("let value: number = 1;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url === workspaceUrl) {
+      return new Response(JSON.stringify(createManifest("let value: any = 2;\n")), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch url: ${url}`);
+  }) as typeof fetch;
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempCaseDir, { recursive: true, force: true });
+  });
+
+  const result = await remoteTaskPreparationNode({
+    caseDir: tempCaseDir,
+    remoteTask: {
+      taskId: 109,
+      testCase: {
+        id: 209,
+        name: "deprecated-diff-case",
+        type: "incremental",
+        description: "忽略请求中的 diff patch",
+        input: "根据前后工程自行生成 patch",
+        expectedOutput: "",
+        fileUrl: originalUrl,
+      },
+      executionResult: {
+        isBuildSuccess: true,
+        outputCodeUrl: workspaceUrl,
+        diffFileUrl: "/",
+      },
+      callback: "https://remote.example.com/callback",
+    },
+  } as never);
+
+  assert.equal(result.caseInput?.patchPath, undefined);
+  assert.equal(result.hasPatch, false);
+  assert.deepEqual(requestedUrls, [originalUrl, workspaceUrl]);
+});
+
 test("remoteTaskPreparationNode logs remote download diagnostics", async (t) => {
   const originalUrl = "https://remote.example.com/log-original.json";
   const workspaceUrl = "https://remote.example.com/log-workspace.json";
@@ -443,10 +503,9 @@ test("remoteTaskPreparationNode logs remote download diagnostics", async (t) => 
       message.includes(`remote_download_response label=workspace_project url=${workspaceUrl}`),
     ),
   );
-  assert.ok(
-    messages.some((message) =>
-      message.includes(`remote_download_completed label=diff_patch url=${patchUrl}`),
-    ),
+  assert.equal(
+    messages.some((message) => message.includes(`label=diff_patch url=${patchUrl}`)),
+    false,
   );
 });
 

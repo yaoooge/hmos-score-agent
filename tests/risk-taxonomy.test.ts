@@ -38,6 +38,36 @@ test("normalizes known risk codes to stable taxonomy titles and levels", () => {
   assert.equal(risk.title, "需求未实现");
 });
 
+test("normalizes unknown risk codes to the fixed other issue taxonomy entry", () => {
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
+  const risk = normalizeRiskItem(
+    {
+      id: 1,
+      level: "high",
+      title: "模型自由生成的风险标题",
+      description: "存在暂未归类的问题。",
+      evidence: "generated/entry/src/main.ets",
+      risk_code: "MODEL_GENERATED_UNKNOWN_CODE",
+    } as never,
+    taxonomy,
+  );
+
+  assert.equal(risk.risk_code, "OTHER_ISSUE");
+  assert.equal(risk.title, "其他问题");
+  assert.equal(risk.risk_category, "medium");
+  assert.equal(risk.level, "medium");
+});
+
+test("risk taxonomy includes the fixed other issue score taxonomy entry", () => {
+  const taxonomy = loadRiskTaxonomy(
+    path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),
+  );
+
+  assert.ok(taxonomy.scoreEntries.some((entry) => entry.code === "OTHER_ISSUE"));
+});
+
 test("loads split score and review-only taxonomy with one primary item per score entry", () => {
   const taxonomy = loadRiskTaxonomy(
     path.resolve(process.cwd(), "references/risks/risk-taxonomy.yaml"),

@@ -452,10 +452,8 @@ must_rules:
     priority: P0
   - id: OM-SWIPER-MUST-03
     rule: >-
-      Swiper 多元素展示必须设置前后边距。检查 Swiper 组件在 displayCount >= 2（多元素展示）时是否设置了 prevMargin 和 nextMargin。sm 断点下 displayCount 为 1
-      时无需设置前后边距，判定为不涉及；md 断点下展示两个元素时应设置 prevMargin 和 nextMargin 为 12vp；lg 断点下展示三个元素时应设置 prevMargin 和 nextMargin 为
-      64vp。displayCount >= 2 时未设置 prevMargin 和 nextMargin 即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper
-      撑满整个页面且每个子项为全屏内容），此类场景不适用前后边距要求
+      Swiper 多元素展示必须设置至少一侧边距。检查 Swiper 组件在 displayCount >= 2（多元素展示）时是否设置了 prevMargin 或 nextMargin。displayCount 固定为
+      1 时无需设置边距，判定为不涉及；displayCount >= 2 时，prevMargin 和 nextMargin 至少配置一个即可，用于露出相邻内容并提示可横向滑动。两者都缺失即判定失败。排除范围：全屏滑动切换场景（如短视频上滑下滑切换视频、Swiper 撑满整个页面且每个子项为全屏内容），此类场景不适用边距要求
     detector:
       kind: static
       mode: arkui_static
@@ -466,14 +464,14 @@ must_rules:
         targetChecks:
           - target: '**/*.ets'
             astSignals: []
-            llmPrompt: Swiper 多元素展示必须设置前后边距。静态扫描已覆盖组件和属性，Agent 仅复核中间态证据。
+            llmPrompt: Swiper 多元素展示必须设置至少一侧边距。静态扫描已覆盖组件和属性，Agent 仅复核中间态证据。
     fallback:
       policy: agent_assisted
     decisionCriteria:
       pass:
-        - 符合：Swiper 多元素展示必须设置前后边距
+        - 符合：Swiper 多元素展示时设置了 prevMargin 或 nextMargin 至少一侧边距
       fail:
-        - 违反：Swiper 多元素展示必须设置前后边距
+        - 违反：Swiper 多元素展示时 prevMargin 和 nextMargin 都缺失
       notApplicable:
         - 本次改动不涉及该规则约束场景。
       review:
@@ -485,7 +483,7 @@ must_rules:
       metricGroups:
         - type_safety
       impact: medium
-    rule_name: Swiper 多元素展示必须设置前后边距
+    rule_name: Swiper 多元素展示必须设置至少一侧边距
     priority: P0
   - id: OM-GRID-MUST-01
     rule: >-

@@ -94,6 +94,18 @@ test("validateRemoteTaskJson accepts an empty expectedOutput string", () => {
   assert.equal(result.task?.testCase.expectedOutput, "");
 });
 
+test("validateRemoteTaskJson ignores deprecated diffFileUrl validation", () => {
+  const task = JSON.parse(remoteTaskJson) as {
+    executionResult: { diffFileUrl?: string };
+  };
+  task.executionResult.diffFileUrl = "";
+
+  const result = validateRemoteTaskJson(JSON.stringify(task));
+
+  assert.equal(result.valid, true);
+  assert.equal(result.task?.executionResult.diffFileUrl, undefined);
+});
+
 test("validateRemoteTaskJson reports missing required fields", () => {
   const result = validateRemoteTaskJson(JSON.stringify({ taskId: 1, testCase: {} }));
 
@@ -108,6 +120,20 @@ test("validateRemoteTaskJson reports missing required fields", () => {
     "testCase.fileUrl 必须是非空字符串",
     "executionResult 必须是对象",
   ]);
+});
+
+test("validateRemoteEvaluationTaskInput ignores deprecated diffFileUrl validation", () => {
+  const task = JSON.parse(remoteTaskJson) as Parameters<
+    typeof validateRemoteEvaluationTaskInput
+  >[0];
+  if (task) {
+    task.executionResult.diffFileUrl = "";
+  }
+
+  const validation = validateRemoteEvaluationTaskInput(task);
+
+  assert.equal(validation.valid, true);
+  assert.deepEqual(validation.errors, []);
 });
 
 test("generateSubmittedTaskIds derives ten increasing safe ids", () => {

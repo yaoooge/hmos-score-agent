@@ -686,6 +686,63 @@ test("runOpencodeRubricScoring rejects replacement risk fields without required 
   assert.match(result.failure_reason ?? "", /risks\.0\.level|risks\[0\]\.level/);
 });
 
+test("runOpencodeRubricScoring requires risk_code for rubric risks", async () => {
+  const answer = finalAnswer();
+  answer.risks = [
+    {
+      id: 1,
+      level: "medium",
+      title: "模型自由生成的风险标题",
+      description: "风险说明",
+      evidence: "generated/entry/src/main.ets",
+    },
+  ];
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "protocol_error");
+  assert.match(result.failure_reason ?? "", /risks\.0\.risk_code|risks\[0\]\.risk_code/);
+});
+
+test("runOpencodeRubricScoring maps unknown risk_code to other issue", async () => {
+  const answer = finalAnswer();
+  answer.risks = [
+    {
+      id: 1,
+      level: "high",
+      title: "模型自由生成的风险标题",
+      description: "风险说明",
+      evidence: "generated/entry/src/main.ets",
+      risk_code: "MODEL_GENERATED_UNKNOWN_CODE",
+    },
+  ];
+
+  const result = await runOpencodeRubricScoring({
+    sandboxRoot: "/sandbox/case",
+    scoringPayload: payload(),
+    runPrompt: async (request) => ({
+      requestTag: request.requestTag,
+      rawEvents: "",
+      rawText: JSON.stringify(answer),
+      elapsedMs: 1,
+    }),
+  });
+
+  assert.equal(result.outcome, "success");
+  assert.equal(result.final_answer?.risks[0]?.risk_code, "OTHER_ISSUE");
+  assert.equal(result.final_answer?.risks[0]?.title, "其他问题");
+  assert.equal(result.final_answer?.risks[0]?.level, "medium");
+});
+
 test("runOpencodeRubricScoring retry prompt targets concrete protocol failures", async () => {
   const calls: Array<{ requestTag: string; prompt: string }> = [];
   const answer = finalAnswer();

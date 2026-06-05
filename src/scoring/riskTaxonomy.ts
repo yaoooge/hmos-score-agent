@@ -34,6 +34,7 @@ export interface RiskTaxonomy {
 const ALLOWED_LEVELS: RiskTaxonomyLevel[] = ["low", "medium", "high"];
 const TASK_KEYS: Array<TaskType | "all"> = ["all", "full_generation", "continuation", "bug_fix"];
 const ROOT_KEYS = ["version", "entries", "score_taxonomy", "review_only_taxonomy"];
+export const OTHER_ISSUE_RISK_CODE = "OTHER_ISSUE";
 const ENTRY_KEYS = [
   "code",
   "level",
@@ -107,7 +108,9 @@ export function resolveRiskTaxonomyPrimaryItem(
 }
 
 export function normalizeRiskItem(risk: RiskItem, taxonomy: RiskTaxonomy): RiskItem {
-  const entry = findRiskTaxonomyEntry(taxonomy, risk.risk_code);
+  const entry =
+    findRiskTaxonomyEntry(taxonomy, risk.risk_code) ??
+    (risk.risk_code ? findRiskTaxonomyEntry(taxonomy, OTHER_ISSUE_RISK_CODE) : undefined);
   if (!entry) {
     return risk;
   }
