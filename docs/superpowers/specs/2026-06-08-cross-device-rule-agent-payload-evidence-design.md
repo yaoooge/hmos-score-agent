@@ -19,6 +19,7 @@
 ## 非目标
 
 - 不实现完整 ArkTS/ArkUI AST 语义分析。
+- 不调整 ArkTS/性能规则的路由、过滤、判定策略或 payload 结构。
 - 不增加新的 agent 输出契约。
 - 不要求静态扫描器理解所有封装函数、样式系统和业务布局意图。
 - 不把建议类规则强行静态终判。
@@ -99,7 +100,6 @@ Web 和 Hover 规则只有在命中强相关入口时才进入 agent：
 | `OM-GRID-MUST-01` | 同上，且多个 Grid 命中只给首个复核入口 | pass/fail 改为 Grid columnsTemplate 列数序列非递减/递减失败 | 输出最多 5 个 Grid 源码片段 |
 | `OM-GRIDCOL-MUST-01` | 有定位证据，但 NA/review 泛化 | 补 GridRow columns 按断点变化时才检查 GridCol 实际占比 | 贴 GridCol 与父 GridRow 附近源码片段 |
 | `OM-WATERFLOW-SHOULD-01` | 有 `evidence_files` 但缺源码上下文 | review 改为无法确认动态列数是否需要 SLIDING_WINDOW | 贴 WaterFlow 源码片段 |
-| ArkTS/Perf 无定位证据规则 | 9 条规则完全无定位证据，不是一多适配核心 | criteria 补仅检查 patch 中新增/修改代码；或从一多 agent payload 中默认过滤 | 短期过滤无定位证据的未接入 ArkTS/Perf 规则，避免污染一多 rule agent |
 
 ## 扫描器实现细节
 
@@ -160,7 +160,6 @@ Web 规则只在以下信号出现时进入 agent：
 - `OM-HOVER-*` 中单独命中 `display` 不再显示 `signal_status=all_matched`。
 - `OM-WEB-*` 在没有 Web 入口时不再携带 183 个 ETS 代表文件。
 - `OM-ASPECTRATIO-SHOULD-*` 不再仅凭已使用 `aspectRatio` 作为充分阅读证据。
-- 无定位证据的 ArkTS/Perf 规则不再默认污染一多 rule-agent payload。
 - 有源码片段的规则，每条片段都能把 agent 带到具体文件和行号。
 
 ## 测试建议
