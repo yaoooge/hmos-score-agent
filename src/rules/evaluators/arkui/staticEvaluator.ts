@@ -96,8 +96,12 @@ export function runArkuiStaticRule(
     return result;
   }
 
+  const reviewInstances = applicableInstances.filter((instance) =>
+    shouldDeferInstanceToAgent(instance, spec, scanIndex),
+  );
   const failedInstances = applicableInstances.filter(
-    (instance) => !isInstanceSatisfied(instance, spec, scanIndex),
+    (instance) =>
+      !reviewInstances.includes(instance) && !isInstanceSatisfied(instance, spec, scanIndex),
   );
   if (failedInstances.length > 0) {
     const result = withMatches(
@@ -109,6 +113,23 @@ export function runArkuiStaticRule(
       ),
       failedInstances.map((instance) => ({ file: instance.filePath, line: instance.line })),
       failedInstances.map((instance) => buildInstanceSnippet(instance, spec)),
+    );
+    writeDebugArtifacts(evidence, rule, result, scanIndex);
+    return result;
+  }
+  if (reviewInstances.length > 0) {
+    const result = withMatches(
+      baseResult(
+        rule,
+        "未接入判定器",
+        `${spec.component} ${spec.properties.join("/")} 使用静态层无法稳定解释的封装表达式，需要 Agent 复核。`,
+        {
+          ...buildPreliminaryData(spec, reviewInstances),
+          reviewEvidence: buildReviewEvidence(spec, reviewInstances),
+        },
+      ),
+      reviewInstances.map((instance) => ({ file: instance.filePath, line: instance.line })),
+      reviewInstances.map((instance) => buildPropertySnippet(instance, spec)),
     );
     writeDebugArtifacts(evidence, rule, result, scanIndex);
     return result;
@@ -198,32 +219,36 @@ function checkModuleDeviceTypes(rule: RegisteredRule, evidence: CollectedEvidenc
     return baseResult(rule, "不涉及", "未发现 HAP 模块的 src/main/module.json5，规则不涉及。");
   }
 
-  const failedFiles = files.filter((file) => {
-    const values = readStringArrayProperty(file.content, "deviceTypes");
-    return !values.includes("phone") || !values.includes("tablet");
-  });
-  if (failedFiles.length > 0) {
+  const deviceTypesByFile = files.map((file) => ({
+    file,
+    deviceTypes: readStringArrayProperty(file.content, "deviceTypes"),
+  }));
+  const aggregatedDeviceTypes = unique(
+    deviceTypesByFile.flatMap((item) => item.deviceTypes),
+  ).sort();
+  if (!aggregatedDeviceTypes.includes("phone") || !aggregatedDeviceTypes.includes("tablet")) {
     return withMatches(
-      baseResult(rule, "不满足", "HAP 模块 module.json5 deviceTypes 缺少 phone 或 tablet。", {
+      baseResult(rule, "不满足", "工程 HAP 模块 deviceTypes 汇总后缺少 phone 或 tablet。", {
         inspectedFileCount: files.length,
+        aggregatedDeviceTypes,
       }),
-      failedFiles.map((file) => ({
+      files.map((file) => ({
         file: file.relativePath,
         line: lineOfPattern(file.content, "deviceTypes"),
       })),
-      failedFiles.map(
-        (file) => `deviceTypes=${readStringArrayProperty(file.content, "deviceTypes").join(",")}`,
-      ),
+      [`aggregatedDeviceTypes=${aggregatedDeviceTypes.join(",")}`],
     );
   }
   return withMatches(
-    baseResult(rule, "满足", "所有 HAP 模块 module.json5 deviceTypes 均包含 phone 和 tablet。", {
+    baseResult(rule, "满足", "工程 HAP 模块 deviceTypes 汇总后包含 phone 和 tablet。", {
       inspectedFileCount: files.length,
+      aggregatedDeviceTypes,
     }),
     files.map((file) => ({
       file: file.relativePath,
       line: lineOfPattern(file.content, "deviceTypes"),
     })),
+    deviceTypesByFile.map((item) => `deviceTypes=${item.deviceTypes.join(",")}`),
   );
 }
 
@@ -241,7 +266,9 @@ function checkBreakpointRanges(
   });
   const failedGridRows = gridRowBreakpoints.filter(
     ({ value }) =>
-      !["320vp", "600vp", "840vp", "1440vp"].every((text) => value.valueText.includes(text)),
+      !["320vp", "600vp", "840vp", "1440vp"].every((text) =>
+        resolveConstants(value.valueText, scanIndex).includes(text),
+      ),
   );
   const files = getEtsFiles(evidence);
   const badRangeMatches = findPatternMatches(
@@ -778,7 +805,7 @@ function getScanIndex(evidence: CollectedEvidence): ArkuiStaticScanIndex {
   if (cached) {
     return cached;
   }
-  const index = buildArkuiStaticScanIndex(evidence.allWorkspaceFiles ?? evidence.workspaceFiles);
+  const index = buildArkuiStaticScanIndex(evidence.workspaceFiles);
   scanIndexCache.set(evidence, index);
   return index;
 }
@@ -815,6 +842,12 @@ function isInstanceSatisfied(
   if (spec.check === "swiper_margins_for_multi_display") {
     return values.some(Boolean);
   }
+  if (spec.check === "waterflow_sliding_window_mode") {
+    const columnsTemplate = readPropertyValue(instance, "columnsTemplate")?.valueText ?? "";
+    if (!isClearlyDynamicColumnsTemplate(columnsTemplate, scanIndex)) {
+      return true;
+    }
+  }
   if (spec.allPropertiesRequired === true && values.some((value) => !value)) {
     return false;
   }
@@ -829,6 +862,11 @@ function isInstanceSatisfied(
       isSmOnlyListWithAlternateGrid(instance, scanIndex)
     ) {
       return true;
+    }
+    if (spec.check === "sidebar_show_by_breakpoint") {
+      return presentValues.every((value) =>
+        isClearlyVaryingBreakpointBoolean(value.valueText, scanIndex),
+      );
     }
     return presentValues.every(
       (value) =>
@@ -849,10 +887,106 @@ function isInstanceSatisfied(
   }
   if (spec.requirement === "contains_all") {
     return presentValues.some((value) =>
-      (spec.expectedTexts ?? []).every((text) => value.valueText.includes(text)),
+      (spec.expectedTexts ?? []).every((text) =>
+        resolveConstants(value.valueText, scanIndex).includes(text),
+      ),
     );
   }
   return false;
+}
+
+function shouldDeferInstanceToAgent(
+  instance: ArkuiComponentInstance,
+  spec: ArkuiRuleSpec,
+  scanIndex: ArkuiStaticScanIndex,
+): boolean {
+  if (
+    spec.requirement === "breakpoint_aware" &&
+    spec.check === "gridcol_span_by_breakpoint" &&
+    hasOpaqueGridRowAncestor(scanIndex, instance)
+  ) {
+    return true;
+  }
+  if (!["breakpoint_aware", "non_decreasing"].includes(spec.requirement)) {
+    if (
+      spec.check === "waterflow_sliding_window_mode" &&
+      isOpaqueResponsiveExpression(readPropertyValue(instance, "columnsTemplate")?.valueText ?? "", scanIndex)
+    ) {
+      return true;
+    }
+    return false;
+  }
+  if (spec.check === "list_space_by_breakpoint" && instance.breakpointContext) {
+    return true;
+  }
+  if (spec.check === "gridrow_columns_non_decreasing" && instance.breakpointContext) {
+    return true;
+  }
+  if (spec.check === "sidebar_show_by_breakpoint") {
+    return spec.properties
+      .map((property) => readPropertyValue(instance, property))
+      .filter((value): value is PropertyValue => Boolean(value))
+      .some((value) => !isClearlyVaryingBreakpointBoolean(value.valueText, scanIndex));
+  }
+  if (
+    spec.check === "swiper_margins_for_multi_display" &&
+    isTrueExpression(readPropertyValue(instance, "disableSwipe")?.valueText ?? "")
+  ) {
+    return true;
+  }
+  return spec.properties
+    .map((property) => readPropertyValue(instance, property))
+    .filter((value): value is PropertyValue => Boolean(value))
+    .some((value) => isOpaqueResponsiveExpression(value.valueText, scanIndex));
+}
+
+function hasOpaqueGridRowAncestor(
+  scanIndex: ArkuiStaticScanIndex,
+  target: ArkuiComponentInstance,
+): boolean {
+  return scanIndex.componentInstances
+    .filter(
+      (instance) =>
+        instance.filePath === target.filePath &&
+        instance.component === "GridRow" &&
+        instance.startIndex < target.startIndex &&
+        instance.endIndex > target.endIndex,
+    )
+    .some((instance) => {
+      const columns = readPropertyValue(instance, "columns")?.valueText;
+      return columns ? isOpaqueResponsiveExpression(columns, scanIndex) : false;
+    });
+}
+
+function isOpaqueResponsiveExpression(
+  valueText: string,
+  scanIndex?: ArkuiStaticScanIndex,
+): boolean {
+  const resolved = resolveConstants(valueText, scanIndex).trim();
+  if (!resolved || /^\s*(?:true|false|[0-9]+(?:\.[0-9]+)?|'[^']*'|"[^"]*")\s*$/.test(resolved)) {
+    return false;
+  }
+  if (hasTernaryExpression(resolved)) {
+    return true;
+  }
+  if (hasBreakpointMap(resolved) || readBreakpointHelperNumbers(resolved, scanIndex).length >= 2) {
+    return false;
+  }
+  if (/\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.getValue\s*\(/.test(resolved)) {
+    return true;
+  }
+  if (/\b(?:currentBreakpoint|breakpoint|Breakpoint|BREAKPOINT_|sm|md|lg|xl)\b/.test(resolved)) {
+    return false;
+  }
+  return (
+    /\b(?:isLargeScreen|isMediumScreen|isSmallScreen|isWideScreen|wideScreen|columnsCount|columnCount)\b/i.test(
+      resolved,
+    ) ||
+    /\b(?:ResourceUtil|[A-Za-z_$][\w$]*)\.[A-Za-z_$][\w$]*\s*\(/.test(resolved) ||
+    /\bthis\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(/.test(resolved) ||
+    /^\s*this\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*$/.test(resolved) &&
+      /(?:displayCount|columns|columnCount|template|lanes|span|width|height)/i.test(resolved)
+  );
 }
 
 function isInstanceApplicable(
@@ -875,7 +1009,28 @@ function isInstanceApplicable(
     return Boolean(readPropertyValue(instance, "lanes") && readPropertyValue(instance, "divider"));
   }
   if (spec.check === "list_space_by_breakpoint") {
-    return Boolean(readPropertyValue(instance, "space"));
+    if (!readPropertyValue(instance, "space")) {
+      return false;
+    }
+    if (instance.breakpointContext) {
+      return true;
+    }
+    const lanes = readPropertyValue(instance, "lanes")?.valueText;
+    if (!lanes) {
+      return false;
+    }
+    return hasResponsiveLayoutEvidence(lanes, scanIndex);
+  }
+  if (spec.check === "gridrow_gutter_required") {
+    return hasMultipleGridColChildren(instance, scanIndex);
+  }
+  if (spec.check === "waterflow_sliding_window_mode") {
+    const columnsTemplate = readPropertyValue(instance, "columnsTemplate")?.valueText;
+    return Boolean(
+      columnsTemplate &&
+        (isClearlyDynamicColumnsTemplate(columnsTemplate, scanIndex) ||
+          isOpaqueResponsiveExpression(columnsTemplate, scanIndex)),
+    );
   }
   if (spec.properties.length === 0) {
     return true;
@@ -901,6 +1056,17 @@ function readPropertyValue(
   }
 
   const constructorValue = readObjectProperty(instance.argumentText, propertyName);
+  if (!constructorValue && instance.component === "SideBarContainer" && propertyName === "type") {
+    const argumentText = instance.argumentText.trim();
+    if (argumentText && !argumentText.startsWith("{")) {
+      return {
+        name: propertyName,
+        valueText: argumentText,
+        line: instance.line,
+        usesBreakpoint: hasBreakpointExpression(argumentText),
+      };
+    }
+  }
   if (!constructorValue) {
     return undefined;
   }
@@ -1001,6 +1167,31 @@ function hasBreakpointMap(valueText: string): boolean {
   );
 }
 
+function isClearlyVaryingBreakpointBoolean(
+  valueText: string,
+  scanIndex: ArkuiStaticScanIndex,
+): boolean {
+  const resolved = resolveConstants(valueText, scanIndex);
+  const mapValues = ["sm", "md", "lg", "xl"].flatMap((name) => {
+    const match = new RegExp(`\\b${name}\\s*:\\s*(true|false)\\b`).exec(resolved);
+    return match?.[1] ? [match[1]] : [];
+  });
+  if (mapValues.length >= 2) {
+    return new Set(mapValues).size >= 2;
+  }
+
+  const helperMatch = /\bnew\s+[A-Za-z_$][\w$]*\s*\(([\s\S]*?)\)\s*\.getValue\s*\(/.exec(
+    resolved,
+  );
+  if (!helperMatch?.[1]) {
+    return false;
+  }
+  const helperValues = splitTopLevelArguments(helperMatch[1])
+    .map((part) => resolveConstants(part.trim(), scanIndex))
+    .filter((part) => /^(?:true|false)$/.test(part));
+  return helperValues.length >= 2 && new Set(helperValues).size >= 2;
+}
+
 function hasBreakpointExpression(valueText: string): boolean {
   return isResponsiveExpression(valueText);
 }
@@ -1009,7 +1200,9 @@ function isResponsiveExpression(valueText: string): boolean {
   return (
     hasBreakpointMap(valueText) ||
     /\b(?:sm|md|lg|xl)\b/.test(valueText) ||
-    /\bBreakpointConstants\.BREAKPOINT_[A-Z_]+\b/.test(valueText) ||
+    /\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.BREAKPOINT_(?:SM|MD|LG|XL)\b/.test(
+      valueText,
+    ) ||
     /\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.getValue\s*\(/.test(valueText) ||
     /\bnew\s+[A-Za-z_$][\w$]*\s*\([^)]*,[^)]*,[^)]*\)\s*\.getValue\s*\(/.test(valueText) ||
     /\b(?:isWideScreen|wideScreen|columnsCount|columnCount)\b/i.test(valueText)
@@ -1177,6 +1370,47 @@ function isSmOnlyListWithAlternateGrid(
   );
 }
 
+function hasResponsiveLayoutEvidence(valueText: string, scanIndex: ArkuiStaticScanIndex): boolean {
+  const resolved = resolveConstants(valueText, scanIndex);
+  return (
+    hasBreakpointMap(resolved) ||
+    readBreakpointHelperNumbers(resolved, scanIndex).length >= 2 ||
+    isResponsiveExpression(resolved) ||
+    isOpaqueResponsiveExpression(resolved, scanIndex)
+  );
+}
+
+function hasMultipleGridColChildren(
+  instance: ArkuiComponentInstance,
+  scanIndex: ArkuiStaticScanIndex,
+): boolean {
+  const children = scanIndex.componentInstances.filter(
+    (item) =>
+      item.filePath === instance.filePath &&
+      item.component === "GridCol" &&
+      item.startIndex > instance.startIndex &&
+      item.endIndex < instance.endIndex,
+  );
+  return children.length >= 2;
+}
+
+function isClearlyDynamicColumnsTemplate(
+  valueText: string,
+  scanIndex: ArkuiStaticScanIndex,
+): boolean {
+  const resolved = resolveConstants(valueText, scanIndex);
+  if (hasTernaryExpression(resolved)) {
+    return false;
+  }
+  if (hasBreakpointMap(resolved) || readBreakpointHelperNumbers(resolved, scanIndex).length >= 2) {
+    return true;
+  }
+  const templates = [...resolved.matchAll(/['"]([^'"]*fr[^'"]*)['"]/g)].map(
+    (match) => match[1] ?? "",
+  );
+  return new Set(templates).size >= 2 && isResponsiveExpression(resolved);
+}
+
 function isTabsPageNavigationCheck(check: string): boolean {
   return [
     "tabs_vertical_by_breakpoint",
@@ -1222,6 +1456,14 @@ function isFixedDisplayCount(valueText: string, expected: number): boolean {
 
 function isFalseExpression(valueText: string): boolean {
   return /^\s*false\s*$/.test(valueText);
+}
+
+function isTrueExpression(valueText: string): boolean {
+  return /^\s*true\s*$/.test(valueText);
+}
+
+function hasTernaryExpression(valueText: string): boolean {
+  return valueText.includes("?") && valueText.includes(":");
 }
 
 function getCustomHoverFiles(files: ScanFile[]): ScanFile[] {
@@ -1399,6 +1641,28 @@ function buildInstanceSnippet(instance: ArkuiComponentInstance, spec: ArkuiRuleS
       return `${property}=${value?.valueText ?? "<missing>"}`;
     })
     .join(" ")}`;
+}
+
+function buildPropertySnippet(instance: ArkuiComponentInstance, spec: ArkuiRuleSpec): string {
+  return spec.properties
+    .map((property) => readPropertyValue(instance, property))
+    .filter((value): value is PropertyValue => Boolean(value))
+    .map((value) => `${value.name}=${value.valueText}`)
+    .join("; ");
+}
+
+function buildReviewEvidence(
+  spec: ArkuiRuleSpec,
+  instances: ArkuiComponentInstance[],
+): Array<Record<string, unknown>> {
+  return instances.map((instance) => ({
+    rule_id: spec.check,
+    file: instance.filePath,
+    line: instance.line,
+    subject: instance.component,
+    evidence: buildPropertySnippet(instance, spec),
+    question: `请结合规则描述和源码上下文复核该 ${instance.component} 是否满足一多适配要求。`,
+  }));
 }
 
 function describeRequirement(spec: ArkuiRuleSpec): string {

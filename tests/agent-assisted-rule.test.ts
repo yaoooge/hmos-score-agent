@@ -286,6 +286,52 @@ test("buildAgentBootstrapPayload keeps case rule metadata on assisted candidates
   assert.equal(payload.assisted_rule_candidates[0]?.static_precheck?.signal_status, "all_matched");
 });
 
+test("buildAgentBootstrapPayload keeps thin review evidence for agent candidates", () => {
+  const assistedRuleCandidates: AssistedRuleCandidate[] = [
+    {
+      rule_id: "OM-SWIPER-MUST-01",
+      rule_summary: "Swiper displayCount 必须按断点非递减设置",
+      rule_source: "must_rule",
+      why_uncertain: "Swiper displayCount 使用静态层无法稳定解释的封装表达式，需要 Agent 复核。",
+      local_preliminary_signal: "未接入静态判定器，需要agent辅助判定",
+      evidence_files: ["entry/src/main/ets/pages/Index.ets:7"],
+      evidence_snippets: ["displayCount=this.currentDisplayCount"],
+      review_evidence: {
+        rule_id: "OM-SWIPER-MUST-01",
+        file: "entry/src/main/ets/pages/Index.ets",
+        line: 7,
+        subject: "Swiper",
+        evidence: "displayCount=this.currentDisplayCount",
+        question: "请结合规则描述和源码上下文复核该 Swiper 是否满足一多适配要求。",
+      },
+    },
+  ];
+
+  const payload = buildAgentBootstrapPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "适配一多",
+      originalProjectPath: "/tmp/original",
+      generatedProjectPath: "/tmp/workspace",
+    },
+    caseRoot: "/tmp/case-root",
+    taskType: "continuation",
+    constraintSummary,
+    rubricSnapshot,
+    assistedRuleCandidates,
+  });
+
+  assert.deepEqual(payload.assisted_rule_candidates[0]?.review_evidence, {
+    rule_id: "OM-SWIPER-MUST-01",
+    file: "entry/src/main/ets/pages/Index.ets",
+    line: 7,
+    subject: "Swiper",
+    evidence: "displayCount=this.currentDisplayCount",
+    question: "请结合规则描述和源码上下文复核该 Swiper 是否满足一多适配要求。",
+  });
+  assert.equal("evidence_snippets" in (payload.assisted_rule_candidates[0] ?? {}), false);
+});
+
 test("buildRubricSnapshot keeps only evaluation summary required by prompt building", () => {
   const snapshot = buildRubricSnapshot({
     taskType: "bug_fix",

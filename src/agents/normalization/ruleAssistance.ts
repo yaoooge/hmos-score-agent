@@ -188,6 +188,7 @@ function compactAssistedRuleCandidateForBootstrap(
     ...(candidate.rule_name ? { rule_name: candidate.rule_name } : {}),
     why_uncertain: mergeCandidateReason(candidate.why_uncertain, candidate.static_precheck?.summary),
     ...(evidenceFiles ? { evidence_files: evidenceFiles } : {}),
+    ...(candidate.review_evidence ? { review_evidence: candidate.review_evidence } : {}),
     ...(kit ? { kit } : {}),
     ...(!targetChecks && typeof candidate.llm_prompt === "string"
       ? { llm_prompt: candidate.llm_prompt }

@@ -543,12 +543,17 @@ test("cross-device component precheck uses full changed file content for kit anc
     enabledRulePackIds: ["cross-device-adaptation"],
   });
 
-  const displayCountRule = result.deterministicRuleResults.find(
+  const displayCountRule = result.assistedRuleCandidates.find(
     (item) => item.rule_id === "OM-SWIPER-MUST-01",
   );
 
   assert.ok(displayCountRule);
-  assert.equal(displayCountRule.result, "不满足");
+  assert.equal(displayCountRule.review_evidence?.rule_id, "OM-SWIPER-MUST-01");
+  assert.equal(displayCountRule.review_evidence?.file, relativePath);
+  assert.equal(displayCountRule.review_evidence?.line, 7);
+  assert.equal(displayCountRule.review_evidence?.subject, "Swiper");
+  assert.equal(displayCountRule.review_evidence?.evidence, "displayCount=this.currentDisplayCount");
+  assert.match(displayCountRule.review_evidence?.question ?? "", /Swiper/);
   assert.deepEqual(result.ruleEvidenceIndex["OM-SWIPER-MUST-01"]?.evidenceFiles, [
     `${relativePath}:7`,
   ]);
@@ -563,6 +568,7 @@ test("cross-device static violations expose concrete line locations in conclusio
       "  build() {",
       "    GridRow({ columns: 12 }) {",
       "      GridCol() { Text('A') }",
+      "      GridCol() { Text('B') }",
       "    }",
       "  }",
       "}",
@@ -588,65 +594,9 @@ test("cross-device static violations expose concrete line locations in conclusio
   assert.match(violation?.evidence ?? "", /位置：entry\/src\/main\/ets\/pages\/Index\.ets:5/);
 });
 
-test("ARKTS-FORBID-006 ignores typed arrow function callbacks", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-006");
-  assert.ok(rule);
 
-  const result = runTextPatternRule(rule, {
-    workspaceFiles: [
-      {
-        relativePath: "components/collect_personal_info/src/main/ets/common/ProfileUtils.ets",
-        content: [
-          "export const formatDate = (format: string): string => {",
-          "  return format.replace(/Y{2,4}/g,",
-          "    (match: string, escaped: string): string => escaped || match)",
-          "}",
-        ].join("\n"),
-      },
-    ],
-    originalFiles: [],
-    changedFiles: [],
-    summary: {
-      workspaceFileCount: 1,
-      originalFileCount: 0,
-      changedFileCount: 0,
-      changedFiles: [],
-      hasPatch: false,
-    },
-  });
-
-  assert.equal(result.result, "满足");
-  assert.deepEqual(result.matchedLocations, []);
-});
-
-test("ARKTS-FORBID-006 flags object type call signatures", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-006");
-  assert.ok(rule);
-
-  const result = runTextPatternRule(rule, {
-    workspaceFiles: [
-      {
-        relativePath: "entry/src/main/ets/pages/Index.ets",
-        content: "interface Callable {\n  (value: number): string;\n}\n",
-      },
-    ],
-    originalFiles: [],
-    changedFiles: [],
-    summary: {
-      workspaceFileCount: 1,
-      originalFileCount: 0,
-      changedFileCount: 0,
-      changedFiles: [],
-      hasPatch: false,
-    },
-  });
-
-  assert.equal(result.result, "不满足");
-  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:2"]);
-});
-
-test("ARKTS-FORBID-021 ignores text inside string literals", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-021");
+test("ARKTS-FORBID-020 ignores text inside string literals", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-020");
   assert.ok(rule);
 
   const result = runTextPatternRule(rule, {
@@ -671,8 +621,8 @@ test("ARKTS-FORBID-021 ignores text inside string literals", () => {
   assert.deepEqual(result.matchedLocations, []);
 });
 
-test("ARKTS-FORBID-021 flags real in membership checks", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-021");
+test("ARKTS-FORBID-020 flags real in membership checks", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-020");
   assert.ok(rule);
 
   const result = runTextPatternRule(rule, {
@@ -697,8 +647,8 @@ test("ARKTS-FORBID-021 flags real in membership checks", () => {
   assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
 });
 
-test("ARKTS-FORBID-026 ignores control flow after a safe finally block", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-026");
+test("ARKTS-FORBID-025 ignores control flow after a safe finally block", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-025");
   assert.ok(rule);
 
   const result = runTextPatternRule(rule, {
@@ -732,8 +682,8 @@ test("ARKTS-FORBID-026 ignores control flow after a safe finally block", () => {
   assert.deepEqual(result.matchedLocations, []);
 });
 
-test("ARKTS-FORBID-026 flags control flow inside a finally block", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-026");
+test("ARKTS-FORBID-025 flags control flow inside a finally block", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-025");
   assert.ok(rule);
 
   const result = runTextPatternRule(rule, {
@@ -925,8 +875,8 @@ test("ARKTS-PERF-FORBID-003 flags mixed integer and float numeric arrays", () =>
   assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
 });
 
-test("ARKTS-FORBID-025 ignores strict equality against equals string literal", () => {
-  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-025");
+test("ARKTS-FORBID-024 ignores strict equality against equals string literal", () => {
+  const rule = listRegisteredRules().find((item) => item.rule_id === "ARKTS-FORBID-024");
   assert.ok(rule);
 
   const result = runTextPatternRule(rule, {
@@ -1497,6 +1447,48 @@ test("runRuleEngine limits incremental rule evaluation to changed files when pat
   );
 });
 
+test("runRuleEngine limits ArkUI component static scan to changed files when patch is available", async (t) => {
+  const changedPath = "entry/src/main/ets/pages/ChangedPage.ets";
+  const legacyPath = "entry/src/main/ets/pages/LegacyPage.ets";
+  const caseDir = await createRuleFixture(t, {
+    [changedPath]:
+      '@Entry\n@Component\nstruct ChangedPage {\n  build() {\n    Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(this.currentBreakpoint === "lg")\n  }\n}\n',
+    [legacyPath]:
+      "@Entry\n@Component\nstruct LegacyPage {\n  build() {\n    Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(false)\n  }\n}\n",
+  });
+
+  await fs.writeFile(
+    path.join(caseDir, "diff", "changes.patch"),
+    [
+      `diff --git a/${changedPath} b/${changedPath}`,
+      `--- a/${changedPath}`,
+      `+++ b/${changedPath}`,
+      "@@ -5 +5 @@",
+      `-    Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(false)`,
+      `+    Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(this.currentBreakpoint === "lg")`,
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "continuation",
+    enabledRulePackIds: ["cross-device-adaptation"],
+  });
+
+  assert.equal(
+    result.deterministicRuleResults.some(
+      (item) => item.rule_id === "OM-TABS-MUST-01" && item.result === "不满足",
+    ),
+    false,
+  );
+  assert.equal(
+    result.ruleViolations.some((item) => item.rule_id === "OM-TABS-MUST-01"),
+    false,
+  );
+});
+
 test("runRuleEngine limits static text scan to patch added lines for every task type", async (t) => {
   for (const taskType of ["full_generation", "continuation", "bug_fix"] as const) {
     await t.test(taskType, async (t) => {
@@ -1586,7 +1578,7 @@ test("runRuleEngine does not report violations from ohosTest and test directorie
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-FORBID-019" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-018" && item.result === "不满足",
     ),
     false,
   );
@@ -1813,7 +1805,7 @@ test("runRuleEngine does not treat object property values as this-type usage", a
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-FORBID-009" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-008" && item.result === "不满足",
     ),
     false,
   );
@@ -1881,9 +1873,9 @@ test("runRuleEngine avoids known false positives from valid ArkTS syntax", async
 
   for (const ruleId of [
     "ARKTS-FORBID-001",
-    "ARKTS-FORBID-016",
+    "ARKTS-FORBID-015",
     "ARKTS-MUST-008",
-    "ARKTS-FORBID-025",
+    "ARKTS-FORBID-024",
     "ARKTS-PERF-FORBID-001",
   ]) {
     assert.equal(
@@ -2067,8 +2059,8 @@ test("runRuleEngine evaluates conventional ArkTS language checks deterministical
     "ARKTS-SHOULD-007",
     "ARKTS-SHOULD-008",
     "ARKTS-SHOULD-009",
-    "ARKTS-FORBID-017",
-    "ARKTS-FORBID-023",
+    "ARKTS-FORBID-016",
+    "ARKTS-FORBID-022",
   ]) {
     assert.equal(
       result.deterministicRuleResults.find((item) => item.rule_id === ruleId)?.result,
@@ -2087,7 +2079,7 @@ test("runRuleEngine evaluates conventional ArkTS language checks deterministical
     /DuplicatedName/,
   );
   assert.match(
-    result.ruleEvidenceIndex["ARKTS-FORBID-023"]?.evidenceSnippets.join("\n") ?? "",
+    result.ruleEvidenceIndex["ARKTS-FORBID-022"]?.evidenceSnippets.join("\n") ?? "",
     /mixedEnum/,
   );
 });
@@ -2191,7 +2183,7 @@ test("runRuleEngine evaluates initial arkts_static checks deterministically", as
     /name: string/,
   );
   assert.equal(
-    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-FORBID-011")?.result,
+    result.deterministicRuleResults.find((item) => item.rule_id === "ARKTS-FORBID-010")?.result,
     "不满足",
   );
   assert.equal(
@@ -2381,13 +2373,13 @@ test("runRuleEngine flags unsupported module system patterns in ets files", asyn
 
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-FORBID-018" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-017" && item.result === "不满足",
     ),
     true,
   );
   assert.equal(
     result.deterministicRuleResults.some(
-      (item) => item.rule_id === "ARKTS-FORBID-019" && item.result === "不满足",
+      (item) => item.rule_id === "ARKTS-FORBID-018" && item.result === "不满足",
     ),
     true,
   );
@@ -2457,12 +2449,11 @@ test("runRuleEngine flags unsupported type signatures and constructor parameter 
 
   for (const ruleId of [
     "ARKTS-FORBID-006",
-    "ARKTS-FORBID-007",
     "ARKTS-MUST-002",
-    "ARKTS-FORBID-008",
-    "ARKTS-FORBID-010",
+    "ARKTS-FORBID-007",
+    "ARKTS-FORBID-009",
+    "ARKTS-FORBID-013",
     "ARKTS-FORBID-014",
-    "ARKTS-FORBID-015",
   ]) {
     assert.equal(
       result.deterministicRuleResults.some(
@@ -2493,7 +2484,7 @@ test("runRuleEngine flags restricted runtime interfaces and NaN comparisons", as
     taskType: "bug_fix",
   });
 
-  for (const ruleId of ["ARKTS-FORBID-020", "ARKTS-MUST-008", "ARKTS-MUST-009"]) {
+  for (const ruleId of ["ARKTS-FORBID-019", "ARKTS-MUST-008", "ARKTS-MUST-009"]) {
     assert.equal(
       result.deterministicRuleResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",
@@ -2523,7 +2514,7 @@ test("runRuleEngine flags advanced type features and expression-style declaratio
     taskType: "full_generation",
   });
 
-  for (const ruleId of ["ARKTS-FORBID-009", "ARKTS-FORBID-012"]) {
+  for (const ruleId of ["ARKTS-FORBID-008", "ARKTS-FORBID-011"]) {
     assert.equal(
       result.deterministicRuleResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",
@@ -2563,7 +2554,7 @@ test("runRuleEngine flags object layout mutation and unsupported exception or fu
     taskType: "bug_fix",
   });
 
-  for (const ruleId of ["ARKTS-FORBID-013", "ARKTS-MUST-006", "ARKTS-FORBID-016"]) {
+  for (const ruleId of ["ARKTS-FORBID-012", "ARKTS-MUST-006", "ARKTS-FORBID-015"]) {
     assert.equal(
       result.deterministicRuleResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",
@@ -2597,10 +2588,10 @@ test("runRuleEngine flags migrated forbidden rules without duplicate legacy forb
   for (const ruleId of [
     "ARKTS-FORBID-001",
     "ARKTS-FORBID-005",
-    "ARKTS-FORBID-009",
+    "ARKTS-FORBID-008",
+    "ARKTS-FORBID-011",
     "ARKTS-FORBID-012",
-    "ARKTS-FORBID-013",
-    "ARKTS-FORBID-015",
+    "ARKTS-FORBID-014",
   ]) {
     assert.equal(
       result.deterministicRuleResults.some(
@@ -2697,11 +2688,11 @@ test("runRuleEngine flags forbidden risky control-flow and runtime interfaces", 
 
   for (const ruleId of [
     "ARKTS-MUST-006",
-    "ARKTS-FORBID-018",
-    "ARKTS-FORBID-020",
+    "ARKTS-FORBID-017",
+    "ARKTS-FORBID-019",
+    "ARKTS-FORBID-023",
     "ARKTS-FORBID-024",
     "ARKTS-FORBID-025",
-    "ARKTS-FORBID-026",
   ]) {
     assert.equal(
       result.deterministicRuleResults.some(
@@ -2758,7 +2749,7 @@ test("runRuleEngine keeps AST-related unsupported rules in agent-assisted state"
     );
   }
 
-  for (const ruleId of ["ARKTS-MUST-001", "ARKTS-FORBID-017", "ARKTS-FORBID-023"]) {
+  for (const ruleId of ["ARKTS-MUST-001", "ARKTS-FORBID-016", "ARKTS-FORBID-022"]) {
     assert.equal(
       result.staticRuleAuditResults.some(
         (item) => item.rule_id === ruleId && item.result === "不满足",

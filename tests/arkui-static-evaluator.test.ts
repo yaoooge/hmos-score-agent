@@ -55,6 +55,36 @@ function makeEvidenceFiles(
   };
 }
 
+test("limits ArkUI component scans to patch-scoped workspace files", () => {
+  const changedFile = {
+    relativePath: "entry/src/main/ets/pages/Changed.ets",
+    content:
+      'Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(this.currentBreakpoint === "lg")',
+    patchLineNumbers: [1],
+  };
+  const unchangedFile = {
+    relativePath: "entry/src/main/ets/pages/Unchanged.ets",
+    content: "Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(false)",
+    patchLineNumbers: [],
+  };
+  const result = runArkuiStaticRule(makeRule("tabs_vertical_by_breakpoint"), {
+    workspaceFiles: [changedFile],
+    allWorkspaceFiles: [changedFile, unchangedFile],
+    originalFiles: [],
+    changedFiles: [changedFile.relativePath],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 1,
+      changedFiles: [changedFile.relativePath],
+      hasPatch: true,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Changed.ets:1"]);
+});
+
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-arkui-static-"));
   t.after(async () => {
@@ -83,13 +113,40 @@ test("passes when a registered component property uses breakpoint expression", (
   assert.equal(result.result, "满足");
 });
 
-test("passes when a registered component property uses breakpoint-derived helper", () => {
+test("asks agent to review breakpoint-aware properties hidden behind screen-size booleans", () => {
   const result = runArkuiStaticRule(
     makeRule("tabs_vertical_by_breakpoint"),
     makeEvidence("Tabs(){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }.vertical(this.isWideScreen)"),
   );
 
-  assert.equal(result.result, "满足");
+  assert.equal(result.result, "未接入判定器");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
+  assert.deepEqual(result.matchedSnippets, ["vertical=this.isWideScreen"]);
+});
+
+test("asks agent to review ternary breakpoint expressions instead of hard-coding responsive inference", () => {
+  const result = runArkuiStaticRule(
+    makeRule("tabs_bar_position_by_breakpoint"),
+    makeEvidence(
+      "Tabs({ barPosition: this.currentBreakpoint === Breakpoint.BREAKPOINT_LG ? BarPosition.Start : BarPosition.End }){ TabContent(){ Navigation(){} } TabContent(){ NavDestination(){} } }",
+    ),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+  assert.deepEqual(result.matchedSnippets, [
+    "barPosition=this.currentBreakpoint === Breakpoint.BREAKPOINT_LG ? BarPosition.Start : BarPosition.End",
+  ]);
+});
+
+test("asks agent to review non-decreasing rules hidden behind helper methods", () => {
+  const result = runArkuiStaticRule(
+    makeRule("swiper_display_count_non_decreasing"),
+    makeEvidence("Swiper(){}.displayCount(this.getDisplayCount())"),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
+  assert.deepEqual(result.matchedSnippets, ["displayCount=this.getDisplayCount()"]);
 });
 
 test("fails when numeric breakpoint map descends across larger breakpoints", () => {
@@ -111,25 +168,25 @@ test("passes fixed single-column WaterFlow columnsTemplate", () => {
   assert.equal(result.result, "满足");
 });
 
-test("passes breakpoint-derived WaterFlow columnsTemplate helper", () => {
+test("asks agent to review breakpoint-derived WaterFlow columnsTemplate helper", () => {
   const result = runArkuiStaticRule(
     makeRule("waterflow_columns_template_non_decreasing"),
     makeEvidence("WaterFlow(){}.columnsTemplate(this.columnsCount > 1 ? '1fr 1fr' : '1fr')"),
   );
 
-  assert.equal(result.result, "满足");
+  assert.equal(result.result, "未接入判定器");
 });
 
-test("passes stable Grid columnsTemplate helper", () => {
+test("asks agent to review stable Grid columnsTemplate helper", () => {
   const result = runArkuiStaticRule(
     makeRule("grid_columns_template_non_decreasing"),
     makeEvidence("Grid(){}.columnsTemplate(this.templateForGrid)"),
   );
 
-  assert.equal(result.result, "满足");
+  assert.equal(result.result, "未接入判定器");
 });
 
-test("passes fixed GridCol span when GridRow columns are responsive in the same file", () => {
+test("asks agent to review fixed GridCol span when GridRow columns are opaque", () => {
   const result = runArkuiStaticRule(
     makeRule("gridcol_span_by_breakpoint"),
     makeEvidence(
@@ -137,7 +194,36 @@ test("passes fixed GridCol span when GridRow columns are responsive in the same 
     ),
   );
 
+  assert.equal(result.result, "未接入判定器");
+});
+
+test("passes SideBarContainer showSideBar when breakpoint boolean values vary explicitly", () => {
+  const result = runArkuiStaticRule(
+    makeRule("sidebar_show_by_breakpoint"),
+    makeEvidence("SideBarContainer(){}.showSideBar({ sm: false, md: true, lg: true })"),
+  );
+
   assert.equal(result.result, "满足");
+});
+
+test("asks agent to review opaque SideBarContainer showSideBar expressions", () => {
+  const result = runArkuiStaticRule(
+    makeRule("sidebar_show_by_breakpoint"),
+    makeEvidence("SideBarContainer(){}.showSideBar(this.panel.visible)"),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+  assert.deepEqual(result.matchedSnippets, ["showSideBar=this.panel.visible"]);
+});
+
+test("asks agent to review fixed SideBarContainer showSideBar values", () => {
+  const result = runArkuiStaticRule(
+    makeRule("sidebar_show_by_breakpoint"),
+    makeEvidence("SideBarContainer(){}.showSideBar(false)"),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+  assert.deepEqual(result.matchedSnippets, ["showSideBar=false"]);
 });
 
 test("does not fail layout-intent rules without applicability evidence", () => {
@@ -177,14 +263,13 @@ test("does not apply List divider rule without lanes", () => {
   assert.equal(result.result, "不涉及");
 });
 
-test("only flags List space rule when space is configured", () => {
+test("does not apply List space rule only because space is configured", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
     makeEvidence("List(){}\nList({ space: 12 }){}"),
   );
 
-  assert.equal(result.result, "不满足");
-  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:2"]);
+  assert.equal(result.result, "不涉及");
 });
 
 test("passes module deviceTypes when phone and tablet are declared", () => {
@@ -220,6 +305,44 @@ test("only checks hap entry modules for deviceTypes", () => {
 
   assert.equal(result.result, "满足");
   assert.deepEqual(result.matchedLocations, ["entry/src/main/module.json5:1"]);
+});
+
+test("passes module deviceTypes when separate hap modules collectively cover phone and tablet", () => {
+  const result = runArkuiStaticRule(
+    makeRule("module_device_types_multi_device"),
+    makeEvidenceFiles([
+      {
+        relativePath: "entry-phone/src/main/module.json5",
+        content: '{ "module": { "name": "phone", "type": "entry", "deviceTypes": ["phone"] } }',
+      },
+      {
+        relativePath: "entry-tablet/src/main/module.json5",
+        content: '{ "module": { "name": "tablet", "type": "entry", "deviceTypes": ["tablet"] } }',
+      },
+    ]),
+  );
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedSnippets, ["deviceTypes=phone", "deviceTypes=tablet"]);
+});
+
+test("flags module deviceTypes only after aggregating all hap device declarations", () => {
+  const result = runArkuiStaticRule(
+    makeRule("module_device_types_multi_device"),
+    makeEvidenceFiles([
+      {
+        relativePath: "entry/src/main/module.json5",
+        content: '{ "module": { "name": "entry", "type": "entry", "deviceTypes": ["phone"] } }',
+      },
+      {
+        relativePath: "entry-pc/src/main/module.json5",
+        content: '{ "module": { "name": "pc", "type": "entry", "deviceTypes": ["2in1"] } }',
+      },
+    ]),
+  );
+
+  assert.equal(result.result, "不满足");
+  assert.deepEqual(result.matchedSnippets, ["aggregatedDeviceTypes=2in1,phone"]);
 });
 
 test("flags hardcoded breakpoint width comparisons", () => {
@@ -354,7 +477,7 @@ test("does not pass default GridCol spans just because a responsive GridRow exis
   assert.equal(result.result, "不满足");
 });
 
-test("does not require breakpoint-aware List space inside sm-only branch", () => {
+test("asks agent to review List space inside sm-only branch with alternate GridRow branch", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
     makeEvidence(
@@ -362,19 +485,19 @@ test("does not require breakpoint-aware List space inside sm-only branch", () =>
     ),
   );
 
-  assert.equal(result.result, "满足");
+  assert.equal(result.result, "未接入判定器");
 });
 
-test("does not pass sm-only List space without an alternate GridRow branch", () => {
+test("does not apply List space rule to single-lane lists without responsive layout evidence", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
-    makeEvidence("if (this.curBp === 'sm') { List({ space: Constants.LIST_GUTTER }){} }"),
+    makeEvidence("List({ space: Constants.LIST_GUTTER }){}"),
   );
 
-  assert.equal(result.result, "不满足");
+  assert.equal(result.result, "不涉及");
 });
 
-test("does not treat not-sm List branch as sm-only fallback", () => {
+test("asks agent to review List space inside breakpoint branches", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
     makeEvidence(
@@ -382,13 +505,13 @@ test("does not treat not-sm List branch as sm-only fallback", () => {
     ),
   );
 
-  assert.equal(result.result, "不满足");
+  assert.equal(result.result, "未接入判定器");
 });
 
-test("still fails fixed List space in non-sm breakpoint branch", () => {
+test("flags fixed List space only when lanes provide responsive multi-column evidence", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
-    makeEvidence("if (this.curBp === 'md') { List({ space: Constants.LIST_GUTTER }){} }"),
+    makeEvidence("List({ lanes: new BreakpointType(1, 2, 3).getValue(this.currentBreakpoint), space: 12 }){}"),
   );
 
   assert.equal(result.result, "不满足");
@@ -424,13 +547,13 @@ test("parses breakpoint helper arguments without relying on selector variable na
   assert.equal(result.result, "满足");
 });
 
-test("does not treat breakpoint-looking variable names as responsive without breakpoint evidence", () => {
+test("does not apply List space rule to breakpoint-looking variable names without layout evidence", () => {
   const result = runArkuiStaticRule(
     makeRule("list_space_by_breakpoint"),
     makeEvidence("List({ space: this.breakpointSpacing }){}"),
   );
 
-  assert.equal(result.result, "不满足");
+  assert.equal(result.result, "不涉及");
 });
 
 test("does not fail local business Tabs as page-level navigation", () => {
@@ -515,6 +638,17 @@ test("passes Swiper multi-display margins when either side margin is configured"
   assert.equal(result.result, "满足");
 });
 
+test("asks agent to review Swiper margins when multi-display swiper disables swiping", () => {
+  const result = runArkuiStaticRule(
+    makeRule("swiper_margins_for_multi_display"),
+    makeEvidence(
+      "Swiper(){}.displayCount(new BreakpointType(1, 2, 3).getValue(sizeClass)).disableSwipe(true)",
+    ),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+});
+
 test("does not fail multi-lane List when divider is not configured", () => {
   const result = runArkuiStaticRule(
     makeRule("list_divider_by_lanes"),
@@ -528,6 +662,73 @@ test("returns not applicable when an optional scanned property is absent", () =>
   const result = runArkuiStaticRule(
     makeRule("gridrow_breakpoints_standard"),
     makeEvidence("GridRow({ columns: { sm: 4, md: 8, lg: 12 } }){}"),
+  );
+
+  assert.equal(result.result, "不涉及");
+});
+
+test("resolves string array constants before checking GridRow breakpoints", () => {
+  const result = runArkuiStaticRule(
+    makeRule("gridrow_breakpoints_standard"),
+    makeEvidenceFiles([
+      {
+        relativePath: "entry/src/main/ets/common/CommonConstants.ets",
+        content:
+          "export class CommonConstants { static readonly BREAK_POINTS_VALUE: Array<string> = ['320vp', '600vp', '840vp', '1440vp']; }",
+      },
+      {
+        relativePath: "entry/src/main/ets/pages/Index.ets",
+        content:
+          "GridRow({ breakpoints: { value: CommonConstants.BREAK_POINTS_VALUE, reference: BreakpointsReference.WindowSize } }){}",
+      },
+    ]),
+  );
+
+  assert.equal(result.result, "满足");
+});
+
+test("asks agent to review GridRow columns inside breakpoint branch", () => {
+  const result = runArkuiStaticRule(
+    makeRule("gridrow_columns_non_decreasing"),
+    makeEvidence(
+      "if (this.currentBreakpoint === BreakpointConstants.BREAKPOINT_MD) { GridRow({ columns: { sm: 2, md: 5, lg: 4 } }){} }",
+    ),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+});
+
+test("does not require GridRow gutter when fewer than two GridCol children need spacing", () => {
+  const result = runArkuiStaticRule(
+    makeRule("gridrow_gutter_required"),
+    makeEvidence("GridRow({ columns: { sm: 4, md: 8, lg: 12 } }) { GridCol({ span: 12 }){} }"),
+  );
+
+  assert.equal(result.result, "不涉及");
+});
+
+test("flags missing GridRow gutter when multiple GridCol children share a grid row", () => {
+  const result = runArkuiStaticRule(
+    makeRule("gridrow_gutter_required"),
+    makeEvidence("GridRow({ columns: { sm: 4, md: 8, lg: 12 } }) { GridCol({ span: 4 }){} GridCol({ span: 4 }){} }"),
+  );
+
+  assert.equal(result.result, "不满足");
+});
+
+test("asks agent to review WaterFlow sliding window when dynamic columns are opaque", () => {
+  const result = runArkuiStaticRule(
+    makeRule("waterflow_sliding_window_mode"),
+    makeEvidence("WaterFlow(){}.columnsTemplate(this.getColumnsTemplate())"),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+});
+
+test("does not apply WaterFlow sliding window rule when columns are not dynamic", () => {
+  const result = runArkuiStaticRule(
+    makeRule("waterflow_sliding_window_mode"),
+    makeEvidence("WaterFlow(){}.columnsTemplate('1fr')"),
   );
 
   assert.equal(result.result, "不涉及");

@@ -187,7 +187,7 @@ async function writeRecalculableCompletedTask(t: test.TestContext) {
               },
               rule_impacts: [
                 {
-                  rule_id: "ARKTS-FORBID-026",
+                  rule_id: "ARKTS-FORBID-025",
                   rule_source: "forbidden_pattern",
                   result: "不满足",
                   severity: "heavy",
@@ -220,12 +220,12 @@ async function writeRecalculableCompletedTask(t: test.TestContext) {
         {
           id: 1,
           level: "high",
-          title: "规则违规：ARKTS-FORBID-026",
+          title: "规则违规：ARKTS-FORBID-025",
           description: "finally 中 return。",
           evidence: "Index.ets",
           score_effect: {
             type: "risk_level_rule_impact",
-            rule_id: "ARKTS-FORBID-026",
+            rule_id: "ARKTS-FORBID-025",
             original_level: "high",
             level_weights: { high: 1, medium: 0.6, low: 0.3, none: 0 },
             hard_gate_ids: ["G3"],
@@ -951,7 +951,7 @@ test("submit human review handler keeps pending hard gate candidates inactive du
       id: 1,
       item: "硬门槛复核",
       current_assessment: "none",
-      uncertainty_reason: "ARKTS-FORBID-026 可能触发 G3，但 agent 无法确认。",
+      uncertainty_reason: "ARKTS-FORBID-025 可能触发 G3，但 agent 无法确认。",
       suggested_focus: "硬门槛规则：G3 严重工程风险。",
       score_effect: {
         type: "hard_gate",

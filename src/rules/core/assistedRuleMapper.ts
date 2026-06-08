@@ -1,5 +1,6 @@
 import type {
   AssistedRuleCandidate,
+  AssistedRuleReviewEvidence,
   RuleEvidenceIndex,
   StaticRuleAuditResult,
 } from "../../types.js";
@@ -24,6 +25,7 @@ export function mapAssistedRuleCandidate(input: {
   const staticPrecheck = input.evaluatedRule?.preliminaryData?.static_precheck as
     | AssistedRuleCandidate["static_precheck"]
     | undefined;
+  const reviewEvidence = readReviewEvidence(input);
 
   return {
     rule_id: input.rule.rule_id,
@@ -35,6 +37,7 @@ export function mapAssistedRuleCandidate(input: {
       (input.registeredRule?.is_case_rule ? "unknown" : "未接入静态判定器，需要agent辅助判定"),
     evidence_files: input.ruleEvidenceIndex[input.rule.rule_id]?.evidenceFiles ?? [],
     evidence_snippets: input.ruleEvidenceIndex[input.rule.rule_id]?.evidenceSnippets ?? [],
+    ...(reviewEvidence ? { review_evidence: reviewEvidence } : {}),
     rule_name: input.registeredRule?.rule_name,
     priority: input.registeredRule?.priority,
     decision_criteria: toOutputDecisionCriteria(input.registeredRule?.decisionCriteria),
@@ -44,6 +47,33 @@ export function mapAssistedRuleCandidate(input: {
     target_checks: readTargetChecks(input.registeredRule?.detector.config.targetChecks),
     static_precheck: staticPrecheck,
     is_case_rule: input.registeredRule?.is_case_rule,
+  };
+}
+
+function readReviewEvidence(input: {
+  rule: StaticRuleAuditResult;
+  evaluatedRule: EvaluatedRule | undefined;
+}): AssistedRuleReviewEvidence | undefined {
+  const preliminary = input.evaluatedRule?.preliminaryData?.reviewEvidence;
+  const first = Array.isArray(preliminary) ? preliminary[0] : undefined;
+  if (!first || typeof first !== "object" || Array.isArray(first)) {
+    return undefined;
+  }
+  const record = first as Record<string, unknown>;
+  const file = typeof record.file === "string" ? record.file : undefined;
+  const subject = typeof record.subject === "string" ? record.subject : undefined;
+  const evidence = typeof record.evidence === "string" ? record.evidence : undefined;
+  const question = typeof record.question === "string" ? record.question : undefined;
+  if (!file || !subject || !evidence || !question) {
+    return undefined;
+  }
+  return {
+    rule_id: input.rule.rule_id,
+    file,
+    ...(typeof record.line === "number" ? { line: record.line } : {}),
+    subject,
+    evidence,
+    question,
   };
 }
 

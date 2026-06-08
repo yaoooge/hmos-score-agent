@@ -324,6 +324,15 @@ export interface CaseRuleStaticPrecheck {
   summary: string;
 }
 
+export interface AssistedRuleReviewEvidence {
+  rule_id: string;
+  file: string;
+  line?: number;
+  subject: string;
+  evidence: string;
+  question: string;
+}
+
 // AssistedRuleCandidate 描述需要 Agent 辅助判定的弱规则候选及其证据。
 export interface AssistedRuleCandidate {
   rule_id: string;
@@ -333,6 +342,7 @@ export interface AssistedRuleCandidate {
   local_preliminary_signal: string;
   evidence_files: string[];
   evidence_snippets: string[];
+  review_evidence?: AssistedRuleReviewEvidence;
   rule_name?: string;
   priority?: CaseConstraintPriority;
   kit?: string[];
@@ -367,6 +377,7 @@ export interface AgentBootstrapRuleCandidate {
   rule_name?: string;
   why_uncertain: string;
   evidence_files?: string[];
+  review_evidence?: AssistedRuleReviewEvidence;
   kit?: string[];
   llm_prompt?: string;
   target_checks?: AgentBootstrapTargetCheck[];

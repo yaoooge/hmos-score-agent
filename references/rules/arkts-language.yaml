@@ -716,37 +716,8 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: light
+
   - id: ARKTS-FORBID-006
-    rule: 禁止在对象类型中使用 call signature。
-    detector:
-      kind: static
-      mode: regex
-      config:
-        fileExtensions:
-          - .ets
-        patterns:
-          - ^\s*\([^)]*\)\s*:\s*[^=;{\r\n]+;?\s*$
-    fallback:
-      policy: agent_assisted
-    decisionCriteria:
-      pass:
-        - 已确认符合规则：禁止在对象类型中使用 call signature。
-      fail:
-        - 存在违反规则的证据：禁止在对象类型中使用 call signature。
-      notApplicable:
-        - 本次改动不涉及该规则约束场景。
-      review:
-        - 证据不足，无法稳定判断该规则。
-    profile:
-      scoring: true
-      riskCode: LANGUAGE_CONSTRAINT_VIOLATION
-      suppressRubricRiskCodes: []
-      metricGroups:
-        - type_safety
-        - stability
-        - security_boundary
-      impact: heavy
-  - id: ARKTS-FORBID-007
     rule: 禁止在 type 或 interface 中定义构造签名。
     detector:
       kind: static
@@ -776,7 +747,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-008
+  - id: ARKTS-FORBID-007
     rule: 禁止使用 index signature。
     detector:
       kind: static
@@ -806,7 +777,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-009
+  - id: ARKTS-FORBID-008
     rule: 禁止使用 intersection types、conditional types、infer、this 类型和索引访问类型。
     detector:
       kind: static
@@ -837,7 +808,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-010
+  - id: ARKTS-FORBID-009
     rule: 禁止在构造函数参数中直接声明类字段。
     detector:
       kind: static
@@ -867,7 +838,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-011
+  - id: ARKTS-FORBID-010
     rule: 禁止依赖 structural typing、对象字面量类型或无类型对象字面量初始化。
     detector:
       kind: static
@@ -898,7 +869,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-012
+  - id: ARKTS-FORBID-011
     rule: 禁止使用 function expression 和 class expression。
     detector:
       kind: static
@@ -928,7 +899,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-013
+  - id: ARKTS-FORBID-012
     rule: 禁止在运行时修改对象布局，包括 delete 或 prototype 赋值。
     detector:
       kind: static
@@ -958,7 +929,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-014
+  - id: ARKTS-FORBID-013
     rule: 类型转换只能使用 as 语法，禁止使用 <Type> 形式的断言。
     detector:
       kind: static
@@ -988,7 +959,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-015
+  - id: ARKTS-FORBID-014
     rule: 禁止使用解构赋值、解构声明、解构参数、逗号运算符和 for..in。
     detector:
       kind: static
@@ -1018,7 +989,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-016
+  - id: ARKTS-FORBID-015
     rule: 禁止在普通函数或静态方法中使用 this，禁止嵌套函数声明与生成器函数。
     detector:
       kind: static
@@ -1048,7 +1019,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-017
+  - id: ARKTS-FORBID-016
     rule: 禁止混合类型枚举、运行时表达式枚举初始化、enum 声明合并和命名空间对象化使用。
     detector:
       kind: static
@@ -1077,7 +1048,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-018
+  - id: ARKTS-FORBID-017
     rule: 禁止使用 require、import 赋值表达式、ambient module、UMD 和 import assertions。
     detector:
       kind: static
@@ -1108,7 +1079,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-019
+  - id: ARKTS-FORBID-018
     rule: 禁止通过 @ts-ignore、@ts-nocheck 或关闭严格检查的方式绕过类型系统。
     detector:
       kind: static
@@ -1138,7 +1109,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-020
+  - id: ARKTS-FORBID-019
     rule: 禁止使用 eval、__proto__、__defineGetter__ 等受限动态标准库接口。
     detector:
       kind: static
@@ -1168,7 +1139,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-021
+  - id: ARKTS-FORBID-020
     rule: 禁止使用 in 检查成员存在。
     detector:
       kind: static
@@ -1199,7 +1170,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-022
+  - id: ARKTS-FORBID-021
     rule: 禁止使用 with 语句。
     detector:
       kind: static
@@ -1229,7 +1200,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-023
+  - id: ARKTS-FORBID-022
     rule: 禁止枚举混用不同值类型、使用运行时表达式初始化枚举、依赖 enum/声明合并或将命名空间作为运行时对象。
     detector:
       kind: static
@@ -1258,7 +1229,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-024
+  - id: ARKTS-FORBID-023
     rule: 禁止使用 Function.apply、Function.call、new.target 或 as const 等 ArkTS 不兼容能力。
     detector:
       kind: static
@@ -1288,7 +1259,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-025
+  - id: ARKTS-FORBID-024
     rule: 禁止在 if、while、for 或其他控制性条件表达式中直接进行赋值。
     detector:
       kind: static
@@ -1319,7 +1290,7 @@ forbidden_patterns:
         - stability
         - security_boundary
       impact: heavy
-  - id: ARKTS-FORBID-026
+  - id: ARKTS-FORBID-025
     rule: 禁止在 finally 代码块中使用 return、break、continue 或抛出未处理异常。
     detector:
       kind: static

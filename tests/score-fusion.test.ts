@@ -972,7 +972,7 @@ test("fuseRubricScoreWithRules snaps rule-adjusted scores back to declared rubri
   );
   const ruleAuditResults: RuleAuditResult[] = [
     {
-      rule_id: "ARKTS-FORBID-012",
+      rule_id: "ARKTS-FORBID-011",
       rule_source: "must_rule",
       result: "不满足",
       conclusion: "命中 must_rule。",
@@ -1089,7 +1089,7 @@ test("fuseRubricScoreWithRules writes uncertain hard gate rules into suggested f
     rubricAgentRunStatus: "success",
     ruleAuditResults: [
       {
-        rule_id: "ARKTS-FORBID-026",
+        rule_id: "ARKTS-FORBID-025",
         rule_source: "forbidden_pattern",
         result: "待人工复核",
         conclusion: "无法确认 finally 中 return 是否真实存在。",
@@ -1111,11 +1111,11 @@ test("fuseRubricScoreWithRules writes uncertain hard gate rules into suggested f
     | undefined;
   assert.ok(hardGateReview);
   assert.equal(hardGateReview.current_assessment, "none");
-  assert.match(hardGateReview.uncertainty_reason, /ARKTS-FORBID-026/);
+  assert.match(hardGateReview.uncertainty_reason, /ARKTS-FORBID-025/);
   assert.match(hardGateReview.suggested_focus, /G3/);
   assert.match(hardGateReview.suggested_focus, /严重工程风险/);
   assert.match(hardGateReview.suggested_focus, /空值或异步竞争风险高/);
-  assert.match(hardGateReview.suggested_focus, /ARKTS-FORBID-026/);
+  assert.match(hardGateReview.suggested_focus, /ARKTS-FORBID-025/);
   assert.doesNotMatch(hardGateReview.suggested_focus, /无法确认 finally 中 return 是否真实存在/);
   assert.deepEqual(hardGateReview.score_effect, {
     type: "hard_gate",

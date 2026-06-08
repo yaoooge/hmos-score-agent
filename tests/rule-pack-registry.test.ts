@@ -16,8 +16,8 @@ test("arkts-language pack registers all rules from current source set", () => {
   const rules = arktsPack.rules;
   assert.equal(rules.filter((item) => item.rule_source === "must_rule").length, 10);
   assert.equal(rules.filter((item) => item.rule_source === "should_rule").length, 11);
-  assert.equal(rules.filter((item) => item.rule_source === "forbidden_pattern").length, 26);
-  assert.equal(rules.length, 47);
+  assert.equal(rules.filter((item) => item.rule_source === "forbidden_pattern").length, 25);
+  assert.equal(rules.length, 46);
 });
 
 test("arkts-performance pack registers PDF-derived performance rules", () => {
@@ -38,7 +38,7 @@ test("arkts-performance pack registers PDF-derived performance rules", () => {
   );
 
   const rules = listRegisteredRules({ enabledPackIds: [...defaultEnabledRulePackIds] });
-  assert.equal(rules.length, 60);
+  assert.equal(rules.length, 59);
 });
 
 test("arkui-extra pack is registered and default enabled", () => {
@@ -77,11 +77,24 @@ test("arkts-language should rules are renumbered contiguously after official-lin
   );
 });
 
+test("arkts-language forbidden rules are numbered contiguously", () => {
+  const rules = listRegisteredRules().filter(
+    (item) => item.pack_id === "arkts-language" && item.rule_source === "forbidden_pattern",
+  );
+
+  assert.deepEqual(
+    rules.map((item) => item.rule_id),
+    Array.from({ length: rules.length }, (_, index) =>
+      `ARKTS-FORBID-${String(index + 1).padStart(3, "0")}`,
+    ),
+  );
+});
+
 test("registered rules carry real summaries and detector configs instead of placeholder entries", () => {
   const rules = listRegisteredRules();
   const movedMust002 = rules.find((item) => item.rule_id === "ARKTS-FORBID-002");
   const should011 = rules.find((item) => item.rule_id === "ARKTS-SHOULD-011");
-  const forbid002 = rules.find((item) => item.rule_id === "ARKTS-FORBID-021");
+  const forbid002 = rules.find((item) => item.rule_id === "ARKTS-FORBID-020");
   const must004 = rules.find((item) => item.rule_id === "ARKTS-MUST-001");
 
   assert.ok(movedMust002);
