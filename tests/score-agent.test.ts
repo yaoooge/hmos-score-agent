@@ -7,16 +7,13 @@ import { buildRubricSnapshot } from "../src/agents/normalization/ruleAssistance.
 import { ArtifactStore } from "../src/commons/io/artifactStore.js";
 import { pruneCompletedCaseArtifacts } from "../src/commons/io/caseArtifactCleanup.js";
 import { loadCaseFromPath } from "../src/commons/io/caseLoader.js";
-import { inputClassificationNode } from "../src/workflow/nodes/inputClassification/index.js";
-import { artifactPostProcessNode } from "../src/workflow/nodes/artifactPostProcess/index.js";
 import { persistAndUploadNode } from "../src/workflow/nodes/persistAndUpload/index.js";
 import { reportGenerationNode } from "../src/workflow/nodes/reportGeneration/index.js";
+import { rubricPreparationNode } from "../src/workflow/nodes/rubricPreparation/index.js";
 import { rubricScoringAgentNode } from "../src/workflow/nodes/rubricScoringAgent/index.js";
-import { rubricScoringPromptBuilderNode } from "../src/workflow/nodes/rubricScoringPromptBuilder/index.js";
-import { ruleAgentPromptBuilderNode } from "../src/workflow/nodes/ruleAgentPromptBuilder/index.js";
 import { ruleAssessmentAgentNode } from "../src/workflow/nodes/ruleAssessmentAgent/index.js";
-import { ruleAuditNode } from "../src/workflow/nodes/ruleAudit/index.js";
 import { ruleMergeNode } from "../src/workflow/nodes/ruleMerge/index.js";
+import { rulePreparationNode } from "../src/workflow/nodes/rulePreparation/index.js";
 import { scoreFusionOrchestrationNode } from "../src/workflow/nodes/scoreFusionOrchestration/index.js";
 import { loadRubricForTaskType } from "../src/scoring/rubricLoader.js";
 import type { CaseInput } from "../src/types.js";
@@ -233,49 +230,16 @@ test("ArtifactStore creates case directories and persists json/text artifacts", 
   assert.equal(logText, "hello");
 });
 
-test("inputClassificationNode prioritizes bug_fix over patch-based continuation", async () => {
-  const bugResult = await inputClassificationNode(
-    makeState({
-      promptText: "请修复餐厅列表页面 bug",
-      patchPath: "/tmp/changes.patch",
-    }) as never,
-  );
-  const continuationResult = await inputClassificationNode(
-    makeState({
-      promptText: "继续完善餐厅列表页面",
-      patchPath: "/tmp/changes.patch",
-    }) as never,
-  );
-  const fullGenerationResult = await inputClassificationNode(makeState() as never);
-
-  assert.equal(bugResult.taskType, "bug_fix");
-  assert.equal(continuationResult.taskType, "continuation");
-  assert.equal(fullGenerationResult.taskType, "full_generation");
-});
-
-test("inputClassificationNode keeps workspace-only cases as full_generation even after patch creation", async () => {
-  const result = await inputClassificationNode(
-    makeState({
-      promptText: "实现商城首页",
-      patchPath: "/tmp/generated.patch",
-      originalProjectProvided: false,
-    }) as never,
-  );
-
-  assert.equal(result.taskType, "full_generation");
-});
-
 test("explicit rubric and rule agent nodes are exported", () => {
-  assert.equal(typeof rubricScoringPromptBuilderNode, "function");
+  assert.equal(typeof rubricPreparationNode, "function");
   assert.equal(typeof rubricScoringAgentNode, "function");
-  assert.equal(typeof ruleAgentPromptBuilderNode, "function");
+  assert.equal(typeof rulePreparationNode, "function");
   assert.equal(typeof ruleAssessmentAgentNode, "function");
 });
 
-test("rubricScoringPromptBuilderNode builds opencode rubric scoring payload", async (t) => {
+test("rubricPreparationNode builds rubric snapshot and opencode scoring payload", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
-  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
-  const result = await rubricScoringPromptBuilderNode(
+  const result = await rubricPreparationNode(
     {
       caseInput: makeState({
         promptText: "请修复餐厅列表页中的 bug",
@@ -284,7 +248,7 @@ test("rubricScoringPromptBuilderNode builds opencode rubric scoring payload", as
       sourceCasePath: "/tmp/case-1",
       effectivePatchPath: "/tmp/changes.patch",
       taskType: "bug_fix",
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["修复餐厅列表页 bug"],
         contextualConstraints: ["保持 ArkTS 工程结构"],
         implicitConstraints: ["存在 patch"],
@@ -300,26 +264,25 @@ test("rubricScoringPromptBuilderNode builds opencode rubric scoring payload", as
         ],
         hasPatch: true,
       },
-      rubricSnapshot: buildRubricSnapshot(rubric),
     } as never,
-    { logger: undefined },
+    { referenceRoot, logger: undefined },
   );
 
+  assert.equal(result.rubricSnapshot?.task_type, "bug_fix");
   assert.equal(result.rubricScoringPayload?.case_context.task_type, "bug_fix");
   assert.equal("initial_target_files" in (result.rubricScoringPayload ?? {}), false);
   assert.equal("rubricScoringPromptText" in result, false);
   assert.equal(result.rubricScoringPayload?.response_contract.output_language, "zh-CN");
 });
 
-test("rubricScoringPromptBuilderNode adds workspace directory summary when changed files are broad", async (t) => {
+test("rubricPreparationNode adds workspace directory summary when changed files are broad", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
-  const rubric = await loadRubricForTaskType("bug_fix", referenceRoot);
   const changedFiles = Array.from(
     { length: 21 },
     (_, index) => `entry/src/main/ets/pages/Page${index}.ets`,
   );
 
-  const result = await rubricScoringPromptBuilderNode(
+  const result = await rubricPreparationNode(
     {
       caseInput: makeState({
         promptText: "请修复页面问题",
@@ -328,7 +291,7 @@ test("rubricScoringPromptBuilderNode adds workspace directory summary when chang
       sourceCasePath: "/tmp/case-1",
       effectivePatchPath: "/tmp/case-1/intermediate/effective.patch",
       taskType: "bug_fix",
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["修复页面问题"],
         contextualConstraints: ["保持 ArkTS 工程结构"],
         implicitConstraints: ["存在 patch"],
@@ -348,9 +311,8 @@ test("rubricScoringPromptBuilderNode adds workspace directory summary when chang
         implementationHints: ["HarmonyOS 模块: entry"],
         omittedFileCount: 5,
       },
-      rubricSnapshot: buildRubricSnapshot(rubric),
     } as never,
-    { logger: undefined },
+    { referenceRoot, logger: undefined },
   );
 
   assert.equal(result.rubricScoringPayload?.workspace_project_structure?.modulePaths[0], "entry");
@@ -531,7 +493,7 @@ test("rubricScoringAgentNode fails when opencode final answer is incomplete", as
     /rubric agent 调用失败，请重新执行用例/,
   );
 });
-test("ruleAuditNode emits one ledger item per rule and preserves source ordering", async (t) => {
+test("rulePreparationNode emits one ledger item per rule and preserves source ordering", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {
@@ -539,12 +501,19 @@ test("ruleAuditNode emits one ledger item per rule and preserves source ordering
   });
   const caseInput = await loadCaseFromPath(caseDir);
 
-  const result = await ruleAuditNode(
+  const result = await rulePreparationNode(
     {
       caseInput,
       taskType: "full_generation",
+      taskUnderstanding: {
+        explicitConstraints: ["固定任务类型: full_generation"],
+        contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+        implicitConstraints: ["修改范围: 未提供 patch"],
+        classificationHints: ["full_generation", "no_patch"],
+        crossDeviceAdaptation: notInvolvedCrossDevice(),
+      },
     } as never,
-    { referenceRoot },
+    { referenceRoot, logger: undefined },
   );
 
   assert.ok((result.ruleViolations?.length ?? 0) >= 1);
@@ -571,7 +540,7 @@ test("ruleAuditNode emits one ledger item per rule and preserves source ordering
   );
 });
 
-test("ruleAuditNode exposes static results and agent candidates separately", async (t) => {
+test("rulePreparationNode exposes static results and agent candidates separately", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {
@@ -579,12 +548,19 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   });
   const caseInput = await loadCaseFromPath(caseDir);
 
-  const result = await ruleAuditNode(
+  const result = await rulePreparationNode(
     {
       caseInput,
       taskType: "full_generation",
+      taskUnderstanding: {
+        explicitConstraints: ["固定任务类型: full_generation"],
+        contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
+        implicitConstraints: ["修改范围: 未提供 patch"],
+        classificationHints: ["full_generation", "no_patch"],
+        crossDeviceAdaptation: notInvolvedCrossDevice(),
+      },
     } as never,
-    { referenceRoot },
+    { referenceRoot, logger: undefined },
   );
 
   assert.equal(Array.isArray(result.staticRuleAuditResults), true);
@@ -599,7 +575,7 @@ test("ruleAuditNode exposes static results and agent candidates separately", asy
   );
 });
 
-test("ruleAuditNode excludes cross-device rules when task is not cross-device related", async (t) => {
+test("rulePreparationNode excludes cross-device rules when task is not cross-device related", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {
@@ -607,11 +583,11 @@ test("ruleAuditNode excludes cross-device rules when task is not cross-device re
   });
   const caseInput = await loadCaseFromPath(caseDir);
 
-  const result = await ruleAuditNode(
+  const result = await rulePreparationNode(
     {
       caseInput,
       taskType: "full_generation",
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["固定任务类型: full_generation"],
         contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
         implicitConstraints: ["修改范围: 未提供 patch"],
@@ -619,7 +595,7 @@ test("ruleAuditNode excludes cross-device rules when task is not cross-device re
         crossDeviceAdaptation: notInvolvedCrossDevice(),
       },
     } as never,
-    { referenceRoot },
+    { referenceRoot, logger: undefined },
   );
 
   assert.equal(
@@ -645,7 +621,7 @@ test("ruleAuditNode excludes cross-device rules when task is not cross-device re
   ]);
 });
 
-test("ruleAuditNode enables cross-device rules and preserves assisted candidate metadata", async (t) => {
+test("rulePreparationNode enables cross-device rules and preserves assisted candidate metadata", async (t) => {
   const referenceRoot = await createReferenceRoot(t);
   const rootDir = await makeTempDir(t);
   const caseDir = await writeCaseFixture(rootDir, {
@@ -655,11 +631,11 @@ test("ruleAuditNode enables cross-device rules and preserves assisted candidate 
   });
   const caseInput = await loadCaseFromPath(caseDir);
 
-  const result = await ruleAuditNode(
+  const result = await rulePreparationNode(
     {
       caseInput,
       taskType: "full_generation",
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["固定任务类型: full_generation", "实现一多适配响应式布局"],
         contextualConstraints: ["技术栈: ArkTS/ETS 页面与组件实现"],
         implicitConstraints: ["修改范围: 未提供 patch"],
@@ -671,7 +647,7 @@ test("ruleAuditNode enables cross-device rules and preserves assisted candidate 
         },
       },
     } as never,
-    { referenceRoot },
+    { referenceRoot, logger: undefined },
   );
 
   assert.equal(
@@ -1875,54 +1851,7 @@ test("reportGenerationNode writes deduction_trace for deducted rubric items only
   assert.equal(untouchedAgentEvaluation.deduction_trace, null);
 });
 
-test("artifactPostProcessNode generates layered html report from resultJson", async () => {
-  const postProcessResult = await artifactPostProcessNode({
-    resultJson: {
-      basic_info: {
-        task_type: "bug_fix",
-      },
-      overall_conclusion: {
-        total_score: 97.6,
-        hard_gate_triggered: false,
-        summary: "整体质量较高，建议优先复核低置信度项。",
-      },
-      dimension_results: [
-        {
-          dimension_name: "改动精准度与最小侵入性",
-          dimension_intent: "评价是否精准修复问题且控制改动范围",
-          score: 22,
-          max_score: 25,
-          comment: "整体较好",
-          item_results: [],
-        },
-      ],
-      risks: [],
-      strengths: ["命中主要问题点"],
-      main_issues: ["存在 1 条待人工复核规则"],
-      human_review_items: [],
-      final_recommendation: ["优先复核低置信度指标"],
-      rule_audit_results: [
-        {
-          rule_id: "ARKTS-FORBID-004",
-          rule_source: "must_rule",
-          result: "不满足",
-          conclusion: "检测到 any 类型使用。",
-        },
-      ],
-      report_meta: {
-        unit_name: "case-1",
-        generated_at: "2026-04-17T04:00:00.000Z",
-      },
-    },
-  } as never);
-
-  assert.match(postProcessResult.htmlReport ?? "", /维度得分概览/);
-  assert.match(postProcessResult.htmlReport ?? "", /待人工复核/);
-  assert.match(postProcessResult.htmlReport ?? "", /规则审计结果/);
-  assert.doesNotMatch(postProcessResult.htmlReport ?? "", /<pre>\s*\{/);
-});
-
-test("persistAndUploadNode writes deterministic rule audit artifacts and falls back merged output to deterministic results", async (t) => {
+test("persistAndUploadNode writes deterministic rule assessment artifacts and falls back merged output to deterministic results", async (t) => {
   const localCaseRoot = await makeTempDir(t);
   const artifactStore = new ArtifactStore(localCaseRoot);
   const caseDir = await artifactStore.ensureCaseDir("case-1");
@@ -1946,7 +1875,7 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
       },
       rubricScoringPayload: {},
       ruleAgentBootstrapPayload: {},
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: [],
         contextualConstraints: [],
         implicitConstraints: [],
@@ -1962,7 +1891,6 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
       },
       ruleAgentRunStatus: "not_enabled",
       resultJson: { ok: true },
-      htmlReport: "<html></html>",
     } as never,
     { artifactStore },
   );
@@ -1992,6 +1920,7 @@ test("persistAndUploadNode writes deterministic rule audit artifacts and falls b
     fs.readFile(path.join(caseDir, "inputs", "rubric-scoring-prompt.txt"), "utf-8"),
   );
   await assert.rejects(fs.readFile(path.join(caseDir, "inputs", "rule-agent-prompt.txt"), "utf-8"));
+  await assert.rejects(fs.readFile(path.join(caseDir, "outputs", "report.html"), "utf-8"));
 });
 
 test("pruneCompletedCaseArtifacts preserves only code-linter and hvigor result files when requested", async (t) => {

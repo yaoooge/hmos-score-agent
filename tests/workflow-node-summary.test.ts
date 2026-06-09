@@ -7,10 +7,10 @@ test("getNodeLabel returns Chinese labels for workflow nodes", () => {
   assert.equal(getNodeLabel("remoteTaskPreparationNode"), "远端任务预处理");
   assert.equal(getNodeLabel("taskUnderstandingNode"), "任务理解");
   assert.equal(getNodeLabel("opencodeSandboxPreparationNode"), "opencode 沙箱准备");
+  assert.equal(getNodeLabel("rulePreparationNode"), "规则准备");
   assert.equal(getNodeLabel("rubricScoringAgentNode"), "Rubric Agent 评分");
   assert.equal(getNodeLabel("ruleAssessmentAgentNode"), "规则 Agent 判定");
   assert.equal(getNodeLabel("scoreFusionOrchestrationNode"), "评分融合");
-  assert.equal(getNodeLabel("artifactPostProcessNode"), "产物后处理");
   assert.equal(getNodeLabel("persistAndUploadNode"), "结果落盘");
 });
 
@@ -27,7 +27,7 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
 
   assert.equal(
     summarizeNodeUpdate("taskUnderstandingNode", {
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["A", "B"],
         contextualConstraints: ["C"],
         implicitConstraints: ["D", "E", "F"],
@@ -45,13 +45,6 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
-    summarizeNodeUpdate("inputClassificationNode", {
-      taskType: "bug_fix",
-    }),
-    "taskType=bug_fix",
-  );
-
-  assert.equal(
     summarizeNodeUpdate("ruleAssessmentAgentNode", {
       ruleAgentRunStatus: "success",
       ruleAgentRunnerResult: {
@@ -63,7 +56,7 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
-    summarizeNodeUpdate("ruleAuditNode", {
+    summarizeNodeUpdate("rulePreparationNode", {
       staticRuleAuditResults: [
         { rule_id: "R1", result: "满足" },
         { rule_id: "R2", result: "未接入判定器" },
@@ -75,7 +68,7 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
-    summarizeNodeUpdate("ruleAuditNode", {
+    summarizeNodeUpdate("rulePreparationNode", {
       ruleViolations: [{ rule_id: "R2" }],
     }),
     "rules=0 violations=1 uncertain=0",
@@ -102,17 +95,6 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
   );
 
   assert.equal(
-    summarizeNodeUpdate("rubricScoringPromptBuilderNode", {
-      rubricScoringPayload: {
-        rubric_summary: {
-          dimension_summaries: [{ name: "A" }, { name: "B" }],
-        },
-      },
-    }),
-    "dimensions=2",
-  );
-
-  assert.equal(
     summarizeNodeUpdate("rubricScoringAgentNode", {
       rubricAgentRunStatus: "success",
       rubricScoringResult: {
@@ -120,14 +102,6 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
       },
     }),
     "status=success items=2",
-  );
-
-  assert.equal(
-    summarizeNodeUpdate("ruleAgentPromptBuilderNode", {
-      deterministicRuleResults: [{ rule_id: "R1" }],
-      assistedRuleCandidates: [{ rule_id: "R2" }, { rule_id: "R3" }],
-    }),
-    "deterministic=1 candidates=2",
   );
 
   assert.equal(
@@ -156,21 +130,13 @@ test("summarizeNodeUpdate returns concise summaries for key node updates", () =>
     summarizeNodeUpdate("reportGenerationNode", {
       resultJson: { ok: true },
     }),
-    "resultReady=true htmlLength=0",
-  );
-
-  assert.equal(
-    summarizeNodeUpdate("artifactPostProcessNode", {
-      htmlReport: "<html></html>",
-    }),
-    "htmlLength=13 reportReady=true",
+    "resultReady=true",
   );
 
   assert.equal(
     summarizeNodeUpdate("persistAndUploadNode", {
       resultJson: { ok: true },
-      htmlReport: "<html></html>",
     }),
-    "outputsWritten=true htmlLength=13",
+    "outputsWritten=true",
   );
 });

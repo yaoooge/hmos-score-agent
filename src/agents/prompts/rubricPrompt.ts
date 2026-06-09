@@ -12,7 +12,7 @@ type BuildOpencodeRubricPayloadInput = {
   caseRoot: string;
   effectivePatchPath?: string;
   taskType: TaskType;
-  constraintSummary: ConstraintSummary;
+  taskUnderstanding: ConstraintSummary;
   rubricSnapshot: LoadedRubricSnapshot;
   workspaceProjectStructure?: ProjectStructureSummary;
   workspaceProjectStructureNote?: string;
@@ -36,7 +36,7 @@ export function buildOpencodeRubricPayload(
       generated_project_path: input.caseInput.generatedProjectPath,
       effective_patch_path: input.effectivePatchPath,
     },
-    task_understanding: input.constraintSummary,
+    task_understanding: input.taskUnderstanding,
     rubric_summary: omitRiskTaxonomy(input.rubricSnapshot),
     workspace_project_structure: input.workspaceProjectStructure,
     workspace_project_structure_note: input.workspaceProjectStructureNote,

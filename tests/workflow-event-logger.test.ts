@@ -18,9 +18,9 @@ test("WorkflowEventLogger writes Chinese workflow event lines", async () => {
   await logger.log({
     level: "info",
     type: "node_completed",
-    nodeId: "inputClassificationNode",
-    label: "任务分类",
-    summary: "taskType=bug_fix",
+    nodeId: "rulePreparationNode",
+    label: "规则准备",
+    summary: "rules=3 violations=1 uncertain=2",
   });
   await logger.log({
     level: "error",
@@ -32,7 +32,7 @@ test("WorkflowEventLogger writes Chinese workflow event lines", async () => {
 
   assert.deepEqual(lines, [
     "INFO [规则结果合并ruleMergeNode] 节点开始",
-    "INFO [任务分类inputClassificationNode] 节点完成 summary=taskType=bug_fix",
+    "INFO [规则准备rulePreparationNode] 节点完成 summary=rules=3 violations=1 uncertain=2",
     "ERROR [规则 Agent 判定ruleAssessmentAgentNode] 节点失败 error=Agent 调用失败",
   ]);
 });

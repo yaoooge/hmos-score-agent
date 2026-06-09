@@ -152,7 +152,6 @@ function createStoredResultJson(totalScore = 88): Record<string, unknown> {
     rule_audit_results: [],
     case_rule_results: [],
     report_meta: {
-      report_file_name: "report.html",
       result_json_file_name: "result.json",
       unit_name: "remote-case",
       generated_at: "2026-04-28T10:20:30.000Z",

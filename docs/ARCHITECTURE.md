@@ -8,24 +8,30 @@
 
 ```mermaid
 flowchart TD
-  A[本地 CLI / 远端 API 任务] --> B[remoteTaskPreparationNode]
+  A[本地 CLI / 远端新任务] --> B[remote/local preparation]
   B --> C[taskUnderstandingNode]
-  C --> D[inputClassificationNode]
-  D --> E[ruleAuditNode]
-  E --> F[officialCodeLinterNode]
-  E --> G[rubricPreparationNode]
-  G --> H[rubricScoringPromptBuilderNode]
-  G --> I[ruleAgentPromptBuilderNode]
-  H --> J[rubricScoringAgentNode]
-  I --> K[ruleAssessmentAgentNode]
-  F --> L[ruleMergeNode]
-  K --> L
-  J --> M[scoreFusionOrchestrationNode]
-  L --> M[scoreFusionOrchestrationNode]
-  M --> N[reportGenerationNode]
-  N --> O[artifactPostProcessNode]
-  O --> P[persistAndUploadNode]
-  P --> Q[result.json + report.html + callback]
+
+  P[preparedState / 任务恢复] --> Q[opencodeSandboxPreparationNode]
+
+  C --> R[branchReadyState]
+  Q --> R
+
+  R --> L[officialCodeLinterNode]
+  R --> M[rulePreparationNode]
+  R --> N[rubricPreparationNode]
+
+  M --> O[ruleAssessmentAgentNode]
+  N --> S[rubricScoringAgentNode]
+
+  L --> T[ruleMergeNode]
+  O --> T
+
+  T --> U[scoreFusionOrchestrationNode]
+  S --> U
+
+  U --> V[reportGenerationNode]
+  V --> W[persistAndUploadNode]
+  W --> X[outputs/result.json + callback]
 ```
 
 ### 人工侧流程
@@ -96,27 +102,23 @@ Agent Trace 由 `src/agents/trace/` 在 opencode agent 调用时采集 run、att
 
 ## 主评分 Workflow
 
-主流程定义在 `src/workflow/graph/scoreWorkflow.ts`，由 LangGraph 串联 `src/workflow/nodes/` 下的节点目录。入口包括本地 CLI 用例和远端 API 任务，最终输出 `outputs/result.json` 与 `outputs/report.html`。
+主流程定义在 `src/workflow/graph/scoreWorkflow.ts`，由 LangGraph 串联 `src/workflow/nodes/` 下的节点目录。入口包括本地 CLI 用例、远端 API 新任务和已接收远端任务恢复，最终正式输出为 `outputs/result.json`。
 
 | 顺序 | 节点 | 职责 |
 | --- | --- | --- |
-| 1 | `remoteTaskPreparationNode` | 远端任务预处理、下载资源、物化标准 case；本地 case 会直接归一化到后续状态。 |
-| 2 | `taskUnderstandingNode` | 构建 opencode sandbox，调用 `hmos-understanding` 提取显式、上下文和隐式约束。 |
-| 3 | `inputClassificationNode` | 判定任务类型：`full_generation`、`continuation` 或 `bug_fix`。 |
-| 4 | `ruleAuditNode` | 运行静态规则审计，输出确定性结果、Agent 辅助判定候选、证据索引和违规项。 |
-| 5a | `officialCodeLinterNode` | 与 rubric 准备并行执行，按配置运行官方 Code Linter，并对变更模块执行 hvigor 编译校验。 |
-| 5b | `rubricPreparationNode` | 与官方工具并行执行，加载任务类型对应 rubric，生成评分快照。 |
-| 6a | `rubricScoringPromptBuilderNode` | 构建 rubric 评分 payload 和落盘 prompt。 |
-| 6b | `ruleAgentPromptBuilderNode` | 构建规则辅助判定 payload 和落盘 prompt。 |
-| 7a | `rubricScoringAgentNode` | 调用 `hmos-rubric-scoring` 完成逐项 rubric 评分。 |
-| 7b | `ruleAssessmentAgentNode` | 调用 `hmos-rule-assessment` 判定候选规则。 |
-| 8 | `ruleMergeNode` | 等待官方工具和规则 agent 完成后，合并静态规则结果、官方工具结果和 agent 规则判定结果。 |
-| 9 | `scoreFusionOrchestrationNode` | 等待 rubric 评分和规则合并完成后，融合 rubric 分、规则扣分、硬门槛和构建校验结果。 |
-| 10 | `reportGenerationNode` | 生成并校验结构化 `result.json` 数据。 |
-| 11 | `artifactPostProcessNode` | 基于结果数据渲染 `report.html`。 |
-| 12 | `persistAndUploadNode` | 写入输入、中间产物和输出文件，并按需回调远端平台。 |
+| 1 | `remoteTaskPreparationNode` / local preparation | 远端任务预处理、下载资源、物化标准 case，读取入口 `taskType`，生成 `effective.patch` 和 patch scope。 |
+| 2 | `taskUnderstandingNode` | 构建 opencode sandbox，调用 `hmos-understanding` 输出 `taskUnderstanding`，作为 rule 与 rubric 的共同前置摘要。 |
+| 3a | `officialCodeLinterNode` | 与规则、rubric 分支并行，按配置运行官方 Code Linter，并对变更模块执行 hvigor 编译校验。 |
+| 3b | `rulePreparationNode` | 与官方工具、rubric 分支并行，运行静态规则审计并构建 rule agent payload。 |
+| 3c | `rubricPreparationNode` | 与官方工具、规则分支并行，加载 rubric/risk taxonomy 并构建 rubric scoring payload。 |
+| 4a | `ruleAssessmentAgentNode` | 调用 `hmos-rule-assessment` 判定候选规则。 |
+| 4b | `rubricScoringAgentNode` | 调用 `hmos-rubric-scoring` 完成逐项 rubric 评分。 |
+| 5 | `ruleMergeNode` | 等待官方工具和规则 agent 完成后，合并规则结果并输出统一 `normalizedRuleImpacts`。 |
+| 6 | `scoreFusionOrchestrationNode` | 等待 rubric 评分和规则合并完成后，融合 rubric 分、规则扣分、硬门槛和构建校验结果。 |
+| 7 | `reportGenerationNode` | 生成并校验结构化 `result.json` 数据。 |
+| 8 | `persistAndUploadNode` | 写入输入、中间产物和 `outputs/result.json`，并按需回调远端平台。 |
 
-`runPreparedScoreWorkflow` 用于从已预处理状态恢复执行，会从 `opencodeSandboxPreparationNode` 重新补建 sandbox，然后进入规则审计、官方工具、rubric 和融合阶段。
+`runPreparedScoreWorkflow` 用于从已预处理状态恢复执行，会从 `opencodeSandboxPreparationNode` 重新补建 sandbox，然后进入同一组三分支并行主流程。
 
 ## 人工侧流程
 
@@ -135,13 +137,12 @@ Agent Trace 由 `src/agents/trace/` 在 opencode agent 调用时采集 run、att
 .local-cases/<caseId>/
   inputs/                           # 标准化输入材料
   intermediate/
-    constraint-summary.json
+    task-understanding.json
     rule-audit.json
     code-linter/
     opencode-sandbox/
   outputs/
     result.json
-    report.html
     agent-trace.json                # opencode agent 运行摘要和事件 trace
   human-rating/                     # 人工评级和差异分析产物，仅相关接口触发后存在
   logs/

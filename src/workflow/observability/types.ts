@@ -2,18 +2,14 @@ export type WorkflowNodeId =
   | "remoteTaskPreparationNode"
   | "taskUnderstandingNode"
   | "opencodeSandboxPreparationNode"
-  | "inputClassificationNode"
-  | "ruleAuditNode"
+  | "rulePreparationNode"
   | "officialCodeLinterNode"
   | "rubricPreparationNode"
-  | "rubricScoringPromptBuilderNode"
   | "rubricScoringAgentNode"
-  | "ruleAgentPromptBuilderNode"
   | "ruleAssessmentAgentNode"
   | "ruleMergeNode"
   | "scoreFusionOrchestrationNode"
   | "reportGenerationNode"
-  | "artifactPostProcessNode"
   | "persistAndUploadNode";
 
 export type WorkflowNodeUpdate = Record<string, unknown>;

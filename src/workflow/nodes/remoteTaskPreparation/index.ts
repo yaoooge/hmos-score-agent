@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { load } from "js-yaml";
 import { loadCaseFromPath } from "../../../commons/io/caseLoader.js";
+import { preparePatchEvidenceSummary } from "../../../rules/evidence/patchEvidenceSummary.js";
 import {
   downloadManifestToDirectory,
   type RemoteDownloadLogger,
@@ -88,17 +89,25 @@ export async function remoteTaskPreparationNode(
         logger: deps.logger,
       },
     );
-    const caseInput = await loadCaseFromPath(casePath);
+    const loadedCaseInput = await loadCaseFromPath(casePath);
+    const patchEvidence = await preparePatchEvidenceSummary({
+      caseInput: loadedCaseInput,
+      caseDir: state.caseDir ?? casePath,
+    });
     const taskType = resolveRemoteTaskType(state.remoteTask.testCase.type);
 
     return {
-      caseInput,
+      caseInput: patchEvidence.caseInput,
       sourceCasePath: casePath,
       remoteTaskRootDir: rootDir,
       inputMode: "remote",
       originalFileCount: originalFiles.length,
       workspaceFileCount: workspaceFiles.length,
-      hasPatch: false,
+      effectivePatchPath: patchEvidence.effectivePatchPath,
+      hasPatch: patchEvidence.evidenceSummary.hasPatch,
+      changedFiles: patchEvidence.evidenceSummary.changedFiles,
+      changedLineNumbersByFile: patchEvidence.evidenceSummary.changedLineNumbersByFile ?? {},
+      changedFileCount: patchEvidence.evidenceSummary.changedFileCount,
       remoteBuildSuccess: state.remoteTask.executionResult.isBuildSuccess,
       taskType,
     };

@@ -145,6 +145,7 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
         generatedProjectPath,
         patchPath,
       },
+      taskType: "bug_fix",
     } as never,
     { opencode, referenceRoot, artifactStore },
   );
@@ -157,29 +158,29 @@ test("taskUnderstandingNode uses agent input from prompt, original structure and
     /entry\/src\/main\/ets\/restaurant\/viewmodels\/RestaurantListVM\.ts/,
   );
 
-  assert.deepEqual(result.constraintSummary?.explicitConstraints, [
+  assert.deepEqual(result.taskUnderstanding?.explicitConstraints, [
     "任务类型: bug_fix",
     "行业: 餐饮",
     "场景: 餐厅列表页",
     "目标: 修复评分筛选异常",
   ]);
-  assert.deepEqual(result.constraintSummary?.contextualConstraints, [
+  assert.deepEqual(result.taskUnderstanding?.contextualConstraints, [
     "模块: entry",
     "实现约束: 保持 restaurant viewmodel 与 pages 分层",
   ]);
-  assert.deepEqual(result.constraintSummary?.implicitConstraints, [
+  assert.deepEqual(result.taskUnderstanding?.implicitConstraints, [
     "修改范围: 2 个 ArkTS/TS 文件",
     "侵入程度: 中等",
     "改动类型: UI 接入与筛选逻辑",
   ]);
-  assert.deepEqual(result.constraintSummary?.crossDeviceAdaptation, notInvolvedCrossDevice());
+  assert.deepEqual(result.taskUnderstanding?.crossDeviceAdaptation, notInvolvedCrossDevice());
   assert.equal(Object.hasOwn(result.workspaceProjectStructure ?? {}, "representativeFiles"), false);
   assert.equal(typeof result.opencodeSandboxRoot, "string");
 
   const persisted = JSON.parse(
-    await fs.readFile(path.join(caseDir, "intermediate", "constraint-summary.json"), "utf-8"),
+    await fs.readFile(path.join(caseDir, "intermediate", "task-understanding.json"), "utf-8"),
   );
-  assert.deepEqual(persisted, result.constraintSummary);
+  assert.deepEqual(persisted, result.taskUnderstanding);
 });
 
 test("taskUnderstandingNode generates patch when case patch is absent and loads case rules", async (t) => {
@@ -234,6 +235,7 @@ test("taskUnderstandingNode generates patch when case patch is absent and loads 
         generatedProjectPath,
         expectedConstraintsPath,
       },
+      taskType: "bug_fix",
     } as never,
     { artifactStore, referenceRoot, opencode: createTaskUnderstandingOpencodeMock() },
   );
@@ -291,6 +293,7 @@ test("taskUnderstandingNode regenerates patch when provided patch file is empty"
         generatedProjectPath,
         patchPath,
       },
+      taskType: "continuation",
     } as never,
     { artifactStore, referenceRoot, opencode: createTaskUnderstandingOpencodeMock() },
   );
@@ -327,6 +330,7 @@ test("taskUnderstandingNode creates a workspace-against-empty patch when origina
         generatedProjectPath,
         originalProjectProvided: false,
       },
+      taskType: "full_generation",
     } as never,
     { artifactStore, referenceRoot, opencode: createTaskUnderstandingOpencodeMock() },
   );
@@ -339,5 +343,5 @@ test("taskUnderstandingNode creates a workspace-against-empty patch when origina
   assert.match(patchText, /diff --git/);
   assert.match(patchText, /new file mode/);
   assert.match(patchText, /Index\.ets/);
-  assert.match(result.constraintSummary?.explicitConstraints[0] ?? "", /full_generation/);
+  assert.match(result.taskUnderstanding?.explicitConstraints[0] ?? "", /full_generation/);
 });

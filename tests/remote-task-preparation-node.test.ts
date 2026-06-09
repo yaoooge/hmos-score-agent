@@ -106,6 +106,13 @@ test("remoteTaskPreparationNode converts RemoteEvaluationTask into caseInput", a
   assert.equal(typeof result.sourceCasePath, "string");
   assert.equal(typeof result.remoteTaskRootDir, "string");
   assert.equal(result.remoteBuildSuccess, true);
+  assert.equal(typeof result.effectivePatchPath, "string");
+  assert.equal(result.hasPatch, true);
+  assert.deepEqual(result.changedFiles, ["entry/src/main/ets/pages/Index.ets"]);
+  assert.equal(result.changedFileCount, 1);
+  assert.ok(
+    result.changedLineNumbersByFile?.["entry/src/main/ets/pages/Index.ets"]?.includes(1),
+  );
 });
 
 test("remoteTaskPreparationNode requires a remote task instead of local case passthrough", async () => {
@@ -414,8 +421,9 @@ test("remoteTaskPreparationNode ignores deprecated diffFileUrl during preprocess
     },
   } as never);
 
-  assert.equal(result.caseInput?.patchPath, undefined);
-  assert.equal(result.hasPatch, false);
+  assert.equal(typeof result.caseInput?.patchPath, "string");
+  assert.equal(result.hasPatch, true);
+  assert.deepEqual(result.changedFiles, ["entry/src/main/ets/pages/Index.ets"]);
   assert.deepEqual(requestedUrls, [originalUrl, workspaceUrl]);
 });
 

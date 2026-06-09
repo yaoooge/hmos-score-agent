@@ -70,6 +70,7 @@ test("taskUnderstandingNode emits custom start events through LangGraph writer",
         originalProjectPath,
         generatedProjectPath,
       },
+      taskType: "bug_fix",
     } as never,
     {
       artifactStore,
@@ -83,5 +84,5 @@ test("taskUnderstandingNode emits custom start events through LangGraph writer",
 
   assert.equal(events[0]?.event, "node_started");
   assert.equal(events[0]?.nodeId, "taskUnderstandingNode");
-  assert.ok(result.constraintSummary);
+  assert.ok(result.taskUnderstanding);
 });

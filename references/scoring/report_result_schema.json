@@ -981,9 +981,6 @@
     "report_meta": {
       "type": "object",
       "properties": {
-        "report_file_name": {
-          "type": "string"
-        },
         "result_json_file_name": {
           "type": "string"
         },
@@ -995,7 +992,6 @@
         }
       },
       "required": [
-        "report_file_name",
         "result_json_file_name",
         "unit_name",
         "generated_at"

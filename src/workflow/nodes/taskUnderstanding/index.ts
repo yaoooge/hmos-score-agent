@@ -11,7 +11,6 @@ import { generateCasePatch } from "../../../commons/io/patchGenerator.js";
 import type { OpencodeRunRequest, OpencodeRunResult } from "../../../agents/opencode/cliRunner.js";
 import { buildOpencodeSandbox } from "../../../agents/opencode/sandboxBuilder.js";
 import { loadCaseConstraintRules } from "../../../rules/case-constraints/loader.js";
-import { inferTaskTypeFromCaseInput } from "../../../service/runCaseId.js";
 import { emitNodeFailed, emitNodeStarted } from "../../observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../../graph/state.js";
 import type {
@@ -282,7 +281,7 @@ async function understandWithAgent(
   }
 }
 
-async function persistConstraintSummary(
+async function persistTaskUnderstanding(
   state: ScoreGraphState,
   deps: TaskUnderstandingDeps,
   summary: ConstraintSummary,
@@ -292,7 +291,7 @@ async function persistConstraintSummary(
   }
   await deps.artifactStore.writeJson(
     state.caseDir,
-    "intermediate/constraint-summary.json",
+    "intermediate/task-understanding.json",
     summary,
   );
 }
@@ -372,6 +371,9 @@ export async function taskUnderstandingNode(
   emitNodeStarted("taskUnderstandingNode", config);
 
   try {
+    if (!state.taskType) {
+      throw new Error("taskUnderstandingNode requires taskType in state.");
+    }
     const projectStructureRoot =
       state.caseInput.originalProjectProvided === false ||
       !(await pathExists(state.caseInput.originalProjectPath))
@@ -384,7 +386,6 @@ export async function taskUnderstandingNode(
     const effectivePatchPath = await ensureEffectivePatchPath(state, deps);
     const patchSummary = await readPatchSummary(effectivePatchPath);
     const caseRuleDefinitions = await loadCaseConstraintRules(state.caseInput);
-    const taskType = state.taskType ?? inferTaskTypeFromCaseInput(state.caseInput);
     const opencodeSandbox =
       deps.opencode && state.caseDir
         ? await buildOpencodeSandbox({
@@ -409,12 +410,12 @@ export async function taskUnderstandingNode(
       originalProjectPath: state.caseInput.originalProjectPath,
       generatedProjectPath: state.caseInput.generatedProjectPath,
       originalProjectProvided: state.caseInput.originalProjectProvided,
-      taskType,
+      taskType: state.taskType,
       projectStructure,
       patchSummary,
     };
-    const constraintSummary = await understandWithAgent(agentInput, deps, opencodeSandbox?.root);
-    await persistConstraintSummary(state, deps, constraintSummary);
+    const taskUnderstanding = await understandWithAgent(agentInput, deps, opencodeSandbox?.root);
+    await persistTaskUnderstanding(state, deps, taskUnderstanding);
     await persistCaseRuleDefinitions(state, deps, caseRuleDefinitions);
 
     return {
@@ -424,10 +425,12 @@ export async function taskUnderstandingNode(
       },
       effectivePatchPath,
       hasPatch: patchSummary.hasPatch,
-      taskType,
+      changedFiles: patchSummary.changedFiles,
+      changedFileCount: patchSummary.changedFiles.length,
+      taskType: state.taskType,
       opencodeSandboxRoot: opencodeSandbox?.root,
       caseRuleDefinitions,
-      constraintSummary,
+      taskUnderstanding,
       workspaceProjectStructure,
     };
   } catch (error) {

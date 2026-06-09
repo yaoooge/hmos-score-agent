@@ -23,8 +23,7 @@ type BuildAgentPromptPayloadInput = {
   caseRoot: string;
   effectivePatchPath?: string;
   taskType: TaskType;
-  constraintSummary: ConstraintSummary;
-  rubricSnapshot: LoadedRubricSnapshot;
+  taskUnderstanding: ConstraintSummary;
   assistedRuleCandidates: AssistedRuleCandidate[];
 };
 
@@ -150,8 +149,7 @@ export function buildAgentBootstrapPayload(
       generated_project_path: input.caseInput.generatedProjectPath,
       effective_patch_path: input.effectivePatchPath,
     },
-    task_understanding: input.constraintSummary,
-    rubric_summary: input.rubricSnapshot,
+    task_understanding: input.taskUnderstanding,
     assisted_rule_candidates: assistedRuleCandidates,
   };
 }
