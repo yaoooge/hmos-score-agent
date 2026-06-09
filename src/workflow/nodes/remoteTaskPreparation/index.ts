@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { load } from "js-yaml";
 import { loadCaseFromPath } from "../../../commons/io/caseLoader.js";
 import { preparePatchEvidenceSummary } from "../../../rules/evidence/patchEvidenceSummary.js";
 import {
@@ -12,38 +11,58 @@ import { resolveRemoteTaskType } from "../../../service/runCaseId.js";
 import type { RemoteEvaluationTask } from "../../../types.js";
 import { emitNodeFailed, emitNodeStarted } from "../../observability/nodeCustomEvents.js";
 import type { ScoreGraphState } from "../../graph/state.js";
+import { buildRemotePrompt, shouldMaterializeExpectedConstraints } from "./tools.js";
 
-function buildRemotePrompt(task: RemoteEvaluationTask): string {
-  return [
-    task.testCase.description ? `任务描述：${task.testCase.description}` : "",
-    task.testCase.input ? `输入要求：${task.testCase.input}` : "",
-    task.testCase.expectedOutput ? `期望输出：${task.testCase.expectedOutput}` : "",
-  ]
-    .filter((section) => section.length > 0)
-    .join("\n\n");
+async function writeRemoteTaskCaseFiles(state: ScoreGraphState, casePath: string): Promise<void> {
+  if (!state.remoteTask) {
+    throw new Error("Workflow requires remoteTask.");
+  }
+  await fs.mkdir(casePath, { recursive: true });
+  await fs.writeFile(
+    path.join(casePath, "input.txt"),
+    buildRemotePrompt(state.remoteTask),
+    "utf-8",
+  );
+  if (shouldMaterializeExpectedConstraints(state.remoteTask.testCase.expectedOutput)) {
+    await fs.writeFile(
+      path.join(casePath, "expected_constraints.yaml"),
+      state.remoteTask.testCase.expectedOutput,
+      "utf-8",
+    );
+  }
 }
 
-function shouldMaterializeExpectedConstraints(expectedOutput: string): boolean {
-  const trimmed = expectedOutput.trim();
-  if (!trimmed) {
-    return false;
+async function downloadOriginalProject(
+  task: RemoteEvaluationTask,
+  casePath: string,
+  logger?: RemoteDownloadLogger,
+): Promise<string[]> {
+  const originalDir = path.join(casePath, "original");
+  const originalFiles = task.testCase.fileUrl.trim()
+    ? await downloadManifestToDirectory(task.testCase.fileUrl, originalDir, {
+        label: "original_project",
+        logger,
+      })
+    : [];
+  if (originalFiles.length === 0) {
+    await fs.mkdir(originalDir, { recursive: true });
   }
-
-  try {
-    const parsed = load(trimmed);
-    if (Array.isArray(parsed)) {
-      return true;
-    }
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return Array.isArray((parsed as { constraints?: unknown }).constraints);
-    }
-  } catch {
-    return false;
-  }
-
-  return false;
+  return originalFiles;
 }
 
+async function downloadWorkspaceProject(
+  task: RemoteEvaluationTask,
+  casePath: string,
+  logger?: RemoteDownloadLogger,
+): Promise<string[]> {
+  return downloadManifestToDirectory(
+    task.executionResult.outputCodeUrl,
+    path.join(casePath, "workspace"),
+    { label: "workspace_project", logger },
+  );
+}
+
+/** 远端任务准备节点：下载远端工程、生成本地 case，并提取 patch 证据。 */
 export async function remoteTaskPreparationNode(
   state: ScoreGraphState,
   deps: { logger?: RemoteDownloadLogger } = {},
@@ -57,38 +76,9 @@ export async function remoteTaskPreparationNode(
 
     rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-remote-task-"));
     const casePath = path.join(rootDir, `remote-task-${state.remoteTask.taskId}`);
-    await fs.mkdir(casePath, { recursive: true });
-    await fs.writeFile(
-      path.join(casePath, "input.txt"),
-      buildRemotePrompt(state.remoteTask),
-      "utf-8",
-    );
-    if (shouldMaterializeExpectedConstraints(state.remoteTask.testCase.expectedOutput)) {
-      await fs.writeFile(
-        path.join(casePath, "expected_constraints.yaml"),
-        state.remoteTask.testCase.expectedOutput,
-        "utf-8",
-      );
-    }
-
-    const originalDir = path.join(casePath, "original");
-    const originalFiles = state.remoteTask.testCase.fileUrl.trim()
-      ? await downloadManifestToDirectory(state.remoteTask.testCase.fileUrl, originalDir, {
-          label: "original_project",
-          logger: deps.logger,
-        })
-      : [];
-    if (originalFiles.length === 0) {
-      await fs.mkdir(originalDir, { recursive: true });
-    }
-    const workspaceFiles = await downloadManifestToDirectory(
-      state.remoteTask.executionResult.outputCodeUrl,
-      path.join(casePath, "workspace"),
-      {
-        label: "workspace_project",
-        logger: deps.logger,
-      },
-    );
+    await writeRemoteTaskCaseFiles(state, casePath);
+    const originalFiles = await downloadOriginalProject(state.remoteTask, casePath, deps.logger);
+    const workspaceFiles = await downloadWorkspaceProject(state.remoteTask, casePath, deps.logger);
     const loadedCaseInput = await loadCaseFromPath(casePath);
     const patchEvidence = await preparePatchEvidenceSummary({
       caseInput: loadedCaseInput,

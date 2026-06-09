@@ -3,30 +3,36 @@ import type { OpencodeRunRequest, OpencodeRunResult } from "../../../agents/open
 import { emitNodeStarted } from "../../observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../../graph/state.js";
 
+type RubricScoringDeps = {
+  opencode?: {
+    sandboxRoot: string;
+    runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
+  };
+  logger?: {
+    info(message: string): Promise<void>;
+    warn(message: string): Promise<void>;
+    error(message: string): Promise<void>;
+  };
+};
+
+function buildSkippedResult(): Partial<ScoreGraphState> {
+  return {
+    rubricAgentRunnerMode: "opencode",
+    rubricAgentRunStatus: "skipped",
+    rubricAgentRawText: "",
+    rubricScoringResult: undefined,
+    rubricAgentRunnerResult: undefined,
+  };
+}
+
 export async function rubricScoringAgentNode(
   state: ScoreGraphState,
-  deps: {
-    opencode?: {
-      sandboxRoot: string;
-      runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
-    };
-    logger?: {
-      info(message: string): Promise<void>;
-      warn(message: string): Promise<void>;
-      error(message: string): Promise<void>;
-    };
-  },
+  deps: RubricScoringDeps,
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("rubricScoringAgentNode");
   if (!state.rubricScoringPayload) {
     await deps.logger?.warn("rubric agent 评分跳过 reason=缺少 rubric payload");
-    return {
-      rubricAgentRunnerMode: "opencode",
-      rubricAgentRunStatus: "skipped",
-      rubricAgentRawText: "",
-      rubricScoringResult: undefined,
-      rubricAgentRunnerResult: undefined,
-    };
+    return buildSkippedResult();
   }
   if (!deps.opencode) {
     const message = "rubric agent 调用失败，请重新执行用例。reason=未配置 opencode runtime";

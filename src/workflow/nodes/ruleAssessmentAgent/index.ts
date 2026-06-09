@@ -3,28 +3,34 @@ import type { OpencodeRunRequest, OpencodeRunResult } from "../../../agents/open
 import { emitNodeStarted } from "../../observability/nodeCustomEvents.js";
 import { ScoreGraphState } from "../../graph/state.js";
 
+type RuleAssessmentDeps = {
+  opencode?: {
+    sandboxRoot: string;
+    runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
+  };
+  logger?: {
+    info(message: string): Promise<void>;
+    warn(message: string): Promise<void>;
+    error(message: string): Promise<void>;
+  };
+};
+
+function buildNoCandidateResult(): Partial<ScoreGraphState> {
+  return {
+    ruleAgentRunnerMode: "opencode",
+    ruleAgentRunStatus: "not_enabled",
+    ruleAgentRunnerResult: undefined,
+  };
+}
+
 export async function ruleAssessmentAgentNode(
   state: ScoreGraphState,
-  deps: {
-    opencode?: {
-      sandboxRoot: string;
-      runPrompt(request: OpencodeRunRequest): Promise<OpencodeRunResult>;
-    };
-    logger?: {
-      info(message: string): Promise<void>;
-      warn(message: string): Promise<void>;
-      error(message: string): Promise<void>;
-    };
-  },
+  deps: RuleAssessmentDeps,
 ): Promise<Partial<ScoreGraphState>> {
   emitNodeStarted("ruleAssessmentAgentNode");
   if ((state.assistedRuleCandidates?.length ?? 0) === 0) {
     await deps.logger?.warn("rule agent 判定跳过 reason=无候选规则");
-    return {
-      ruleAgentRunnerMode: "opencode",
-      ruleAgentRunStatus: "not_enabled",
-      ruleAgentRunnerResult: undefined,
-    };
+    return buildNoCandidateResult();
   }
 
   if (!deps.opencode) {

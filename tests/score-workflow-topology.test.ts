@@ -5,7 +5,7 @@ import test from "node:test";
 
 test("score workflow uses task understanding as shared prerequisite for three parallel branches", async () => {
   const source = await fs.readFile(
-    path.resolve(process.cwd(), "src/workflow/graph/scoreWorkflow.ts"),
+    path.resolve(process.cwd(), "src/workflow/graph/compiledGraph.ts"),
     "utf-8",
   );
 
@@ -14,7 +14,10 @@ test("score workflow uses task understanding as shared prerequisite for three pa
   assert.equal(source.includes('addNode("rubricScoringPromptBuilderNode"'), false);
   assert.equal(source.includes('addNode("ruleAgentPromptBuilderNode"'), false);
   assert.equal(source.includes('addNode("artifactPostProcessNode"'), false);
-  assert.equal(source.includes('addEdge("taskUnderstandingNode", "inputClassificationNode"'), false);
+  assert.equal(
+    source.includes('addEdge("taskUnderstandingNode", "inputClassificationNode"'),
+    false,
+  );
   assert.equal(source.includes('addEdge("reportGenerationNode", "artifactPostProcessNode"'), false);
 
   assert.match(source, /\.addEdge\("remoteTaskPreparationNode", "taskUnderstandingNode"\)/);
