@@ -33,7 +33,7 @@ flowchart TD
 - `artifactPostProcessNode` 只负责生成 `report.html`。新目标是不再生成 HTML 报告，评分结果以 `outputs/result.json` 为唯一正式输出。
 - `ruleMergeNode` 目前只是把确定性规则、官方 linter 规则和 agent 判定拼接/回退，下游扣分仍依赖不同规则来源的隐式口径，需要在合并阶段拉齐规则影响表达。
 
-同时，`taskUnderstandingNode` 必须保留。它不是任务类型判定节点，而是共同前置的任务理解节点：构建 opencode sandbox、生成 effective patch、汇总原始输入和工程结构，输出 `ConstraintSummary`。rule agent 与 rubric agent 的 payload 都通过 `task_understanding` 字段消费这份摘要，用它替代完整 PRD/原始 prompt 的长输入。
+同时，`taskUnderstandingNode` 必须保留。它不是任务类型判定节点，而是共同前置的任务理解节点：构建 opencode sandbox、读取 preparation 阶段生成的 effective patch 与 patch summary、汇总原始输入和工程结构，输出 `taskUnderstanding`。rule agent 与 rubric agent 的 payload 都通过 `task_understanding` 字段消费这份摘要，用它替代完整 PRD/原始 prompt 的长输入。
 
 ## 目标
 
@@ -48,57 +48,44 @@ flowchart TD
 ## 非目标
 
 - 不改 opencode agent 的模型调用协议。
-- 不改 `task_understanding` 对外字段名。内部类型仍可继续使用 `ConstraintSummary`，payload 中继续序列化为 `task_understanding`。
+- 不改 `task_understanding` 对外字段名。实现迁移期内部类型可继续复用 `ConstraintSummary` 结构，但 state、artifact 和 payload 语义统一为 `taskUnderstanding`。
 - 不重写 rubric 评分算法，只调整它接收的前置节点和 payload 构建位置。
 - 不重写官方 Code Linter runner、parser、mapper，只解除它对 `ruleAuditNode` 的时序依赖。
 - 不删除 `src/report/html/` 代码作为本次必须项；第一阶段只从 workflow 和产物中移除 HTML 生成。后续可单独清理未引用模块。
 
 ## 目标拓扑
 
-### 普通评分入口
+接收新任务和任务恢复入口只有首节点不同，后续三分支主流程完全一致。因此文档和架构图只维护一张统一拓扑图，用 `branchReadyState` 表示已经具备并行分支所需的标准 state。
 
 ```mermaid
 flowchart TD
-  A[本地 CLI / 远端 API 任务] --> B[remoteTaskPreparationNode / local input prepared]
+  A[本地 CLI / 远端新任务] --> B[remote/local preparation]
   B --> C[taskUnderstandingNode]
 
-  C --> D[officialCodeLinterNode]
-  C --> E[rulePreparationNode]
-  C --> F[rubricPreparationNode]
+  P[preparedState / 任务恢复] --> Q[opencodeSandboxPreparationNode]
 
-  E --> G[ruleAssessmentAgentNode]
-  F --> H[rubricScoringAgentNode]
+  C --> R[branchReadyState]
+  Q --> R
 
-  D --> I[ruleMergeNode]
-  G --> I
+  R --> L[officialCodeLinterNode]
+  R --> M[rulePreparationNode]
+  R --> N[rubricPreparationNode]
 
-  I --> J[scoreFusionOrchestrationNode]
-  H --> J
+  M --> O[ruleAssessmentAgentNode]
+  N --> S[rubricScoringAgentNode]
 
-  J --> K[resultGenerationNode]
-  K --> L[persistAndUploadNode]
-  L --> M[outputs/result.json + callback]
+  L --> T[ruleMergeNode]
+  O --> T
+
+  T --> U[scoreFusionOrchestrationNode]
+  S --> U
+
+  U --> V[resultGenerationNode]
+  V --> W[persistAndUploadNode]
+  W --> X[outputs/result.json + callback]
 ```
 
-### 已接收远端任务恢复入口
-
-`runPreparedScoreWorkflow` 的 prepared state 已包含 `caseInput`、`effectivePatchPath`、`caseRuleDefinitions`、`constraintSummary`、`taskType` 等字段。恢复执行时只需要保证 sandbox 可用，然后进入三路并行：
-
-```mermaid
-flowchart TD
-  A[preparedState] --> B[opencodeSandboxPreparationNode]
-  B --> C[officialCodeLinterNode]
-  B --> D[rulePreparationNode]
-  B --> E[rubricPreparationNode]
-  D --> F[ruleAssessmentAgentNode]
-  E --> G[rubricScoringAgentNode]
-  C --> H[ruleMergeNode]
-  F --> H
-  H --> I[scoreFusionOrchestrationNode]
-  G --> I
-  I --> J[resultGenerationNode]
-  J --> K[persistAndUploadNode]
-```
+新任务入口必须经过 `taskUnderstandingNode`，因为它生成 `task_understanding`。任务恢复入口的 prepared state 已包含 `caseInput`、`effectivePatchPath`、`caseRuleDefinitions`、`taskUnderstanding`、`taskType` 等前置产物，只需要通过 `opencodeSandboxPreparationNode` 补齐 sandbox，然后进入同一个三分支并行主流程。
 
 ## 节点设计
 
@@ -116,43 +103,49 @@ flowchart TD
 - 不做任务类型推断。
 - 远端 payload 类型不合法时直接失败，不再进入后续 graph。
 
-本地 CLI 入口也应在调用 graph 前明确写入 `taskType`。如需兼容旧本地用例，可以把 `inferTaskTypeFromCaseInput` 保留为入口层 fallback，但不再作为 LangGraph 节点出现。
+本地 CLI 入口也应在调用 graph 前明确写入 `taskType`。无需兼容旧本地用例。
+
+此外，新任务 preparation 阶段需要前移一部分纯工具逻辑，避免后续并行分支重复计算或依赖 agent：
+
+- 生成或过滤 `effective.patch`。
+- 使用非 agent helper 解析 patch scope，输出 `changedFiles`、`changedLineNumbersByFile`、`hasPatch` 和 patch 统计信息。
+- 将这些字段写入标准 state，供 `taskUnderstandingNode`、`officialCodeLinterNode` 和 `rulePreparationNode` 直接复用。
+
+远端入口由 `remoteTaskPreparationNode` 完成这些准备；本地入口在进入 graph 前完成等价准备。恢复入口直接复用 prepared state 中已经持久化的结果。
 
 ### `taskUnderstandingNode`
 
 保留，并作为 rule 与 rubric 的共同前置。
 
-现有职责继续保留：
+职责：
 
 - 收集原始/生成工程结构。
-- 生成或过滤 `effective.patch`。
-- 读取 patch summary。
+- 读取 preparation 阶段生成的 patch summary 和 effective patch 路径。
 - 加载 case constraint rules。
 - 构建 opencode sandbox。
-- 调用 `hmos-understanding` 输出 `ConstraintSummary`。
-- 持久化 `intermediate/constraint-summary.json` 和 `intermediate/case-rule-definitions.json`。
+- 调用 `hmos-understanding` 输出任务理解摘要。
+- 持久化 `intermediate/task-understanding.json` 和 `intermediate/case-rule-definitions.json`。
 
 语义调整：
 
 - 不再承担任务类型 fallback 推断。节点应要求 `state.taskType` 已存在；缺失时抛出明确错误。
-- `ConstraintSummary` 继续作为内部类型名，但对 agent payload 的字段名保持 `task_understanding`。
+- 统一命名为 `taskUnderstanding`。实现上可以短期复用现有 `ConstraintSummary` 结构，但 state、artifact 和 agent payload 语义统一为任务理解摘要；agent payload 字段名保持 `task_understanding`。
 - `caseInput.promptText` 可以继续作为任务理解 agent 的输入；rule/rubric agent 后续只消费压缩后的 `task_understanding`，避免重复传完整 PRD。
 
 ### `officialCodeLinterNode`
 
 从 `taskUnderstandingNode` 后直接启动，与规则/rubric 分支并行。
 
-当前阻塞点是它读取 `state.evidenceSummary?.changedFiles` 和 `changedLineNumbersByFile`，而这些字段来自 `ruleAuditNode` 内部的 `collectEvidence`。为解除依赖，官方 linter 节点需要自己准备 patch 范围信息。
+当前阻塞点是它读取 `state.evidenceSummary?.changedFiles` 和 `changedLineNumbersByFile`，而这些字段来自 `ruleAuditNode` 内部的 `collectEvidence`。为解除依赖，patch scope 解析前移到新任务 preparation 阶段，并通过 prepared state 复用，不依赖 agent。
 
 方案：
 
 - 在 `rules/evidence` 中拆出轻量 helper，例如 `collectPatchEvidenceSummary(caseInput)` 或 `collectChangedFileScope(caseInput)`。
-- `officialCodeLinterNode` 内部调用该 helper，获得：
-  - `changedFiles`
-  - `changedLineNumbersByFile`
-  - `hasPatch`
+- `remoteTaskPreparationNode` 和本地入口调用该 helper，把 `changedFiles`、`changedLineNumbersByFile`、`hasPatch`、patch 统计信息写入 state。
+- `taskUnderstandingNode` 直接读取这些 patch summary 字段，专注生成需要 agent 参与的任务理解摘要。
+- `officialCodeLinterNode` 直接读取 state 中的 patch scope，不再依赖 `rulePreparationNode` 或 `evidenceSummary`。
 - hvigor build check 和 linter finding 过滤继续使用这些字段。
-- `constraintSummary.crossDeviceAdaptation` 仍来自 `taskUnderstandingNode`，用于选择 cross-device linter rule sets。
+- `taskUnderstanding.crossDeviceAdaptation` 仍来自 `taskUnderstandingNode`，用于选择 cross-device linter rule sets。
 
 输出保持：
 
@@ -169,20 +162,14 @@ flowchart TD
 
 职责：
 
-- 读取 `state.constraintSummary.crossDeviceAdaptation`，通过 `resolveEnabledRulePackIds` 确定启用规则包。
+- 读取 `state.taskUnderstanding.crossDeviceAdaptation`，通过 `resolveEnabledRulePackIds` 确定启用规则包。
 - 调用 `runRuleEngine`，输出静态规则结果、确定性规则结果、agent 候选、证据索引、rule violations、evidence summary。
 - 构建 `ruleAgentBootstrapPayload`，字段中包含：
   - `case_context`
-  - `task_understanding: state.constraintSummary`
-  - `rubric_summary`
+  - `task_understanding: state.taskUnderstanding`
   - `assisted_rule_candidates`
 
-注意：当前 `buildAgentBootstrapPayload` 需要 `rubricSnapshot`，而 `rulePreparationNode` 与 `rubricPreparationNode` 目标上需要并行。这里有两种实现选择：
-
-1. 推荐：让 `rulePreparationNode` 自己加载轻量 rubric snapshot。这样 rule/rubric 两条分支无依赖，代价是 rubric 文件读取重复一次。
-2. 备选：把 rule agent payload 中的 `rubric_summary` 改为可选或仅保留 rule 判定必要字段。代价是要同步调整 agent prompt 契约与测试。
-
-建议采用方案 1。rubric 文件读取成本低，换来拓扑简单和并行确定性。
+`ruleAgentBootstrapPayload` 采用最终传给 rule assessment agent 的字段形态，不再先生成一份大 payload 再在 runner/prompt 阶段二次裁剪。现有 `.local-cases/20260608T105703_case_167600460_dbee0885/opencode-sandbox/metadata/opencode-prompts/rule-assessment-remote-task-167600460-20260608T105703_case_167600460_dbee0885.md` 已体现最终 prompt 只需要 `case_context`、`task_understanding` 和 `assisted_rule_candidates`。因此本次重构同步调整 `buildAgentBootstrapPayload` 契约，移除对 `rubricSnapshot` 的依赖，保证 `rulePreparationNode` 与 `rubricPreparationNode` 真正并行。
 
 输出字段：
 
@@ -197,7 +184,7 @@ flowchart TD
 
 命名迁移：
 
-- 可保留 `ruleAuditNode` 作为内部函数或兼容导出，但 graph 节点名建议使用 `rulePreparationNode`。
+- 不保留旧 graph 节点兼容方案。`ruleAuditNode` 和 `ruleAgentPromptBuilderNode` 的职责合并到 `rulePreparationNode`，旧节点导出和测试同步删除或迁移。
 - 观测文案使用“规则准备”，摘要包含 `rules / violations / candidates / deterministic`。
 
 ### `ruleAssessmentAgentNode`
@@ -224,7 +211,7 @@ flowchart TD
 - 构建 `rubricSnapshot`。
 - 构建 `rubricScoringPayload`，字段中包含：
   - `case_context`
-  - `task_understanding: state.constraintSummary`
+  - `task_understanding: state.taskUnderstanding`
   - `rubric_summary`
   - `workspace_project_structure`
   - `response_contract`
@@ -234,7 +221,7 @@ flowchart TD
 - `rubricSnapshot`
 - `rubricScoringPayload`
 
-这样 `rubricPreparationNode -> rubricScoringAgentNode` 成为完整 rubric 分支。
+这样 `rubricPreparationNode -> rubricScoringAgentNode` 成为完整 rubric 分支。`rubricScoringPayload` 也采用最终传给 rubric scoring agent 的字段形态，不再在 runner/prompt 阶段二次裁剪；字段边界参考 `.local-cases/20260608T105703_case_167600460_dbee0885/opencode-sandbox/metadata/opencode-prompts/rubric-scoring-remote-task-167600460-20260608T105703_case_167600460_dbee0885.md`。
 
 ### `rubricScoringAgentNode`
 
@@ -292,11 +279,16 @@ type NormalizedRuleImpact = {
 - 新增 `normalizedRuleImpacts` 或把 `score_effect` 增量挂到扩展后的 `RuleAuditResult`。推荐新增字段，降低对旧接口的破坏。
 - `scoreFusionOrchestrationNode` 优先消费 `normalizedRuleImpacts`；缺失时继续基于 `mergedRuleAuditResults` fallback。
 
-扣分口径来源：
+扣分映射方案：
 
-- 静态规则与 case rule：根据 `rule_source`、priority、risk taxonomy 映射到 hard gate / cap / deduct。
-- 官方 linter：根据 `official_linter_severity` 和 rule profile 映射 severity，再映射 score effect。
-- agent 判定：先归一成 `RuleAuditResult`，再按候选规则元数据映射 score effect。
+- `result !== "不满足"`：`mode="none"`；`待人工复核` 只生成 review item，不直接扣分。
+- case constraint P0：`severity="critical"`，`mode="hard_gate"`，触发现有 P0 硬门槛。
+- `must_rule` 或 `forbidden_pattern`：默认 `severity="major"`，`mode="cap"`，封顶值由 risk taxonomy 或规则 profile 提供；缺失 profile 时使用统一默认 cap，避免不同来源自行决定。
+- `should_rule`：默认 `severity="minor"`，`mode="deduct"`，扣分点数由 risk taxonomy 或规则 profile 提供；缺失 profile 时使用统一默认扣分。
+- 官方 linter：先把 `official_linter_severity` 映射为统一 severity：`error -> major`、`warn -> minor`、`suggestion -> info`、`unknown -> minor`；再按对应 rule profile 决定 cap/deduct。没有 profile 的 finding 不直接扣分，转为 `review_only` 并在 diagnostics 中提示补 profile。
+- rule agent 判定：先映射为统一 `RuleAuditResult`，再按候选规则的 `rule_source`、case rule priority 和 rule profile 走同一套 score effect 映射，不允许 agent 分支单独决定扣分。
+
+这样 `ruleMergeNode` 是唯一规则扣分归一化边界，`scoreFusionOrchestrationNode` 只消费归一后的 `score_effect`，不再按规则来源分叉解释。
 
 ### `scoreFusionOrchestrationNode`
 
@@ -306,7 +298,7 @@ type NormalizedRuleImpact = {
 
 - 输入等待 `ruleMergeNode` 与 `rubricScoringAgentNode`。
 - 优先使用 `normalizedRuleImpacts` 进行规则扣分、封顶和硬门槛计算。
-- `evidenceSummary` 仍来自 `rulePreparationNode`；如果规则分支失败，保持当前 fallback。
+- `evidenceSummary` 仍来自 `rulePreparationNode`；patch scope 使用 preparation 阶段产物作为基准，避免官方 linter 与规则分支重复解析出不同结果。
 - `hvigorBuildCheckSummary` 继续由官方 linter 分支写入，并参与硬门槛。
 
 ### `resultGenerationNode`
@@ -347,7 +339,7 @@ schema 影响：
 
 - `inputs/rubric-scoring-payload.json`
 - `inputs/rule-agent-bootstrap-payload.json`
-- `intermediate/constraint-summary.json`
+- `intermediate/task-understanding.json`
 - `intermediate/case-rule-definitions.json`
 - `intermediate/rule-audit.json`
 - `intermediate/rule-audit-merged.json`
@@ -370,6 +362,7 @@ schema 影响：
 `ScoreState` 调整：
 
 - 删除 `htmlReport`。
+- 将 `constraintSummary` 归一为 `taskUnderstanding`。实现迁移期可通过类型别名复用 `ConstraintSummary`，但新节点、新 artifact 和新 payload 均使用 task understanding 语义。
 - 删除仅服务于独立 prompt builder 的中间节点依赖，但保留 payload 字段：
   - `rubricScoringPayload` 保留。
   - `ruleAgentBootstrapPayload` 保留。
@@ -389,8 +382,9 @@ schema 影响：
 - `caseDir`
 - `effectivePatchPath`
 - `caseRuleDefinitions`
-- `constraintSummary`
+- `taskUnderstanding`
 - `taskType`
+- patch scope 字段：`changedFiles`、`changedLineNumbersByFile`、`hasPatch` 和 patch 统计信息
 
 ## 服务层影响
 
@@ -411,7 +405,7 @@ remoteTaskPreparationNode -> taskUnderstandingNode
 - 移除 `inputClassificationNode` import。
 - `prepareAcceptedRemoteEvaluationTask` 不再调用 `inputClassificationNode`。
 - 日志从“任务类型读取完成”改为“任务理解完成 taskType=...”。
-- `toAcceptedRemoteWorkflowState` 继续要求 `taskType` 存在，确保任务类型来自 `remoteTaskPreparationNode` 或入口 state。
+- `toAcceptedRemoteWorkflowState` 继续要求 `taskType` 和 `taskUnderstanding` 存在，确保任务类型来自 `remoteTaskPreparationNode` 或入口 state，任务理解来自 `taskUnderstandingNode`。
 
 ## 观测与文档影响
 
@@ -439,10 +433,10 @@ remoteTaskPreparationNode -> taskUnderstandingNode
 
 - `taskUnderstandingNode`
   - 缺失 `taskType` 时失败。
-  - 正常输出 `constraintSummary`，rule/rubric payload 中仍表现为 `task_understanding`。
+  - 正常输出 `taskUnderstanding`，rule/rubric payload 中仍表现为 `task_understanding`。
 - `officialCodeLinterNode`
   - 不依赖 `state.evidenceSummary` 时也能基于 patch scope 运行 hvigor 和 filtering。
-  - cross-device rule set 仍由 `constraintSummary.crossDeviceAdaptation` 决定。
+  - cross-device rule set 仍由 `taskUnderstanding.crossDeviceAdaptation` 决定。
 - `rulePreparationNode`
   - 输出原 `ruleAuditNode` 的规则审计字段。
   - 同时输出 `ruleAgentBootstrapPayload`。
@@ -466,7 +460,7 @@ remoteTaskPreparationNode -> taskUnderstandingNode
   - `opencodeSandboxPreparationNode` 后三路分支可并行启动。
 - 远端异步接收：
   - `prepareRemoteEvaluationTask` 不再调用 `inputClassificationNode`。
-  - accepted state 仍包含 `taskType`、`constraintSummary`、`effectivePatchPath`。
+  - accepted state 仍包含 `taskType`、`taskUnderstanding`、`effectivePatchPath` 和 patch scope 字段。
 
 ### Schema 与产物测试
 
@@ -486,6 +480,34 @@ node --import tsx --test tests/workflow-node-summary.test.ts tests/workflow-even
 npm test
 ```
 
+### 端到端验收步骤
+
+完成单元和 workflow 测试后，需要用本地最新执行用例的 `remote-task.json` 构造新请求，验证真实 API 链路：
+
+1. 启动本地 API 服务：
+
+   ```bash
+   npm run dev:api
+   ```
+
+2. 在另一个终端选择最近一次本地用例的远端任务 payload，并提交新评分请求：
+
+   ```bash
+   latest_remote_task=$(ls -t .local-cases/*/inputs/remote-task.json | head -1)
+   curl -i --max-time 600 \
+     -H 'Content-Type: application/json' \
+     --data-binary @"$latest_remote_task" \
+     http://127.0.0.1:3000/score/run-remote-task
+   ```
+
+3. 验证新生成 case：
+
+   - API 返回 accepted/completed 或可查询的 task id。
+   - 新 case 写入 `outputs/result.json`。
+   - 新 case 不写入 `outputs/report.html`。
+   - `inputs/rule-agent-bootstrap-payload.json` 与 `inputs/rubric-scoring-payload.json` 的字段形态与最终 agent prompt 中的 payload 一致，不存在 runner 阶段二次裁剪后的字段差异。
+   - workflow 日志中不出现 `inputClassificationNode`、`rubricScoringPromptBuilderNode`、`ruleAgentPromptBuilderNode`、`artifactPostProcessNode`。
+
 ## 分阶段实施建议
 
 ### 阶段 1：删除任务分类节点
@@ -499,12 +521,12 @@ npm test
 
 - 创建 `rulePreparationNode`，合并 `ruleAuditNode` 与 `ruleAgentPromptBuilderNode` 职责。
 - 扩展 `rubricPreparationNode`，合并 `rubricScoringPromptBuilderNode` 职责。
-- 保留旧节点导出一小段时间可选，但 graph 不再使用。
+- 删除旧节点导出或将测试迁移到新节点，不做 graph 兼容保留。
 
 ### 阶段 3：真正并行三分支
 
-- 拆出 patch/evidence scope helper。
-- 改造 `officialCodeLinterNode`，不再依赖 `state.evidenceSummary`。
+- 拆出 patch/evidence scope helper，并在新任务 preparation 阶段调用。
+- 改造 `taskUnderstandingNode` 和 `officialCodeLinterNode`，直接消费 preparation 阶段生成的 patch scope，不再依赖 `state.evidenceSummary`。
 - 更新普通与 prepared graph edges。
 
 ### 阶段 4：规则影响归一化
@@ -521,10 +543,10 @@ npm test
 
 ## 风险与缓解
 
-- 风险：`officialCodeLinterNode` 与 `rulePreparationNode` 分别收集 patch scope，结果不一致。
-  - 缓解：共用 `rules/evidence` 下的同一个 helper，并用测试固定 changedFiles 与 changedLineNumbersByFile。
-- 风险：rule preparation 自行加载 rubric snapshot 导致与 rubric 分支不一致。
-  - 缓解：共用 `loadRubricForTaskType + buildRubricSnapshot`，并在测试中断言同 taskType 下 snapshot task_type 一致。
+- 风险：preparation 阶段生成的 patch scope 与规则引擎内部 evidence summary 不一致。
+  - 缓解：共用 `rules/evidence` 下的同一个 helper，并用测试固定 changedFiles 与 changedLineNumbersByFile；规则引擎应优先复用 state 中的 patch scope。
+- 风险：移除 rule agent payload 中的 rubric summary 后影响 agent 判断。
+  - 缓解：以现有最终 rule assessment prompt 为准，确认 rule agent 判定只依赖 `case_context`、`task_understanding` 和 `assisted_rule_candidates`；用 payload snapshot 测试固定字段集合。
 - 风险：删除 `report_file_name` 影响历史消费者。
   - 缓解：API 文档明确正式产物只有 `result.json`；dashboard 和 raw result 本身已基于 result.json。
 - 风险：节点重命名影响 workflow 日志和测试。
@@ -538,3 +560,4 @@ npm test
 - `ruleMergeNode` 输出统一规则影响，score fusion 对不同规则来源采用一致扣分口径。
 - 完成评分后写入 `outputs/result.json`，不再写入 `outputs/report.html`。
 - `npm run build` 与核心 workflow、remote、linter、schema、observability 测试通过。
+- 启动 `npm run dev:api` 后，使用本地最新 `remote-task.json` 构造新请求完成端到端验证，新 case 产物和 workflow 日志符合上述节点与产物约束。
