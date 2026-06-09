@@ -93,6 +93,10 @@ function hasArkuiSymbolEvidence(content: string, symbol: string): boolean {
   );
 }
 
+function isWeakArkuiSymbol(symbol: string): boolean {
+  return symbol === "display" || symbol === "aspectRatio";
+}
+
 function hasExternalKitStrongEvidence(
   content: string,
   requirement: KitRequirement,
@@ -160,10 +164,23 @@ function collectKitEvidence(
         matchedTokens.add(symbol);
       }
 
-      if (matchedSymbols.length > 0) {
+      const strongMatchedSymbols = matchedSymbols.filter((symbol) => !isWeakArkuiSymbol(symbol));
+      const weakMatchedSymbols = matchedSymbols.filter(isWeakArkuiSymbol);
+      if (strongMatchedSymbols.length > 0) {
         strongMatchCount += 1;
         summaries.push(
-          `Kit 静态锚点：ArkUI 内置组件或符号 ${matchedSymbols.join("、")} 已在目标文件中使用。`,
+          `Kit 静态锚点：ArkUI 内置组件或强符号 ${strongMatchedSymbols.join("、")} 已在目标文件中使用。`,
+        );
+        if (weakMatchedSymbols.length > 0) {
+          weakMatchCount += 1;
+          summaries.push(
+            `Kit 静态锚点：同时发现弱锚点 ${weakMatchedSymbols.join("、")}，仅作为阅读入口。`,
+          );
+        }
+      } else if (weakMatchedSymbols.length > 0) {
+        weakMatchCount += 1;
+        summaries.push(
+          `Kit 静态锚点：仅发现弱锚点 ${weakMatchedSymbols.join("、")}，不能单独证明规则适用或满足。`,
         );
       } else {
         summaries.push(

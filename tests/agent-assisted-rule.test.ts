@@ -332,6 +332,47 @@ test("buildAgentBootstrapPayload keeps thin review evidence for agent candidates
   assert.equal("evidence_snippets" in (payload.assisted_rule_candidates[0] ?? {}), false);
 });
 
+test("buildAgentBootstrapPayload omits representative files when static precheck matched nothing", () => {
+  const payload = buildAgentBootstrapPayload({
+    caseInput: {
+      caseId: "case-1",
+      promptText: "适配一多",
+      originalProjectPath: "/tmp/original",
+      generatedProjectPath: "/tmp/workspace",
+    },
+    caseRoot: "/tmp/case-root",
+    taskType: "continuation",
+    constraintSummary,
+    rubricSnapshot,
+    assistedRuleCandidates: [
+      {
+        rule_id: "OM-WEB-MUST-02",
+        rule_summary: "Native 侧断点变化时必须将断点信息同步至 Web 组件",
+        rule_source: "must_rule",
+        why_uncertain: "静态预判未发现 Web 强入口。",
+        local_preliminary_signal: "none_matched",
+        evidence_files: [],
+        evidence_snippets: [],
+        static_precheck: {
+          target_matched: true,
+          target_files: [
+            "entry/src/main/ets/pages/Index.ets",
+            "entry/src/main/ets/pages/Home.ets",
+          ],
+          signal_status: "none_matched",
+          matched_tokens: [],
+          summary: "静态预判在目标文件中命中了 0/0 个 AST 信号。",
+        },
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  const staticPrecheck = payload.assisted_rule_candidates[0]?.static_precheck;
+  assert.equal(staticPrecheck?.target_file_count, 2);
+  assert.equal("representative_files" in (staticPrecheck ?? {}), false);
+});
+
 test("buildRubricSnapshot keeps only evaluation summary required by prompt building", () => {
   const snapshot = buildRubricSnapshot({
     taskType: "bug_fix",

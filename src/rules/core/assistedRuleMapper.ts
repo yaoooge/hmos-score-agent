@@ -62,7 +62,12 @@ function readReviewEvidence(input: {
   const record = first as Record<string, unknown>;
   const file = typeof record.file === "string" ? record.file : undefined;
   const subject = typeof record.subject === "string" ? record.subject : undefined;
-  const evidence = typeof record.evidence === "string" ? record.evidence : undefined;
+  const evidence =
+    typeof record.evidence === "string"
+      ? record.evidence
+      : typeof record.source === "string"
+        ? record.source
+        : undefined;
   const question = typeof record.question === "string" ? record.question : undefined;
   if (!file || !subject || !evidence || !question) {
     return undefined;

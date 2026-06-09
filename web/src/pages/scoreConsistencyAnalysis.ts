@@ -154,6 +154,17 @@ export type RuleConsistencyReportItem = {
   stability: "稳定不满足" | "稳定满足或不涉及" | "判定波动";
 };
 
+export type RiskConsistencyReportDetail = {
+  runIndex: number;
+  taskId: number;
+  level?: string;
+  title?: string;
+  description?: string;
+  evidence?: string;
+  riskCode?: string;
+  sourceRuleId?: string;
+};
+
 export type RiskConsistencyReportItem = {
   key: string;
   level?: string;
@@ -161,6 +172,7 @@ export type RiskConsistencyReportItem = {
   appearanceCount: number;
   appearanceRate: number;
   runIndexes: number[];
+  details: RiskConsistencyReportDetail[];
   evidenceSample?: string;
   stability: "稳定出现" | "偶发出现" | "未出现";
 };
@@ -464,6 +476,7 @@ function cloneRunSummary(run: ConsistencyRunSummary): ConsistencyRunSummary {
 function cloneConsistencyAnalysisHistoryItem(
   item: ConsistencyAnalysisHistoryItem,
 ): ConsistencyAnalysisHistoryItem {
+  const runs = item.runs.map(cloneRunSummary);
   return {
     round: item.round,
     capturedAt: item.capturedAt,
@@ -480,9 +493,9 @@ function cloneConsistencyAnalysisHistoryItem(
         : undefined,
       runConsistencyByTaskId: { ...item.summary.runConsistencyByTaskId },
     },
-    ruleReport: item.ruleReport.map((rule) => ({ ...rule, runIndexes: [...rule.runIndexes] })),
-    riskReport: item.riskReport.map((risk) => ({ ...risk, runIndexes: [...risk.runIndexes] })),
-    runs: item.runs.map(cloneRunSummary),
+    ruleReport: buildRuleReport(runs),
+    riskReport: buildRiskReport(runs),
+    runs,
   };
 }
 
@@ -575,9 +588,10 @@ export function selectConsistencyTaskRoundSnapshot(
   if (!history) {
     return cloneConsistencyTaskSnapshot(task);
   }
+  const runs = history.runs.map(cloneRunSummary);
   return {
     ...cloneConsistencyTaskSnapshot(task),
-    runs: history.runs.map(cloneRunSummary),
+    runs,
     analysis: {
       ...history.summary,
       scoreStability: history.summary.scoreStability
@@ -591,8 +605,8 @@ export function selectConsistencyTaskRoundSnapshot(
         : undefined,
       runConsistencyByTaskId: { ...history.summary.runConsistencyByTaskId },
     },
-    ruleReport: history.ruleReport.map((rule) => ({ ...rule, runIndexes: [...rule.runIndexes] })),
-    riskReport: history.riskReport.map((risk) => ({ ...risk, runIndexes: [...risk.runIndexes] })),
+    ruleReport: buildRuleReport(runs),
+    riskReport: buildRiskReport(runs),
   };
 }
 
@@ -1252,10 +1266,24 @@ export function appendAnalysisHistorySnapshot(
   ];
 }
 
+export function collectConsistencyExportRuns(
+  task: Pick<ConsistencyExportTask, "runs" | "analysisHistory">,
+): ConsistencyRunSummary[] {
+  const runsByKey = new Map<string, ConsistencyRunSummary>();
+  for (const run of [
+    ...task.analysisHistory.flatMap((round) => round.runs),
+    ...task.runs,
+  ]) {
+    runsByKey.set(`${String(run.runIndex)}:${String(run.taskId)}`, run);
+  }
+  return [...runsByKey.values()].map(cloneRunSummary);
+}
+
 export function buildConsistencyExportPayload(
   task: ConsistencyExportTask,
   runResults: Map<number, unknown>,
 ): ConsistencyExportPayload {
+  const exportRuns = collectConsistencyExportRuns(task);
   return {
     task: {
       id: task.id,
@@ -1272,7 +1300,7 @@ export function buildConsistencyExportPayload(
       riskReport: task.riskReport,
     },
     analysisHistory: task.analysisHistory,
-    runs: task.runs.map((run) => {
+    runs: exportRuns.map((run) => {
       const result = runResults.get(run.taskId);
       const error = errorMessage(result);
       return {
@@ -1525,6 +1553,7 @@ export function buildRiskReport(runs: ConsistencyRunSummary[]): RiskConsistencyR
       title?: string;
       evidenceSample?: string;
       runIndexes: number[];
+      details: RiskConsistencyReportDetail[];
     }
   >();
 
@@ -1540,6 +1569,7 @@ export function buildRiskReport(runs: ConsistencyRunSummary[]): RiskConsistencyR
       if (existing) {
         existing.runIndexes.push(run.runIndex + 1);
         existing.evidenceSample = existing.evidenceSample ?? risk.evidence;
+        existing.details.push(toRiskReportDetail(run, risk));
         continue;
       }
       riskMap.set(risk.key, {
@@ -1547,6 +1577,7 @@ export function buildRiskReport(runs: ConsistencyRunSummary[]): RiskConsistencyR
         title: risk.title ?? risk.description ?? risk.key,
         evidenceSample: risk.evidence,
         runIndexes: [run.runIndex + 1],
+        details: [toRiskReportDetail(run, risk)],
       });
     }
   }
@@ -1564,9 +1595,26 @@ export function buildRiskReport(runs: ConsistencyRunSummary[]): RiskConsistencyR
         appearanceCount,
         appearanceRate,
         runIndexes: item.runIndexes,
+        details: item.details,
         ...(item.evidenceSample ? { evidenceSample: item.evidenceSample } : {}),
         stability,
       };
     })
     .sort((a, b) => b.appearanceCount - a.appearanceCount || a.key.localeCompare(b.key));
+}
+
+function toRiskReportDetail(
+  run: ConsistencyRunSummary,
+  risk: ConsistencyRiskSummary,
+): RiskConsistencyReportDetail {
+  return {
+    runIndex: run.runIndex + 1,
+    taskId: run.taskId,
+    ...(risk.level ? { level: risk.level } : {}),
+    ...(risk.title ? { title: risk.title } : {}),
+    ...(risk.description ? { description: risk.description } : {}),
+    ...(risk.evidence ? { evidence: risk.evidence } : {}),
+    ...(risk.riskCode ? { riskCode: risk.riskCode } : {}),
+    ...(risk.sourceRuleId ? { sourceRuleId: risk.sourceRuleId } : {}),
+  };
 }

@@ -1246,6 +1246,100 @@ test("runRuleEngine does not treat local same-name functions as external kit API
   assert.match(candidate.static_precheck?.summary ?? "", /未发现.*来源证据/);
 });
 
+test("runRuleEngine treats display-only hover kit evidence as weak", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "import { display } from '@kit.ArkUI';",
+      "export function readDisplay(): void {",
+      "  display.getDefaultDisplaySync();",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "case-requirement_hover",
+        rule_id: "OM-HOVER-MUST-01",
+        rule_name: "悬停态页面布局必须将展示类组件置于上半屏、交互类组件置于下半屏",
+        rule_source: "must_rule",
+        summary: "悬停态页面布局必须将展示类组件置于上半屏、交互类组件置于下半屏",
+        priority: "P0",
+        detector_kind: "case_constraint",
+        detector_config: {
+          targetPatterns: ["**/*.ets"],
+          astSignals: [],
+          llmPrompt: "检查悬停态页面布局",
+          kit: ["ArkUI: FolderStack / FoldSplitContainer / display"],
+        },
+        fallback_policy: "agent_assisted",
+        is_case_rule: true,
+      },
+    ],
+  });
+
+  const candidate = result.assistedRuleCandidates.find((item) => item.rule_id === "OM-HOVER-MUST-01");
+
+  assert.ok(candidate);
+  assert.equal(candidate.static_precheck?.signal_status, "partial_matched");
+  assert.deepEqual(candidate.static_precheck?.matched_tokens, ["display"]);
+  assert.match(candidate.static_precheck?.summary ?? "", /弱文本命中|弱锚点/);
+});
+
+test("runRuleEngine maps manual ArkUI source snippets into review evidence", async (t) => {
+  const caseDir = await createRuleFixture(t, {
+    "entry/src/main/ets/pages/Index.ets": [
+      "Flex({ justifyContent: FlexAlign.SpaceBetween }) {",
+      "  Text(this.title).flexGrow(1)",
+      "  Button('More').flexShrink(0)",
+      "}",
+    ].join("\n"),
+  });
+
+  const result = await runRuleEngine({
+    referenceRoot,
+    caseInput: makeCaseInput(caseDir),
+    taskType: "full_generation",
+    runtimeRules: [
+      {
+        pack_id: "cross-device-adaptation",
+        rule_id: "OM-FLEX-MUST-01",
+        rule_source: "must_rule",
+        summary: "Flex 拉伸布局必须合理设置 flexGrow 和 flexShrink",
+        detector: {
+          kind: "static",
+          mode: "arkui_static",
+          config: {
+            check: "flex_grow_shrink_required",
+            targetPatterns: ["**/*.ets"],
+          },
+        },
+        fallback: { policy: "agent_assisted" },
+        rule_name: "Flex 拉伸布局必须合理设置 flexGrow 和 flexShrink",
+        priority: "P0",
+        is_case_rule: false,
+        profile: {
+          scoring: true,
+          riskCode: "UI_LAYOUT_OR_BREAKPOINT_MISMATCH",
+          metricGroups: ["type_safety"],
+          impact: "medium",
+        },
+      },
+    ],
+  });
+
+  const candidate = result.assistedRuleCandidates.find((item) => item.rule_id === "OM-FLEX-MUST-01");
+
+  assert.ok(candidate);
+  assert.equal(candidate.review_evidence?.file, "entry/src/main/ets/pages/Index.ets");
+  assert.equal(candidate.review_evidence?.line, 1);
+  assert.equal(candidate.review_evidence?.subject, "Flex");
+  assert.match(candidate.review_evidence?.evidence ?? "", /Button\('More'\)\.flexShrink\(0\)/);
+});
+
 test("runRuleEngine keeps missing case targets in agent candidates instead of static violations", async (t) => {
   const caseDir = await createRuleFixture(t, {
     "entry/src/main/ets/Index.ets": "Text('plain')\n",

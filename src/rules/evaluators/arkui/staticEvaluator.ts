@@ -24,6 +24,7 @@ type PropertyValue = {
 
 const scanIndexCache = new WeakMap<CollectedEvidence, ArkuiStaticScanIndex>();
 const ruleTraceCache = new WeakMap<CollectedEvidence, Array<Record<string, unknown>>>();
+const patchScopedFileSetCache = new WeakMap<CollectedEvidence, Set<string>>();
 
 export function runArkuiStaticRule(
   rule: RegisteredRule,
@@ -48,25 +49,41 @@ export function runArkuiStaticRule(
 
   const scanIndex = getScanIndex(evidence);
   if (MANUAL_APPLICABILITY_CHECKS.has(spec.check)) {
-    const result = baseResult(
-      rule,
-      "未接入判定器",
-      `${spec.component} ${spec.properties.join("/")} 的适用场景依赖布局意图，当前静态扫描仅提供组件证据，需要 Agent 复核。`,
-      {
+    const instances = getPatchScopedComponentInstances(evidence, scanIndex).filter(
+      (item) => item.component === spec.component,
+    );
+    if (instances.length === 0) {
+      const result = baseResult(rule, "不涉及", `未发现 ${spec.component} 组件，规则不涉及。`, {
         check: spec.check,
         component: spec.component,
-        properties: spec.properties,
-        requirement: spec.requirement,
-        inspectedComponentCount: scanIndex.componentInstances.filter(
-          (item) => item.component === spec.component,
-        ).length,
-      },
+        inspectedComponentCount: 0,
+      });
+      writeDebugArtifacts(evidence, rule, result, scanIndex);
+      return result;
+    }
+    const reviewInstances = instances.slice(0, 5);
+    const result = withMatches(
+      baseResult(
+        rule,
+        "未接入判定器",
+        `${spec.component} ${spec.properties.join("/")} 的适用场景依赖布局意图，当前静态扫描提供组件源码片段，需要 Agent 复核。`,
+        {
+          check: spec.check,
+          component: spec.component,
+          properties: spec.properties,
+          requirement: spec.requirement,
+          inspectedComponentCount: instances.length,
+          reviewEvidence: buildManualReviewEvidence(spec, reviewInstances, evidence),
+        },
+      ),
+      reviewInstances.map((instance) => ({ file: instance.filePath, line: instance.line })),
+      reviewInstances.map((instance) => buildComponentSourceSnippet(instance, evidence)),
     );
     writeDebugArtifacts(evidence, rule, result, scanIndex);
     return result;
   }
 
-  const instances = scanIndex.componentInstances.filter(
+  const instances = getPatchScopedComponentInstances(evidence, scanIndex).filter(
     (item) => item.component === spec.component,
   );
   if (instances.length === 0) {
@@ -258,7 +275,7 @@ function checkBreakpointRanges(
   scanIndex: ArkuiStaticScanIndex,
 ): EvaluatedRule {
   const gridRows = scanIndex.componentInstances.filter(
-    (instance) => instance.component === "GridRow",
+    (instance) => instance.component === "GridRow" && isPatchScopedInstance(evidence, instance),
   );
   const gridRowBreakpoints = gridRows.flatMap((instance) => {
     const value = readPropertyValue(instance, "breakpoints");
@@ -805,9 +822,33 @@ function getScanIndex(evidence: CollectedEvidence): ArkuiStaticScanIndex {
   if (cached) {
     return cached;
   }
-  const index = buildArkuiStaticScanIndex(evidence.workspaceFiles);
+  const index = buildArkuiStaticScanIndex(getAllFiles(evidence));
   scanIndexCache.set(evidence, index);
   return index;
+}
+
+function getPatchScopedComponentInstances(
+  evidence: CollectedEvidence,
+  scanIndex: ArkuiStaticScanIndex,
+): ArkuiComponentInstance[] {
+  return scanIndex.componentInstances.filter((instance) => isPatchScopedInstance(evidence, instance));
+}
+
+function isPatchScopedInstance(
+  evidence: CollectedEvidence,
+  instance: ArkuiComponentInstance,
+): boolean {
+  return getPatchScopedFileSet(evidence).has(instance.filePath);
+}
+
+function getPatchScopedFileSet(evidence: CollectedEvidence): Set<string> {
+  const cached = patchScopedFileSetCache.get(evidence);
+  if (cached) {
+    return cached;
+  }
+  const fileSet = new Set(evidence.workspaceFiles.map((file) => file.relativePath));
+  patchScopedFileSetCache.set(evidence, fileSet);
+  return fileSet;
 }
 
 function isInstanceSatisfied(
@@ -1663,6 +1704,35 @@ function buildReviewEvidence(
     evidence: buildPropertySnippet(instance, spec),
     question: `请结合规则描述和源码上下文复核该 ${instance.component} 是否满足一多适配要求。`,
   }));
+}
+
+function buildManualReviewEvidence(
+  spec: ArkuiRuleSpec,
+  instances: ArkuiComponentInstance[],
+  evidence: CollectedEvidence,
+): Array<Record<string, unknown>> {
+  return instances.map((instance) => ({
+    rule_id: spec.check,
+    file: instance.filePath,
+    line: instance.line,
+    subject: instance.component,
+    source: buildComponentSourceSnippet(instance, evidence),
+    question: `请结合源码片段中的 ${instance.component} 子组件职责判断该规则是否适用，以及是否满足一多适配要求。`,
+  }));
+}
+
+function buildComponentSourceSnippet(
+  instance: ArkuiComponentInstance,
+  evidence: CollectedEvidence,
+): string {
+  const file = getAllFiles(evidence).find((item) => item.relativePath === instance.filePath);
+  if (!file) {
+    return `${instance.component}(${instance.argumentText})`;
+  }
+  const lines = file.content.split(/\r?\n/);
+  const startLine = Math.max(1, instance.line - 1);
+  const endLine = Math.min(lines.length, instance.line + 8);
+  return lines.slice(startLine - 1, endLine).join("\n").trim();
 }
 
 function describeRequirement(spec: ArkuiRuleSpec): string {

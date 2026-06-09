@@ -166,11 +166,13 @@ function compactAssistedRuleCandidateForBootstrap(
   const kit = compactStrings(candidate.kit ?? []);
   const matchedFiles = candidate.static_precheck?.matched_files ?? [];
   const targetFiles = candidate.static_precheck?.target_files ?? [];
+  const representativeSourceFiles =
+    candidate.static_precheck?.signal_status === "none_matched" ||
+    candidate.static_precheck?.signal_status === "no_target_files"
+      ? [...matchedFiles, ...candidate.evidence_files]
+      : [...matchedFiles, ...candidate.evidence_files, ...targetFiles];
   const representativeFiles = compactStrings(
-    uniqueStrings([...matchedFiles, ...candidate.evidence_files, ...targetFiles]).slice(
-      0,
-      MAX_BOOTSTRAP_REPRESENTATIVE_FILES,
-    ),
+    uniqueStrings(representativeSourceFiles).slice(0, MAX_BOOTSTRAP_REPRESENTATIVE_FILES),
   );
   const matchedTokens = compactStrings(candidate.static_precheck?.matched_tokens ?? []);
   const staticPrecheck = candidate.static_precheck

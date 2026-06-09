@@ -306,6 +306,63 @@ test("buildRiskReport counts each risk at most once per run", () => {
   assert.deepEqual(report[0]?.runIndexes, [1]);
 });
 
+test("buildRiskReport keeps per-run risk trigger details for drill-down", () => {
+  const report = buildRiskReport([
+    completedRun(0, {
+      taskId: 130600101,
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          level: "medium",
+          title: "需求实现不完整",
+          description: "未完成电视台页面的一多适配。",
+          evidence: "TelevisionPage.ets 缺少断点布局。",
+          riskCode: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          sourceRuleId: "RSP-MUST-01",
+        },
+      ],
+    }),
+    completedRun(1, {
+      taskId: 130600102,
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          level: "medium",
+          title: "需求实现不完整",
+          description: "MinePage 仍然使用固定宽度。",
+          evidence: "MinePage.ets width(360)。",
+          riskCode: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          sourceRuleId: "RSP-MUST-02",
+        },
+      ],
+    }),
+  ]);
+
+  assert.equal(report[0]?.appearanceCount, 2);
+  assert.deepEqual(report[0]?.details, [
+    {
+      runIndex: 1,
+      taskId: 130600101,
+      level: "medium",
+      title: "需求实现不完整",
+      description: "未完成电视台页面的一多适配。",
+      evidence: "TelevisionPage.ets 缺少断点布局。",
+      riskCode: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+      sourceRuleId: "RSP-MUST-01",
+    },
+    {
+      runIndex: 2,
+      taskId: 130600102,
+      level: "medium",
+      title: "需求实现不完整",
+      description: "MinePage 仍然使用固定宽度。",
+      evidence: "MinePage.ets width(360)。",
+      riskCode: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+      sourceRuleId: "RSP-MUST-02",
+    },
+  ]);
+});
+
 test("jaccardSimilarity treats two empty sets as identical", () => {
   assert.equal(jaccardSimilarity([], []), 1);
   assert.equal(jaccardSimilarity(["a", "b"], ["b", "c"]), 1 / 3);
@@ -529,6 +586,67 @@ test("selectConsistencyTaskRoundSnapshot returns a historical round view", () =>
     selected.runs.map((run) => run.taskId),
     [130600101, 130600102],
   );
+});
+
+test("selectConsistencyTaskRoundSnapshot rebuilds risk details for legacy history reports", () => {
+  const firstRuns = [
+    completedRun(0, {
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          level: "medium",
+          title: "需求实现不完整",
+          description: "第 1 次结论",
+          evidence: "第 1 次证据",
+          riskCode: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+        },
+      ],
+    }),
+    completedRun(1, {
+      risks: [
+        {
+          key: "risk_code|REQUIREMENT_PARTIALLY_IMPLEMENTED",
+          level: "medium",
+          title: "需求实现不完整",
+          description: "第 2 次结论",
+          evidence: "第 2 次证据",
+          riskCode: "REQUIREMENT_PARTIALLY_IMPLEMENTED",
+        },
+      ],
+    }),
+  ];
+  const legacyHistory = appendAnalysisHistorySnapshot(
+    [],
+    firstRuns,
+    "2026-05-20T01:00:00.000Z",
+  ).map((round) => ({
+    ...round,
+    riskReport: round.riskReport.map(({ details: _details, ...risk }) => risk as never),
+  }));
+
+  const selected = selectConsistencyTaskRoundSnapshot(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      runs: firstRuns,
+      analysis: analyzeConsistency(firstRuns),
+      ruleReport: buildRuleReport(firstRuns),
+      riskReport: buildRiskReport(firstRuns),
+      analysisHistory: legacyHistory,
+    },
+    "2026-05-20T01:00:00.000Z",
+  );
+
+  assert.deepEqual(selected.riskReport?.[0]?.details.map((detail) => detail.description), [
+    "第 1 次结论",
+    "第 2 次结论",
+  ]);
 });
 
 test("removeConsistencyAnalysisHistoryRound removes the latest current round and rolls back current data", () => {
@@ -784,6 +902,60 @@ test("buildConsistencyExportFiles splits overview and round result files", () =>
     files.get("rounds/round-001/run-02-task-130600102.json") ?? "",
     /result unavailable/,
   );
+});
+
+test("buildConsistencyExportFiles includes result files for previous history rounds", () => {
+  const firstRuns = [
+    completedRun(0, { taskId: 130600101, totalScore: 82 }),
+    completedRun(1, { taskId: 130600102, totalScore: 86 }),
+  ];
+  const secondRuns = [
+    completedRun(0, { taskId: 130600201, totalScore: 70 }),
+    completedRun(1, { taskId: 130600202, totalScore: 74 }),
+  ];
+  const history = appendAnalysisHistorySnapshot(
+    appendAnalysisHistorySnapshot([], firstRuns, "2026-05-20T01:00:00.000Z"),
+    secondRuns,
+    "2026-05-20T02:00:00.000Z",
+  );
+  const payload = buildConsistencyExportPayload(
+    {
+      id: "C-001",
+      sequence: 1,
+      serviceBaseUrl: "http://localhost:3000",
+      originalTaskId: 1306,
+      caseId: 63,
+      caseName: "点餐元服务模板新增安装预加载功能",
+      createdAt: "2026-05-20T00:00:00.000Z",
+      status: "completed",
+      sourceTask: JSON.parse(remoteTaskJson),
+      runs: secondRuns,
+      analysis: analyzeConsistency(secondRuns),
+      ruleReport: buildRuleReport(secondRuns),
+      riskReport: buildRiskReport(secondRuns),
+      analysisHistory: history,
+    },
+    new Map<number, unknown>([
+      [130600101, { overall_conclusion: { total_score: 82 } }],
+      [130600102, { overall_conclusion: { total_score: 86 } }],
+      [130600201, { overall_conclusion: { total_score: 70 } }],
+      [130600202, { overall_conclusion: { total_score: 74 } }],
+    ]),
+  );
+
+  const files = buildConsistencyExportFiles(payload);
+
+  assert.deepEqual(
+    [...files.keys()].filter((key) => key.includes("/run-")),
+    [
+      "rounds/round-001/run-01-task-130600101.json",
+      "rounds/round-001/run-02-task-130600102.json",
+      "rounds/round-002/run-01-task-130600201.json",
+      "rounds/round-002/run-02-task-130600202.json",
+    ],
+  );
+  assert.match(files.get("rounds/round-001/run-01-task-130600101.json") ?? "", /82/);
+  assert.match(files.get("rounds/round-002/run-02-task-130600202.json") ?? "", /74/);
 });
 
 test("createStoredZip writes a zip archive containing provided files", () => {

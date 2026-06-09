@@ -813,10 +813,12 @@ must_rules:
         check: flex_grow_shrink_required
         targetPatterns:
           - '**/*.ets'
+        kit:
+          - 'ArkUI: Flex / flexGrow / flexShrink'
         targetChecks:
           - target: '**/*.ets'
             astSignals: []
-            llmPrompt: Flex 拉伸布局必须合理设置 flexGrow 和 flexShrink。静态扫描已覆盖组件和属性，Agent 仅复核中间态证据。
+            llmPrompt: Flex 拉伸布局必须合理设置 flexGrow 和 flexShrink。请优先阅读静态扫描提供的 Flex 源码片段，判断子组件是否分别承担弹性内容区与固定留白/操作区职责；无源码片段或职责无法确认时判定为需复核。
     fallback:
       policy: agent_assisted
     decisionCriteria:
@@ -860,7 +862,7 @@ must_rules:
       fail:
         - 违反：可明确分类的交互类组件位于上半屏，或展示类组件位于下半屏
       notApplicable:
-        - 本次改动不涉及该规则约束场景。
+        - 未使用 FolderStack、FoldSplitContainer、半折 posture 或折痕区域 API，且没有自定义悬停态布局证据。
       review:
         - 组件语义无法明确归类为展示类或交互类，需要人工复核。
     profile:
@@ -896,9 +898,9 @@ must_rules:
       fail:
         - 违反：自定义悬停态未读取折痕区域，或读取后未用于上下半屏尺寸/位置计算
       notApplicable:
-        - 本次改动不涉及该规则约束场景。
+        - 未使用 FolderStack、FoldSplitContainer、半折 posture 或折痕区域 API，且没有自定义悬停态布局证据。
       review:
-        - 静态证据不足，需要人工复核。
+        - 仅发现 display 等弱锚点，或无法确认折痕区域是否参与上下半屏尺寸/位置计算。
     profile:
       scoring: true
       riskCode: LANGUAGE_CONSTRAINT_VIOLATION
@@ -971,7 +973,7 @@ must_rules:
       fail:
         - 违反：upperItems 中包含可明确分类的交互类组件 ID
       notApplicable:
-        - 本次改动不涉及该规则约束场景。
+        - 未发现 FolderStack 或 upperItems 配置。
       review:
         - 无法确认 upperItems 是否遗漏展示类组件，或无法判断某个 ID 对应组件语义。
     profile:
@@ -1044,7 +1046,7 @@ must_rules:
       fail:
         - 违反：primary 中放置可明确分类的交互类控件，或 secondary 中放置可明确分类的展示类内容
       notApplicable:
-        - 本次改动不涉及该规则约束场景。
+        - 未发现 FoldSplitContainer。
       review:
         - primary/secondary 内容语义无法明确分类，需要人工复核。
     profile:
@@ -1229,6 +1231,7 @@ must_rules:
       fail:
         - 违反：已确认 Web 内容依赖 Native 断点，但 Native 侧断点变化后未同步给 Web 侧
       notApplicable:
+        - 未发现 Web 组件、Web controller、runJavaScript、javaScriptProxy 或本地 Web 资源入口。
         - 可见证据表明 Web 侧已有独立媒体查询或自适应布局，不依赖 Native 注入断点。
       review:
         - Web 资源不可见，或无法确认 Web 侧是否依赖 Native 注入断点。
@@ -1869,13 +1872,13 @@ should_rules:
       policy: agent_assisted
     decisionCriteria:
       pass:
-        - 满足建议：需要保持宽高比的视觉内容容器设置 aspectRatio，或使用等效比例约束
+        - 满足建议：已确认需要保持宽高比的视觉内容容器设置 aspectRatio，或使用等效比例约束；仅发现已有 aspectRatio 配置不自动视为全部满足。
       fail:
         - 不满足建议：已确认需要保持比例的视觉内容容器固定宽高且未设置 aspectRatio 或等效比例约束
       notApplicable:
         - 普通文本卡片或不需要保持固定宽高比的容器。
       review:
-        - 无法确认容器内容类型或是否需要保持固定宽高比。
+        - 无法确认容器内容类型或是否需要保持固定宽高比；仅发现 aspectRatio 弱锚点但未覆盖候选视觉容器。
     profile:
       scoring: true
       riskCode: UI_LAYOUT_OR_BREAKPOINT_MISMATCH
@@ -1911,7 +1914,7 @@ should_rules:
       notApplicable:
         - 头像、图标、固定比例视频、固定比例商品图等需要保持统一比例的内容。
       review:
-        - 无法确认该容器在不同断点是否需要不同宽高比。
+        - 无法确认该容器在不同断点是否需要不同宽高比；仅发现固定 aspectRatio 但没有断点布局上下文或动态表达式。
     profile:
       scoring: true
       riskCode: UI_LAYOUT_OR_BREAKPOINT_MISMATCH
@@ -1946,9 +1949,9 @@ should_rules:
       fail:
         - 不满足建议：自定义悬停态使用固定 vp 值设置上下半屏组件位置，未基于折痕区域计算
       notApplicable:
-        - 本次改动不涉及该规则约束场景。
+        - 未发现自定义半折、折痕区域读取或基于 rect.top/rect.height 的尺寸位置计算。
       review:
-        - 静态证据不足，需要人工复核。
+        - 仅发现 display 等弱锚点，无法确认是否为自定义悬停态布局。
     profile:
       scoring: true
       riskCode: LANGUAGE_CONSTRAINT_VIOLATION

@@ -297,7 +297,13 @@
           <el-tab-pane label="风险项报表" name="risks">
             <el-table :data="selectedRoundView.riskReport" stripe class="consistency-report-table">
               <el-table-column prop="level" label="等级" width="90" />
-              <el-table-column prop="title" label="风险标题" min-width="260" show-overflow-tooltip />
+              <el-table-column label="风险标题" min-width="260" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <el-button link type="primary" @click="openRiskDetailDrawer(row)">
+                    {{ row.title ?? row.key }}
+                  </el-button>
+                </template>
+              </el-table-column>
               <el-table-column prop="appearanceCount" label="出现次数" width="110" />
               <el-table-column label="出现率" width="100">
                 <template #default="{ row }">{{ row.appearanceRate }}%</template>
@@ -326,6 +332,49 @@
       :task-name="selectedTask?.caseName"
       @refresh="reloadRunReport"
     />
+
+    <el-drawer v-model="riskDetailDrawerVisible" size="48%" :title="riskDetailDrawerTitle">
+      <div v-if="riskDetailItem" class="page-stack">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="风险等级">
+            {{ riskDetailItem.level ?? "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="触发次数">
+            {{ riskDetailItem.appearanceCount }}
+          </el-descriptions-item>
+          <el-descriptions-item label="出现率">
+            {{ riskDetailItem.appearanceRate }}%
+          </el-descriptions-item>
+          <el-descriptions-item label="运行序号">
+            {{ riskDetailItem.runIndexes.join(", ") }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-collapse>
+          <el-collapse-item
+            v-for="detail in riskDetailItem?.details ?? []"
+            :key="`${String(detail.runIndex)}-${String(detail.taskId)}`"
+            :title="`第 ${String(detail.runIndex)} 次运行 / taskId ${String(detail.taskId)}`"
+          >
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="Agent 结论">
+                {{ detail.description ?? detail.title ?? "-" }}
+              </el-descriptions-item>
+              <el-descriptions-item label="证据">
+                {{ detail.evidence ?? "-" }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="detail.riskCode" label="risk_code">
+                {{ detail.riskCode }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="detail.sourceRuleId" label="source_rule_id">
+                {{ detail.sourceRuleId }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+      <el-empty v-else description="未选择风险项" />
+    </el-drawer>
   </div>
 
   <el-drawer v-model="taskInfoDrawerVisible" size="46%" title="一致性任务信息">
@@ -416,6 +465,7 @@ import {
   buildRiskReport,
   buildRuleReport,
   collectExclusiveRoundTaskIds,
+  collectConsistencyExportRuns,
   DEFAULT_SERVICE_BASE_URL,
   extractConsistencyRunSummary,
   generateSubmittedTaskIds,
@@ -480,6 +530,8 @@ const reportCase = ref<CaseReportViewModel | null>(null);
 const downloadingResults = ref(false);
 const taskInfoDrawerVisible = ref(false);
 const taskInfoDrawerTaskId = ref("");
+const riskDetailDrawerVisible = ref(false);
+const riskDetailItem = ref<RiskConsistencyReportItem | null>(null);
 const serviceBaseUrl = ref(DEFAULT_SERVICE_BASE_URL);
 const jsonInput = ref("");
 const validationErrors = ref<string[]>([]);
@@ -636,6 +688,12 @@ const reportDrawerTitle = computed(() => {
   }
   return `#${String(reportRun.value.taskId)} ${selectedTask.value.caseName}`;
 });
+const riskDetailDrawerTitle = computed(() => {
+  if (!riskDetailItem.value) {
+    return "风险项详情";
+  }
+  return riskDetailItem.value.title ?? riskDetailItem.value.key;
+});
 
 watch(
   selectedTask,
@@ -646,6 +704,8 @@ watch(
     reportCase.value = null;
     reportError.value = "";
     reportDrawerVisible.value = false;
+    riskDetailItem.value = null;
+    riskDetailDrawerVisible.value = false;
   },
   { immediate: true },
 );
@@ -655,6 +715,8 @@ watch(selectedRound, () => {
   reportCase.value = null;
   reportError.value = "";
   reportDrawerVisible.value = false;
+  riskDetailItem.value = null;
+  riskDetailDrawerVisible.value = false;
 });
 
 function buildPersistPayload(task: ConsistencyTask, includeSourceTask = false) {
@@ -1161,6 +1223,11 @@ async function reloadRunReport() {
   }
 }
 
+function openRiskDetailDrawer(item: RiskConsistencyReportItem) {
+  riskDetailItem.value = item;
+  riskDetailDrawerVisible.value = true;
+}
+
 function triggerZipDownload(filename: string, archive: Uint8Array) {
   const body = archive.buffer.slice(
     archive.byteOffset,
@@ -1186,7 +1253,8 @@ async function downloadSelectedTaskResults() {
   downloadingResults.value = true;
   try {
     const results = new Map<number, unknown>();
-    for (const run of task.runs) {
+    const exportRuns = collectConsistencyExportRuns(task);
+    for (const run of exportRuns) {
       try {
         results.set(run.taskId, await ensureRunResult(task, run));
       } catch (error) {
@@ -1201,7 +1269,7 @@ async function downloadSelectedTaskResults() {
     const successCount = [...results.values()].filter((value) => !(value instanceof Error)).length;
     if (successCount === 0) {
       ElMessage.warning("未下载到运行原始结果，已导出分析结果和错误信息");
-    } else if (successCount < task.runs.length) {
+    } else if (successCount < exportRuns.length) {
       ElMessage.warning("部分运行结果不可用，已导出可用结果和错误信息");
     } else {
       ElMessage.success("一致性任务结果已下载");

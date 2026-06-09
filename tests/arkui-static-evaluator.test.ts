@@ -85,6 +85,37 @@ test("limits ArkUI component scans to patch-scoped workspace files", () => {
   assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Changed.ets:1"]);
 });
 
+test("uses full ArkUI scan context while judging patch-scoped components", () => {
+  const changedFile = {
+    relativePath: "entry/src/main/ets/pages/Changed.ets",
+    content:
+      "GridRow({ breakpoints: { value: CommonConstants.BREAK_POINTS_VALUE, reference: BreakpointsReference.WindowSize } }){}",
+    patchLineNumbers: [1],
+  };
+  const unchangedFile = {
+    relativePath: "entry/src/main/ets/common/CommonConstants.ets",
+    content:
+      "export class CommonConstants { static readonly BREAK_POINTS_VALUE: Array<string> = ['320vp', '600vp', '840vp', '1440vp']; }",
+    patchLineNumbers: [],
+  };
+  const result = runArkuiStaticRule(makeRule("gridrow_breakpoints_standard"), {
+    workspaceFiles: [changedFile],
+    allWorkspaceFiles: [changedFile, unchangedFile],
+    originalFiles: [],
+    changedFiles: [changedFile.relativePath],
+    summary: {
+      workspaceFileCount: 1,
+      originalFileCount: 0,
+      changedFileCount: 1,
+      changedFiles: [changedFile.relativePath],
+      hasPatch: true,
+    },
+  });
+
+  assert.equal(result.result, "满足");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Changed.ets:1"]);
+});
+
 async function makeTempDir(t: test.TestContext): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hmos-arkui-static-"));
   t.after(async () => {
@@ -147,6 +178,42 @@ test("asks agent to review non-decreasing rules hidden behind helper methods", (
   assert.equal(result.result, "未接入判定器");
   assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
   assert.deepEqual(result.matchedSnippets, ["displayCount=this.getDisplayCount()"]);
+});
+
+test("manual applicability checks are not involved when target component is absent", () => {
+  const result = runArkuiStaticRule(
+    makeRule("flex_grow_shrink_required"),
+    makeEvidence("Column(){ Text('plain') }"),
+  );
+
+  assert.equal(result.result, "不涉及");
+  assert.equal(result.preliminaryData?.inspectedComponentCount, 0);
+  assert.deepEqual(result.matchedLocations, undefined);
+});
+
+test("manual applicability checks provide source snippets for agent review", () => {
+  const result = runArkuiStaticRule(
+    makeRule("flex_grow_shrink_required"),
+    makeEvidence(
+      [
+        "Flex({ justifyContent: FlexAlign.SpaceBetween }) {",
+        "  Text(this.title).flexGrow(1)",
+        "  Button('More').flexShrink(0)",
+        "}",
+      ].join("\n"),
+    ),
+  );
+
+  assert.equal(result.result, "未接入判定器");
+  assert.deepEqual(result.matchedLocations, ["entry/src/main/ets/pages/Index.ets:1"]);
+  assert.match(result.matchedSnippets?.[0] ?? "", /Flex\(\{ justifyContent/);
+  const reviewEvidence = result.preliminaryData?.reviewEvidence as
+    | Array<Record<string, unknown>>
+    | undefined;
+  assert.equal(reviewEvidence?.[0]?.file, "entry/src/main/ets/pages/Index.ets");
+  assert.equal(reviewEvidence?.[0]?.line, 1);
+  assert.equal(reviewEvidence?.[0]?.subject, "Flex");
+  assert.match(String(reviewEvidence?.[0]?.source ?? ""), /Button\('More'\)\.flexShrink\(0\)/);
 });
 
 test("fails when numeric breakpoint map descends across larger breakpoints", () => {
