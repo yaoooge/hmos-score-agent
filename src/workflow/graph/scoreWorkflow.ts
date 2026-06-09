@@ -10,18 +10,14 @@ import { parseOpencodeSessionEvents } from "../../agents/trace/partParser.js";
 import type { AgentTraceRun } from "../../agents/trace/types.js";
 import { pruneCompletedCaseArtifacts } from "../../commons/io/caseArtifactCleanup.js";
 import { CaseLogger } from "../../commons/io/caseLogger.js";
-import { artifactPostProcessNode } from "../nodes/artifactPostProcess/index.js";
-import { inputClassificationNode } from "../nodes/inputClassification/index.js";
 import { opencodeSandboxPreparationNode } from "../nodes/opencodeSandboxPreparation/index.js";
 import { persistAndUploadNode } from "../nodes/persistAndUpload/index.js";
 import { reportGenerationNode } from "../nodes/reportGeneration/index.js";
 import { remoteTaskPreparationNode } from "../nodes/remoteTaskPreparation/index.js";
 import { rubricPreparationNode } from "../nodes/rubricPreparation/index.js";
 import { rubricScoringAgentNode } from "../nodes/rubricScoringAgent/index.js";
-import { rubricScoringPromptBuilderNode } from "../nodes/rubricScoringPromptBuilder/index.js";
-import { ruleAgentPromptBuilderNode } from "../nodes/ruleAgentPromptBuilder/index.js";
 import { ruleAssessmentAgentNode } from "../nodes/ruleAssessmentAgent/index.js";
-import { ruleAuditNode } from "../nodes/ruleAudit/index.js";
+import { rulePreparationNode } from "../nodes/rulePreparation/index.js";
 import { ruleMergeNode } from "../nodes/ruleMerge/index.js";
 import { scoreFusionOrchestrationNode } from "../nodes/scoreFusionOrchestration/index.js";
 import { officialCodeLinterNode } from "../nodes/officialCodeLinter/index.js";
@@ -85,8 +81,11 @@ type PreparedWorkflowInput = {
     | "caseDir"
     | "effectivePatchPath"
     | "caseRuleDefinitions"
-    | "constraintSummary"
+    | "taskUnderstanding"
     | "taskType"
+    | "changedFiles"
+    | "changedLineNumbersByFile"
+    | "changedFileCount"
   >;
   caseDir: string;
   referenceRoot: string;
@@ -158,18 +157,16 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       traceRecorder,
       graph: new StateGraph(ScoreState)
         .addNode("opencodeSandboxPreparationNode", (s) => opencodeSandboxPreparationNode(s))
-        .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
         .addNode("officialCodeLinterNode", (s) => officialCodeLinterNode(s))
+        .addNode("rulePreparationNode", (s) =>
+          rulePreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
+        )
         .addNode("rubricPreparationNode", (s) =>
           rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
-        )
-        .addNode("rubricScoringPromptBuilderNode", (s) =>
-          rubricScoringPromptBuilderNode(s, { logger }),
         )
         .addNode("rubricScoringAgentNode", (s) =>
           rubricScoringAgentNode(s, { opencode: opencodeForState(s), logger }),
         )
-        .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
         .addNode("ruleAssessmentAgentNode", (s) =>
           ruleAssessmentAgentNode(s, { opencode: opencodeForState(s), logger }),
         )
@@ -178,25 +175,21 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
         .addNode("reportGenerationNode", (s) =>
           reportGenerationNode(s, { referenceRoot: input.referenceRoot }),
         )
-        .addNode("artifactPostProcessNode", (s) => artifactPostProcessNode(s))
         .addNode("persistAndUploadNode", (s) =>
           persistAndUploadNode(s, {
             artifactStore: input.artifactStore,
           }),
         )
         .addEdge(START, "opencodeSandboxPreparationNode")
-        .addEdge("opencodeSandboxPreparationNode", "ruleAuditNode")
-        .addEdge("ruleAuditNode", "officialCodeLinterNode")
-        .addEdge("ruleAuditNode", "rubricPreparationNode")
-        .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
-        .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
-        .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")
-        .addEdge("ruleAgentPromptBuilderNode", "ruleAssessmentAgentNode")
+        .addEdge("opencodeSandboxPreparationNode", "officialCodeLinterNode")
+        .addEdge("opencodeSandboxPreparationNode", "rulePreparationNode")
+        .addEdge("opencodeSandboxPreparationNode", "rubricPreparationNode")
+        .addEdge("rulePreparationNode", "ruleAssessmentAgentNode")
+        .addEdge("rubricPreparationNode", "rubricScoringAgentNode")
         .addEdge(["ruleAssessmentAgentNode", "officialCodeLinterNode"], "ruleMergeNode")
         .addEdge(["rubricScoringAgentNode", "ruleMergeNode"], "scoreFusionOrchestrationNode")
         .addEdge("scoreFusionOrchestrationNode", "reportGenerationNode")
-        .addEdge("reportGenerationNode", "artifactPostProcessNode")
-        .addEdge("artifactPostProcessNode", "persistAndUploadNode")
+        .addEdge("reportGenerationNode", "persistAndUploadNode")
         .addEdge("persistAndUploadNode", END)
         .compile(),
     };
@@ -218,19 +211,16 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
           nodeConfig,
         ),
       )
-      .addNode("inputClassificationNode", (s) => inputClassificationNode(s))
-      .addNode("ruleAuditNode", (s) => ruleAuditNode(s, { referenceRoot: input.referenceRoot }))
       .addNode("officialCodeLinterNode", (s) => officialCodeLinterNode(s))
+      .addNode("rulePreparationNode", (s) =>
+        rulePreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
+      )
       .addNode("rubricPreparationNode", (s) =>
         rubricPreparationNode(s, { referenceRoot: input.referenceRoot, logger }),
-      )
-      .addNode("rubricScoringPromptBuilderNode", (s) =>
-        rubricScoringPromptBuilderNode(s, { logger }),
       )
       .addNode("rubricScoringAgentNode", (s) =>
         rubricScoringAgentNode(s, { opencode: opencodeForState(s), logger }),
       )
-      .addNode("ruleAgentPromptBuilderNode", (s) => ruleAgentPromptBuilderNode(s, { logger }))
       .addNode("ruleAssessmentAgentNode", (s) =>
         ruleAssessmentAgentNode(s, { opencode: opencodeForState(s), logger }),
       )
@@ -239,7 +229,6 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       .addNode("reportGenerationNode", (s) =>
         reportGenerationNode(s, { referenceRoot: input.referenceRoot }),
       )
-      .addNode("artifactPostProcessNode", (s) => artifactPostProcessNode(s))
       .addNode("persistAndUploadNode", (s) =>
         persistAndUploadNode(s, {
           artifactStore: input.artifactStore,
@@ -247,19 +236,15 @@ function createCompiledScoreGraph(input: WorkflowCommonInput, resumeFromPrepared
       )
       .addEdge(START, "remoteTaskPreparationNode")
       .addEdge("remoteTaskPreparationNode", "taskUnderstandingNode")
-      .addEdge("taskUnderstandingNode", "inputClassificationNode")
-      .addEdge("inputClassificationNode", "ruleAuditNode")
-      .addEdge("ruleAuditNode", "officialCodeLinterNode")
-      .addEdge("ruleAuditNode", "rubricPreparationNode")
-      .addEdge("rubricPreparationNode", "rubricScoringPromptBuilderNode")
-      .addEdge("rubricPreparationNode", "ruleAgentPromptBuilderNode")
-      .addEdge("rubricScoringPromptBuilderNode", "rubricScoringAgentNode")
-      .addEdge("ruleAgentPromptBuilderNode", "ruleAssessmentAgentNode")
+      .addEdge("taskUnderstandingNode", "officialCodeLinterNode")
+      .addEdge("taskUnderstandingNode", "rulePreparationNode")
+      .addEdge("taskUnderstandingNode", "rubricPreparationNode")
+      .addEdge("rulePreparationNode", "ruleAssessmentAgentNode")
+      .addEdge("rubricPreparationNode", "rubricScoringAgentNode")
       .addEdge(["ruleAssessmentAgentNode", "officialCodeLinterNode"], "ruleMergeNode")
       .addEdge(["rubricScoringAgentNode", "ruleMergeNode"], "scoreFusionOrchestrationNode")
       .addEdge("scoreFusionOrchestrationNode", "reportGenerationNode")
-      .addEdge("reportGenerationNode", "artifactPostProcessNode")
-      .addEdge("artifactPostProcessNode", "persistAndUploadNode")
+      .addEdge("reportGenerationNode", "persistAndUploadNode")
       .addEdge("persistAndUploadNode", END)
       .compile(),
   };

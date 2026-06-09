@@ -11,7 +11,7 @@ test("interpretStreamChunk maps custom and updates chunks into workflow events",
     "updates",
     {
       taskUnderstandingNode: {
-        constraintSummary: {
+        taskUnderstanding: {
           explicitConstraints: ["A"],
           contextualConstraints: [],
           implicitConstraints: [],

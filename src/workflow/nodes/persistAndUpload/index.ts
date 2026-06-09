@@ -22,8 +22,8 @@ export async function persistAndUploadNode(
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
-      "intermediate/constraint-summary.json",
-      state.constraintSummary,
+      "intermediate/task-understanding.json",
+      state.taskUnderstanding,
     );
     await deps.artifactStore.writeJson(
       state.caseDir,
@@ -76,11 +76,9 @@ export async function persistAndUploadNode(
       result_schema: "report_result_schema.json",
     });
     await deps.artifactStore.writeJson(state.caseDir, "outputs/result.json", state.resultJson);
-    await deps.artifactStore.writeText(state.caseDir, "outputs/report.html", state.htmlReport);
 
     return {
       resultJson: state.resultJson,
-      htmlReport: state.htmlReport,
     };
   } catch (error) {
     emitNodeFailed("persistAndUploadNode", error);

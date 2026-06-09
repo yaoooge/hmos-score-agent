@@ -165,7 +165,7 @@ function buildBoundRulePacks(state: ScoreGraphState): Array<Record<string, strin
     state.enabledRulePacks ??
     getEnabledRulePacks(
       resolveEnabledRulePackIds({
-        crossDeviceAdaptation: state.constraintSummary?.crossDeviceAdaptation,
+        crossDeviceAdaptation: state.taskUnderstanding?.crossDeviceAdaptation,
       }),
     ).map((pack) => ({
       pack_id: pack.packId,
@@ -442,7 +442,7 @@ export async function reportGenerationNode(
         build_check_enabled: state.hvigorBuildCheckSummary?.enabled ?? false,
         target_description: "HarmonyOS 生成工程评分",
         target_scope: state.caseInput.generatedProjectPath,
-        task_type_basis: state.constraintSummary.classificationHints.join("; "),
+        task_type_basis: (state.taskUnderstanding?.classificationHints ?? []).join("; "),
       },
       overall_conclusion: buildOverallConclusion(state),
       score_policy: {
@@ -469,7 +469,6 @@ export async function reportGenerationNode(
       },
       case_rule_results: caseRuleResults,
       report_meta: {
-        report_file_name: "report.html",
         result_json_file_name: "result.json",
         unit_name: state.caseInput.caseId,
         generated_at: new Date().toISOString(),

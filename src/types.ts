@@ -147,6 +147,19 @@ export interface RuleAuditResult {
   }>;
 }
 
+export interface NormalizedRuleImpact {
+  rule_id: string;
+  rule_source: RuleAuditResult["rule_source"] | "official_linter" | "case_constraint";
+  result: RuleAuditResult["result"];
+  severity: "critical" | "major" | "minor" | "info" | "review";
+  score_effect: {
+    mode: "none" | "hard_gate" | "cap" | "deduct" | "review_only";
+    score_cap?: number;
+    points?: number;
+    reason: string;
+  };
+}
+
 export type OfficialLinterRunStatus =
   | "not_enabled"
   | "not_installed"
@@ -443,7 +456,6 @@ export interface AgentBootstrapPayload {
     effective_patch_path?: string;
   };
   task_understanding: ConstraintSummary;
-  rubric_summary: LoadedRubricSnapshot;
   assisted_rule_candidates: AgentBootstrapRuleCandidate[];
 }
 

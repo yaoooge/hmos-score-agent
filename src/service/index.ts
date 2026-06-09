@@ -11,7 +11,6 @@ import {
   type OpencodeRunnerLease,
   type OpencodeRunnerPool,
 } from "../agents/opencode/runnerPool.js";
-import { inputClassificationNode } from "../workflow/nodes/inputClassification/index.js";
 import { remoteTaskPreparationNode } from "../workflow/nodes/remoteTaskPreparation/index.js";
 import { taskUnderstandingNode } from "../workflow/nodes/taskUnderstanding/index.js";
 import { buildRunCaseId } from "./runCaseId.js";
@@ -148,8 +147,11 @@ type AcceptedRemoteWorkflowState = {
   remoteTaskRootDir: string;
   effectivePatchPath: string;
   caseRuleDefinitions: CaseRuleDefinition[];
-  constraintSummary: ConstraintSummary;
+  taskUnderstanding: ConstraintSummary;
   taskType: TaskType;
+  changedFiles: string[];
+  changedLineNumbersByFile: Record<string, number[]>;
+  changedFileCount: number;
   inputMode: string;
   originalFileCount: number;
   workspaceFileCount: number;
@@ -277,8 +279,8 @@ function toAcceptedRemoteWorkflowState(
   if (!state.remoteTaskRootDir) {
     throw new Error("Accepted remote task is missing remoteTaskRootDir.");
   }
-  if (!state.constraintSummary) {
-    throw new Error("Accepted remote task is missing constraintSummary.");
+  if (!state.taskUnderstanding) {
+    throw new Error("Accepted remote task is missing taskUnderstanding.");
   }
   if (!state.effectivePatchPath) {
     throw new Error("Accepted remote task is missing effectivePatchPath.");
@@ -306,8 +308,13 @@ function toAcceptedRemoteWorkflowState(
     remoteTaskRootDir: state.remoteTaskRootDir,
     effectivePatchPath: state.effectivePatchPath,
     caseRuleDefinitions: state.caseRuleDefinitions ?? [],
-    constraintSummary: state.constraintSummary,
+    taskUnderstanding: state.taskUnderstanding,
     taskType: state.taskType,
+    changedFiles: state.changedFiles ?? state.evidenceSummary?.changedFiles ?? [],
+    changedLineNumbersByFile:
+      state.changedLineNumbersByFile ?? state.evidenceSummary?.changedLineNumbersByFile ?? {},
+    changedFileCount:
+      state.changedFileCount ?? state.evidenceSummary?.changedFileCount ?? state.changedFiles?.length ?? 0,
     inputMode: state.inputMode ?? "remote",
     originalFileCount: state.originalFileCount,
     workspaceFileCount: state.workspaceFileCount,
@@ -439,8 +446,7 @@ async function prepareAcceptedRemoteEvaluationTask(
       }),
     );
     await logger.info("初始任务分析完成");
-    Object.assign(preparedState, await inputClassificationNode(preparedState as ScoreGraphState));
-    await logger.info(`任务类型读取完成 taskType=${String(preparedState.taskType ?? "")}`);
+    await logger.info(`任务理解完成 taskType=${String(preparedState.taskType ?? "")}`);
     await artifactStore.writeJson(
       acceptedTask.caseDir,
       "inputs/case-info.json",

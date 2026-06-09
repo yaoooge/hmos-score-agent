@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ruleAgentPromptBuilderNode } from "../src/workflow/nodes/ruleAgentPromptBuilder/index.js";
+import { buildAgentBootstrapPayload } from "../src/agents/normalization/ruleAssistance.js";
 
-test("rule agent prompt builder excludes official linter results from bootstrap payload", async () => {
-  const output = await ruleAgentPromptBuilderNode(
-    {
+test("rule agent bootstrap payload excludes official linter results", () => {
+  const payload = buildAgentBootstrapPayload({
       caseInput: {
         caseId: "case-1",
         promptText: "测试规则 agent 边界",
@@ -12,29 +11,24 @@ test("rule agent prompt builder excludes official linter results from bootstrap 
         generatedProjectPath: "/tmp/generated",
       },
       sourceCasePath: "/tmp/case",
+      caseRoot: "/tmp/case",
       effectivePatchPath: "/tmp/case/diff.patch",
       taskType: "full_generation",
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: [],
         contextualConstraints: [],
         implicitConstraints: [],
         classificationHints: [],
         crossDeviceAdaptation: { applicability: "not_involved", confidence: "high", reasons: [] },
       },
-      rubricSnapshot: {
-        task_type: "full_generation",
-        evaluation_mode: "auto",
-        scenario: "",
-        scoring_method: "",
-        scoring_note: "",
-        common_risks: [],
-        report_emphasis: [],
-        dimension_summaries: [],
-        hard_gates: [],
-        review_rule_summary: [],
-      },
-      deterministicRuleResults: [],
-      assistedRuleCandidates: [],
+      assistedRuleCandidates: [
+        {
+          rule_id: "ARKTS-MUST-001",
+          rule_source: "must_rule",
+          why_uncertain: "需要人工复核",
+          evidence_files: ["entry/src/main/ets/pages/Index.ets"],
+        },
+      ],
       officialLinterRuleResults: [
         {
           rule_id: "OFFICIAL-LINTER:@performance/no-use-any-import",
@@ -49,11 +43,9 @@ test("rule agent prompt builder excludes official linter results from bootstrap 
           affected_items: [],
         },
       ],
-    } as never,
-    { logger: { info: async () => undefined } },
-  );
+    } as never);
 
-  const text = JSON.stringify(output);
+  const text = JSON.stringify(payload);
   assert.doesNotMatch(text, /OFFICIAL-LINTER/);
   assert.doesNotMatch(text, /officialLinterRuleResults/);
   assert.doesNotMatch(text, /官方 Code Linter/);

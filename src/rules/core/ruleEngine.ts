@@ -8,6 +8,7 @@ import type {
   AssistedRuleCandidate,
   CaseInput,
   CaseRuleDefinition,
+  EvidenceSummary,
   RuleAuditResult,
   RuleEvidenceIndex,
   RuleViolation,
@@ -27,13 +28,7 @@ export interface RuleEngineOutput {
   ruleViolations: RuleViolation[];
   enabledRulePacks: Array<{ pack_id: string; display_name: string; version?: string }>;
   ruleEvidenceIndex: RuleEvidenceIndex;
-  evidenceSummary: {
-    workspaceFileCount: number;
-    originalFileCount: number;
-    changedFileCount: number;
-    changedFiles: string[];
-    hasPatch: boolean;
-  };
+  evidenceSummary: EvidenceSummary;
 }
 
 type DeterministicStaticRuleAuditResult = StaticRuleAuditResult & {

@@ -206,9 +206,13 @@ export async function officialCodeLinterNode(
     const hvigorTimeoutMs = deps.hvigorTimeoutMs ?? config.hvigorBuildCheckTimeoutMs;
     const caseDir = state.caseDir;
     const generatedProjectPath = state.caseInput?.generatedProjectPath;
-    const crossDeviceAdaptation = state.constraintSummary?.crossDeviceAdaptation;
+    const changedFiles = state.changedFiles ?? state.evidenceSummary?.changedFiles ?? [];
+    const changedLineNumbersByFile =
+      state.changedLineNumbersByFile ?? state.evidenceSummary?.changedLineNumbersByFile;
+    const hasPatch = state.hasPatch ?? state.evidenceSummary?.hasPatch ?? false;
+    const crossDeviceAdaptation = state.taskUnderstanding?.crossDeviceAdaptation;
     const crossDeviceMissingDiagnostic =
-      state.constraintSummary && !crossDeviceAdaptation
+      state.taskUnderstanding && !crossDeviceAdaptation
         ? "cross-device applicability missing; treated as not_involved"
         : undefined;
     const configuredRuleSets = resolveOfficialCodeLinterRecommendedRuleSets({
@@ -219,7 +223,7 @@ export async function officialCodeLinterNode(
       const hvigorSummary = await resolveBuildCheckSummary({
         hvigorEnabled,
         hvigorRunDir,
-        changedFiles: [],
+        changedFiles,
         timeoutMs: hvigorTimeoutMs,
         remoteBuildSuccess: state.remoteBuildSuccess,
       });
@@ -258,7 +262,7 @@ export async function officialCodeLinterNode(
       const hvigorSummary = await resolveBuildCheckSummary({
         hvigorEnabled,
         hvigorRunDir,
-        changedFiles: state.evidenceSummary?.changedFiles ?? [],
+        changedFiles,
         timeoutMs: hvigorTimeoutMs,
         remoteBuildSuccess: state.remoteBuildSuccess,
       });
@@ -296,8 +300,8 @@ export async function officialCodeLinterNode(
       hvigorEnabled,
       hvigorRunDir,
       workspaceDir: workspace.workspaceDir,
-      changedFiles: state.evidenceSummary?.changedFiles ?? [],
-      changedLineNumbersByFile: state.evidenceSummary?.changedLineNumbersByFile,
+      changedFiles,
+      changedLineNumbersByFile,
       timeoutMs: hvigorTimeoutMs,
       remoteBuildSuccess: state.remoteBuildSuccess,
     });
@@ -321,9 +325,9 @@ export async function officialCodeLinterNode(
     const mapped = mapOfficialCodeLinterFindings({
       findings: parsed.findings,
       workspaceDir: workspace.workspaceDir,
-      hasPatch: state.evidenceSummary?.hasPatch ?? state.hasPatch ?? false,
-      changedFiles: state.evidenceSummary?.changedFiles ?? [],
-      changedLineNumbersByFile: state.evidenceSummary?.changedLineNumbersByFile,
+      hasPatch,
+      changedFiles,
+      changedLineNumbersByFile,
     });
 
     const runStatus: OfficialLinterRunStatus = !linterInstalled

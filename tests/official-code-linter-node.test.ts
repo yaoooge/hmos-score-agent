@@ -176,7 +176,7 @@ test("officialCodeLinterNode returns not_installed without rule results when run
   assert.deepEqual(result.officialLinterRuleResults, []);
 });
 
-test("officialCodeLinterNode configures cross-device rule set from constraint summary", async (t) => {
+test("officialCodeLinterNode configures cross-device rule set from task understanding", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-cross-device-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const caseDir = path.join(root, "case-1");
@@ -198,7 +198,7 @@ test("officialCodeLinterNode configures cross-device rule set from constraint su
         originalProjectPath: generated,
         generatedProjectPath: generated,
       },
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["目标: 适配手机和平板双端展示"],
         contextualConstraints: ["模块: entry"],
         implicitConstraints: ["布局适配"],
@@ -231,7 +231,7 @@ test("officialCodeLinterNode configures cross-device rule set from constraint su
   assert.deepEqual(result.officialLinterSummary?.configuredRuleSets, config.ruleSet);
 });
 
-test("officialCodeLinterNode treats prepared state missing cross-device field as not involved", async (t) => {
+test("officialCodeLinterNode treats task understanding missing cross-device field as not involved", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "official-linter-cross-device-missing-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const caseDir = path.join(root, "case-1");
@@ -253,7 +253,7 @@ test("officialCodeLinterNode treats prepared state missing cross-device field as
         originalProjectPath: generated,
         generatedProjectPath: generated,
       },
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["旧约束"],
         contextualConstraints: ["模块: entry"],
         implicitConstraints: ["修改范围: 未知"],
@@ -1193,7 +1193,7 @@ test("officialCodeLinterNode reports missing profile for unknown cross-device ru
         originalProjectPath: generated,
         generatedProjectPath: generated,
       },
-      constraintSummary: {
+      taskUnderstanding: {
         explicitConstraints: ["目标: 适配手机和平板双端展示"],
         contextualConstraints: ["模块: entry"],
         implicitConstraints: ["布局适配"],

@@ -10,7 +10,7 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
     case "remoteTaskPreparationNode":
       return `mode=${String(update.inputMode ?? update.mode ?? "")} originalFiles=${String(update.originalFileCount ?? 0)} workspaceFiles=${String(update.workspaceFileCount ?? 0)} hasPatch=${String(Boolean(update.hasPatch))}`;
     case "taskUnderstandingNode": {
-      const summary = update.constraintSummary as
+      const summary = update.taskUnderstanding as
         | {
             explicitConstraints?: string[];
             contextualConstraints?: string[];
@@ -22,9 +22,7 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
     }
     case "opencodeSandboxPreparationNode":
       return `sandboxReady=${String(Boolean(update.opencodeSandboxRoot))}`;
-    case "inputClassificationNode":
-      return `taskType=${String(update.taskType ?? "")}`;
-    case "ruleAuditNode": {
+    case "rulePreparationNode": {
       const staticRuleAuditResults =
         (update.staticRuleAuditResults as Array<{ result?: string }> | undefined) ?? [];
       const ruleViolations = (update.ruleViolations as unknown[] | undefined) ?? [];
@@ -46,17 +44,10 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
         | undefined;
       return `dimensions=${lengthOf(rubricSnapshot?.dimension_summaries)} hardGates=${lengthOf(rubricSnapshot?.hard_gates)} reviewRules=${lengthOf(rubricSnapshot?.review_rule_summary)}`;
     }
-    case "rubricScoringPromptBuilderNode":
-      return `dimensions=${lengthOf(
-        (update.rubricScoringPayload as { rubric_summary?: { dimension_summaries?: unknown[] } })
-          ?.rubric_summary?.dimension_summaries,
-      )}`;
     case "rubricScoringAgentNode": {
       const result = update.rubricScoringResult as { item_scores?: unknown[] } | undefined;
       return `status=${String(update.rubricAgentRunStatus ?? "")} items=${lengthOf(result?.item_scores)}`;
     }
-    case "ruleAgentPromptBuilderNode":
-      return `deterministic=${lengthOf(update.deterministicRuleResults)} candidates=${lengthOf(update.assistedRuleCandidates)}`;
     case "ruleAssessmentAgentNode": {
       const runnerResult = update.ruleAgentRunnerResult as
         | {
@@ -84,11 +75,9 @@ export function summarizeNodeUpdate(nodeId: WorkflowNodeId, update: WorkflowNode
       return `totalScore=${String(score?.totalScore ?? 0)} hardGate=${String(Boolean(score?.hardGateTriggered))} risks=${lengthOf(score?.risks)} reviewItems=${lengthOf(score?.humanReviewItems)}`;
     }
     case "reportGenerationNode":
-      return `resultReady=${String(Boolean(update.resultJson))} htmlLength=${String(String(update.htmlReport ?? "").length)}`;
-    case "artifactPostProcessNode":
-      return `htmlLength=${String(String(update.htmlReport ?? "").length)} reportReady=${String(Boolean(update.htmlReport))}`;
+      return `resultReady=${String(Boolean(update.resultJson))}`;
     case "persistAndUploadNode":
-      return `outputsWritten=${String(Boolean(update.resultJson))} htmlLength=${String(String(update.htmlReport ?? "").length)}`;
+      return `outputsWritten=${String(Boolean(update.resultJson))}`;
     default:
       return "summary=unavailable";
   }

@@ -18,7 +18,7 @@ export async function opencodeSandboxPreparationNode(
       case_id: state.caseInput.caseId,
       prompt_text: state.caseInput.promptText,
       original_project_provided: state.caseInput.originalProjectProvided ?? true,
-      constraint_summary: state.constraintSummary,
+      task_understanding: state.taskUnderstanding,
       task_type: state.taskType,
       input_mode: state.inputMode,
     },

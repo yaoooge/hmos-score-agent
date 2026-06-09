@@ -121,7 +121,6 @@ function makeValidResultJson(): Record<string, unknown> {
       durationMs: 0,
     },
     report_meta: {
-      report_file_name: "report.html",
       result_json_file_name: "result.json",
       unit_name: "case-1",
       generated_at: new Date().toISOString(),
