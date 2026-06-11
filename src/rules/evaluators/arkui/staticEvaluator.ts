@@ -8,6 +8,7 @@ import {
   ArkuiStaticScanIndex,
   buildArkuiStaticScanIndex,
 } from "./staticScanner.js";
+import { buildArkuiStaticScanIndexFromArkFacts } from "./astFacts.js";
 import {
   ARKUI_RULE_SPEC_BY_CHECK,
   MANUAL_APPLICABILITY_CHECKS,
@@ -822,7 +823,10 @@ function getScanIndex(evidence: CollectedEvidence): ArkuiStaticScanIndex {
   if (cached) {
     return cached;
   }
-  const index = buildArkuiStaticScanIndex(getAllFiles(evidence));
+  const index =
+    evidence.arkFacts && evidence.arkFacts.components.length > 0
+      ? buildArkuiStaticScanIndexFromArkFacts(evidence.arkFacts)
+      : buildArkuiStaticScanIndex(getAllFiles(evidence));
   scanIndexCache.set(evidence, index);
   return index;
 }
@@ -1004,6 +1008,9 @@ function isOpaqueResponsiveExpression(
   scanIndex?: ArkuiStaticScanIndex,
 ): boolean {
   const resolved = resolveConstants(valueText, scanIndex).trim();
+  if (/^__arkAnalyzerOpaque\([^)]+\)$/.test(resolved)) {
+    return true;
+  }
   if (!resolved || /^\s*(?:true|false|[0-9]+(?:\.[0-9]+)?|'[^']*'|"[^"]*")\s*$/.test(resolved)) {
     return false;
   }

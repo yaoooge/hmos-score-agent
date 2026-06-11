@@ -1,4 +1,5 @@
 import type { EvidenceSummary } from "../../types.js";
+import type { ArkFactsIndex } from "../arkfacts/index.js";
 
 // 规则引擎只消费归一化后的文件视图，避免直接耦合真实项目目录结构。
 export interface WorkspaceFile {
@@ -15,5 +16,6 @@ export interface CollectedEvidence {
   patchText?: string;
   changedFiles: string[];
   caseDir?: string;
+  arkFacts?: ArkFactsIndex;
   summary: EvidenceSummary;
 }

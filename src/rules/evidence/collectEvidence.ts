@@ -8,6 +8,7 @@ import {
   RULE_EVALUATION_IGNORED_PATH_PREFIXES,
   isRuleEvaluationIgnoredPath,
 } from "./pathPolicy.js";
+import { runArkAnalyzerFacts } from "../arkfacts/index.js";
 import type { CollectedEvidence } from "./types.js";
 
 export async function collectEvidence(
@@ -51,13 +52,28 @@ export async function collectEvidence(
     ? workspaceFiles.filter((file) => patchScopedFileSet.has(file.relativePath))
     : workspaceFiles;
 
+  const caseDir = deriveCaseDir(caseInput);
+  const arkFacts =
+    process.env.HMOS_ARKANALYZER_ENABLE === "true"
+      ? await runArkAnalyzerFacts({
+          projectPath: caseInput.generatedProjectPath,
+          caseDir,
+          analyzerHome: process.env.HMOS_ARKANALYZER_HOME,
+          analyzerScriptPath: process.env.HMOS_ARKANALYZER_SCRIPT_PATH,
+          sdkHome: process.env.HMOS_ARKANALYZER_SDK_HOME ?? process.env.OHOS_SDK_HOME,
+          sdkPaths: readEnvList(process.env.HMOS_ARKANALYZER_SDK_PATHS),
+          skipExternalExecution: false,
+        })
+      : undefined;
+
   return {
     workspaceFiles: scopedWorkspaceFiles,
     allWorkspaceFiles: workspaceFiles,
     originalFiles,
     patchText,
     changedFiles,
-    caseDir: deriveCaseDir(caseInput),
+    caseDir,
+    ...(arkFacts ? { arkFacts } : {}),
     summary: {
       workspaceFileCount: scopedWorkspaceFiles.length,
       originalFileCount: originalFiles.length,
@@ -67,6 +83,15 @@ export async function collectEvidence(
       hasPatch: Boolean(patchText),
     },
   };
+}
+
+function readEnvList(value: string | undefined): string[] {
+  return value
+    ? value
+        .split(path.delimiter)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
 }
 
 function deriveCaseDir(caseInput: CaseInput): string | undefined {

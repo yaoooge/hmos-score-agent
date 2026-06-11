@@ -6,6 +6,7 @@ import {
   type ArktsLightScanIndex,
   type ArktsNamedDeclarationFact,
 } from "./lightScanner.js";
+import { buildArktsLightScanIndexFromArkFacts } from "./astFacts.js";
 import type { EvaluatedRule } from "../shared.js";
 
 const scanCache = new WeakMap<CollectedEvidence, ArktsLightScanIndex>();
@@ -23,7 +24,12 @@ function getScanIndex(rule: RegisteredRule, evidence: CollectedEvidence): ArktsL
   if (cached) {
     return cached;
   }
-  const index = scanArktsLightFacts(evidence, { fileExtensions: readFileExtensions(rule) });
+  const index =
+    evidence.arkFacts && evidence.arkFacts.declarations.length > 0
+      ? buildArktsLightScanIndexFromArkFacts(evidence.arkFacts, {
+          includedFilePaths: new Set(evidence.workspaceFiles.map((file) => file.relativePath)),
+        })
+      : scanArktsLightFacts(evidence, { fileExtensions: readFileExtensions(rule) });
   scanCache.set(evidence, index);
   return index;
 }
