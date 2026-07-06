@@ -1,21 +1,42 @@
 import type { ArkExpressionFact, ArkFactsIndex } from "../../arkfacts/index.js";
 import type { ArkuiComponentInstance, ArkuiStaticScanIndex } from "./staticScanner.js";
 
+const OPAQUE_CONSTRUCTOR_PROPERTIES_BY_COMPONENT: Record<string, string[]> = {
+  GridRow: ["breakpoints", "columns"],
+  GridCol: ["span", "offset"],
+  SideBarContainer: ["type"],
+  FolderStack: ["upperItems"],
+};
+
+const CREATE_ARGUMENT_PROPERTY_BY_COMPONENT: Record<string, string> = {
+  SideBarContainer: "type",
+  FolderStack: "upperItems",
+};
+
 export function buildArkuiStaticScanIndexFromArkFacts(facts: ArkFactsIndex): ArkuiStaticScanIndex {
+  const componentById = new Map(facts.components.map((component) => [component.id, component]));
   const componentInstances = facts.components.map((component, index): ArkuiComponentInstance => {
-    const constructorProperties = component.attributes.filter(
-      (attribute) => attribute.source === "constructor",
-    );
+    const constructorProperties = expandOpaqueConstructorProperties(component.name, component.attributes);
     const chainedProperties = component.attributes.filter(
-      (attribute) => attribute.source !== "constructor",
+      (attribute) => attribute.source !== "constructor" && attribute.source !== "create",
     );
+    const parent = component.parentId ? componentById.get(component.parentId) : undefined;
     return {
+      componentId: component.id,
       component: component.name,
       filePath: component.filePath,
       line: component.line ?? 1,
       startIndex: index,
       endIndex: index,
       argumentText: renderConstructorArgument(constructorProperties),
+      parentId: component.parentId,
+      parentComponent: parent?.name,
+      childIds: component.childIds ?? [],
+      childComponents: (component.childIds ?? []).flatMap((childId) => {
+        const child = componentById.get(childId);
+        return child ? [child.name] : [];
+      }),
+      source: "arkFacts",
       properties: chainedProperties.map((attribute) => ({
         name: attribute.name,
         argumentText: renderAttributeExpression(attribute),
@@ -43,6 +64,41 @@ export function buildArkuiStaticScanIndexFromArkFacts(facts: ArkFactsIndex): Ark
   };
 }
 
+function expandOpaqueConstructorProperties(
+  componentName: string,
+  attributes: Array<{ name: string; source: string; expr?: ArkExpressionFact; line?: number }>,
+): Array<{ name: string; expr?: ArkExpressionFact; line?: number }> {
+  const constructorProperties = attributes.filter((attribute) => attribute.source === "constructor");
+  const createAttribute = attributes.find((attribute) => attribute.source === "create");
+  const createArgumentProperty = CREATE_ARGUMENT_PROPERTY_BY_COMPONENT[componentName];
+  if (createArgumentProperty && createAttribute?.expr && createAttribute.expr.kind !== "opaque") {
+    constructorProperties.push({
+      name: createArgumentProperty,
+      source: "constructor",
+      line: createAttribute.line,
+      expr: createAttribute.expr,
+    });
+  }
+  const isOpaqueCreate = createAttribute?.expr?.kind === "opaque";
+  if (!isOpaqueCreate) {
+    return constructorProperties;
+  }
+  const existingNames = new Set(constructorProperties.map((attribute) => attribute.name));
+  const opaqueProperties = (OPAQUE_CONSTRUCTOR_PROPERTIES_BY_COMPONENT[componentName] ?? [])
+    .filter((name) => !existingNames.has(name))
+    .map((name) => ({
+      name,
+      source: "constructor",
+      line: createAttribute.line,
+      expr: {
+        kind: "opaque",
+        reason: `unresolved ${componentName}.create argument`,
+        raw: name,
+      } satisfies ArkExpressionFact,
+    }));
+  return [...constructorProperties, ...opaqueProperties];
+}
+
 function renderConstructorArgument(
   attributes: Array<{ name: string; expr?: ArkExpressionFact }>,
 ): string {
@@ -53,6 +109,9 @@ function renderConstructorArgument(
 }
 
 function renderAttributeExpression(attribute: { name: string; expr?: ArkExpressionFact }): string {
+  if (attribute.expr?.kind === "opaque") {
+    return `__arkAnalyzerOpaque(${attribute.name})`;
+  }
   return attribute.expr ? renderExpression(attribute.expr) : `__arkAnalyzerOpaque(${attribute.name})`;
 }
 
@@ -90,6 +149,9 @@ function renderExpression(expression: ArkExpressionFact | undefined): string {
     return `{ ${Object.entries(expression.values)
       .map(([key, value]) => `${key}: ${renderExpression(value)}`)
       .join(", ")} }`;
+  }
+  if (expression.kind === "opaque") {
+    return expression.raw ?? "";
   }
   return expression.raw ?? "";
 }

@@ -8,6 +8,7 @@ export interface ArkuiComponentPropertyCall {
 }
 
 export interface ArkuiComponentInstance {
+  componentId?: string;
   component: string;
   filePath: string;
   line: number;
@@ -15,6 +16,11 @@ export interface ArkuiComponentInstance {
   endIndex: number;
   argumentText: string;
   properties: ArkuiComponentPropertyCall[];
+  parentId?: string;
+  parentComponent?: string;
+  childIds?: string[];
+  childComponents?: string[];
+  source?: "arkFacts" | "legacyScanner";
   breakpointContext?: "if" | "switch";
   breakpointCondition?: string;
 }

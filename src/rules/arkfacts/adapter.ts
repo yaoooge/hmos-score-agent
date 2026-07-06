@@ -198,12 +198,15 @@ function buildViewTreeFacts(rawViewTrees: RawViewTree[]): {
       viewTreeId,
       filePath,
       components,
+      depth: 0,
     });
+    const treeComponents = components.filter((item) => item.viewTreeId === viewTreeId);
     viewTrees.push({
       id: viewTreeId,
       component,
       filePath,
-      nodeCount: asNumber(tree.nodeCount) ?? components.length,
+      rootComponentId: treeComponents[0]?.id,
+      nodeCount: asNumber(tree.nodeCount) ?? treeComponents.length,
     });
   });
   return { viewTrees, components };
@@ -214,6 +217,8 @@ function appendComponentFacts(options: {
   viewTreeId: string;
   filePath: string;
   components: ArkComponentFact[];
+  parentId?: string;
+  depth: number;
 }): string {
   const id = `${options.viewTreeId}:node:${options.components.length}`;
   const children = Array.isArray(options.node.children)
@@ -225,15 +230,20 @@ function appendComponentFacts(options: {
     name: asString(options.node.name) ?? "unknown",
     kind: normalizeComponentKind(options.node.kind, options.node.builderParam),
     filePath: options.filePath,
+    ...(options.parentId ? { parentId: options.parentId } : {}),
+    childIds: [],
+    depth: options.depth,
     attributes: readAttributes(options.node.attributes),
     stateRefs: readStringArray(options.node.stateValues).map(normalizeSymbolName),
   };
   options.components.push(component);
   for (const child of children) {
-    appendComponentFacts({
+    component.childIds.push(appendComponentFacts({
       ...options,
       node: child,
-    });
+      parentId: id,
+      depth: options.depth + 1,
+    }));
   }
   return id;
 }
@@ -243,25 +253,29 @@ function readAttributes(value: unknown): ArkAttributeFact[] {
     return [];
   }
   return Object.entries(value)
-    .filter(([name]) => name !== "create" && name !== "pop")
+    .filter(([name]) => name !== "pop")
     .map(([name, attribute]) => {
       const rawAttribute = isRecord(attribute) ? (attribute as RawAttribute) : {};
       const uses = readStringArray(rawAttribute.uses);
+      const expr = expressionFromUses(uses);
+      const opaqueReason = readOpaqueReason(expr);
       return {
         name,
-        expr: expressionFromUses(uses),
-        source: "modifier",
+        expr,
+        source: name === "create" ? "create" : "modifier",
+        ...(typeof rawAttribute.stmt === "string" ? { stmt: rawAttribute.stmt.slice(0, 300) } : {}),
+        ...(opaqueReason ? { opaqueReason } : {}),
       };
     });
 }
 
-function expressionFromUses(uses: string[]): ArkExpressionFact | undefined {
+function expressionFromUses(uses: string[]): ArkExpressionFact {
   if (uses.length === 0) {
-    return undefined;
+    return { kind: "opaque", reason: "empty_uses" };
   }
   if (uses.length > 1) {
     return {
-      kind: "unknown",
+      kind: "opaque",
       reason: "multiple attribute uses",
       raw: uses.join(", "),
     };
@@ -269,8 +283,29 @@ function expressionFromUses(uses: string[]): ArkExpressionFact | undefined {
   return expressionFromUse(uses[0] ?? "");
 }
 
+function readOpaqueReason(
+  expression: ArkExpressionFact,
+): ArkAttributeFact["opaqueReason"] | undefined {
+  if (expression.kind !== "opaque") {
+    return undefined;
+  }
+  if (expression.reason === "empty_uses") {
+    return "empty_uses";
+  }
+  if (expression.reason === "multiple attribute uses") {
+    return "multiple_uses";
+  }
+  return "unsupported_ir";
+}
+
 function expressionFromUse(useText: string): ArkExpressionFact {
   const text = useText.trim();
+  if (text.startsWith("[") && text.endsWith("]")) {
+    return {
+      kind: "array",
+      items: splitTopLevelValues(text.slice(1, -1)).map(expressionFromUse),
+    };
+  }
   const stringMatch = /^'([^']*)'$/.exec(text) ?? /^"([^"]*)"$/.exec(text);
   if (stringMatch) {
     const value = stringMatch[1] ?? "";
@@ -301,6 +336,51 @@ function expressionFromUse(useText: string): ArkExpressionFact {
     return { kind: "symbol", name: normalizeSymbolName(text) };
   }
   return { kind: "symbol", name: normalizeSymbolName(text) };
+}
+
+function splitTopLevelValues(content: string): string[] {
+  const values: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote: "'" | "\"" | undefined;
+  for (let index = 0; index < content.length; index += 1) {
+    const current = content[index] ?? "";
+    const next = content[index + 1] ?? "";
+    if (quote) {
+      if (current === "\\" && next) {
+        index += 1;
+        continue;
+      }
+      if (current === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (current === "'" || current === "\"") {
+      quote = current;
+      continue;
+    }
+    if (current === "[" || current === "{" || current === "(") {
+      depth += 1;
+      continue;
+    }
+    if (current === "]" || current === "}" || current === ")") {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (current === "," && depth === 0) {
+      const value = content.slice(start, index).trim();
+      if (value) {
+        values.push(value);
+      }
+      start = index + 1;
+    }
+  }
+  const tail = content.slice(start).trim();
+  if (tail) {
+    values.push(tail);
+  }
+  return values;
 }
 
 function normalizeComponentKind(kind: unknown, builderParam: unknown): ArkComponentFact["kind"] {

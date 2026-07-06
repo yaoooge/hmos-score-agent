@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect x="0" y="0" width="1280" height="720" fill="#FFFFFF"/>
+
+  <g id="background-accent">
+    <rect x="0" y="0" width="1280" height="10" fill="#C7000A"/>
+    <rect x="56" y="112" width="1168" height="1" fill="#D9D9D9"/>
+    <rect x="56" y="664" width="1168" height="1" fill="#EDEDED"/>
+  </g>
+
+  <g id="header">
+    <text x="56" y="58" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="34" font-weight="700" fill="#1D1D1B">白盒代码评价流程：以电视台元服务一多适配为例</text>
+    <text x="58" y="84" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" fill="#666666">
+      <tspan x="58" dy="0">Case: .local-cases/20260608T105703_case_167600460_dbee0885</tspan>
+      <tspan x="58" dy="20">Task ID 167600460 · continuation / incremental</tspan>
+    </text>
+    <rect x="1048" y="46" width="176" height="36" rx="4" fill="#C7000A"/>
+    <text x="1070" y="70" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" font-weight="700" fill="#FFFFFF">Build Success = true</text>
+  </g>
+
+  <g id="takeaway">
+    <rect x="56" y="132" width="1168" height="56" rx="6" fill="#C7000A" fill-opacity="0.06" stroke="#D9D9D9" stroke-width="1"/>
+    <rect x="56" y="132" width="8" height="56" rx="4" fill="#C7000A"/>
+    <text x="82" y="155" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#1D1D1B">
+      <tspan x="82" dy="0">本样例评价流程把远程任务、增量补丁、静态检查、规则判定和评分结果</tspan>
+      <tspan x="82" dy="24">组织为一条可追溯证据链。</tspan>
+    </text>
+  </g>
+
+  <g id="input-card">
+    <rect x="56" y="214" width="360" height="210" rx="6" fill="#F7F7F5" stroke="#D9D9D9" stroke-width="1"/>
+    <use data-icon="tabler-outline/file-import" x="82" y="238" width="30" height="30" fill="#C7000A" stroke-width="2"/>
+    <text x="124" y="260" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="20" font-weight="700" fill="#1D1D1B">输入材料</text>
+    <text x="82" y="304" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" fill="#1D1D1B">
+      <tspan x="82" dy="0">原始工程包：TelevisionNews1.0.0_one2many.zip</tspan>
+      <tspan x="82" dy="28">生成后工程：execution_2296_output.zip</tspan>
+      <tspan x="82" dy="28">增量补丁：execution_2296_changes.patch</tspan>
+      <tspan x="82" dy="28">Rubric 评分载荷：rubric-scoring-payload.json</tspan>
+      <tspan x="82" dy="28">规则判定载荷：rule-agent-bootstrap-payload.json</tspan>
+    </text>
+  </g>
+
+  <g id="evidence-card">
+    <rect x="460" y="214" width="360" height="210" rx="6" fill="#FFFFFF" stroke="#D9D9D9" stroke-width="1"/>
+    <use data-icon="tabler-outline/file-diff" x="486" y="238" width="30" height="30" fill="#F26B43" stroke-width="2"/>
+    <text x="528" y="260" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="20" font-weight="700" fill="#1D1D1B">白盒证据</text>
+    <text x="486" y="304" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" fill="#1D1D1B">
+      <tspan x="486" dy="0">Patch 全量读取：2709 行</tspan>
+      <tspan x="486" dy="28">实质变更源码文件：11 个</tspan>
+      <tspan x="486" dy="28">覆盖：断点工具、窗口模型、入口监听</tspan>
+      <tspan x="486" dy="28">页面：首页、详情页、我的页、订阅列表、标签栏</tspan>
+      <tspan x="486" dy="28">Code Linter：成功，2 条有效告警</tspan>
+    </text>
+  </g>
+
+  <g id="output-card">
+    <rect x="864" y="214" width="360" height="210" rx="6" fill="#FFFFFF" stroke="#D9D9D9" stroke-width="1"/>
+    <use data-icon="tabler-outline/report-analytics" x="890" y="238" width="30" height="30" fill="#C7000A" stroke-width="2"/>
+    <text x="932" y="260" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="20" font-weight="700" fill="#1D1D1B">输出产物</text>
+    <text x="890" y="304" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" fill="#1D1D1B">
+      <tspan x="890" dy="0">Rule Agent：38 条候选规则判定</tspan>
+      <tspan x="890" dy="28">判定分布：10 通过，26 不适用，2 违规</tspan>
+      <tspan x="890" dy="28">规则合并：117 条结果进入融合</tspan>
+      <tspan x="890" dy="28">最终文件：outputs/result.json</tspan>
+      <tspan x="890" dy="28">报告文件：outputs/report.html</tspan>
+    </text>
+  </g>
+
+  <g id="workflow">
+    <text x="56" y="470" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="20" font-weight="700" fill="#1D1D1B">流程节点</text>
+    <line x1="94" y1="548" x2="1186" y2="548" stroke="#D9D9D9" stroke-width="2"/>
+    <polygon points="1186,548 1174,541 1174,555" fill="#D9D9D9"/>
+
+    <g id="flow-01">
+      <circle cx="96" cy="548" r="25" fill="#C7000A"/>
+      <text x="88" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">1</text>
+      <text x="56" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">远程任务输入</text>
+    </g>
+    <g id="flow-02">
+      <circle cx="232" cy="548" r="25" fill="#F26B43"/>
+      <text x="224" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">2</text>
+      <text x="193" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">沙箱准备</text>
+    </g>
+    <g id="flow-03">
+      <circle cx="368" cy="548" r="25" fill="#F26B43"/>
+      <text x="360" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">3</text>
+      <text x="326" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">Patch/工程解析</text>
+    </g>
+    <g id="flow-04">
+      <circle cx="504" cy="548" r="25" fill="#F26B43"/>
+      <text x="496" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">4</text>
+      <text x="459" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">Code Linter</text>
+    </g>
+    <g id="flow-05">
+      <circle cx="640" cy="548" r="25" fill="#F26B43"/>
+      <text x="632" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">5</text>
+      <text x="599" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">Rubric Agent</text>
+    </g>
+    <g id="flow-06">
+      <circle cx="776" cy="548" r="25" fill="#F26B43"/>
+      <text x="768" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">6</text>
+      <text x="742" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">Rule Agent</text>
+    </g>
+    <g id="flow-07">
+      <circle cx="912" cy="548" r="25" fill="#F26B43"/>
+      <text x="904" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">7</text>
+      <text x="879" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">规则合并</text>
+    </g>
+    <g id="flow-08">
+      <circle cx="1048" cy="548" r="25" fill="#C7000A"/>
+      <text x="1040" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">8</text>
+      <text x="1015" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">分数融合</text>
+    </g>
+    <g id="flow-09">
+      <circle cx="1184" cy="548" r="25" fill="#C7000A"/>
+      <text x="1176" y="555" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">9</text>
+      <text x="1151" y="600" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">报告生成</text>
+    </g>
+  </g>
+
+  <g id="footer">
+    <text x="56" y="690" font-family="Consolas, Courier New, monospace" font-size="12" fill="#919191">Source: outputs/result.json, agent-output/*.json, code-linter/summary.json</text>
+    <text x="1192" y="690" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#919191">01 / 02</text>
+  </g>
+</svg>

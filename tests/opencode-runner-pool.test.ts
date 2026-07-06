@@ -162,3 +162,31 @@ test("opencode runner pool cleans up partially started slots when initialization
 
   leases.forEach((lease) => lease.release());
 });
+
+test("opencode runner pool stopAll is a no-op before initialization", async () => {
+  let ensureCount = 0;
+  let startCount = 0;
+  const pool = createOpencodeRunnerPool({
+    size: 3,
+    basePort: 4096,
+    ensureCliAvailable: async () => {
+      ensureCount += 1;
+    },
+    createRuntimeConfig: async ({ port, slotId }) => runtimeConfig(port, slotId),
+    createServeManager: (): OpencodeServeManager => ({
+      start: async () => {
+        startCount += 1;
+      },
+      restart: async () => undefined,
+      stop: async () => undefined,
+      health: async () => true,
+      serverUrl: () => "http://127.0.0.1:4096",
+    }),
+    runPrompt: async ({ runtime, request: runRequest }) => result(runRequest, runtime.serverUrl),
+  });
+
+  await pool.stopAll();
+
+  assert.equal(ensureCount, 0);
+  assert.equal(startCount, 0);
+});

@@ -59,6 +59,15 @@ export function setServiceOpencodeRunnerPoolForTesting(
   sharedServiceOpencodeRunnerPool = pool;
 }
 
+export async function stopServiceOpencodeRunnerPool(): Promise<void> {
+  const pool = sharedServiceOpencodeRunnerPool;
+  if (!pool) {
+    return;
+  }
+  sharedServiceOpencodeRunnerPool = undefined;
+  await pool.stopAll();
+}
+
 function buildRemoteCallbackPayload(input: {
   taskId: number;
   status: RemoteCallbackPayload["status"];

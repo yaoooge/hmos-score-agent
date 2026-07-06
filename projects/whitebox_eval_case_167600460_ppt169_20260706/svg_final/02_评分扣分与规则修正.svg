@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect x="0" y="0" width="1280" height="720" fill="#FFFFFF" />
+
+  <g id="background-accent">
+    <rect x="0" y="0" width="1280" height="10" fill="#C7000A" />
+    <rect x="56" y="112" width="1168" height="1" fill="#D9D9D9" />
+    <rect x="56" y="664" width="1168" height="1" fill="#EDEDED" />
+  </g>
+
+  <g id="header">
+    <text x="56" y="58" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="34" font-weight="700" fill="#1D1D1B">评分结果拆解：Rubric 基础分、规则修正与硬门槛</text>
+    <text x="58" y="91" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="15" fill="#666666">样例结果：Rubric 基础分 88 → 规则修正后 73 → G1 封顶后 69</text>
+  </g>
+
+  <g id="score-waterfall">
+    <path fill="#F7F7F5" stroke="#D9D9D9" stroke-width="1" d="M62,136 H450 A6,6 0 0 1 456,142 V298 A6,6 0 0 1 450,304 H62 A6,6 0 0 1 56,298 V142 A6,6 0 0 1 62,136 Z" />
+    
+  <g transform="translate(78.0, 158.0) scale(1.1666666666666667)" fill="none" stroke="#C7000A" stroke-width="2">
+    <path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6" />
+    <path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10" />
+    <path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14" />
+    <path d="M4 20h14" />
+  </g>
+    <text x="116" y="179" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="20" font-weight="700" fill="#1D1D1B">总分链路</text>
+
+    <g id="score-88">
+      <path fill="#FFFFFF" stroke="#D9D9D9" stroke-width="1" d="M88,212 H164 A6,6 0 0 1 170,218 V262 A6,6 0 0 1 164,268 H88 A6,6 0 0 1 82,262 V218 A6,6 0 0 1 88,212 Z" />
+      <text x="104" y="246" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="34" font-weight="700" fill="#1D1D1B">88</text>
+      <text x="91" y="286" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">Rubric 基础分</text>
+    </g>
+    <polygon points="190,238 218,226 218,250" fill="#F26B43" />
+    <text x="186" y="274" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#C7000A">约 -14.8</text>
+    <g id="score-73">
+      <path fill="#FFFFFF" stroke="#D9D9D9" stroke-width="1" d="M242,212 H318 A6,6 0 0 1 324,218 V262 A6,6 0 0 1 318,268 H242 A6,6 0 0 1 236,262 V218 A6,6 0 0 1 242,212 Z" />
+      <text x="258" y="246" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="34" font-weight="700" fill="#1D1D1B">73</text>
+      <text x="248" y="286" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">规则修正后</text>
+    </g>
+    <polygon points="344,238 372,226 372,250" fill="#C7000A" />
+    <text x="340" y="274" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#C7000A">G1 cap</text>
+    <g id="score-69">
+      <path fill="#C7000A" d="M396,212 H432 A6,6 0 0 1 438,218 V262 A6,6 0 0 1 432,268 H396 A6,6 0 0 1 390,262 V218 A6,6 0 0 1 396,212 Z" />
+      <text x="398" y="246" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="31" font-weight="700" fill="#FFFFFF">69</text>
+      <text x="388" y="286" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">最终分</text>
+    </g>
+  </g>
+
+  <g id="rubric-deductions">
+    <path fill="#FFFFFF" stroke="#D9D9D9" stroke-width="1" d="M62,320 H450 A6,6 0 0 1 456,326 V638 A6,6 0 0 1 450,644 H62 A6,6 0 0 1 56,638 V326 A6,6 0 0 1 62,320 Z" />
+    <text x="78" y="352" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="20" font-weight="700" fill="#1D1D1B">Rubric 基础扣分点</text>
+    <text x="78" y="380" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#666666">满分 100，基础分 88；以下为主要未满分项</text>
+
+    <g id="rubric-list" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#1D1D1B">
+      <text x="78" y="415"><tspan font-weight="700" fill="#C7000A">命名与风格 5/7：</tspan>TelevisionPage 空 catch 注释移除；WindowModel 文档注释移除</text>
+      <text x="78" y="443"><tspan font-weight="700" fill="#C7000A">类型安全 6/8：</tspan>contentMaxWidth 使用 BreakpointType(0, 840, 840) 依赖 falsy 逻辑</text>
+      <text x="78" y="471"><tspan font-weight="700" fill="#C7000A">静态坏味道 4/6：</tspan>VideoProgramDetails 宽窄屏分支约 120 行 VideoCard 配置重复</text>
+      <text x="78" y="499"><tspan font-weight="700" fill="#C7000A">能力抽取 4/5：</tspan>VideoCard 配置未抽为 Builder；isWideScreen 未集中到 WindowModel</text>
+      <text x="78" y="527"><tspan font-weight="700" fill="#C7000A">复杂度 4/5：</tspan>ContentBuilder 超过 220 行，嵌套层级较深</text>
+      <text x="78" y="555"><tspan font-weight="700" fill="#C7000A">可演进性 4/5：</tspan>isWideScreen 判断散布在 6 个组件中</text>
+      <text x="78" y="583"><tspan font-weight="700" fill="#C7000A">稳定性 3/4：</tspan>EntryAbility 注册 windowSizeChange 监听后未在 onDestroy 注销</text>
+      <text x="78" y="611"><tspan font-weight="700" fill="#C7000A">改动范围 3/5：</tspan>注释删除、TAG 常量删除、文档注释删除混入适配变更</text>
+    </g>
+  </g>
+
+  <g id="rule-corrections">
+    <path fill="#FFFFFF" stroke="#D9D9D9" stroke-width="1" d="M486,136 H1218 A6,6 0 0 1 1224,142 V638 A6,6 0 0 1 1218,644 H486 A6,6 0 0 1 480,638 V142 A6,6 0 0 1 486,136 Z" />
+    
+  <g transform="translate(502.0, 158.0) scale(1.1666666666666667)" fill="none" stroke="#C7000A" stroke-width="2">
+    <path d="M12 21a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3c.539 1.832 .627 3.747 .283 5.588" />
+    <path d="M15 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
+    <path d="M20.2 20.2l1.8 1.8" />
+  </g>
+    <text x="540" y="179" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="20" font-weight="700" fill="#1D1D1B">规则修正明细</text>
+    <text x="502" y="208" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" fill="#666666">规则修正按风险等级映射到评分项；同一规则可影响多个评分项。</text>
+
+    <rect x="502" y="228" width="700" height="30" fill="#C7000A" />
+    <text x="514" y="248" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">规则</text>
+    <text x="690" y="248" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">客观问题</text>
+    <text x="1036" y="248" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">分数修正</text>
+
+    <g id="rule-row-1">
+      <rect x="502" y="258" width="700" height="45" fill="#F7F7F5" />
+      <text x="514" y="279" font-family="Consolas, Courier New, monospace" font-size="12" fill="#1D1D1B">OM-BREAKPOINT-MUST-02</text>
+      <text x="690" y="278" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#1D1D1B">布局断点判断使用硬编码宽度</text>
+      <text x="690" y="295" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">影响 ArkTS/ArkUI 语法与 ArkTS 约束两个评分项</text>
+      <text x="1036" y="286" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#C7000A">-2.1 / -1.75</text>
+    </g>
+    <g id="rule-row-2">
+      <rect x="502" y="303" width="700" height="45" fill="#FFFFFF" />
+      <text x="514" y="324" font-family="Consolas, Courier New, monospace" font-size="12" fill="#1D1D1B">OM-BREAKPOINT-MUST-04</text>
+      <text x="690" y="323" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#1D1D1B">页面组件断点来源不符合规则要求</text>
+      <text x="690" y="340" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">触发 G1；同样影响两个评分项</text>
+      <text x="1036" y="331" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#C7000A">-2.1 / -1.75</text>
+    </g>
+    <g id="rule-row-3">
+      <rect x="502" y="348" width="700" height="45" fill="#F7F7F5" />
+      <text x="514" y="369" font-family="Consolas, Courier New, monospace" font-size="12" fill="#1D1D1B">OM-BREAKPOINT-MUST-03</text>
+      <text x="690" y="368" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#1D1D1B">BreakpointType 只覆盖 sm/md/lg，缺少 xl</text>
+      <text x="690" y="385" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">触发 G1；断点值分发能力不完整</text>
+      <text x="1036" y="376" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#C7000A">-2.1 / -1.75</text>
+    </g>
+    <g id="rule-row-4">
+      <rect x="502" y="393" width="700" height="45" fill="#FFFFFF" />
+      <text x="514" y="414" font-family="Consolas, Courier New, monospace" font-size="12" fill="#1D1D1B">ARKTS-SHOULD-010</text>
+      <text x="690" y="414" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#1D1D1B">代码重复坏味道</text>
+      <text x="690" y="431" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">映射到静态坏味道控制</text>
+      <text x="1036" y="421" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#C7000A">-0.6</text>
+    </g>
+    <g id="rule-row-5">
+      <rect x="502" y="438" width="700" height="45" fill="#F7F7F5" />
+      <text x="514" y="459" font-family="Consolas, Courier New, monospace" font-size="12" fill="#1D1D1B">ARKTS-PERF-SHOULD-001</text>
+      <text x="690" y="458" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#1D1D1B">重复逻辑带来性能与维护风险</text>
+      <text x="690" y="475" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">影响静态坏味道控制与性能风险</text>
+      <text x="1036" y="466" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#C7000A">-0.6 / -0.45</text>
+    </g>
+    <g id="rule-row-6">
+      <rect x="502" y="483" width="700" height="45" fill="#FFFFFF" />
+      <text x="514" y="504" font-family="Consolas, Courier New, monospace" font-size="12" fill="#1D1D1B">OM-WATERFLOW-SHOULD-01</text>
+      <text x="690" y="503" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#1D1D1B">WaterFlow 动态切列未设置 SLIDING_WINDOW</text>
+      <text x="690" y="520" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">映射到静态坏味道控制</text>
+      <text x="1036" y="511" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#C7000A">-0.6</text>
+    </g>
+    <g id="rule-row-7">
+      <rect x="502" y="528" width="700" height="58" fill="#F7F7F5" />
+      <text x="514" y="549" font-family="Consolas, Courier New, monospace" font-size="12" fill="#1D1D1B">OFFICIAL-LINTER:color-value</text>
+      <text x="690" y="548" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#1D1D1B">VideoProgramDetails 第 269、381 行颜色值未通过 $r 资源引用</text>
+      <text x="690" y="565" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#666666">影响 ArkUI 组织方式与 HarmonyOS 工程实践</text>
+      <text x="1036" y="557" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="13" font-weight="700" fill="#C7000A">-0.5 / -0.5</text>
+    </g>
+  </g>
+
+  <g id="hard-gate">
+    <path fill="#C7000A" fill-opacity="0.08" stroke="#C7000A" stroke-width="1" d="M486,604 H1218 A6,6 0 0 1 1224,610 V638 A6,6 0 0 1 1218,644 H486 A6,6 0 0 1 480,638 V610 A6,6 0 0 1 486,604 Z" />
+    
+  <g transform="translate(502.0, 612.0)" fill="none" stroke="#C7000A" stroke-width="2">
+    <path d="M15.04 19.745c-.942 .551 -1.964 .976 -3.04 1.255a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 .195 6.015" />
+    <path d="M19 16v3" />
+    <path d="M19 22v.01" />
+  </g>
+    <text x="536" y="630" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14" font-weight="700" fill="#1D1D1B">G1 高密度静态错误：</text>
+    <text x="674" y="630" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="14" fill="#1D1D1B">must_rule 不满足阈值 2，实际 3；触发规则为 OM-BREAKPOINT-MUST-02 / 04 / 03；分数上限 69。</text>
+  </g>
+
+  <g id="footer">
+    <text x="56" y="690" font-family="Consolas, Courier New, monospace" font-size="12" fill="#919191">Source: outputs/result.json dimension_results, risks, hard_gates, official_linter_summary</text>
+    <text x="1192" y="690" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="12" fill="#919191">02 / 02</text>
+  </g>
+</svg>

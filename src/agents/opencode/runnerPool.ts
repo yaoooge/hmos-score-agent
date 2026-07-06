@@ -173,6 +173,9 @@ export function createOpencodeRunnerPool(input: OpencodeRunnerPoolInput): Openco
     },
 
     async stopAll(): Promise<void> {
+      if (!initPromise && slots.length === 0) {
+        return;
+      }
       await init();
       waiters.splice(0, waiters.length);
       await Promise.all(slots.map((slot) => slot.serveManager.stop()));

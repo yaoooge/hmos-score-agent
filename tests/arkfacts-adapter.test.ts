@@ -125,7 +125,22 @@ test("adapts ArkAnalyzer scene summary into compact facts", () => {
 
   const tabs = facts.components.find((item) => item.name === "Tabs");
   assert.ok(tabs);
+  assert.equal(tabs.parentId, facts.components.find((item) => item.name === "Column")?.id);
+  assert.deepEqual(facts.components.find((item) => item.name === "Column")?.childIds, [
+    tabs.id,
+    facts.components.find((item) => item.name === "Text")?.id,
+  ]);
   assert.deepEqual(tabs.stateRefs, ["Index.isLargeScreen"]);
+  assert.deepEqual(tabs.attributes.find((item) => item.name === "create"), {
+    name: "create",
+    source: "create",
+    stmt: "%3 = staticinvoke <@%unk/%unk: Tabs.create()>()",
+    expr: {
+      kind: "opaque",
+      reason: "empty_uses",
+    },
+    opaqueReason: "empty_uses",
+  });
   assert.deepEqual(tabs.attributes.find((item) => item.name === "barPosition")?.expr, {
     kind: "enum",
     name: "BarPosition.Start",
@@ -134,6 +149,10 @@ test("adapts ArkAnalyzer scene summary into compact facts", () => {
     kind: "symbol",
     name: "Index.isLargeScreen",
   });
+  assert.equal(
+    tabs.attributes.find((item) => item.name === "vertical")?.stmt,
+    "%4 = instanceinvoke %3.<@%unk/%unk: .vertical()>(%0)",
+  );
 });
 
 test("records diagnostics for malformed scene input", () => {
@@ -145,4 +164,92 @@ test("records diagnostics for malformed scene input", () => {
     facts.diagnostics.map((item) => item.code),
     ["INVALID_FILES", "INVALID_VIEW_TREES"],
   );
+});
+
+test("records nested component parent and child ids in traversal order", () => {
+  const facts = adaptArkAnalyzerScene({
+    files: [],
+    viewTrees: [
+      {
+        component: "Index",
+        file: "entry/src/main/ets/pages/Index.ets",
+        root: {
+          name: "Column",
+          kind: "system",
+          attributes: {},
+          stateValues: [],
+          children: [
+            {
+              name: "Row",
+              kind: "system",
+              attributes: {},
+              stateValues: [],
+              children: [
+                {
+                  name: "Text",
+                  kind: "system",
+                  attributes: {},
+                  stateValues: [],
+                  children: [],
+                },
+              ],
+            },
+            {
+              name: "Blank",
+              kind: "system",
+              attributes: {},
+              stateValues: [],
+              children: [],
+            },
+          ],
+        },
+      },
+    ],
+  });
+
+  const column = facts.components.find((item) => item.name === "Column");
+  const row = facts.components.find((item) => item.name === "Row");
+  const text = facts.components.find((item) => item.name === "Text");
+  const blank = facts.components.find((item) => item.name === "Blank");
+
+  assert.ok(column);
+  assert.ok(row);
+  assert.ok(text);
+  assert.ok(blank);
+  assert.deepEqual(column.childIds, [row.id, blank.id]);
+  assert.deepEqual(row.childIds, [text.id]);
+  assert.equal(blank.parentId, column.id);
+  assert.equal(text.parentId, row.id);
+});
+
+test("adapts simple array attribute uses for constructor-backed ArkUI rules", () => {
+  const facts = adaptArkAnalyzerScene({
+    files: [],
+    viewTrees: [
+      {
+        component: "Index",
+        file: "entry/src/main/ets/pages/Index.ets",
+        root: {
+          name: "FolderStack",
+          kind: "system",
+          attributes: {
+            create: {
+              uses: ["['video', 'preview']"],
+              stmt: "%1 = staticinvoke <@%unk/%unk: FolderStack.create()>(%0)",
+            },
+          },
+          stateValues: [],
+          children: [],
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(facts.components[0]?.attributes[0]?.expr, {
+    kind: "array",
+    items: [
+      { kind: "literal", value: "video" },
+      { kind: "literal", value: "preview" },
+    ],
+  });
 });

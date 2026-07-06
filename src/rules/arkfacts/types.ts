@@ -72,6 +72,7 @@ export interface ArkViewTreeFact {
   id: string;
   component: string;
   filePath: string;
+  rootComponentId?: string;
   nodeCount: number;
 }
 
@@ -81,6 +82,9 @@ export interface ArkComponentFact {
   name: string;
   kind: "system" | "custom" | "builderParam" | "unknown";
   filePath: string;
+  parentId?: string;
+  childIds: string[];
+  depth?: number;
   attributes: ArkAttributeFact[];
   stateRefs: string[];
   line?: number;
@@ -90,7 +94,9 @@ export interface ArkAttributeFact {
   name: string;
   expr?: ArkExpressionFact;
   line?: number;
-  source: "constructor" | "modifier" | "synthetic" | "unknown";
+  stmt?: string;
+  source: "constructor" | "modifier" | "create" | "synthetic" | "unknown";
+  opaqueReason?: "empty_uses" | "multiple_uses" | "unresolved_temp" | "unsupported_ir";
 }
 
 export type BreakpointKey = "sm" | "md" | "lg" | "xl";
@@ -104,4 +110,5 @@ export type ArkExpressionFact =
   | { kind: "symbol"; name: string; resolved?: ArkExpressionFact }
   | { kind: "call"; callee: string; args: ArkExpressionFact[] }
   | { kind: "breakpointValue"; values: Partial<Record<BreakpointKey, ArkExpressionFact>> }
+  | { kind: "opaque"; reason: string; raw?: string }
   | { kind: "unknown"; reason: string; raw?: string };

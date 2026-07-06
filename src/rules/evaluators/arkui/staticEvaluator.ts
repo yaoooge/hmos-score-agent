@@ -78,7 +78,7 @@ export function runArkuiStaticRule(
         },
       ),
       reviewInstances.map((instance) => ({ file: instance.filePath, line: instance.line })),
-      reviewInstances.map((instance) => buildComponentSourceSnippet(instance, evidence)),
+      reviewInstances.map((instance) => buildManualReviewSnippet(instance, spec, evidence)),
     );
     writeDebugArtifacts(evidence, rule, result, scanIndex);
     return result;
@@ -282,8 +282,12 @@ function checkBreakpointRanges(
     const value = readPropertyValue(instance, "breakpoints");
     return value ? [{ instance, value }] : [];
   });
+  const opaqueGridRows = gridRowBreakpoints.filter(({ value }) =>
+    isOpaqueResponsiveExpression(value.valueText, scanIndex),
+  );
   const failedGridRows = gridRowBreakpoints.filter(
     ({ value }) =>
+      !isOpaqueResponsiveExpression(value.valueText, scanIndex) &&
       !["320vp", "600vp", "840vp", "1440vp"].every((text) =>
         resolveConstants(value.valueText, scanIndex).includes(text),
       ),
@@ -307,6 +311,26 @@ function checkBreakpointRanges(
         ...failedGridRows.map(({ value }) => `breakpoints=${value.valueText}`),
         ...snippetsOf(badRangeMatches),
       ],
+    );
+  }
+  if (opaqueGridRows.length > 0) {
+    return withMatches(
+      baseResult(rule, "未接入判定器", "GridRow breakpoints 使用静态层无法稳定解释的封装表达式，需要 Agent 复核。", {
+        inspectedGridRowBreakpointCount: gridRowBreakpoints.length,
+        reviewEvidence: opaqueGridRows.map(({ instance, value }) => ({
+          rule_id: "breakpoint_ranges_standard",
+          file: instance.filePath,
+          line: value.line ?? instance.line,
+          subject: instance.component,
+          evidence: `breakpoints=${value.valueText}`,
+          question: "请结合规则描述和源码上下文复核该 GridRow breakpoints 是否包含推荐断点 320vp/600vp/840vp/1440vp。",
+        })),
+      }),
+      opaqueGridRows.map(({ instance, value }) => ({
+        file: instance.filePath,
+        line: value.line ?? instance.line,
+      })),
+      opaqueGridRows.map(({ value }) => `breakpoints=${value.valueText}`),
     );
   }
   if (gridRowBreakpoints.length === 0 && badRangeMatches.length === 0) {
@@ -952,7 +976,7 @@ function shouldDeferInstanceToAgent(
   ) {
     return true;
   }
-  if (!["breakpoint_aware", "non_decreasing"].includes(spec.requirement)) {
+  if (!["breakpoint_aware", "non_decreasing", "contains_all"].includes(spec.requirement)) {
     if (
       spec.check === "waterflow_sliding_window_mode" &&
       isOpaqueResponsiveExpression(readPropertyValue(instance, "columnsTemplate")?.valueText ?? "", scanIndex)
@@ -1723,9 +1747,60 @@ function buildManualReviewEvidence(
     file: instance.filePath,
     line: instance.line,
     subject: instance.component,
-    source: buildComponentSourceSnippet(instance, evidence),
+    ...(instance.source === "arkFacts"
+      ? { structure: buildComponentStructureEvidence(instance) }
+      : { source: buildComponentSourceSnippet(instance, evidence) }),
     question: `请结合源码片段中的 ${instance.component} 子组件职责判断该规则是否适用，以及是否满足一多适配要求。`,
   }));
+}
+
+function buildComponentStructureEvidence(instance: ArkuiComponentInstance): Record<string, unknown> {
+  return {
+    componentId: instance.componentId,
+    parent: instance.parentComponent,
+    children: instance.childComponents ?? [],
+    attributes: buildStructureAttributes(instance),
+  };
+}
+
+function buildStructureAttributes(
+  instance: ArkuiComponentInstance,
+): Array<{ name: string; valueText: string }> {
+  return [
+    ...readConstructorStructureAttributes(instance.argumentText),
+    ...instance.properties.map((property) => ({
+      name: property.name,
+      valueText: property.argumentText,
+    })),
+  ];
+}
+
+function readConstructorStructureAttributes(argumentText: string): Array<{ name: string; valueText: string }> {
+  const trimmed = argumentText.trim();
+  if (!trimmed.startsWith("{")) {
+    return trimmed ? [{ name: "constructor", valueText: trimmed }] : [];
+  }
+  return [...trimmed.matchAll(/\b([A-Za-z_$][\w$]*)\s*:/g)].flatMap((match) => {
+    const name = match[1];
+    if (!name) {
+      return [];
+    }
+    return [{ name, valueText: readObjectProperty(trimmed, name) ?? "<unknown>" }];
+  });
+}
+
+function buildManualReviewSnippet(
+  instance: ArkuiComponentInstance,
+  spec: ArkuiRuleSpec,
+  evidence: CollectedEvidence,
+): string {
+  if (instance.source !== "arkFacts") {
+    return buildComponentSourceSnippet(instance, evidence);
+  }
+  const props = buildStructureAttributes(instance)
+    .map((property) => `${property.name}=${property.valueText}`)
+    .join("; ");
+  return `${instance.component} parent=${instance.parentComponent ?? "<none>"} children=${(instance.childComponents ?? []).join(",") || "<none>"} props=${props || buildPropertySnippet(instance, spec) || "<none>"}`;
 }
 
 function buildComponentSourceSnippet(
